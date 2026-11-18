@@ -1,13 +1,13 @@
 //! Format 2, sources and tiers, covers, updates.
 
 use anyhow::anyhow;
-use dusk_protocol::plugin::{Kind, Listing, Order, Tier};
+use dusk_protocol::plugin::{Kind, Listing, Order, RepoStars, Tier};
 use proptest::prelude::*;
 
 use super::{
     asks_more, fetch,
     index::{self, Cover, Index},
-    listing::{newer, sort},
+    listing::{self, newer, picks, sort},
     record::Record,
     source::settle,
     tests::{SHA, signed},
@@ -307,25 +307,77 @@ fn an_old_record_belongs_to_the_official_source() {
 
 #[test]
 fn the_list_comes_in_trust_order() {
-    let item = |name: &str, tier: Tier, stars: u32| Listing {
+    let item = |name: &str, tier: Tier| Listing {
         name: name.into(),
         tier,
-        stars,
         ..Listing::default()
     };
     let mut listings = vec![
-        item("b", Tier::Local, 9),
-        item("z", Tier::Community, 1),
-        item("y", Tier::Official, 0),
-        item("a", Tier::Verified, 5),
-        item("c", Tier::Official, 0),
+        item("b", Tier::Local),
+        item("z", Tier::Community),
+        item("y", Tier::Official),
+        item("a", Tier::Verified),
+        item("c", Tier::Official),
     ];
     sort(&mut listings, Order::Trust);
     let names: String = listings.iter().map(|item| item.name.as_str()).collect();
     assert_eq!(names, "cyazb");
-    sort(&mut listings, Order::Stars);
-    let names: String = listings.iter().map(|item| item.name.as_str()).collect();
-    assert_eq!(names, "bazcy");
+}
+
+/// The official list and a verified mirror carried the store's or a vendor's whole
+/// repository's stars, so they never reach a client, whatever the list says; a mirror
+/// the user added keeps its count, with the repository it belongs to.
+#[test]
+fn only_a_mirror_the_user_added_shows_stars_and_with_their_repository() {
+    let page = r#", "stars": 900, "homepage": "https://github.com/someone/tool/tree/main/x""#;
+    let elsewhere = r#", "stars": 900, "homepage": "https://someone.example.com/tool""#;
+    let json = list(
+        2,
+        &format!("{}, {}", entry("tool", page), entry("other", elsewhere)),
+        "",
+    );
+    let paths = crate::testing::temp_paths("store-stars");
+    let record = Record::default();
+    let stars = |tier: Tier| -> Vec<Option<RepoStars>> {
+        let source = fetched("friends", tier, "k", read(&json).unwrap().0);
+        source
+            .index
+            .plugins
+            .iter()
+            .map(|entry| listing::listing(&paths, &record, &source, entry).repo_stars)
+            .collect()
+    };
+    assert_eq!(stars(Tier::Official), [None, None]);
+    assert_eq!(stars(Tier::Verified), [None, None]);
+    let repo = RepoStars {
+        repo: "someone/tool".into(),
+        stars: 900,
+    };
+    assert_eq!(stars(Tier::Community), [Some(repo), None]);
+}
+
+/// A mirror writes its own count, so the biggest number buys no place on a shelf.
+#[test]
+fn a_mirror_s_big_star_count_earns_no_shelf() {
+    let listings = vec![
+        Listing {
+            name: "loud".into(),
+            tier: Tier::Community,
+            repo_stars: Some(RepoStars {
+                repo: "someone/loud".into(),
+                stars: u32::MAX,
+            }),
+            ..Listing::default()
+        },
+        Listing {
+            name: "quiet".into(),
+            created: Some("2026-01-02T00:00:00Z".into()),
+            updated: Some("2026-01-02T00:00:00Z".into()),
+            ..Listing::default()
+        },
+    ];
+    let shelves = picks(&listings);
+    assert_eq!((shelves.newest, shelves.updated), (vec![1], vec![1]));
 }
 
 proptest! {

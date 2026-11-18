@@ -61,6 +61,10 @@ impl Tool for AgentState {
         schema::of::<AgentStateArguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: AgentStateArguments = parse_arguments(arguments)?;

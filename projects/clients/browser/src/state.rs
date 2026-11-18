@@ -202,7 +202,9 @@ impl AppState {
             | Event::TerminalClosed { .. }
             | Event::PluginView { .. }
             | Event::PluginFrame { .. }
-            | Event::PluginNotice { .. } => {}
+            | Event::PluginNotice { .. }
+            // The project page reads the repository when it opens.
+            | Event::GitChanged { .. } => {}
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chat(&thread_id) {
                     chat.update(|data| {

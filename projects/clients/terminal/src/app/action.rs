@@ -53,6 +53,8 @@ pub enum Action {
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
     OpenPlan,
+    /// Read the Overview and open its panel.
+    Overview,
     /// `/files`: what this chat's commands changed in the project.
     ChangedFiles,
     /// `/diff`: the folder's changes line by line.
@@ -69,6 +71,8 @@ pub enum Action {
     Disconnect(String),
     /// The plan as the editor saved it; empty text removes it.
     SavePlan(String),
+    /// `/pins`, `/pin` and `/unpin N`: the chat's pinned messages.
+    Pin(PinAsk),
     /// `/access`: this chat's own approval mode, or the one it has now when none is named.
     Access(Option<String>),
     SetMemoryChars(usize),
@@ -156,6 +160,15 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "a new tab; /tab 2 shows tab 2, /tab next, /tab prev, /tab close",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
+        (
+            "/overview",
+            "how the chat's work stands: plan, tokens, changes, activity, log",
+        ),
+        ("/pins", "this chat's pinned messages, numbered"),
+        (
+            "/pin",
+            "pin the agent's last answer; /unpin N takes pin N away",
+        ),
         ("/files", "the files this chat's commands changed"),
         ("/diff", "review the changes in this chat's folder"),
         (
@@ -173,4 +186,15 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())
+}
+
+/// What a pin command asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinAsk {
+    /// Lists the pins, numbered.
+    List,
+    /// Pins the agent's last answer.
+    Last,
+    /// Unpins the pin of this number, from 1.
+    Unpin(usize),
 }

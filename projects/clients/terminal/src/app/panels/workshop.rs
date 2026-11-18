@@ -100,7 +100,6 @@ pub fn order_word(order: Order) -> &'static str {
         Order::Trust => "official first",
         Order::Newest => "newest",
         Order::Updated => "recently updated",
-        Order::Stars => "most stars",
     }
 }
 
@@ -157,8 +156,7 @@ impl Workshop {
         self.order = match self.order {
             Order::Trust => Order::Newest,
             Order::Newest => Order::Updated,
-            Order::Updated => Order::Stars,
-            Order::Stars => Order::Trust,
+            Order::Updated => Order::Trust,
         };
         self.selected = 0;
     }

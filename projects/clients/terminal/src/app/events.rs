@@ -2,13 +2,29 @@
 
 use dusk_protocol::{
     model::ModelEvent,
-    thread::{ThreadEvent, TurnStatus},
+    thread::{Note, RetryRow, ThreadEvent, TurnStatus, note, retry_row, turn_spend},
 };
+
+use std::time::Instant;
 
 use super::{Activity, App, Entry, Focus, Poll, Tone, compact_number};
 
 impl App {
     pub fn apply(&mut self, event: ThreadEvent) {
+        // The retry row is the footer's activity: one state, replaced in place. Events
+        // that end it hand over to the arms below, which name the next activity.
+        match retry_row(&event) {
+            Some(RetryRow::Show(retry)) => {
+                self.activity = Activity::Retrying(retry, Instant::now())
+            }
+            Some(RetryRow::Clear) if matches!(self.activity, Activity::Retrying(..)) => {
+                self.activity = Activity::Thinking;
+            }
+            _ => {}
+        }
+        if let Some(spend) = turn_spend(&event) {
+            self.turn_spend = spend;
+        }
         match event {
             // Crash recovery may admit a pending request already in the snapshot.
             ThreadEvent::UserMessage(message)
@@ -36,7 +52,7 @@ impl App {
                 }
                 self.show_local_unsent(message);
             }
-            ThreadEvent::ProviderUnavailable => {
+            ThreadEvent::NoModel => {
                 self.provider_available = false;
                 self.transcript.notice(
                     "Provider unavailable. You can continue reading this chat; use /connect or /model to choose a provider.",
@@ -79,6 +95,7 @@ impl App {
                 self.activity = Activity::Thinking;
             }
             ThreadEvent::TurnFinished(turn) => {
+                self.overview_stale = true;
                 self.turn_running = false;
                 self.last_turn_duration_ms = turn
                     .finished_at
@@ -88,10 +105,8 @@ impl App {
                 self.transcript.stop_running_tools();
                 match turn.status {
                     TurnStatus::Interrupted => self.transcript.notice("stopped", Tone::Info),
-                    TurnStatus::Failed => {
-                        let error = turn.error_message.unwrap_or_else(|| "turn failed".into());
-                        self.error(error);
-                    }
+                    // `TurnFailed` came just before and said why.
+                    TurnStatus::Failed => {}
                     _ => {
                         if let Some(ms) = self.last_turn_duration_ms {
                             let took = dusk_protocol::thread::duration_words(ms as i64);
@@ -101,12 +116,16 @@ impl App {
                     }
                 }
             }
-            ThreadEvent::Retrying { attempt, error } => {
-                self.activity = Activity::Retrying(attempt);
-                let text = format!("attempt {attempt} failed, trying again: {error}");
-                self.transcript.notice(text, Tone::Info);
+            // The footer shows the retry in place; the transcript keeps no line of it.
+            ThreadEvent::Retrying { .. } => {}
+            ThreadEvent::TurnWaiting(_) => {
+                if let Some(Note::Notice(text)) = note(&event) {
+                    self.transcript.notice(text, Tone::Info);
+                }
             }
+            ThreadEvent::TurnFailed(failure) => self.error(failure.text()),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
+            ThreadEvent::Pins(pins) => self.pins = pins,
             ThreadEvent::OutputLimitReached => {
                 let text = "the answer reached the model's output limit".to_owned();
                 self.transcript.notice(text, Tone::Info);
@@ -167,6 +186,7 @@ impl App {
                     .push(Entry::from_agent(from, message.content));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_) => self.overview_stale = true,
             ThreadEvent::Goal {
                 goal,
                 note,

@@ -34,6 +34,8 @@ pub struct App {
     pub temporary_next: bool,
     pub temporary: bool,
     pub title: Option<String>,
+    /// The open chat's pins, as the core last listed them.
+    pub pins: Vec<dusk_protocol::thread::Pin>,
     pub transcript: Transcript,
     pub input: Input,
     /// What was typed and not sent in the threads that are not shown; `None` is a new one.
@@ -138,6 +140,13 @@ pub struct App {
     /// Read the jobs again at once: a tool ended, a result arrived, a thread opened.
     pub jobs_stale: bool,
     pub jobs_read: Instant,
+    /// The open thread's plan by status and its team, for the rail and /overview.
+    pub plan: Option<dusk_protocol::thread::PlanCounts>,
+    pub team: Option<dusk_protocol::thread::Team>,
+    /// Read the plan and team again, and the open Overview: a turn ended, the plan or
+    /// team changed, a thread opened. At most once every `OVERVIEW_PERIOD`.
+    pub overview_stale: bool,
+    pub overview_read: Instant,
     /// Image previews on screen in the last frame, and the pictures drawn over them
     /// where the terminal can.
     pub previews: Vec<ShownPreview>,
@@ -158,6 +167,8 @@ pub struct App {
     pub mcp: Vec<McpStatus>,
     pub turn_started_at: Option<i64>,
     pub last_turn_duration_ms: Option<u64>,
+    /// What the running turn has used so far, as the core counted it.
+    pub turn_spend: Option<dusk_protocol::thread::TurnSpend>,
     /// What the core last said about itself: model, settings, MCP, updates.
     pub status: Status,
     pub turn_running: bool,
@@ -170,6 +181,13 @@ pub struct App {
 }
 
 impl App {
+    /// Another thread is shown: its plan and team are read anew.
+    pub fn forget_overview(&mut self) {
+        self.plan = None;
+        self.team = None;
+        self.overview_stale = true;
+    }
+
     /// A transcript line as drawn on the last frame, as plain text.
     pub fn drawn_text(&self, line: usize) -> Option<&str> {
         let earlier = self
@@ -195,6 +213,7 @@ impl App {
             temporary_next: false,
             temporary: false,
             title: None,
+            pins: Vec::new(),
             transcript: Transcript::default(),
             input: Input::default(),
             drafts: HashMap::new(),
@@ -273,6 +292,10 @@ impl App {
             jobs: Vec::new(),
             jobs_stale: false,
             jobs_read: Instant::now(),
+            plan: None,
+            team: None,
+            overview_stale: false,
+            overview_read: Instant::now(),
             previews: Vec::new(),
             pictures: Default::default(),
             subagents: Vec::new(),
@@ -280,6 +303,7 @@ impl App {
             mcp: Vec::new(),
             turn_started_at: None,
             last_turn_duration_ms: None,
+            turn_spend: None,
             status,
             turn_running: false,
             compacting: false,
@@ -303,6 +327,7 @@ impl App {
             self.input = self.drafts.remove(&thread_id).unwrap_or_default();
         }
         self.temporary = false;
+        self.pins.clear();
         (self.sent_ids, self.sent) = history
             .iter()
             .filter(|message| {
@@ -316,6 +341,7 @@ impl App {
         self.recall_draft = None;
         self.jobs.clear();
         self.jobs_stale = true;
+        self.forget_overview();
         self.thread_id = thread_id;
         self.title = title;
         self.poll = None;
@@ -352,6 +378,7 @@ impl App {
         self.goal = None;
         self.turn_started_at = None;
         self.last_turn_duration_ms = None;
+        self.turn_spend = None;
         self.output_samples.clear();
         self.turn_running = false;
         self.compacting = false;
@@ -427,6 +454,7 @@ impl App {
         self.turn_running = false;
         self.compacting = false;
         self.turn_started_at = None;
+        self.turn_spend = None;
         self.transcript.stop_running_tools();
         let unavailable_at = now_ms();
         for agent in self.subagents.iter_mut().filter(|agent| agent.is_working()) {
@@ -484,20 +512,5 @@ impl App {
     }
 }
 
-/// 1234 as "1.2k", 100000 as "100k", 1234567 as "1.2M".
-pub fn compact_number(value: u64) -> String {
-    match value {
-        0..1_000 => value.to_string(),
-        1_000..1_000_000 => format!("{}k", tenths(value, 1_000)),
-        _ => format!("{}M", tenths(value, 1_000_000)),
-    }
-}
-
-/// `value / unit` with one decimal, dropped when it is zero.
-pub fn tenths(value: u64, unit: u64) -> String {
-    let tenths = (value * 10 + unit / 2) / unit;
-    match tenths % 10 {
-        0 => (tenths / 10).to_string(),
-        rest => format!("{}.{rest}", tenths / 10),
-    }
-}
+/// 1234 as "1.2k", 100000 as "100k", 1234567 as "1.2M", as every client says it.
+pub use dusk_protocol::thread::short_count as compact_number;

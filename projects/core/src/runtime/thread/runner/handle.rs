@@ -1,13 +1,15 @@
 //! What a client holds of a running thread: the input that feeds it and the output that tells it.
 
 use crate::runtime::ThreadEvent;
-use crate::runtime::agent::Input;
+use crate::runtime::agent::{Decision, Input};
 use crate::runtime::model_choice::ModelChoice;
 use crate::{
     config::live::LiveConfig,
     state::{State, estimate_tokens},
 };
 use anyhow::{Result, ensure};
+use dusk_protocol::tools::Question;
+use parking_lot::Mutex;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -21,6 +23,8 @@ pub struct ThreadInput {
     pub(super) events: mpsc::WeakUnboundedSender<ThreadEvent>,
     pub(super) thread_id: String,
     pub(super) inputs: mpsc::UnboundedSender<Input>,
+    /// The question a restart asked, while the runner waits for its answer.
+    pub(super) deciding: Arc<Mutex<Option<Question>>>,
 }
 
 /// The client's side for receiving.
@@ -68,11 +72,12 @@ impl ThreadInput {
             tokens <= limit,
             "the message is about {tokens} tokens, past the input limit of {limit}"
         );
-        if self.model.current().is_none() {
+        // The answer to a restart's question needs no model: "Stop" must work without one.
+        if self.model.current().is_none() && !self.decides(&text) {
             let message = self.state.add_local_unsent(&self.thread_id, &text).await?;
             if let Some(events) = self.events.upgrade() {
                 let _ = events.send(ThreadEvent::LocalUnsent(message));
-                let _ = events.send(ThreadEvent::ProviderUnavailable);
+                let _ = events.send(ThreadEvent::NoModel);
             }
             return Ok(());
         }
@@ -80,6 +85,14 @@ impl ThreadInput {
         // Stored either way: a thread that has just ended takes it in on its next start.
         let _ = self.inputs.send(input);
         Ok(())
+    }
+
+    /// Whether `text` answers the question a restart asked, with one of its options.
+    fn decides(&self, text: &str) -> bool {
+        let deciding = self.deciding.lock();
+        deciding
+            .as_ref()
+            .is_some_and(|question| Decision::of(question, text).is_some())
     }
 }
 

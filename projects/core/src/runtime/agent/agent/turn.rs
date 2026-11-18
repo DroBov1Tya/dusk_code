@@ -1,36 +1,34 @@
 //! A turn: starting it, running it, and what joins it from outside.
 
+use super::wait::Waited;
 use super::{Agent, Pace, StepEnd};
 use crate::catalog::modes::Modes;
 use crate::plugins::HookEvent;
-use crate::runtime::agent::{Inbox, Stop};
+use crate::runtime::agent::{Inbox, Keep, Stop};
 use crate::runtime::{
     ThreadEvent,
     thread::{Conversation, start::NO_PROMPT},
 };
 use crate::state::{AgentPhase, Goal, GoalStatus, PendingMessage, Turn, TurnOutcome, TurnStatus};
+use crate::tools::console::project_folder;
 use anyhow::Result;
+use dusk_protocol::thread::TurnWait;
 use serde_json::json;
 use tracing::{info, warn};
 
-impl Agent {
-    /// Marks turns left running by a stopped process as interrupted, and an agent that
-    /// was at work then as paused.
-    pub async fn recover(&self) -> Result<()> {
-        self.state.interrupt_running_turns(&self.thread_id).await?;
-        if self.phase().await.is_some_and(AgentPhase::is_open) {
-            self.runtime_phase(AgentPhase::Paused).await;
-        }
-        self.state.recover_goal_verification(&self.thread_id).await
-    }
+/// Compactions a step that does not fit the model's context gets before the turn fails.
+const MAX_SHRINKS: u32 = 2;
 
+impl Agent {
     /// Starts a turn when something is queued and the context fits the input limit.
     pub async fn start_turn(&self) -> Result<Option<Turn>> {
         if self.model.current().is_none() {
             return Ok(None);
         }
-        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
-        let specs = self.tools.specs(&self.scope, &self.config.current());
+        let config = self.config.current();
+        let stub_results = config.limits().stub_results;
+        let conversation = Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        let specs = self.tools.specs(&self.scope, &config);
         if !conversation.has_queued() || self.context_too_large(&conversation, &specs, 0).is_some()
         {
             return Ok(None);
@@ -72,35 +70,77 @@ impl Agent {
 
     /// Runs the turn to its end and records it. Returns why it stopped early, if it did,
     /// and how it ended.
-    #[tracing::instrument(
-        name = "turn",
-        skip_all,
-        fields(thread = %turn.thread_id, turn = %turn.turn_id, depth = self.depth)
-    )]
     pub async fn run_turn(
         &self,
         turn: &Turn,
         inbox: &mut Inbox,
     ) -> Result<(Option<Stop>, TurnStatus)> {
+        self.run_turn_from(turn, inbox, None).await
+    }
+
+    /// The same, for a turn whose step already ended as `first` says.
+    #[tracing::instrument(
+        name = "turn",
+        skip_all,
+        fields(thread = %turn.thread_id, turn = %turn.turn_id, depth = self.depth)
+    )]
+    pub(super) async fn run_turn_from(
+        &self,
+        turn: &Turn,
+        inbox: &mut Inbox,
+        mut first: Option<StepEnd>,
+    ) -> Result<(Option<Stop>, TurnStatus)> {
         // The user's stop and the context's compaction end a long run, not a step count.
         let outcome;
         let mut stop = None;
         let mut received = Vec::new();
+        // When the provider waits in a row began, while one is stored with the turn.
+        let mut waiting_since = match turn.waiting {
+            Some(TurnWait::Provider { since, .. }) => Some(since),
+            _ => None,
+        };
+        // Compactions of a context too large for the step at hand.
+        let mut shrunk = 0;
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
-            let end = match self.step(turn, inbox, &mut received).await {
+            let step = match first.take() {
+                Some(end) => Ok(end),
+                None => {
+                    let waited = waiting_since.is_some();
+                    self.step(turn, inbox, &mut received, waited).await
+                }
+            };
+            let end = match step {
                 Ok(end) => end,
                 Err(error) => {
-                    outcome = TurnOutcome::Failed(format!("{error:#}"));
+                    outcome = TurnOutcome::failed(format!("{error:#}"));
                     break;
                 }
             };
+            // A step that called tools had its answer, which ended the wait it followed.
+            if matches!(end, StepEnd::CalledTools) {
+                waiting_since = None;
+                shrunk = 0;
+            }
+            // The same error came back too often: another step would only spend the turn.
+            // A stop by the user wins, so only a step that went on to the next is checked.
+            let repeated = match end {
+                StepEnd::CalledTools => self.repeats.lock().take_stop(&turn.turn_id),
+                _ => None,
+            };
+            if let Some(why) = repeated {
+                outcome = TurnOutcome::Failed(dusk_protocol::thread::TurnFailure {
+                    error: why,
+                    provider: None,
+                });
+                break;
+            }
             match end {
                 // Tool results are what fills the context, so it is checked after each.
                 StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {
                     None => {
                         if let Err(error) = self.take_agent_messages().await {
-                            outcome = TurnOutcome::Failed(format!("{error:#}"));
+                            outcome = TurnOutcome::failed(format!("{error:#}"));
                             break;
                         }
                         continue;
@@ -110,6 +150,42 @@ impl Agent {
                         outcome = TurnOutcome::Interrupted(None);
                     }
                 },
+                StepEnd::Wait(error, failure) => {
+                    let waited = self.wait_for_provider(turn, &error, waiting_since, inbox);
+                    match waited.await {
+                        Ok(Waited::Again { since }) => {
+                            waiting_since = Some(since);
+                            continue;
+                        }
+                        Ok(Waited::Stopped(reason)) => {
+                            stop = Some(reason);
+                            outcome = TurnOutcome::Interrupted(None);
+                        }
+                        Ok(Waited::Spent) => outcome = TurnOutcome::Failed(failure),
+                        Err(error) => outcome = TurnOutcome::failed(format!("{error:#}")),
+                    }
+                }
+                StepEnd::TooLarge(_) if shrunk < MAX_SHRINKS => {
+                    shrunk += 1;
+                    // A tail kept the first time may be what does not fit; the second
+                    // time everything goes.
+                    let keep = match shrunk {
+                        1 => Keep::Tail,
+                        _ => Keep::Nothing,
+                    };
+                    info!(
+                        "thread {} turn {}: the context is too large, compaction {shrunk}",
+                        self.thread_id, turn.turn_id
+                    );
+                    match self.compact(None, keep, Some(turn), inbox).await {
+                        None => continue,
+                        Some(reason) => {
+                            stop = Some(reason);
+                            outcome = TurnOutcome::Interrupted(None);
+                        }
+                    }
+                }
+                StepEnd::TooLarge(failure) => outcome = TurnOutcome::Failed(failure),
                 StepEnd::Answered(answer) => outcome = answer,
                 StepEnd::Stopped(reason, partial) => {
                     stop = Some(reason);
@@ -126,6 +202,13 @@ impl Agent {
                 self.thread_id
             );
         }
+        if let TurnOutcome::Completed(answer) = &outcome {
+            self.store_lesson(&turn.turn_id, &answer.content).await;
+        }
+        let failure = match &outcome {
+            TurnOutcome::Failed(failure) => Some(failure.clone()),
+            _ => None,
+        };
         let turn = self.state.finish_turn(&turn.turn_id, outcome).await?;
         let took = turn.finished_at.unwrap_or(turn.started_at) - turn.started_at;
         match &turn.error_message {
@@ -137,6 +220,11 @@ impl Agent {
                 "thread {} turn {} {:?} after {took} ms",
                 self.thread_id, turn.turn_id, turn.status
             ),
+        }
+        // What the turn changed and the ledger did not record is found by a walk.
+        if let Some(graph) = &self.tools.graph {
+            let recorded = self.config.current().limits().record_changes;
+            graph.turn_ended(project_folder(&self.scope), recorded);
         }
         let status = turn.status;
         let ended = match status {
@@ -153,11 +241,10 @@ impl Agent {
         }
         let details = json!({ "status": format!("{status:?}").to_lowercase() });
         // A turn whose step failed ends normally for the runner; without this the clients
-        // would show it as done with no word of why there is no answer.
-        if status == TurnStatus::Failed
-            && let Some(error) = &turn.error_message
-        {
-            self.emit(ThreadEvent::Failed(error.clone()));
+        // would show it as done with no word of why there is no answer. It is the one
+        // event of the failure: `Failed` stays for a thread that stops.
+        if let Some(failure) = failure {
+            self.emit(ThreadEvent::TurnFailed(failure));
         }
         self.emit(ThreadEvent::TurnFinished(turn));
         self.report_tokens().await;

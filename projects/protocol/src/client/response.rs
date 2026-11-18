@@ -7,10 +7,13 @@ use crate::catalog::{NodeText, SkillPack};
 use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
-    Change, FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project, Schedule,
+    Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile,
+    Project, PullRequest, PullRequestDetail, Schedule,
 };
 use crate::system::SystemReport;
-use crate::thread::{Found, JobInfo, LocalUnsent, Message, Task, Thread};
+use crate::thread::{
+    Found, JobInfo, LocalUnsent, LogEntry, Message, Overview, Pin, PlanPage, Task, Team, Thread,
+};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
@@ -27,6 +30,16 @@ pub enum Response {
     /// Messages of any chat that contain the searched text.
     Found(Vec<Found>),
     Tasks(Vec<Task>),
+    /// A page of a root thread's plan.
+    PlanPage(PlanPage),
+    /// The team running a root thread's plan, or none before one ran.
+    Team(Option<Team>),
+    /// How a thread's work stands.
+    Overview(Overview),
+    /// A page of a thread's event log, newest first.
+    Events(Vec<LogEntry>),
+    /// A thread's pins, oldest message first.
+    Pins(Vec<Pin>),
     LocalUnsent(Vec<LocalUnsent>),
     Jobs(Vec<JobInfo>),
     Node(NodeText),
@@ -53,9 +66,15 @@ pub enum Response {
     Schedules(Vec<Schedule>),
     Project(Project),
     Git(GitInfo),
+    /// What a change of a repository left.
+    GitDone(GitOutcome),
+    PullRequests(Vec<PullRequest>),
+    PullRequest(Box<PullRequestDetail>),
     Diff(Vec<FileDiff>),
     Files(Vec<FileEntry>),
     Changes(Vec<Change>),
+    /// A thread's change ledger, newest first.
+    FileChanges(Vec<FileChange>),
     Outputs(Vec<OutputFile>),
     /// A file read for the editor.
     File(FileText),

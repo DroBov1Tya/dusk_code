@@ -438,6 +438,84 @@ mod tests {
         state.close().await;
     }
 
+    /// A database from before the change ledger gets its table, and its data stays.
+    #[tokio::test]
+    async fn a_database_before_the_ledger_gets_its_table() {
+        let path = temp_dir("legacy-changes").join("state.db");
+        let state = State::open(&path).await.unwrap();
+        state.create_thread("thread", "test").await.unwrap();
+        sqlx::raw_sql(
+            "DROP TABLE changes;
+             DELETE FROM _sqlx_migrations WHERE version = 31;",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        state.close().await;
+        let state = State::open(&path).await.unwrap();
+        assert!(state.load_thread("thread").await.unwrap().is_some());
+        let edit = crate::project::ledger::Edit {
+            path: "a.txt".into(),
+            kind: dusk_protocol::project::EditKind::Created,
+            size_before: None,
+            size_after: Some(1),
+            hash_after: None,
+            diff: None,
+        };
+        state
+            .record_changes("thread", None, "/project", &[edit])
+            .await
+            .unwrap();
+        let rows = state.thread_changes("thread").await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].turn, None);
+        // A row the schema forbids is refused: a deleted file has no size after.
+        let refused = sqlx::query(
+            "INSERT INTO changes (change_id, thread_id, project, path, kind, size_before,
+                size_after, created_at) VALUES ('x', 'thread', '/p', 'b', 'deleted', 1, 1, 0)",
+        )
+        .execute(&state.pool)
+        .await;
+        assert!(refused.is_err());
+        state.delete_thread("thread").await.unwrap();
+        let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM changes")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+        assert_eq!(left, 0, "a deleted thread's rows go with it");
+        state.close().await;
+    }
+
+    /// A database from before stubs gets their table; its messages stay and take stubs.
+    #[tokio::test]
+    async fn a_database_before_stubs_gets_their_table() {
+        let path = temp_dir("legacy-stubs").join("state.db");
+        let state = State::open(&path).await.unwrap();
+        state.create_thread("thread", "test").await.unwrap();
+        state.add_system_message("thread", "prompt").await.unwrap();
+        sqlx::raw_sql(
+            "DROP TABLE result_stubs;
+             DELETE FROM _sqlx_migrations WHERE version = 32;",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        state.close().await;
+        let state = State::open(&path).await.unwrap();
+        assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
+        assert!(state.stubs("thread", 0).await.unwrap().is_empty());
+        // A row the schema forbids is refused: a stub has text.
+        let refused = sqlx::query(
+            "INSERT INTO result_stubs (message_id, thread_id, stub, saved_tokens,
+                made_at_sequence)
+             SELECT message_id, thread_id, ' ', 0, 1 FROM messages",
+        )
+        .execute(&state.pool)
+        .await;
+        assert!(refused.is_err());
+        state.close().await;
+    }
+
     #[tokio::test]
     async fn messages_without_image_cards_get_the_column() {
         let path = temp_dir("legacy-messages").join("state.db");
@@ -452,6 +530,41 @@ mod tests {
              DROP TABLE thread_projects;
              DROP TABLE sources;
              ALTER TABLE threads DROP COLUMN auto_title;
+             ALTER TABLE turns DROP COLUMN error_kind;
+             ALTER TABLE turns DROP COLUMN attempts;
+             DROP TRIGGER turns_wait_only_running;
+             ALTER TABLE turns DROP COLUMN waiting_for;
+             ALTER TABLE turns DROP COLUMN waiting_since;
+             ALTER TABLE turns DROP COLUMN wake_at;
+             DROP TABLE teams;
+             DROP TABLE pinned_messages;
+             DROP TRIGGER tasks_done_is_status;
+             DROP TRIGGER tasks_done_is_status_new;
+             DROP TRIGGER tasks_lease_by_status;
+             DROP TRIGGER tasks_lease_by_status_new;
+             DROP TRIGGER tasks_open_has_no_owner;
+             DROP TRIGGER tasks_open_has_no_owner_new;
+             DROP INDEX tasks_status;
+             DROP INDEX tasks_one_at_work;
+             DROP INDEX turns_task;
+             ALTER TABLE turns DROP COLUMN task_id;
+             ALTER TABLE tasks DROP COLUMN status;
+             ALTER TABLE tasks DROP COLUMN depends_on;
+             ALTER TABLE tasks DROP COLUMN role;
+             ALTER TABLE tasks DROP COLUMN phase;
+             ALTER TABLE tasks DROP COLUMN acceptance;
+             ALTER TABLE tasks DROP COLUMN brief;
+             ALTER TABLE tasks DROP COLUMN gate;
+             ALTER TABLE tasks DROP COLUMN files;
+             ALTER TABLE tasks DROP COLUMN owner_thread_id;
+             ALTER TABLE tasks DROP COLUMN lease_until;
+             ALTER TABLE tasks DROP COLUMN attempts;
+             ALTER TABLE tasks DROP COLUMN reworks;
+             ALTER TABLE tasks DROP COLUMN waits_on;
+             ALTER TABLE tasks DROP COLUMN note;
+             ALTER TABLE tasks DROP COLUMN gate_job;
+             ALTER TABLE tasks DROP COLUMN checkpoint;
+             ALTER TABLE tasks DROP COLUMN model;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
              INSERT INTO _sqlx_migrations (version, description, success, checksum,
@@ -490,6 +603,41 @@ mod tests {
              DROP TABLE thread_projects;
              DROP TABLE sources;
              ALTER TABLE threads DROP COLUMN auto_title;
+             ALTER TABLE turns DROP COLUMN error_kind;
+             ALTER TABLE turns DROP COLUMN attempts;
+             DROP TRIGGER turns_wait_only_running;
+             ALTER TABLE turns DROP COLUMN waiting_for;
+             ALTER TABLE turns DROP COLUMN waiting_since;
+             ALTER TABLE turns DROP COLUMN wake_at;
+             DROP TABLE teams;
+             DROP TABLE pinned_messages;
+             DROP TRIGGER tasks_done_is_status;
+             DROP TRIGGER tasks_done_is_status_new;
+             DROP TRIGGER tasks_lease_by_status;
+             DROP TRIGGER tasks_lease_by_status_new;
+             DROP TRIGGER tasks_open_has_no_owner;
+             DROP TRIGGER tasks_open_has_no_owner_new;
+             DROP INDEX tasks_status;
+             DROP INDEX tasks_one_at_work;
+             DROP INDEX turns_task;
+             ALTER TABLE turns DROP COLUMN task_id;
+             ALTER TABLE tasks DROP COLUMN status;
+             ALTER TABLE tasks DROP COLUMN depends_on;
+             ALTER TABLE tasks DROP COLUMN role;
+             ALTER TABLE tasks DROP COLUMN phase;
+             ALTER TABLE tasks DROP COLUMN acceptance;
+             ALTER TABLE tasks DROP COLUMN brief;
+             ALTER TABLE tasks DROP COLUMN gate;
+             ALTER TABLE tasks DROP COLUMN files;
+             ALTER TABLE tasks DROP COLUMN owner_thread_id;
+             ALTER TABLE tasks DROP COLUMN lease_until;
+             ALTER TABLE tasks DROP COLUMN attempts;
+             ALTER TABLE tasks DROP COLUMN reworks;
+             ALTER TABLE tasks DROP COLUMN waits_on;
+             ALTER TABLE tasks DROP COLUMN note;
+             ALTER TABLE tasks DROP COLUMN gate_job;
+             ALTER TABLE tasks DROP COLUMN checkpoint;
+             ALTER TABLE tasks DROP COLUMN model;
              DELETE FROM _sqlx_migrations WHERE version >= 13;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
         )
@@ -586,7 +734,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

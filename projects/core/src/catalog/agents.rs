@@ -85,6 +85,15 @@ impl Agents {
             .cloned()
     }
 
+    /// Every agent found, switched on or not, by name.
+    pub fn names(&self) -> Vec<String> {
+        self.identities
+            .read()
+            .iter()
+            .map(|identity| identity.name.clone())
+            .collect()
+    }
+
     /// Whom a thread may ask: the entries for a chat (`asker` is `None`), the links for an
     /// agent. Switched-off agents are left out.
     pub fn reachable(&self, asker: Option<&str>, config: &Config) -> Vec<Identity> {

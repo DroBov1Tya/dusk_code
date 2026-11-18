@@ -15,5 +15,5 @@ mod tests;
 
 pub use block::SourceBlock;
 pub(crate) use picture::picture;
-pub use store::ThreadSources;
 pub(crate) use store::{FOLDER, clean_name};
+pub use store::{HostFiles, ThreadSources};

@@ -1,15 +1,15 @@
-//! The left rail. Statistics always have a place; agent and MCP sections appear only when
-//! their event sources have supplied something to show.
+//! The left rail. The Overview always has a place; agent and MCP sections appear only
+//! when their event sources have supplied something to show.
 //!
 //! `draw` here shares the rail's rows between the sections; each section draws itself in
-//! a file of its own (`statistics`, `tasks`, `jobs`, `agents`, `connectors`), from the
+//! a file of its own (`overview`, `tasks`, `jobs`, `agents`, `connectors`), from the
 //! pieces in `section`.
 
 mod agents;
 mod connectors;
 mod jobs;
+mod overview;
 mod section;
-mod statistics;
 mod tasks;
 
 use ratatui::{
@@ -23,14 +23,12 @@ use super::theme::DEEP;
 use crate::app::App;
 use jobs::MAX_JOB_ROWS;
 
-/// The statistics: eleven lines and a blank one below.
-const STATS_HEIGHT: u16 = 12;
 /// The connectors folded: the heading and one line that sums them up.
 const CONNECTORS_FOLDED: u16 = 2;
 /// A compact bottom panel, kept the same height when connectors fold.
 const CONNECTORS_HEIGHT: u16 = 5;
 
-/// The rail beside the thread: statistics, tasks, background jobs, agents and connectors.
+/// The rail beside the thread: the Overview, tasks, background jobs, agents and connectors.
 pub struct Sidebar<'a> {
     pub app: &'a mut App,
 }
@@ -44,8 +42,8 @@ impl Sidebar<'_> {
         if area.width < 4 || area.height < 3 {
             return;
         }
-        let stats_height = STATS_HEIGHT.min(area.height);
-        self.statistics(
+        let stats_height = self.overview_height().min(area.height);
+        self.overview(
             frame,
             Rect {
                 height: stats_height,

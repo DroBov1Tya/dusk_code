@@ -1,8 +1,14 @@
-//! A card of the connectors page: an icon slot, the name, what kind it is, a line of
-//! description, its state and its action.
+//! A row of the connectors page, in a card of rows: an icon slot, the name over one line
+//! of what kind it is and what it does, its state and its actions at the right end.
 
 use crate::ui::{Type, widgets::Focusable};
 use gpui_kit::{component::ActiveTheme, *};
+
+/// A row's height: two lines of text and their padding.
+const HEIGHT: f32 = 68.;
+const ICON: f32 = 36.;
+/// One line is ever shown; the rest is not shaped.
+const LINE_CHARS: usize = 300;
 
 pub struct Card {
     pub id: SharedString,
@@ -17,29 +23,28 @@ pub struct Card {
 
 pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
     let theme = cx.theme();
+    let (muted, hover) = (theme.muted_foreground, theme.list_hover);
+    let facts = match one_line(&card.description) {
+        about if about.is_empty() => card.kind,
+        about => format!("{} \u{b7} {about}", card.kind),
+    };
     div()
         .id(card.id)
         .focusable_row(cx)
-        .w(px(360.))
-        .max_w_full()
         .flex()
         .flex_row()
+        .items_center()
         .gap_3()
-        .p_3()
-        .min_h(px(84.))
-        .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.muted)
+        .px_3()
+        .h(px(HEIGHT))
+        .rounded_lg()
         .cursor_pointer()
-        .hover(|card| card.border_color(theme.muted_foreground.opacity(0.4)))
+        .hover(move |row| row.bg(hover))
         .child(match card.icon {
             Some(path) => div()
-                .size(px(36.))
+                .size(px(ICON))
                 .flex_none()
-                .rounded_lg()
-                .overflow_hidden()
-                .child(img(path).size_full()),
+                .child(img(path).size_full().rounded_lg()),
             None => icon_slot(&card.name, cx),
         })
         .child(
@@ -56,39 +61,38 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
                         .truncate()
                         .child(card.name),
                 )
-                .child(
-                    div()
-                        .meta()
-                        .text_color(theme.muted_foreground)
-                        .child(card.kind),
-                )
-                .child(
-                    div()
-                        .small()
-                        .text_color(theme.muted_foreground)
-                        .line_clamp(2)
-                        .text_ellipsis()
-                        .child(card.description),
-                ),
+                .child(div().small().text_color(muted).truncate().child(facts)),
         )
+        .children(card.state.map(|(text, color)| {
+            div()
+                .flex_none()
+                .meta()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(color)
+                .child(text)
+        }))
+        // The action keeps its clicks, so a switch does not open the row's window.
         .child(
             div()
-                .flex()
-                .flex_col()
-                .items_end()
-                .justify_between()
-                .gap_2()
-                .children(
-                    card.state
-                        .map(|(text, color)| div().meta().text_color(color).child(text)),
-                )
-                // The action keeps its clicks, so a switch does not open the card.
-                .child(
-                    div()
-                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .child(action),
-                ),
+                .flex_none()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(action),
         )
+}
+
+/// Text as one plain line of at most `LINE_CHARS` characters.
+fn one_line(text: &str) -> String {
+    let mut line: String = text
+        .split_whitespace()
+        .flat_map(|word| std::iter::once(' ').chain(word.chars()))
+        .skip(1)
+        .take(LINE_CHARS)
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    if line.chars().count() == LINE_CHARS {
+        line.push('\u{2026}');
+    }
+    line
 }
 
 /// Keep the fallback quiet so each connector's status gets the color.
@@ -99,7 +103,7 @@ pub fn icon_slot(name: &str, cx: &App) -> Div {
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_owned());
     div()
-        .size(px(34.))
+        .size(px(ICON))
         .flex_none()
         .rounded_md()
         .bg(cx.theme().accent)

@@ -2,6 +2,8 @@
 
 use std::time::{Duration, Instant};
 
+use dusk_protocol::thread::Retry;
+
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum Focus {
     #[default]
@@ -20,7 +22,8 @@ pub enum Activity {
     Compacting,
     /// /fork is describing the thread for a new one.
     Forking,
-    Retrying(u32),
+    /// A model call is tried again; the instant is when the event came, for the countdown.
+    Retrying(Retry, Instant),
 }
 
 /// The button pressed last, which darkens for `PRESS` after the click.

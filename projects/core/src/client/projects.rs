@@ -3,10 +3,10 @@
 use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::{
-    client::{ProjectRequest, Request, Response, Secret},
+    client::{GitRequest, ProjectRequest, Request, Response, Secret},
     project::{
-        FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project, Schedule,
-        ScheduleDraft,
+        FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile, Project,
+        Schedule, ScheduleDraft,
     },
 };
 use std::path::PathBuf;
@@ -81,6 +81,19 @@ impl Projects<'_> {
             .await?
         {
             Response::Git(info) => Ok(info),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Changes the project's repository; answers with what git said.
+    pub async fn repository(&self, id: &str, request: GitRequest) -> Result<GitOutcome> {
+        let id = id.to_owned();
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::Repository { id, request }))
+            .await?
+        {
+            Response::GitDone(outcome) => Ok(outcome),
             other => Err(unexpected(other)),
         }
     }

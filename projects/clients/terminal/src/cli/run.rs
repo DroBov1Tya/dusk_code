@@ -213,9 +213,7 @@ fn see(seen: &mut Result_, event: ThreadEvent) {
             seen.completion_tokens = tokens.spent.completion_tokens;
             seen.reasoning_tokens = tokens.spent.reasoning_tokens;
         }
-        ThreadEvent::ProviderUnavailable => {
-            seen.error = Some("the provider is unavailable".into());
-        }
+        ThreadEvent::NoModel => seen.error = Some("no model is chosen".into()),
         ThreadEvent::Rejected { reason } => seen.error = Some(reason),
         _ => {}
     }

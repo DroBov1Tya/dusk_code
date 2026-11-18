@@ -1,0 +1,80 @@
+exit code: 1
+stdout:
+
+> shop@1.0.0 test
+> jest
+
+stderr:
+PASS src/cart.test.ts
+  cart
+    ✓ handles case 0 (1 ms)
+    ✓ handles case 1 (2 ms)
+    ✓ handles case 2 (3 ms)
+    ✓ handles case 3 (4 ms)
+    ✓ handles case 4 (5 ms)
+    ✓ handles case 5 (6 ms)
+    ✓ handles case 6 (7 ms)
+    ✓ handles case 7 (8 ms)
+PASS src/inventory.test.ts
+  inventory
+    ✓ handles case 0 (1 ms)
+    ✓ handles case 1 (2 ms)
+    ✓ handles case 2 (3 ms)
+    ✓ handles case 3 (4 ms)
+    ✓ handles case 4 (5 ms)
+    ✓ handles case 5 (6 ms)
+    ✓ handles case 6 (7 ms)
+    ✓ handles case 7 (8 ms)
+PASS src/pricing.test.ts
+  pricing
+    ✓ handles case 0 (1 ms)
+    ✓ handles case 1 (2 ms)
+    ✓ handles case 2 (3 ms)
+    ✓ handles case 3 (4 ms)
+    ✓ handles case 4 (5 ms)
+    ✓ handles case 5 (6 ms)
+    ✓ handles case 6 (7 ms)
+    ✓ handles case 7 (8 ms)
+PASS src/search.test.ts
+  search
+    ✓ handles case 0 (1 ms)
+    ✓ handles case 1 (2 ms)
+    ✓ handles case 2 (3 ms)
+    ✓ handles case 3 (4 ms)
+    ✓ handles case 4 (5 ms)
+    ✓ handles case 5 (6 ms)
+    ✓ handles case 6 (7 ms)
+    ✓ handles case 7 (8 ms)
+PASS src/users.test.ts
+  users
+    ✓ handles case 0 (1 ms)
+    ✓ handles case 1 (2 ms)
+    ✓ handles case 2 (3 ms)
+    ✓ handles case 3 (4 ms)
+    ✓ handles case 4 (5 ms)
+    ✓ handles case 5 (6 ms)
+    ✓ handles case 6 (7 ms)
+    ✓ handles case 7 (8 ms)
+FAIL src/checkout.test.ts
+  checkout
+    ✓ builds a receipt (2 ms)
+    ✕ adds tax (4 ms)
+
+  ● checkout › adds tax
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8.1
+    Received: 7.5
+
+      20 |   const receipt = checkout(cart);
+    > 21 |   expect(receipt.total).toBe(8.1);
+         |                         ^
+
+      at Object.<anonymous> (src/checkout.test.ts:21:25)
+
+Test Suites: 1 failed, 5 passed, 6 total
+Tests:       1 failed, 41 passed, 42 total
+Snapshots:   0 total
+Time:        2.183 s
+Ran all test suites.

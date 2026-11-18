@@ -1,12 +1,15 @@
-//! A thread's background jobs, sources, plan and changes.
+//! A thread's background jobs, sources, plan, team and changes.
 
 use serde::{Deserialize, Serialize};
+
+use crate::thread::TeamBudget;
 
 /// The largest picture a client may send as bytes. A browser's frame carries the bytes
 /// as JSON numbers, about four characters each, so this keeps it under the web's frame cap.
 pub const MAX_PICTURE_UPLOAD: usize = 6 * 1024 * 1024;
 
-/// A thread's background jobs and sources.
+/// A thread's background jobs, sources, plan, team and changes. The plan and team
+/// requests name the root thread, which leads the team.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WorkRequest {
     Jobs {
@@ -62,5 +65,48 @@ pub enum WorkRequest {
     /// The files the chat's commands changed in its project.
     ChangedFiles {
         thread_id: String,
+    },
+    /// What the chat's commands changed in its project, file by file with diffs, newest
+    /// first, at most `MAX_FILE_CHANGES`.
+    FileChanges {
+        thread_id: String,
+    },
+    /// The plan for the strip: every task not done, then up to `limit` done ones older
+    /// than the task `done_before`, newest first; the core holds `limit` to
+    /// `PLAN_PAGE_DONE`. Answers with `Response::PlanPage`.
+    PlanTasks {
+        thread_id: String,
+        done_before: Option<String>,
+        limit: u32,
+    },
+    /// The team running the plan. Answers with `Response::Team`.
+    Team {
+        thread_id: String,
+    },
+    /// How the thread's work stands: its activity, changes and newest log lines. Answers
+    /// with `Response::Overview`.
+    Overview {
+        thread_id: String,
+    },
+    /// The thread's event log older than `before` (Unix ms), newest first; the core holds
+    /// `limit` to `EVENTS_PAGE`. Answers with `Response::Events`.
+    Events {
+        thread_id: String,
+        before: Option<i64>,
+        limit: u32,
+    },
+    /// Passes the `user_confirmation` gate of a task in review.
+    ConfirmTask {
+        thread_id: String,
+        task_id: String,
+    },
+    /// Ends the running team as stopped.
+    StopTeam {
+        thread_id: String,
+    },
+    /// Sets the running team's budget, within the ceilings of the settings.
+    SetTeamBudget {
+        thread_id: String,
+        budget: TeamBudget,
     },
 }

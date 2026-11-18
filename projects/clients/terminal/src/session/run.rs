@@ -18,7 +18,7 @@ use ratatui::DefaultTerminal;
 
 use super::{
     actions::{Flow, apply, set_update_note},
-    answers::{jobs_wanted, refresh_jobs, refresh_system, system_open},
+    answers::{jobs_wanted, refresh_jobs, refresh_overview, refresh_system, system_open},
     tabs::{self, Held},
     thread::{OpenThread, close, send},
 };
@@ -37,6 +37,8 @@ pub const MEMORY_LOG_PERIOD: Duration = Duration::from_secs(10 * 60);
 pub const SYSTEM_PERIOD: Duration = Duration::from_secs(2);
 /// How often the jobs are read again while one runs or their window is open.
 pub const JOBS_PERIOD: Duration = Duration::from_secs(1);
+/// The plan, the team and the open Overview are read at most this often.
+pub const OVERVIEW_PERIOD: Duration = Duration::from_secs(1);
 pub const MAX_EVENTS_PER_FRAME: usize = 512;
 
 pub struct InstallingUpdate {
@@ -215,6 +217,7 @@ pub async fn run(
         app.update_available = app.status.available_update.clone();
         refresh_system(client, &mut app).await;
         refresh_jobs(client, &mut app).await;
+        refresh_overview(client, &mut app).await;
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
         if title != shown_title {
@@ -288,7 +291,8 @@ pub async fn run(
             Ok(()) = client.status.changed() => Action::None,
             // While the core looks for a model, the clock redraws what it finds.
             _ = system_clock.tick(), if system_open(&app) => Action::None,
-            _ = jobs_clock.tick(), if jobs_wanted(&app) => Action::None,
+            // The jobs' clock also wakes an Overview that waits for its second.
+            _ = jobs_clock.tick(), if jobs_wanted(&app) || app.overview_stale => Action::None,
             _ = memory_clock.tick() => {
                 if let Ok(Some(usage)) = tokio::task::spawn_blocking(dusk_core::app::process_usage).await {
                     tracing::info!(

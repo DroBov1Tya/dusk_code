@@ -32,6 +32,40 @@ async fn a_chat_is_automatically_named_only_on_its_first_turn() {
     assert_eq!(provider.requests.lock().unwrap().len(), 3);
 }
 
+/// The core counts what a turn spent: after each model call its totals so far, and the
+/// same totals on the finished turn, so no client sums usage.
+#[tokio::test]
+async fn a_turn_reports_the_sum_of_its_model_calls() {
+    let state = thread_state("turn_progress").await;
+    let config = live_config("turn_progress_config");
+    let provider = provider(vec![
+        vec![Step::Call("one"), Step::Usage(100, 20, 5), Step::Done],
+        vec![Step::Text("done"), Step::Usage(300, 40, 7), Step::Done],
+    ]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let client = async move {
+        input.send("go").await.unwrap();
+        let mut progress = Vec::new();
+        loop {
+            match output.next_event().await.expect("thread is open") {
+                ThreadEvent::TurnProgress {
+                    steps,
+                    tokens,
+                    cost_micro_usd,
+                    ..
+                } => progress.push((steps, tokens, cost_micro_usd)),
+                ThreadEvent::TurnFinished(turn) => {
+                    assert_eq!(progress, [(1, 120, 5), (2, 460, 12)]);
+                    assert_eq!((turn.steps, turn.tokens, turn.cost_micro_usd), (2, 460, 12));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    };
+    tokio::join!(runner.run(), client);
+}
+
 #[tokio::test]
 async fn undo_does_not_retry_a_failed_title_request() {
     let state = thread_state("failed_title_undo").await;
@@ -397,6 +431,64 @@ async fn runs_tools_until_the_model_answers() {
     );
 }
 
+/// A block lives in the stored call: a client that reopens the thread reads the same
+/// block the live events gave, and `read_history` gives its plain text.
+#[tokio::test]
+async fn a_shown_block_is_read_back_from_the_stored_messages() {
+    use crate::tools::{ReadHistory, Show};
+    use dusk_protocol::thread::Block;
+
+    let state = thread_state("shown_block").await;
+    let config = Arc::new(temp_live_config_with(
+        "shown_block_config",
+        "tools:\n  show: true\n",
+    ));
+    let arguments = json!({ "choices": { "labels": ["Yes, fix it", "Not now"] } });
+    let provider = provider(vec![
+        vec![Step::Tool("show".into(), arguments), Step::Done],
+        vec![Step::Text("Shall I?"), Step::Done],
+    ]);
+    let (runner, input, mut output) =
+        runner_with(&state, &provider, &config, model(None), Box::new(Show));
+    input.send("fix it?").await.unwrap();
+    drop(input);
+
+    runner.run().await;
+
+    let (mut started, mut live) = (None, None);
+    while let Some(event) = output.next_event().await {
+        match event {
+            ThreadEvent::ToolStarted(call) => started = Some(call),
+            ThreadEvent::ToolFinished { result, .. } => {
+                assert!(!result.is_error, "{}", result.content);
+                live = Block::shown(started.as_ref().unwrap(), &result.content);
+            }
+            _ => {}
+        }
+    }
+    let text = "Choices:\n1. Yes, fix it\n2. Not now";
+    assert_eq!(live.as_ref().map(Block::text).as_deref(), Some(text));
+
+    let messages = state.list_messages("thread").await.unwrap();
+    let call = messages
+        .iter()
+        .flat_map(|message| &message.tool_calls)
+        .next()
+        .expect("the call is stored with the assistant message");
+    let answer = messages
+        .iter()
+        .find(|message| message.tool_call_id.as_deref() == Some(call.id.as_str()))
+        .expect("the call has its tool message");
+    assert_eq!(Block::shown(call, &answer.content), live);
+
+    let root = temp_dir("shown_block_scope");
+    std::fs::create_dir_all(&root).unwrap();
+    let context = crate::testing::tool_context(&ToolScope::new(&root, &root).unwrap());
+    let history = ReadHistory::new(Arc::clone(&state), "thread".into());
+    let read = history.call(json!({}), context).await.unwrap();
+    assert!(read.contains(text), "{read}");
+}
+
 /// The first step plans and a step after a failure works it out at the effort set;
 /// steps that carry out the plan think lightly.
 #[tokio::test]
@@ -467,7 +559,7 @@ async fn a_passing_failure_is_retried() {
     let mut status = None;
     while let Some(event) = output.next_event().await {
         match event {
-            ThreadEvent::Retrying { attempt, error } => {
+            ThreadEvent::Retrying { attempt, error, .. } => {
                 retried = attempt == 1 && error == "server busy";
             }
             ThreadEvent::TurnFinished(turn) => status = Some(turn.status),

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::client::Secret;
+use crate::client::{GitRequest, Secret};
 use crate::project::{FileStamp, ScheduleDraft};
 /// Projects, and the git state and files of one. Git and files are read only inside
 /// a saved project's folder.
@@ -33,6 +33,13 @@ pub enum ProjectRequest {
     SwitchBranch {
         id: String,
         branch: String,
+    },
+    /// Changes the repository or reads its pull requests. Answered beside the loop,
+    /// since a push or the GitHub CLI may take a while; a change is followed by
+    /// `Event::GitChanged`.
+    Repository {
+        id: String,
+        request: GitRequest,
     },
     /// The entries of `path`, a folder relative to the project's, `""` for its top.
     Files {

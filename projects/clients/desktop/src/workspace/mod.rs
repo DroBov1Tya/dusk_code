@@ -48,14 +48,17 @@ pub enum Center {
     File,
     /// Prompts the core runs on a timetable.
     Schedules,
+    /// How the shown chat's work stands, as a page.
+    Overview,
 }
 
 /// The modules of the right column, top to bottom.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Right {
     Arbiter,
-    /// The context and the activity under one fold.
-    Statistics,
+    /// How the shown chat's work stands: plan, team, tokens, context, changes, activity
+    /// and its log.
+    Overview,
     Screenshots,
     Git,
     Files,
@@ -71,7 +74,7 @@ pub enum Right {
 impl Right {
     const ALL: [Right; 10] = [
         Right::Arbiter,
-        Right::Statistics,
+        Right::Overview,
         Right::Screenshots,
         Right::Git,
         Right::Files,
@@ -86,7 +89,7 @@ impl Right {
     pub fn key(self) -> &'static str {
         match self {
             Self::Arbiter => "arbiter",
-            Self::Statistics => "statistics",
+            Self::Overview => "overview",
             Self::Screenshots => "screenshots",
             Self::Git => "git",
             Self::Files => "files",
@@ -102,7 +105,7 @@ impl Right {
     fn folded_at_first() -> HashSet<Right> {
         [
             Right::Arbiter,
-            Right::Statistics,
+            Right::Overview,
             Right::Screenshots,
             Right::Git,
             Right::Files,
@@ -198,6 +201,8 @@ pub struct Workspace {
     pub agents_trigger_focus: FocusHandle,
     /// The keys of a window that takes them: the subagents' list, a listing's gallery.
     pub modal_focus: FocusHandle,
+    /// The Workshop confirmation's Cancel button, where the keyboard starts.
+    pub confirm_focus: FocusHandle,
     pub file: crate::pages::file::FileView,
     /// MCP servers whose restart button was just pressed.
     pub mcp_restarting: HashSet<String>,
@@ -206,6 +211,10 @@ pub struct Workspace {
     pub expanded: HashSet<String>,
     pub context: Option<ContextReport>,
     pub context_load: crate::columns::inspector::context::ContextLoad,
+    /// The core's answers the Overview draws.
+    pub overview: crate::columns::inspector::overview::Shown,
+    /// The plan strip and the views tab over the composer.
+    pub dock: chat::dock::Dock,
     pub alerts: crate::platform::notify::Alerts,
     /// The shown chat's pinned plan.
     pub plan: crate::columns::inspector::plan::Plan,
@@ -316,6 +325,13 @@ pub struct Workspace {
     pub list_chat: Option<String>,
     /// A row changed height, as when folded: measure every row again.
     pub measure_again: bool,
+    /// How wide the transcript's rows are drawn, for blocks that set their columns by it.
+    pub reading_width: f32,
+    /// The chat whose reply buttons were just pressed and how many items it had then,
+    /// so one press sends once.
+    pub replied: Option<(String, usize)>,
+    /// The pinned bar: the pin it shows, whether its list is open, a pin under way.
+    pub pins: chat::pins::PinsView,
 }
 
 impl Workspace {

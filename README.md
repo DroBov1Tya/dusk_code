@@ -5,8 +5,8 @@ or browser. Chat history is stored locally, and you choose which model provider 
 
 [Website](https://drobov1tya.github.io/dusk_code/) ·
 [Releases](https://github.com/DroBov1Tya/dusk_code/releases) ·
-[Plugin Workshop](https://drobov1tya.github.io/duskcode-plugins/) ·
-[Plugins repository](https://github.com/DroBov1Tya/duskcode-plugins)
+[Plugin Workshop](https://drobov1tya.github.io/duskcode-workshop/) ·
+[Plugins repository](https://github.com/DroBov1Tya/duskcode-workshop)
 
 ## Install
 
@@ -92,8 +92,8 @@ account only in its own apps. Claude models work here with an API key.
   servers add tools, with OAuth where the server asks; plugins bring skills, agents,
   providers, hooks, platforms and panels. Each runs in a sandbox, never sees your keys
   and installs in one click from the signed store, the
-  [Workshop](https://drobov1tya.github.io/duskcode-plugins/); its plugins, Telegram
-  among them, live in [duskcode-plugins](https://github.com/DroBov1Tya/duskcode-plugins)
+  [Workshop](https://drobov1tya.github.io/duskcode-workshop/); its plugins, Telegram
+  among them, live in [duskcode-workshop](https://github.com/DroBov1Tya/duskcode-workshop)
   ([writing one](docs/plugins.md)).
 - **Memory you can read**: notes per project and about you, as plain files. A temporary
   chat is kept in memory only and leaves nothing on disk.
@@ -103,6 +103,20 @@ account only in its own apps. Claude models work here with an API key.
 - **Voice**: dictation and reading aloud through servers you connect or models
   installed on the machine.
 - **Headless**: `duskcode run "prompt"` prints the answer; `--json` adds the usage.
+
+### Git
+
+A saved project's repository is managed from the Changes page of the desktop app: stage
+or unstage a file, stage all, commit, discard a file's changes (after a yes), make a
+branch, fetch, pull (fast-forward only) and push (after a yes, to the upstream or to
+`origin` as a new one). The core also merges with a list of conflicts, aborts a merge,
+adds and removes worktrees beside the repository, and reads and opens pull requests
+through the GitHub CLI when `gh` is installed and signed in; the clients do not show
+these yet. Git runs with an argument vector and never a shell, with your own hooks,
+config and credential helper; the app never reads a token.
+
+It never forces a push, amends a commit, prunes worktrees or removes a worktree that has
+uncommitted or untracked files.
 
 ## How it is built
 
@@ -126,7 +140,7 @@ account only in its own apps. Claude models work here with an API key.
 | `resources/` | Shipped modes, agents, skills, plugins and prompts |
 
 [docs/structure.md](docs/structure.md) says where a file goes;
-[docs/agent-engine.md](docs/agent-engine.md) describes a turn.
+[docs/features.md](docs/features.md) lists the features and their switches.
 
 ## Security and privacy
 
@@ -168,15 +182,22 @@ scripts/build-web.sh                  # the web page, embedded by the next build
 ```
 
 `Cargo.lock` is committed, so a build uses the dependency versions of a release.
+
+### Keeping the build folder small
+
+Cargo never deletes old artifacts, so `target/` only grows. Give each worktree its own
+target folder and never share one `CARGO_TARGET_DIR` between worktrees: each path builds
+its own copy of every crate anyway, so a shared folder only piles them up. Delete a
+worktree's target folder with the worktree. Now and then run `scripts/clean-build.sh`
+from the repository root: it removes what was not used for 7 days (`--days N` to change
+that, `cargo sweep` when it is installed), or everything with `--all`.
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rules of the code, and
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) says how we treat each other.
 
 ## Documentation
 
-[docs/structure.md](docs/structure.md), [docs/agent-engine.md](docs/agent-engine.md),
+[docs/structure.md](docs/structure.md), [docs/features.md](docs/features.md),
 [docs/web.md](docs/web.md) and [docs/plugins.md](docs/plugins.md) describe the program.
-[docs/structure-audit.md](docs/structure-audit.md) is the maintainers' working note on
-the code's layout: public on purpose, and may be rough.
 
 ## Limitations
 

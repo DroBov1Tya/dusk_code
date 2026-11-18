@@ -44,6 +44,25 @@ impl ThreadTokens {
     }
 }
 
+/// A count as every client says it: "950", "18.4k", "1.2M"; a tenth of zero is left out,
+/// so 12000 reads "12k".
+pub fn short_count(value: u64) -> String {
+    match value {
+        0..1_000 => value.to_string(),
+        1_000..1_000_000 => format!("{}k", tenths(value, 1_000)),
+        _ => format!("{}M", tenths(value, 1_000_000)),
+    }
+}
+
+/// `value / unit` rounded to one decimal, dropped when it is zero.
+fn tenths(value: u64, unit: u64) -> String {
+    let tenths = (u128::from(value) * 10 + u128::from(unit) / 2) / u128::from(unit);
+    match tenths % 10 {
+        0 => (tenths / 10).to_string(),
+        rest => format!("{}.{rest}", tenths / 10),
+    }
+}
+
 /// Estimated tokens by who wrote them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenCounts {
@@ -85,5 +104,20 @@ impl TokenCounts {
         }
         self.tool_calls += tool_calls;
         self.reasoning += reasoning;
+    }
+}
+
+#[cfg(test)]
+mod short_count_tests {
+    use super::short_count;
+
+    #[test]
+    fn counts_read_short_with_one_tenth_at_most() {
+        assert_eq!(short_count(0), "0");
+        assert_eq!(short_count(999), "999");
+        assert_eq!(short_count(1_000), "1k");
+        assert_eq!(short_count(18_420), "18.4k");
+        assert_eq!(short_count(999_949), "999.9k");
+        assert_eq!(short_count(1_250_000), "1.3M");
     }
 }

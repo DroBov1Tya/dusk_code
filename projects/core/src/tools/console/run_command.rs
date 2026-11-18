@@ -29,10 +29,15 @@ use crate::tools::{
 };
 
 use super::process::{CommandEnv, Running};
+use super::shape::Shaped;
 use crate::runtime::jobs::Launch;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 120;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
+/// Added while old results are sent as stubs, so a model reads one back instead of
+/// running the command again.
+const STUB_SENTENCE: &str = " A result shown as `[result N put away ...]` is stored; get it \
+    with read_history, run again only if something changed.";
 
 #[derive(Default)]
 pub struct RunCommand {
@@ -112,7 +117,7 @@ impl RunCommand {
         let scope = &*context.scope;
         let confinement = confinement(context).await;
         let marker = scope.workspace().join(format!(
-            ".dusk-cwd-{}-{}",
+            "{MARKER}{}-{}",
             std::process::id(),
             NEXT_MARKER.fetch_add(1, Ordering::Relaxed)
         ));
@@ -135,10 +140,7 @@ impl RunCommand {
             }
             _ => None,
         };
-        let before = match &context.state {
-            Some(_) => Some(super::file_changes::snapshot(scope.cwd()).await),
-            None => None,
-        };
+        let watch = super::file_changes::watch(context).await;
         let ran = run(
             &script,
             &self.start_dir(scope),
@@ -181,11 +183,8 @@ impl RunCommand {
                 )));
             }
         };
-        if let (Some(before), Some(state)) = (before, &context.state) {
-            let touched = before.touched(&super::file_changes::snapshot(scope.cwd()).await);
-            if let Err(error) = state.note_thread_files(&context.thread_id, &touched).await {
-                tracing::warn!("cannot note the files a command changed: {error:#}");
-            }
+        if let Some(watch) = watch {
+            watch.record(context, MARKER).await;
         }
         if let Some(note) = self.keep_dir(scope, ended) {
             result.content.push_str(&format!("\n{note}"));
@@ -195,6 +194,8 @@ impl RunCommand {
 }
 
 static NEXT_MARKER: AtomicU64 = AtomicU64::new(0);
+/// The name of the file a command leaves its last folder in starts with this.
+const MARKER: &str = ".dusk-cwd-";
 
 fn inside(scope: &ToolScope, dir: &Path) -> bool {
     dir.is_dir()
@@ -262,11 +263,21 @@ impl Tool for RunCommand {
             " Set background=true to start a long command and continue immediately. Returns job_id after spawn; the result joins this agent automatically at a safe boundary, even after this turn ends. Jobs survive turn cancellation; use jobs(action=cancel) to stop one. At most 8 jobs per thread and 64 per runtime; commands are limited to 16 KiB. Incomplete jobs are never restarted after application restart."
         } else {
             ""
+        } + if context.config.limits().stub_results {
+            STUB_SENTENCE
+        } else {
+            ""
         }
     }
 
     fn parameters(&self) -> Value {
         schema::of::<RunCommandArguments>()
+    }
+
+    /// Only a command that ended in the foreground has an exit code and output of its own.
+    fn shape(&self, arguments: &Value, result: &crate::tools::ToolResult) -> Option<Shaped> {
+        result.exit_code?;
+        super::shape::shape(arguments["command"].as_str()?, &result.content)
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
@@ -430,7 +441,43 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::testing::{temp_dir, tool_context};
+    use crate::testing::{temp_dir, tool_context, tool_context_with};
+
+    /// The description with stubs off is the one every cached prompt already holds.
+    #[test]
+    fn the_description_gains_the_stub_sentence_only_with_the_switch_on() {
+        let scope = scope("shell-description");
+        let tool = RunCommand::default();
+        let off = tool.description(&tool_context_with(
+            &scope,
+            "limits:\n  stub_results: false\n",
+        ));
+        let before = format!(
+            "Run a command with sh -c. The first starts in {}; the folder a command ends in \
+             carries over to the next, so `cd` once, not in every command. Stdin is empty. \
+             Returns the exit code, stdout and stderr; a long stream keeps its first 8 KiB \
+             and last 24 KiB. A non-zero exit code is a failed result. Put temporary and \
+             downloaded files in {}. Change files here too: a quoted heredoc \
+             (cat > file <<'EOF') for a new file; for an edit, a short script that replaces \
+             one exact, unique piece and fails otherwise; then check with git diff. Do more \
+             per call: join commands with `&&` or `;`, and keep output small with `head`, \
+             `tail` or `grep`; never dump whole logs or files. Never wait with `sleep`. \
+             The project may hold environment variables the user set, such as API tokens: \
+             `env` lists them with the values masked; use them as `$NAME` and never print \
+             or copy a value.",
+            scope.cwd().display(),
+            scope.workspace().display()
+        );
+        assert_eq!(off, before);
+        let on = tool_context_with(&scope, "limits:\n  stub_results: true\n");
+        assert_eq!(
+            tool.description(&on),
+            format!(
+                "{before} A result shown as `[result N put away ...]` is stored; get it with \
+                 read_history, run again only if something changed."
+            )
+        );
+    }
 
     fn scope(name: &str) -> ToolScope {
         let root = temp_dir(name);

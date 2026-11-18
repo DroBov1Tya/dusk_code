@@ -1,5 +1,5 @@
-//! The built-in tools of the chat's mode as cards, grouped by what they work on; a card
-//! opens what the tool tells the model. MCP tools live with their servers.
+//! The built-in tools of the chat's mode as rows, a card of them for each thing they
+//! work on; a row opens what the tool tells the model. MCP tools live with their servers.
 
 use dusk_protocol::{
     client::Switch as CoreSwitch,
@@ -33,7 +33,7 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
             continue;
         }
         has_results = true;
-        let mut cards = grid();
+        let mut cards = grid(cx);
         for tool in tools {
             let open = tool.name.clone();
             let line = tool

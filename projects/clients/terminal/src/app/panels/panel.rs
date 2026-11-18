@@ -54,6 +54,8 @@ pub enum Panel {
         report: ContextReport,
         row: usize,
     },
+    /// How the thread's work stands, as text; read again while open.
+    Overview(Box<OverviewView>),
     Jobs(JobsView),
     /// The chat's folder's changes: the files, or one of them open.
     Diff(DiffView),
@@ -69,6 +71,15 @@ pub enum Panel {
         selected: usize,
         removing: bool,
     },
+}
+
+/// The core's Overview and context report for the /overview panel; the plan and team
+/// are the app's, which the rail shows too.
+pub struct OverviewView {
+    pub overview: dusk_protocol::thread::Overview,
+    pub context: ContextReport,
+    /// The line kept in view while scrolling.
+    pub row: usize,
 }
 
 pub struct DiffView {

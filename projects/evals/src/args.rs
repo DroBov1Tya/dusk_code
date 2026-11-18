@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command, value_parser};
 
+use crate::overrides::Setting;
+
 pub struct Options {
     pub tasks: PathBuf,
     pub only: Vec<String>,
@@ -14,6 +16,10 @@ pub struct Options {
     pub runs: usize,
     pub timeout_seconds: u64,
     pub out: PathBuf,
+    /// Keys of the run's config.yml changed for this run, to compare a mechanism on and off.
+    pub settings: Vec<Setting>,
+    /// Picks where a task with `kill_after` kills the core, run by run.
+    pub seed: u64,
 }
 
 pub enum Args {
@@ -83,6 +89,23 @@ pub fn parse_args() -> Args {
                 .value_parser(value_parser!(PathBuf)),
         )
         .arg(
+            Arg::new("set")
+                .long("set")
+                .value_name("NAME=VALUE")
+                .action(ArgAction::Append)
+                .value_parser(Setting::parse)
+                .help(
+                    "Set a key of the run's config, such as limits.max_attempts=1; may be repeated",
+                ),
+        )
+        .arg(
+            Arg::new("seed")
+                .long("seed")
+                .default_value("1")
+                .value_parser(value_parser!(u64))
+                .help("Picks the kill points of tasks with kill_after; the same seed, the same points"),
+        )
+        .arg(
             Arg::new("selfcheck")
                 .long("selfcheck")
                 .action(ArgAction::SetTrue)
@@ -130,5 +153,10 @@ pub fn parse_args() -> Args {
             .get_one::<PathBuf>("out")
             .cloned()
             .unwrap_or_default(),
+        settings: matches
+            .get_many::<Setting>("set")
+            .map(|settings| settings.cloned().collect())
+            .unwrap_or_default(),
+        seed: matches.get_one::<u64>("seed").copied().unwrap_or(1),
     })
 }

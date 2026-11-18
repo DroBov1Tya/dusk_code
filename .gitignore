@@ -17,6 +17,7 @@
 /docs/gui-todo.md
 /docs/frontier-gap.md
 /docs/weak-models.md
+/docs/roadmap.md
 
 # Secrets and local settings: never commit keys, tokens or a user's config
 .env

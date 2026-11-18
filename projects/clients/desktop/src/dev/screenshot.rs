@@ -26,6 +26,8 @@
 //! - `fake=store`: thirty made-up listings in the Workshop (see `dev::store`); `workshop`:
 //!   show the Workshop; `workshop=install:NAME|remove:NAME`: its window that asks first;
 //!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
+//! - `fake=blocks|blocks-working|blocks-wait|blocks-decision`: a chat with a Flow, Checks and
+//!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
 //!   menu; `fake=sentpicture`: a user's message with a picture thumbnail under it;
@@ -39,6 +41,7 @@
 //!   for the mist;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
+//! - `size=WxH`: resize the window, as a drag of its edge would;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
 //!   for that many minutes, for the header's sky;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
@@ -74,8 +77,16 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                     let image = cx
                         .update_window(window, |_, window, cx| {
                             // The window may not be on screen, so it draws no frames of
-                            // its own: draw the current state, then render that frame.
-                            window.draw(cx).clear(cx);
+                            // its own: draw the current state, then render that frame. A
+                            // draw may ask for the next frame (the Workshop's grid does, once
+                            // it has measured its page), so deliver those until none is left,
+                            // as the platform's frame loop would.
+                            for _ in 0..8 {
+                                window.draw(cx).clear(cx);
+                                if window.simulate_next_frame(cx) == 0 {
+                                    break;
+                                }
+                            }
                             window.render_to_image()
                         })
                         .ok()
@@ -154,6 +165,10 @@ fn act(
                 "connectors" => Center::Connectors,
                 "artifacts" => Center::Artifacts,
                 "schedules" => Center::Schedules,
+                "overview" => {
+                    ws.overview.back = Some(Center::Chat);
+                    Center::Overview
+                }
                 _ => Center::Chat,
             };
             if ws.center == Center::Schedules {
@@ -163,6 +178,11 @@ fn act(
         }
         "review" => ws.open_review(cx),
         "quiet" => ws.quiet = true,
+        // The window's size, as a drag of its edge would set it.
+        "size" => match value.split_once('x').map(|(w, h)| (w.parse(), h.parse())) {
+            Some((Ok(width), Ok(height))) => window.resize(size(px(width), px(height))),
+            _ => eprintln!("size=WIDTHxHEIGHT: {value}"),
+        },
         // A turn of the shown chat that began `value` minutes ago and goes on.
         "working" => {
             let minutes: i64 = value.parse().unwrap_or(7);
@@ -171,7 +191,7 @@ fn act(
                 chat.activity_boundaries.push(chat.items.len());
                 chat.boundary_times
                     .push(dusk_protocol::system::now_ms() - minutes * 60_000);
-                chat.boundary_spend.push((0, 0));
+                chat.boundary_spend.push(None);
             }
         }
         "detail" => {
@@ -388,6 +408,21 @@ fn act(
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
         }
+        // A board of 200 tasks in the Overview; the next real answer replaces it.
+        "fake" if value == "overview" => {
+            ws.overview.chat = ws.shown.clone();
+            ws.overview.overview = Some(Default::default());
+            ws.overview.plan = Some(dusk_protocol::thread::PlanCounts {
+                open: 120,
+                claimed: 4,
+                running: 6,
+                blocked: 10,
+                review: 5,
+                done: 50,
+                failed: 5,
+            });
+            cx.notify();
+        }
         "fake" if value == "plugins" => {
             ws.status.plugin_parts = std::sync::Arc::new(super::plugins::parts());
             cx.notify();
@@ -430,8 +465,9 @@ fn act(
             }
             cx.notify();
         }
+        "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
         "fake" if value == "store" => super::store::fake(ws, cx),
-        "workshop" => super::store::step(ws, value, cx),
+        "workshop" => super::store::step(ws, value, window, cx),
         "fake" if value == "limits" => {
             use dusk_protocol::model::{RateLimit, RateLimits};
             ws.status.limits = Some(RateLimits {

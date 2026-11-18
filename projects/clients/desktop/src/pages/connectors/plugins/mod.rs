@@ -96,7 +96,7 @@ fn installed(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
             cx,
         ));
     }
-    let mut cards = grid();
+    let mut cards = grid(cx);
     for plugin in plugins {
         let name = plugin.name.clone();
         let open = plugin.name.clone();

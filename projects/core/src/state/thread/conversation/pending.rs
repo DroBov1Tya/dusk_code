@@ -14,6 +14,19 @@ pub struct PendingMessage {
     /// The agent's thread for a message another agent sent; `None` for a client's.
     pub from_thread_id: Option<String>,
     pub from_job_id: Option<String>,
+    /// When it was stored, in Unix ms.
+    pub created_at: i64,
+}
+
+/// How far a message stored under a caller's `request_uid` got.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Delivery {
+    /// Nothing was stored under the uid.
+    None,
+    /// Stored; its thread has not taken it in.
+    Waiting,
+    /// In the thread; `answered` once a turn that took it has ended.
+    Read { answered: bool },
 }
 
 impl State {
@@ -31,6 +44,7 @@ impl State {
     ) -> Result<PendingMessage> {
         ensure!(!content.trim().is_empty(), "message is empty");
         let request_uid = Uuid::now_v7().to_string();
+        let created_at = timestamp_ms()?;
         let pending_id = sqlx::query_scalar(
             "INSERT INTO pending_messages (thread_id, request_uid, content, created_at,
                 from_thread_id)
@@ -39,7 +53,7 @@ impl State {
         .bind(thread_id)
         .bind(&request_uid)
         .bind(content)
-        .bind(timestamp_ms()?)
+        .bind(created_at)
         .bind(from)
         .fetch_one(&self.pool)
         .await
@@ -50,6 +64,66 @@ impl State {
             content: content.to_owned(),
             from_thread_id: from.map(str::to_owned),
             from_job_id: None,
+            created_at,
+        })
+    }
+
+    /// Stores a message under the caller's `request_uid`, once: a sender that cannot know
+    /// whether it stored the message before a crash stores it again, and the second time
+    /// changes nothing, whether the first still waits or was taken into the thread.
+    /// Answers whether it was stored now.
+    pub async fn add_pending_once(
+        &self,
+        thread_id: &str,
+        request_uid: &str,
+        content: &str,
+        from: Option<&str>,
+    ) -> Result<bool> {
+        ensure!(!request_uid.trim().is_empty(), "request UID is empty");
+        ensure!(!content.trim().is_empty(), "message is empty");
+        let stored = sqlx::query(
+            "INSERT INTO pending_messages (thread_id, request_uid, content, created_at,
+                from_thread_id)
+             SELECT ?1, ?2, ?3, ?4, ?5
+             WHERE NOT EXISTS (SELECT 1 FROM messages WHERE request_uid = ?2)
+             ON CONFLICT (request_uid) DO NOTHING",
+        )
+        .bind(thread_id)
+        .bind(request_uid)
+        .bind(content)
+        .bind(timestamp_ms()?)
+        .bind(from)
+        .execute(&self.pool)
+        .await
+        .context("store sent message once")?;
+        Ok(stored.rows_affected() == 1)
+    }
+
+    /// Where the message stored under `request_uid` stands.
+    pub async fn delivery(&self, request_uid: &str) -> Result<Delivery> {
+        let read: Option<bool> = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM turns WHERE turns.thread_id = messages.thread_id
+                 AND turns.last_sequence >= messages.sequence AND turns.status != 'running')
+             FROM messages WHERE request_uid = ?",
+        )
+        .bind(request_uid)
+        .fetch_optional(&self.pool)
+        .await
+        .context("look up a delivered message")?;
+        if let Some(answered) = read {
+            return Ok(Delivery::Read { answered });
+        }
+        let waits: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pending_messages WHERE request_uid = ?)",
+        )
+        .bind(request_uid)
+        .fetch_one(&self.pool)
+        .await
+        .context("look up a waiting message")?;
+        Ok(if waits {
+            Delivery::Waiting
+        } else {
+            Delivery::None
         })
     }
 
@@ -81,7 +155,8 @@ impl State {
 
     pub async fn pending_messages(&self, thread_id: &str) -> Result<Vec<PendingMessage>> {
         let rows = sqlx::query(
-            "SELECT pending_id, request_uid, content, from_thread_id, from_job_id FROM pending_messages
+            "SELECT pending_id, request_uid, content, from_thread_id, from_job_id, created_at
+             FROM pending_messages
              WHERE thread_id = ? ORDER BY pending_id",
         )
         .bind(thread_id)
@@ -96,6 +171,7 @@ impl State {
                     content: row.try_get("content")?,
                     from_thread_id: row.try_get("from_thread_id")?,
                     from_job_id: row.try_get("from_job_id")?,
+                    created_at: row.try_get("created_at")?,
                 })
             })
             .collect()
@@ -147,5 +223,48 @@ mod tests {
         assert_eq!(first, again);
         assert!(state.pending_messages("thread").await.unwrap().is_empty());
         assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_message_stored_under_the_callers_uid_is_stored_once() {
+        use super::Delivery;
+
+        let state = temp_state("pending_once").await;
+        state.create_thread("thread", "test").await.unwrap();
+        assert_eq!(state.delivery("card:t:1").await.unwrap(), Delivery::None);
+
+        let once =
+            |content: &'static str| state.add_pending_once("thread", "card:t:1", content, None);
+        assert!(once("the card").await.unwrap());
+        // Again while it waits, with other words: the first stands.
+        assert!(!once("another card").await.unwrap());
+        assert_eq!(state.delivery("card:t:1").await.unwrap(), Delivery::Waiting);
+        let waiting = state.pending_messages("thread").await.unwrap();
+        assert_eq!(waiting.len(), 1);
+        assert_eq!(waiting[0].content, "the card");
+
+        // Again after the thread took it in: nothing waits a second time.
+        state.admit_pending("thread", &waiting[0]).await.unwrap();
+        assert!(!once("the card").await.unwrap());
+        assert!(state.pending_messages("thread").await.unwrap().is_empty());
+        let read = Delivery::Read { answered: false };
+        assert_eq!(state.delivery("card:t:1").await.unwrap(), read);
+        // A turn that took it and ended has answered it; a running one has not.
+        let turn = state.start_turn("thread").await.unwrap().unwrap();
+        assert_eq!(state.delivery("card:t:1").await.unwrap(), read);
+        state.interrupt_running_turns("thread").await.unwrap();
+        let answered = Delivery::Read { answered: true };
+        assert_eq!(
+            state.delivery("card:t:1").await.unwrap(),
+            answered,
+            "{turn:?}"
+        );
+        assert!(once(" ").await.is_err());
+        assert!(
+            state
+                .add_pending_once("thread", " ", "x", None)
+                .await
+                .is_err()
+        );
     }
 }

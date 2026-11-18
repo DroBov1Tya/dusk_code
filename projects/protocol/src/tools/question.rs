@@ -4,6 +4,8 @@ use anyhow::ensure;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::thread::{CHOICE_CHARS, MAX_CHOICES, MIN_CHOICES};
+
 /// How long a question and its options may be, and how many options it has.
 pub const MAX_QUESTION_CHARS: usize = 300;
 
@@ -43,6 +45,18 @@ impl Question {
             parts.push(own);
         }
         self.reply(&parts.join("; "))
+    }
+
+    /// Whether the question is short enough to be drawn as reply buttons instead of a
+    /// card: one answer, 2 to 4 options, each a non-empty label of `CHOICE_CHARS` at
+    /// most. Options are the model's text, so they are measured in characters, trimmed.
+    pub fn light(&self) -> bool {
+        !self.multiple
+            && (MIN_CHOICES..=MAX_CHOICES).contains(&self.options.len())
+            && self.options.iter().all(|option| {
+                let chars = option.trim().chars().count();
+                (1..=CHOICE_CHARS).contains(&chars)
+            })
     }
 
     /// The message saying the user would not answer, ahead of what they wrote instead.
@@ -86,5 +100,32 @@ impl Question {
             );
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn question(options: &[&str], multiple: bool) -> Question {
+        Question {
+            question: "Which?".into(),
+            options: options.iter().map(|o| o.to_string()).collect(),
+            multiple,
+        }
+    }
+
+    #[test]
+    fn a_question_is_light_only_within_every_cap() {
+        let edge = "\u{e9}".repeat(CHOICE_CHARS);
+        let over = "\u{e9}".repeat(CHOICE_CHARS + 1);
+        assert!(question(&["Yes", "No"], false).light());
+        assert!(question(&[&edge, "b", "c", "d"], false).light());
+        assert!(!question(&["Yes"], false).light());
+        assert!(!question(&["a", "b", "c", "d", "e"], false).light());
+        assert!(!question(&["Yes", "No"], true).light());
+        assert!(!question(&[&over, "No"], false).light());
+        assert!(!question(&["Yes", "  "], false).light());
+        assert!(question(&[&format!(" {edge} "), "No"], false).light());
     }
 }

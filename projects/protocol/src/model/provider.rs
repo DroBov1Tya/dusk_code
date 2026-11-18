@@ -3,6 +3,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::model::ProviderErrorKind;
+
 /// A configured provider as a check found it: its models, or why it did not answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderStatus {
@@ -34,6 +36,44 @@ impl ProviderStatus {
 
 fn yes() -> bool {
     true
+}
+
+/// How a configured provider's calls went, as the turns that used it since the core
+/// started found. Every field holds until the provider turns healthy or failing or fails
+/// for another reason, so the status is not sent again on every call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderHealth {
+    pub name: String,
+    pub calls: CallHealth,
+}
+
+/// Whether a provider's calls are answered. Times are Unix milliseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CallHealth {
+    /// Its newest call was answered, and every one since `since`.
+    Answering { since: i64 },
+    /// Its calls fail with `kind`, the first of them at `since`; `last_answered` is when
+    /// one was answered before, if any was since the core started.
+    Failing {
+        kind: ProviderErrorKind,
+        since: i64,
+        last_answered: Option<i64>,
+    },
+}
+
+impl CallHealth {
+    /// "answering", or how it fails and for how long: "Provider unreachable, since 3m 0s
+    /// ago". `now` is in the unit of `since`.
+    pub fn text(&self, now: i64) -> String {
+        match self {
+            Self::Answering { .. } => "answering".to_owned(),
+            Self::Failing { kind, since, .. } => format!(
+                "{}, since {} ago",
+                kind.label(),
+                crate::thread::duration_words(now.saturating_sub(*since))
+            ),
+        }
+    }
 }
 
 /// Money left on a provider account, as the provider wrote it.
@@ -183,6 +223,21 @@ pub struct Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn health_reads_as_answering_or_how_it_fails() {
+        let answering = CallHealth::Answering { since: 0 };
+        assert_eq!(answering.text(500_000), "answering");
+        let failing = CallHealth::Failing {
+            kind: ProviderErrorKind::Overloaded,
+            since: 1_000,
+            last_answered: None,
+        };
+        assert_eq!(
+            failing.text(181_000),
+            "Provider overloaded, since 3m 0s ago"
+        );
+    }
 
     #[test]
     fn limits_read_as_one_line() {

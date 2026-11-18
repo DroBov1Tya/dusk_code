@@ -55,6 +55,12 @@ pub struct RemoteTool {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    /// The server says the tool only reads or is idempotent. The hint comes from the
+    /// server and is not trusted for anything beyond repeating that server's own call.
+    pub repeatable: bool,
+    /// The server says the tool changes nothing. Only `readOnlyHint` says so; an
+    /// idempotent call may still change state.
+    pub read_only: bool,
 }
 
 /// HTTPS, or plain HTTP to this machine by its address, without credentials in the URL.
@@ -101,17 +107,7 @@ impl McpClient {
             .await
             .context("the server did not list its tools in time")?
             .map_err(|error| anyhow!("cannot list the tools: {error}"))?;
-        Ok(tools
-            .into_iter()
-            .map(|tool| RemoteTool {
-                name: tool.name.into_owned(),
-                description: tool
-                    .description
-                    .map(|text| text.chars().take(MAX_DESCRIPTION_CHARS).collect())
-                    .unwrap_or_default(),
-                input_schema: Value::Object((*tool.input_schema).clone()),
-            })
-            .collect())
+        Ok(tools.into_iter().map(remote_tool).collect())
     }
 
     /// The connection ended: a local server exited, or a remote one closed it.
@@ -262,6 +258,22 @@ fn content_text(part: &ContentBlock) -> String {
     }
 }
 
+fn remote_tool(tool: rmcp::model::Tool) -> RemoteTool {
+    let hint = |pick: fn(&rmcp::model::ToolAnnotations) -> Option<bool>| {
+        tool.annotations.as_ref().and_then(pick) == Some(true)
+    };
+    RemoteTool {
+        repeatable: hint(|a| a.read_only_hint) || hint(|a| a.idempotent_hint),
+        read_only: hint(|a| a.read_only_hint),
+        name: tool.name.into_owned(),
+        description: tool
+            .description
+            .map(|text| text.chars().take(MAX_DESCRIPTION_CHARS).collect())
+            .unwrap_or_default(),
+        input_schema: Value::Object((*tool.input_schema).clone()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -278,5 +290,37 @@ mod tests {
         .unwrap();
         assert_eq!(content_text(&text), "two files");
         assert_eq!(content_text(&image), "[image content]");
+    }
+
+    /// Whether a server's tool, with these annotations, may be repeated.
+    fn repeatable(annotations: Option<Value>) -> bool {
+        let mut tool = json!({"name": "t", "inputSchema": {"type": "object"}});
+        if let Some(annotations) = annotations {
+            tool["annotations"] = annotations;
+        }
+        remote_tool(serde_json::from_value(tool).unwrap()).repeatable
+    }
+
+    #[test]
+    fn only_a_read_only_hint_makes_a_tool_read_only() {
+        let read_only = |annotations: Value| {
+            let tool =
+                json!({"name": "t", "inputSchema": {"type": "object"}, "annotations": annotations});
+            remote_tool(serde_json::from_value(tool).unwrap()).read_only
+        };
+        assert!(read_only(json!({"readOnlyHint": true})));
+        assert!(!read_only(json!({"idempotentHint": true})));
+        assert!(!read_only(json!({"readOnlyHint": false})));
+    }
+
+    #[test]
+    fn a_server_hint_makes_its_tool_repeatable() {
+        assert!(repeatable(Some(json!({"readOnlyHint": true}))));
+        assert!(repeatable(Some(json!({"idempotentHint": true}))));
+        assert!(!repeatable(None));
+        assert!(!repeatable(Some(json!({}))));
+        assert!(!repeatable(Some(
+            json!({"readOnlyHint": false, "idempotentHint": false})
+        )));
     }
 }

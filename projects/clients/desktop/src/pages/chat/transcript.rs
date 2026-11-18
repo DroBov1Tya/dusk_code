@@ -6,8 +6,9 @@ use std::{collections::BTreeMap, time::Instant};
 use dusk_protocol::{
     model::ModelEvent,
     thread::{
-        AgentState, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Task, ThreadEvent,
-        ThreadTokens, Tool, ToolState, clip, note,
+        AgentState, Block, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Pin, Retry,
+        RetryRow, Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, clip,
+        note, retry_row, turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, Question},
 };
@@ -31,6 +32,8 @@ pub enum Item {
         reasoning: String,
     },
     Tool(Tool),
+    /// What a `show` call put in the chat, in place of that call's step.
+    Block(Block),
     /// A picture a tool or a message carries, by its ID in the pictures folder.
     Image(Picture),
     /// A sound a tool carries, to play in the chat.
@@ -206,7 +209,7 @@ impl Agent {
                 AgentState::Writing
             }
             ThreadEvent::Idle => AgentState::Done,
-            ThreadEvent::Failed(_) => AgentState::Failed,
+            ThreadEvent::Failed(_) | ThreadEvent::TurnFailed(_) => AgentState::Failed,
             _ => return,
         };
         if matches!(state, AgentState::Done | AgentState::Failed) {
@@ -228,18 +231,29 @@ pub struct Transcript {
     pub changed_from: Option<usize>,
     pub answered: BTreeMap<usize, Vec<Answered>>,
     asked: Asked,
+    /// The blocks `show` calls ask for, by call, until their results say whether they
+    /// were shown.
+    blocks: BTreeMap<String, Block>,
     pub activity_boundaries: Vec<usize>,
     /// When each boundary was drawn, in Unix milliseconds, beside `activity_boundaries`.
     pub boundary_times: Vec<i64>,
-    /// What the thread had spent, as tokens and micro-dollars, when each boundary was
-    /// drawn; a turn's own spend is the difference across it.
-    pub boundary_spend: Vec<(u64, u64)>,
-    /// The thread's spend as the core last reported it.
-    spent: (u64, u64),
+    /// What the turn ending at each boundary spent, as tokens and micro-dollars, as the
+    /// core said when it finished; none for a turn read from history.
+    pub boundary_spend: Vec<Option<(u64, u64)>>,
     /// When the last turn seen live ended, for the header's star.
     pub finished_at: Option<Instant>,
     pub working: bool,
+    /// The model call being tried again and when its event came, for the countdown.
+    pub retry: Option<(Retry, Instant)>,
+    /// What the running turn waits for, as the core last said.
+    pub waiting: Option<TurnWait>,
+    /// When the running turn began, in Unix milliseconds, as the core stamped it.
+    pub turn_started: Option<i64>,
+    /// What the running turn has used so far, as the core counted it.
+    pub spend: Option<TurnSpend>,
     pub tokens: Option<(u64, u64)>,
+    /// The token report as the core last sent it, for the Overview.
+    pub usage: Option<ThreadTokens>,
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
     /// Screenshots the model took to see the screen, oldest first: they go to the right
@@ -264,11 +278,31 @@ pub struct Transcript {
     pub agent_chats: BTreeMap<String, Transcript>,
     /// What passed between the agents and the arbiter, oldest first.
     pub exchanges: Vec<Exchange>,
+    /// The stored message each of the user's and the agent's items is, by item index, for
+    /// pinning it and for finding it again.
+    pub message_ids: BTreeMap<usize, String>,
+    /// The chat's pins, as the core last listed them.
+    pub pins: Vec<Pin>,
     /// When the arbiter last answered, for its pulse.
     pub arbiter_at: Option<Instant>,
 }
 
 impl Transcript {
+    /// The item that shows the stored message `message_id`.
+    pub fn item_of(&self, message_id: &str) -> Option<usize> {
+        self.message_ids
+            .iter()
+            .find(|(_, id)| id.as_str() == message_id)
+            .map(|(at, _)| *at)
+    }
+
+    /// Whether the message of item `at` is pinned.
+    pub fn pinned(&self, at: usize) -> bool {
+        self.message_ids
+            .get(&at)
+            .is_some_and(|id| self.pins.iter().any(|pin| pin.message_id == *id))
+    }
+
     /// Answers the question shown. Gives the message for the agent once every question
     /// asked has its answer: a second question must not take the place of the first.
     pub fn answer(&mut self, chosen: &[usize], own: &str) -> Option<String> {
@@ -331,6 +365,8 @@ impl Transcript {
                 if let Some(answers) = self.asked.answer(&message.content) {
                     self.answered.insert(self.items.len(), answers);
                 }
+                self.message_ids
+                    .insert(self.items.len(), message.message_id.clone());
                 self.items.push(Item::User {
                     text: message.content.clone(),
                     sequence: Some(message.sequence),
@@ -341,19 +377,21 @@ impl Transcript {
                 .push(Item::Job(JobResult::read(&message.content))),
             MessageRole::Assistant => {
                 if !message.content.is_empty() || message.reasoning.is_some() {
+                    self.message_ids
+                        .insert(self.items.len(), message.message_id.clone());
                     self.items.push(Item::Assistant {
                         text: message.content.clone(),
                         reasoning: message.reasoning.clone().unwrap_or_default(),
                     });
                 }
                 for call in &message.tool_calls {
-                    self.asked.call(call);
-                    self.items.push(Item::Tool(tool(call, ToolState::Done)));
+                    self.start_tool(call, ToolState::Done);
                 }
             }
             MessageRole::Tool => {
-                if let Some(tool) =
-                    self.tool_mut(message.tool_call_id.as_deref().unwrap_or_default())
+                let call_id = message.tool_call_id.as_deref().unwrap_or_default();
+                if !self.show_block(call_id, &message.content)
+                    && let Some(tool) = self.tool_mut(call_id)
                 {
                     tool.output = clip(&message.content);
                 }
@@ -395,9 +433,28 @@ impl Transcript {
         if let Some(index) = changed {
             self.changed_from = Some(self.changed_from.map_or(index, |old| old.min(index)));
         }
+        match retry_row(&event) {
+            Some(RetryRow::Show(retry)) => self.retry = Some((retry, Instant::now())),
+            Some(RetryRow::Clear) => self.retry = None,
+            None => {}
+        }
+        // The wait leaves a notice as well, below; the row shows what it waits for.
+        if let ThreadEvent::TurnWaiting(turn) = &event {
+            self.waiting = turn.waiting;
+        }
+        if let Some(spend) = turn_spend(&event) {
+            self.spend = spend;
+        }
+        // The row above is the whole of a retry: it leaves no notice.
+        if matches!(event, ThreadEvent::Retrying { .. }) {
+            return;
+        }
         if let Some(note) = note(&event) {
             match &event {
-                ThreadEvent::Failed(_) => self.working = false,
+                ThreadEvent::Failed(_) => {
+                    self.working = false;
+                    self.end_turn();
+                }
                 ThreadEvent::ArbiterDecided {
                     what,
                     allow,
@@ -426,29 +483,58 @@ impl Transcript {
             ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
                 self.add_message(&message);
             }
-            ThreadEvent::TurnStarted(_) => {
+            ThreadEvent::TurnStarted(turn) => {
                 self.activity_boundary(dusk_protocol::system::now_ms());
                 self.working = true;
+                self.turn_started = Some(turn.started_at);
+                self.waiting = turn.waiting;
             }
             // The turn began before this client listened: it works, but its items are
-            // already in the history and must not open a second fold boundary.
-            ThreadEvent::TurnRunning(_) => self.working = true,
-            ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => {
+            // already in the history and must not open a second fold boundary. It also
+            // comes after a wait, with the turn no longer waiting.
+            ThreadEvent::TurnRunning(turn) => {
+                self.working = true;
+                self.turn_started = Some(turn.started_at);
+                self.waiting = turn.waiting;
+            }
+            ThreadEvent::TurnFinished(turn) => {
+                // The answer streamed without its ID; the core names it as the turn ends.
+                if let Some(id) = turn.response_message_id.clone()
+                    && let Some(at) = self
+                        .items
+                        .iter()
+                        .rposition(|item| matches!(item, Item::Assistant { .. }))
+                {
+                    self.message_ids.entry(at).or_insert(id);
+                }
+                let spent = (turn.tokens > 0).then_some((turn.tokens, turn.cost_micro_usd));
+                if self.activity_boundary(dusk_protocol::system::now_ms())
+                    && let Some(last) = self.boundary_spend.last_mut()
+                {
+                    *last = spent;
+                }
+                if self.working {
+                    self.finished_at = Some(Instant::now());
+                }
+                self.working = false;
+                self.end_turn();
+            }
+            ThreadEvent::Idle => {
                 self.activity_boundary(dusk_protocol::system::now_ms());
                 if self.working {
                     self.finished_at = Some(Instant::now());
                 }
                 self.working = false;
+                self.end_turn();
             }
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
-            ThreadEvent::ToolStarted(call) => {
-                self.asked.call(&call);
-                self.items.push(Item::Tool(tool(&call, ToolState::Running)));
-            }
+            ThreadEvent::ToolStarted(call) => self.start_tool(&call, ToolState::Running),
             ThreadEvent::ToolFinished { call_id, result } => {
-                if let Some(tool) = self.tool_mut(&call_id) {
+                if !self.show_block(&call_id, &result.content)
+                    && let Some(tool) = self.tool_mut(&call_id)
+                {
                     tool.finish(&result);
                 }
                 self.add_pictures(&call_id, &result.artifacts);
@@ -456,14 +542,14 @@ impl Transcript {
             ThreadEvent::Tokens { tokens, limit } => {
                 self.tokens = Some((context(&tokens), limit));
                 self.cost = tokens.cost();
-                let used = tokens.spent.prompt_tokens + tokens.spent.completion_tokens;
-                self.spent = (used, tokens.cost_micro_usd);
+                self.usage = Some(tokens);
             }
             ThreadEvent::ModelSelected { input_limit, .. } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);
                 self.tokens = Some((used, input_limit));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::TaskChanged(task) => task_changed(&mut self.tasks, task),
             ThreadEvent::SubagentStarted {
                 call_id,
                 thread_id,
@@ -531,12 +617,15 @@ impl Transcript {
             }
             ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
+            ThreadEvent::Pins(pins) => self.pins = pins,
             ThreadEvent::Undone { text } => {
                 // The core forgot the message and all after it; so does the view.
                 if let Some(at) = self.rollback_at.take() {
                     self.items.truncate(at);
                     self.answered.retain(|index, _| *index < at);
+                    self.message_ids.retain(|index, _| *index < at);
                     self.asked = Asked::default();
+                    self.blocks.clear();
                     let kept = self
                         .activity_boundaries
                         .iter()
@@ -553,20 +642,11 @@ impl Transcript {
         }
     }
 
-    /// How many times each tool ran in the chat, most used first.
-    pub fn activity(&self) -> Vec<(String, usize)> {
-        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-        for item in &self.items {
-            if let Item::Tool(tool) = item {
-                *counts.entry(tool.name.as_str()).or_default() += 1;
-            }
-        }
-        let mut counts: Vec<_> = counts
-            .into_iter()
-            .map(|(name, count)| (name.to_owned(), count))
-            .collect();
-        counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        counts
+    /// The turn is over: what only a running turn has goes.
+    fn end_turn(&mut self) {
+        self.waiting = None;
+        self.turn_started = None;
+        self.spend = None;
     }
 
     fn agent_name(&self, thread_id: &str) -> String {
@@ -596,6 +676,40 @@ impl Transcript {
             ExchangeKind::Denied
         };
         self.exchange(ARBITER, asker, kind, &format!("{what}: {reason}"));
+    }
+
+    /// A step that starts, live or read from history; a `show` call also keeps the block it
+    /// asks for, which its result may put in the step's place.
+    fn start_tool(&mut self, call: &dusk_protocol::model::ToolCall, state: ToolState) {
+        self.asked.call(call);
+        if let Some(block) = Block::asked(call) {
+            self.blocks.insert(call.id.clone(), block);
+        }
+        self.items.push(Item::Tool(tool(call, state)));
+    }
+
+    /// Puts the block of a finished `show` call in place of its step, when `result` says
+    /// it was shown; a refused call stays a step with its error. Whether it did.
+    fn show_block(&mut self, call_id: &str, result: &str) -> bool {
+        let Some(block) = self
+            .blocks
+            .remove(call_id)
+            .filter(|block| block.shown_by(result))
+        else {
+            return false;
+        };
+        let step = self
+            .items
+            .iter_mut()
+            .rev()
+            .find(|item| matches!(item, Item::Tool(tool) if tool.call_id == call_id));
+        match step {
+            Some(step) => {
+                *step = Item::Block(block);
+                true
+            }
+            None => false,
+        }
     }
 
     fn tool_mut(&mut self, call_id: &str) -> Option<&mut Tool> {
@@ -629,34 +743,27 @@ impl Transcript {
         }
     }
 
-    fn activity_boundary(&mut self, at: i64) {
+    /// Draws a boundary after the last item; false when there is one there already.
+    fn activity_boundary(&mut self, at: i64) -> bool {
         let end = self.items.len();
-        if end > 0 && self.activity_boundaries.last() != Some(&end) {
+        let new = end > 0 && self.activity_boundaries.last() != Some(&end);
+        if new {
             self.activity_boundaries.push(end);
             self.boundary_times.push(at);
-            self.boundary_spend.push(self.spent);
+            self.boundary_spend.push(None);
         }
+        new
     }
 
     /// When the turn whose items end at boundary `index` began and ended; the turn after
     /// the last boundary is still open.
-    /// What the turn ending at boundary `index` spent, as tokens and micro-dollars; none
-    /// for a turn read from history, whose spend was not seen.
-    pub fn turn_spend(&self, index: usize) -> Option<(u64, u64)> {
-        let before = *self.boundary_spend.get(index.checked_sub(1)?)?;
-        let after = *self.boundary_spend.get(index)?;
-        let spent = (
-            after.0.saturating_sub(before.0),
-            after.1.saturating_sub(before.1),
-        );
-        (spent.0 > 0).then_some(spent)
-    }
-
     /// The mean cost of the turns that have one, to tell an unusually dear turn.
     pub fn mean_turn_cost(&self) -> Option<u64> {
-        let costs: Vec<u64> = (1..self.boundary_spend.len())
-            .filter_map(|index| self.turn_spend(index))
-            .map(|(_, micro)| micro)
+        let costs: Vec<u64> = self
+            .boundary_spend
+            .iter()
+            .flatten()
+            .map(|(_, micro)| *micro)
             .filter(|micro| *micro > 0)
             .collect();
         (!costs.is_empty()).then(|| costs.iter().sum::<u64>() / costs.len() as u64)
@@ -707,4 +814,12 @@ fn tool(call: &dusk_protocol::model::ToolCall, state: ToolState) -> Tool {
             .collect();
     }
     tool
+}
+
+/// A task the core moved: it takes its place on the board, or joins it at the end.
+fn task_changed(tasks: &mut Vec<Task>, task: Task) {
+    match tasks.iter_mut().find(|known| known.task_id == task.task_id) {
+        Some(known) => *known = task,
+        None => tasks.push(task),
+    }
 }

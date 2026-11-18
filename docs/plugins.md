@@ -301,7 +301,8 @@ for line in sys.stdin:
 The Workshop under Plugins lists what the store and its mirrors offer and installs a
 plugin with a click, after showing what it may do. The official list is at
 `https://drobov1tya.github.io/duskcode-workshop/index.json`; when that address cannot be
-reached, the old `https://drobov1tya.github.io/duskcode-plugins/index.json` is tried.
+reached, the old `https://drobov1tya.github.io/duskcode-plugins/index.json` is tried
+(it stopped answering when the repository was renamed on 2026-11-18).
 The core installs a plugin only when:
 
 - the list is signed (Ed25519) by its source's key: the key built into duskcode for the
@@ -339,9 +340,9 @@ An install names the tier you were shown and is refused when the source earns an
 one now. A listing whose name another source also offers is marked, since a mirror may
 copy a name to pass for another source's plugin.
 
-The list comes sorted in that order, then by name; a client may ask for the newest,
-the recently updated or the most starred first, or for one category. Sorting is the
-core's, so every client shows the same.
+The list comes sorted in that order, then by name; a client may ask for the newest or
+the recently updated first, or for one category. Sorting is the core's, so every client
+shows the same. Nothing is sorted or picked by stars: a mirror writes its own count.
 
 ### Mirrors
 
@@ -402,7 +403,12 @@ Format 2 (format 1, the same without the new fields and `verified`, is still rea
   only what the last list read named, from a source that is still the one configured.
   Covers and screenshots share a 32 MiB in-memory cache. A bad cover or screenshot
   refuses the whole list, as any bad field does.
-- `stars` is counted by the publisher when signing; duskcode never calls GitHub.
+- `stars` is the GitHub star count of the repository `homepage` names, counted by the
+  publisher when signing; duskcode never calls GitHub. It is a repository's number, not
+  a rating, so duskcode shows it only for a mirror you added, and only when `homepage`
+  is a `https://github.com/owner/name` page, as "122 GitHub stars of owner/name" on the
+  listing's page. The official list's and a verified mirror's `stars` are dropped when
+  read: they were the store's own or a vendor's whole repository's.
 - `created` and `updated` are RFC 3339.
 - `verified` is believed only in the official list.
 
@@ -462,5 +468,5 @@ package for all, for a script run by an interpreter already on the machine. A `r
 ## Plugins of the store
 
 Telegram and the rest live in their own repository,
-[duskcode-plugins](https://github.com/DroBov1Tya/duskcode-plugins), and install from
+[duskcode-workshop](https://github.com/DroBov1Tya/duskcode-workshop), and install from
 Plugins, Workshop. duskcode ships no plugin in its binary.

@@ -4,6 +4,9 @@
 
 mod diff;
 mod files;
+mod git;
+
+pub use git::{GitConfirm, confirm as git_confirm};
 
 use diff::diff;
 use files::{files, stat};
@@ -34,11 +37,13 @@ pub struct Review {
     pub loading: bool,
     rows: Vec<Row>,
     list: ListState,
+    pub git: git::GitBox,
 }
 
 impl Review {
-    pub fn new() -> Self {
+    pub fn new(window: &mut Window, cx: &mut App) -> Self {
         Self {
+            git: git::GitBox::new(window, cx),
             files: Vec::new(),
             selected: 0,
             loading: false,
@@ -157,6 +162,7 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex()
         .flex_col()
         .child(header)
+        .child(git::bar(ws, cx))
         .child(body)
 }
 

@@ -106,6 +106,15 @@ impl State {
         .transpose()
     }
 
+    /// When the thread's newest model call with a usage report was stored, in Unix ms.
+    pub async fn last_model_call_at(&self, thread_id: &str) -> Result<Option<i64>> {
+        sqlx::query_scalar("SELECT MAX(created_at) FROM model_usage WHERE thread_id = ?")
+            .bind(thread_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("load the time of the last model call")
+    }
+
     /// Counts by author; `context` and tool definitions are left to the agent, which
     /// knows the request.
     pub async fn thread_tokens(&self, thread_id: &str) -> Result<ThreadTokens> {

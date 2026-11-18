@@ -89,19 +89,26 @@ pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
                 Activity::Tool(name) => (TEXT_SOFT, format!("running {name}")),
                 Activity::Compacting => (DUSK, "compacting the context".to_owned()),
                 Activity::Forking => (DUSK, "describing the thread for a fork".to_owned()),
-                Activity::Retrying(attempt) => {
-                    (NEGATIVE, format!("retrying after attempt {attempt}"))
-                }
+                Activity::Retrying(retry, arrived) => (
+                    NEGATIVE,
+                    retry.line(u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX)),
+                ),
                 Activity::Idle => (TEXT_MUTED, String::new()),
             };
-            // How long the turn has run, beside what it does now.
-            let took = app
+            // How long the turn has run and what it used, beside what it does now.
+            let mut took = app
                 .turn_started_at
                 .map(|started| {
                     let ms = dusk_protocol::system::now_ms() - started;
                     format!(" \u{00B7} {}", dusk_protocol::thread::duration_words(ms))
                 })
                 .unwrap_or_default();
+            if let Some(spend) = app.turn_spend.filter(|_| app.turn_started_at.is_some()) {
+                if let Some(tokens) = spend.tokens() {
+                    took.push_str(&format!(" \u{00B7} {tokens} tok"));
+                }
+                took.push_str(&format!(" \u{00B7} {}", spend.step()));
+            }
             vec![
                 Span::styled(format!("{} ", spinner(app)), fg(color)),
                 Span::styled(what, fg(color)),

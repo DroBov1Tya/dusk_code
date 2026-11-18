@@ -116,6 +116,29 @@ pub async fn start_agent_thread(
     agent: &str,
     prompt: Option<String>,
 ) -> Result<StartedThread> {
+    start_under(state, paths, parent, agent, prompt, false).await
+}
+
+/// A thread a team makes under its lead for one task, working as `role`: an agent's
+/// thread in everything but who made it, which its record says.
+pub async fn start_member_thread(
+    state: &State,
+    paths: &Paths,
+    lead: &str,
+    role: &str,
+    prompt: Option<String>,
+) -> Result<StartedThread> {
+    start_under(state, paths, lead, role, prompt, true).await
+}
+
+async fn start_under(
+    state: &State,
+    paths: &Paths,
+    parent: &str,
+    agent: &str,
+    prompt: Option<String>,
+    member: bool,
+) -> Result<StartedThread> {
     // The name comes from the ID, so a new ID gives a sibling's name a way out.
     let taken: Vec<String> = state
         .agent_threads(parent)
@@ -139,9 +162,18 @@ pub async fn start_agent_thread(
     let folder = format!("{chat}/{AGENTS_FOLDER}/{thread_id}");
     let workspace = paths.workspace_folder(&folder)?;
     create_private_dir(&workspace)?;
-    state
-        .create_agent_thread(&thread_id, parent, agent, &name)
-        .await?;
+    match member {
+        true => {
+            state
+                .create_member_thread(&thread_id, parent, agent, &name)
+                .await?
+        }
+        false => {
+            state
+                .create_agent_thread(&thread_id, parent, agent, &name)
+                .await?
+        }
+    };
     state.set_thread_folder(&thread_id, &folder).await?;
     if let Some(prompt) = prompt.filter(|prompt| !prompt.trim().is_empty()) {
         state.add_system_message(&thread_id, &prompt).await?;

@@ -1,7 +1,9 @@
-//! A listing as a capsule, as in the desktop app: its cover on top at the art's aspect,
-//! its name and stars, one line of what it is, its tier mark and its state; Installed
-//! or Update on the cover's corner, a warning on the other when another source offers
-//! the same name. The tier mark is the same icon, colour and word, never colour alone.
+//! A listing as a card, as in the desktop app: the cover on top at 40:21 with nothing
+//! drawn over it, the name and kind, two lines of text (a warning takes the first), and a
+//! footer with the tier mark on the left and one slot on the right. Every card of a row
+//! has the same height whatever its text. The browser installs nothing, so the slot holds
+//! a state or says where installing happens. The tier mark is an icon, a colour and a
+//! word, never colour alone. Listing text is drawn as text nodes only.
 
 use dusk_protocol::{
     catalog::SkillPack,
@@ -10,11 +12,17 @@ use dusk_protocol::{
 };
 use leptos::prelude::*;
 
-use super::Shop;
+use super::{
+    Shop,
+    placeholder::{Picture, placeholder},
+};
 use crate::{
     api,
     ui::{Icon, IconName, Switch, run},
 };
+
+/// Why the slot has no Install button, for a screen reader.
+const IN_APP: &str = ": install it in the desktop app or the terminal";
 
 pub fn word(tier: Tier) -> &'static str {
     match tier {
@@ -56,73 +64,98 @@ pub fn mark(tier: Tier) -> impl IntoView {
     view! { <span class=format!("tier {}", class(tier))><Icon name=icon(tier) />{word(tier)}</span> }
 }
 
-/// The tier's mark, the kind, the stars and the version.
+/// The tier's mark, the kind (with a pack's skill count), the version and, for a mirror
+/// the user added, its repository's GitHub stars.
 pub fn facts(listing: &Listing) -> AnyView {
+    let kind = match (listing.kind, listing.skills.len()) {
+        (Kind::Pack, count) if count > 0 => format!("Pack \u{b7} {count} skills"),
+        (kind, _) => kind_word(kind).to_owned(),
+    };
     view! {
         <span class="facts">
             {mark(listing.tier)}
-            <span>{kind_word(listing.kind)}</span>
-            {(listing.stars > 0).then(|| stars(listing.stars))}
+            <span>{kind}</span>
             <span>{format!("v{}", listing.version)}</span>
+            {listing.repo_stars.as_ref().map(|stars| view! { <span>{stars.label()}</span> })}
         </span>
     }
     .into_any()
 }
 
-pub fn stars(count: u32) -> impl IntoView {
-    view! { <span class="stars" aria-label=format!("{count} stars")><Icon name=IconName::Star />{count}</span> }
+/// What goes in a cover's frame: the picture, cropped to fill, or the placeholder.
+pub fn art(kind: Kind, name: &str, picture: Picture) -> AnyView {
+    match picture {
+        Picture::Shown(url) => view! { <img src=url alt=format!("{name} cover") /> }.into_any(),
+        other => placeholder(kind, &other),
+    }
 }
 
-/// The cover at the art's aspect, or the name's letter on the tier's tint.
-pub fn art(name: &str, tier: Tier, cover: Option<String>) -> AnyView {
-    match cover {
-        Some(url) => view! { <div class="art"><img src=url alt="" /></div> }.into_any(),
-        None => {
-            let letter = name
-                .chars()
-                .find(|c| c.is_alphanumeric())
-                .map_or("?".to_owned(), |c| c.to_uppercase().to_string());
-            view! { <div class=format!("art letter {}", class(tier)) aria-hidden="true"><span>{letter}</span></div> }
+/// A listing's cover frame, redrawn alone when its picture arrives.
+pub fn cover(shop: Shop, listing: &Listing) -> AnyView {
+    let (kind, name) = (listing.kind, listing.name.clone());
+    let sha = listing.cover.as_ref().map(|cover| cover.sha256.clone());
+    view! { <div class="cover">{move || art(kind, &name, shop.picture(sha.as_deref()))}</div> }
+        .into_any()
+}
+
+/// The footer's one slot: a state, or where installing happens. Never two things.
+pub fn slot(listing: &Listing) -> AnyView {
+    match (&listing.installed, &listing.update, &listing.unfit) {
+        (Some(_), Some(version), _) => view! {
+            <span class="slot-state waiting"><Icon name=IconName::ArrowUp />"Update waiting"
+                <span class="sr">{format!(": {version}{IN_APP}")}</span></span>
+        }
+        .into_any(),
+        (Some(_), None, _) => {
+            view! { <span class="slot-state installed"><Icon name=IconName::Check />"Installed"</span> }
+                .into_any()
+        }
+        (None, _, Some(_)) => view! { <span class="slot-note">"Cannot run here"</span> }.into_any(),
+        (None, _, None) => {
+            view! { <span class="slot-note">"In the app"<span class="sr">{IN_APP}</span></span> }
                 .into_any()
         }
     }
 }
 
-/// Installed, or an update waiting, on the cover's corner.
-pub fn state(listing: &Listing) -> Option<AnyView> {
-    match (&listing.installed, &listing.update) {
-        (Some(_), Some(_)) => Some(view! { <span class="corner update"><Icon name=IconName::ArrowUp />"Update"</span> }.into_any()),
-        (Some(_), None) => Some(view! { <span class="corner installed"><Icon name=IconName::Check />"Installed"</span> }.into_any()),
-        (None, _) => None,
-    }
+/// One warning line above the text: a name another source also offers, else why it
+/// cannot run here.
+fn notice(listing: &Listing) -> Option<AnyView> {
+    let text = match (listing.clash, &listing.unfit) {
+        (true, _) => "Same name from another source".to_owned(),
+        (false, Some(why)) => why.clone(),
+        (false, None) => return None,
+    };
+    Some(
+        view! { <p class="notice"><Icon name=IconName::TriangleAlert /><span>{text}</span></p> }
+            .into_any(),
+    )
 }
 
+/// The whole card opens the listing through its name, its one tab stop; anything in the
+/// slot that can be pressed sits above it and keeps its own click.
 pub fn capsule(shop: Shop, listing: Listing) -> AnyView {
-    let cover = shop.cover(&listing);
-    let line = match &listing.unfit {
-        Some(why) => view! { <p class="line warn">{why.clone()}</p> }.into_any(),
-        None => view! { <p class="line muted">{listing.description.clone()}</p> }.into_any(),
-    };
+    let notice = notice(&listing);
+    let one = notice.is_some();
     let opened = listing.clone();
     view! {
-        <button class="capsule" on:click=move |_| shop.open_listing(&opened)
-            aria-label=format!("{}, {}", listing.name, word(listing.tier))>
-            <div class="cover">
-                {art(&listing.name, listing.tier, cover)}
-                {state(&listing)}
-                {listing.clash.then(|| view! { <span class="corner clash"><Icon name=IconName::TriangleAlert />"Same name elsewhere"</span> })}
-            </div>
+        <article class="capsule">
+            {cover(shop, &listing)}
             <div class="body">
-                <div class="name"><b>{listing.name.clone()}</b>{(listing.stars > 0).then(|| stars(listing.stars))}</div>
-                {line}
-                <div class="foot">{mark(listing.tier)}<span class="muted">{kind_word(listing.kind)}</span></div>
+                <div class="name">
+                    <button class="open" title=listing.name.clone()
+                        on:click=move |_| shop.open_listing(&opened)>{listing.name.clone()}</button>
+                    <span class="kind">{kind_word(listing.kind)}</span>
+                </div>
+                <div class="text">{notice}<p class="desc" class:one=one>{listing.description.clone()}</p></div>
+                <div class="foot">{mark(listing.tier)}<span class="grow"></span>{slot(&listing)}</div>
             </div>
-        </button>
+        </article>
     }
     .into_any()
 }
 
-/// A pack here that no source lists, with its switch; a click opens its page.
+/// A pack here that no source lists, with its switch in the slot; the card opens its page.
 pub fn pack(shop: Shop, pack: SkillPack) -> impl IntoView {
     let on = pack.skills.iter().filter(|skill| skill.enabled).count();
     let (opened, switched) = (pack.name.clone(), pack.name.clone());
@@ -132,17 +165,22 @@ pub fn pack(shop: Shop, pack: SkillPack) -> impl IntoView {
     } else {
         pack.title.clone()
     };
+    let cover = art(Kind::Pack, &title, Picture::Missing);
+    let tooltip = title.clone();
     view! {
-        <div class="capsule" role="button" tabindex="0"
-            on:click=move |_| shop.open.set(Some(opened.clone()))>
-            <div class="cover">{art(&pack.name, Tier::Local, None)}</div>
+        <article class="capsule">
+            <div class="cover">{cover}</div>
             <div class="body">
-                <div class="name"><b>{title}</b></div>
-                <p class="line muted">{format!("{on} of {} skills on", pack.skills.len())}</p>
+                <div class="name">
+                    <button class="open" title=tooltip
+                        on:click=move |_| shop.open.set(Some(opened.clone()))>{title}</button>
+                    <span class="kind">"Pack"</span>
+                </div>
+                <div class="text"><p class="desc">{format!("{on} of {} skills on", pack.skills.len())}</p></div>
                 <div class="foot">
                     <span class="tier tier-local"><Icon name=IconName::TierLocal />{origin}</span>
                     <span class="grow"></span>
-                    <span on:click=|ev| ev.stop_propagation()>
+                    <span class="slot-control">
                         <Switch on=pack.enabled label="Pack" change=move |on| {
                             let name = switched.clone();
                             run(api::switch(Flag::SkillPack(name), on), move |()| shop.load_packs());
@@ -150,6 +188,6 @@ pub fn pack(shop: Shop, pack: SkillPack) -> impl IntoView {
                     </span>
                 </div>
             </div>
-        </div>
+        </article>
     }
 }

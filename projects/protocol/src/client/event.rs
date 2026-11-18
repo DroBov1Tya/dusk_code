@@ -30,6 +30,9 @@ pub enum Event {
         widget: String,
         jpeg: Vec<u8>,
     },
+    /// The repository of a saved project was changed through the core: open views of
+    /// it read it again. Given to clients that may read projects.
+    GitChanged { project_id: String },
     /// A plugin's short note, or why its interface stopped.
     PluginNotice { plugin: String, text: String },
 }

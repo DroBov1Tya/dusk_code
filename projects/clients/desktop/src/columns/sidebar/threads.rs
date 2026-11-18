@@ -216,13 +216,15 @@ impl Workspace {
                             let thread_id = threads.resume(&open, cwd).await?;
                             let tasks = threads.tasks(&thread_id).await?;
                             let access = threads.approvals(&thread_id).await?;
-                            anyhow::Ok((thread_id, tasks, access))
+                            let pins = threads.pins(&thread_id).await?;
+                            anyhow::Ok((thread_id, tasks, access, pins))
                         },
                         move |ws, result, cx| match result {
-                            Ok((thread_id, tasks, access)) => {
+                            Ok((thread_id, tasks, access, pins)) => {
                                 if let Some(chat) = ws.chats.get_mut(&thread_id) {
                                     chat.tasks = tasks;
                                     chat.access = access;
+                                    chat.pins = pins;
                                 }
                                 ws.show(thread_id, cx);
                             }
@@ -249,6 +251,7 @@ impl Workspace {
         self.plan.editing = false;
         self.refresh_inspector(cx);
         self.load_plan(cx);
+        self.load_plan_counts(cx);
         self.touched.clear();
         self.load_touched(cx);
         cx.notify();

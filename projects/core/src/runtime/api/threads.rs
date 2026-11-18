@@ -7,7 +7,7 @@ use crate::{
     state::{LocalUnsent, Message, State, Task, Thread},
 };
 use anyhow::{Result, ensure};
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 use tracing::info;
 
 impl Runtime {
@@ -53,9 +53,44 @@ impl Runtime {
         launcher.state.list_messages(thread_id).await
     }
 
+    /// The thread's pins, oldest message first.
+    pub async fn pins(&self, thread_id: &str) -> Result<Vec<dusk_protocol::thread::Pin>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.pins(thread_id).await
+    }
+
+    /// Pins or unpins one of the thread's messages; answers with its pins.
+    pub async fn set_pinned(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+        pinned: bool,
+    ) -> Result<Vec<dusk_protocol::thread::Pin>> {
+        let launcher = self.of(thread_id).await;
+        launcher
+            .state
+            .set_pinned(thread_id, message_id, pinned)
+            .await
+    }
+
     /// What was said in any chat that contains `text`, best matches first.
-    pub async fn search_chats(&self, text: &str) -> Result<Vec<dusk_protocol::thread::Found>> {
-        self.launcher.state.search_chats(text, 40).await
+    /// Only in the chats of `within`, when it is given.
+    pub async fn search_chats(
+        &self,
+        text: &str,
+        within: Option<&HashSet<String>>,
+    ) -> Result<Vec<dusk_protocol::thread::Found>> {
+        self.launcher.state.search_chats(text, 40, within).await
+    }
+
+    /// Why the thread's newest turn failed, for a client that joins it to show the row the
+    /// others showed; none when it did not fail.
+    pub async fn last_failure(
+        &self,
+        thread_id: &str,
+    ) -> Result<Option<dusk_protocol::thread::TurnFailure>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.last_failure(thread_id).await
     }
 
     /// Local messages waiting for an explicit resend. They are not model history.
@@ -128,8 +163,8 @@ impl Runtime {
     }
 
     /// Picks a stored thread up again, with its tools working in `cwd`. What it left
-    /// unfinished is closed first: a running turn ends as interrupted, and messages sent
-    /// before a crash are taken in.
+    /// unfinished is settled first: a running turn goes on or waits for the user, and
+    /// messages sent before a crash are taken in.
     pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
         let launcher = self.of(thread_id).await;
         launcher.resume_thread(thread_id, cwd).await

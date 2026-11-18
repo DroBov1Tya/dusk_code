@@ -8,10 +8,12 @@ use std::{
 };
 
 use anyhow::Result;
+use parking_lot::Mutex;
 use serde_json::Value;
 use tracing::info;
 
 use super::{
+    Shaped,
     schema::Check,
     scope::ToolScope,
     tool::{Progress, Tool, ToolContext, ToolKind},
@@ -25,7 +27,7 @@ use crate::{
 pub use dusk_protocol::tools::ToolResult;
 
 /// The model reads every result; a runaway one must not flood its context.
-const MAX_RESULT_BYTES: usize = 64 * 1024;
+pub(super) const MAX_RESULT_BYTES: usize = 64 * 1024;
 
 #[derive(Default)]
 pub struct ToolRegistry {
@@ -44,6 +46,11 @@ pub struct ToolRegistry {
     pub(crate) state: Option<Arc<crate::state::State>>,
     /// The thread these tools run for; its own mode applies.
     pub(crate) thread_id: String,
+    /// The indexer of the project graph, which hears of the files a command changed.
+    pub(crate) graph: Option<Arc<crate::project::graph::Indexer>>,
+    /// With `limits.stable_prefix`, each description as this thread first showed it, so
+    /// the start of its requests stays byte-identical and the provider's cache holds.
+    shown: Mutex<BTreeMap<String, String>>,
 }
 
 impl ToolRegistry {
@@ -97,6 +104,27 @@ impl ToolRegistry {
 
     pub fn kind_of(&self, name: &str) -> Option<ToolKind> {
         self.tools.get(name).map(|tool| tool.kind())
+    }
+
+    /// Whether the call may simply run again after its result was lost; an unknown tool
+    /// is never repeated.
+    pub fn repeatable(&self, name: &str, arguments: &Value) -> bool {
+        self.tools
+            .get(name)
+            .is_some_and(|tool| tool.repeatable(arguments))
+    }
+
+    /// The result of a call as the model is to be sent it, when the tool shapes it.
+    pub fn shape(&self, name: &str, arguments: &Value, result: &ToolResult) -> Option<Shaped> {
+        self.tools.get(name)?.shape(arguments, result)
+    }
+
+    /// Whether the call only reads, so it may run with the read-only calls next to it;
+    /// an unknown tool never does.
+    pub fn read_only(&self, name: &str, arguments: &Value) -> bool {
+        self.tools
+            .get(name)
+            .is_some_and(|tool| tool.read_only(arguments))
     }
 
     /// The skill a successful `load_skill` call named; `None` for other tools or when
@@ -188,6 +216,7 @@ impl ToolRegistry {
             approvals: None,
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
+            graph: self.graph.clone(),
         };
         self.tools
             .iter()
@@ -204,16 +233,42 @@ impl ToolRegistry {
             approvals: None,
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
+            graph: self.graph.clone(),
         };
+        let stable = config.limits().stable_prefix;
         self.tools
             .values()
             .filter(|tool| self.enabled(tool.as_ref(), config) && tool.available(&context))
             .map(|tool| ToolSpec {
                 name: tool.name().to_owned(),
-                description: tool.description(&context),
-                parameters: tool.parameters(),
+                description: self.description(tool.as_ref(), &context, stable),
+                parameters: tool.offered_parameters(&context),
             })
             .collect()
+    }
+
+    /// What the model reads of `tool`: as it is now, or with `stable` as first shown.
+    fn description(&self, tool: &dyn Tool, context: &ToolContext, stable: bool) -> String {
+        if !stable {
+            return tool.description(context);
+        }
+        if let Some(shown) = self.shown.lock().get(tool.name()) {
+            return shown.clone();
+        }
+        // Rendered outside the lock: a description may read files.
+        let description = tool.description(context);
+        let mut shown = self.shown.lock();
+        shown
+            .entry(tool.name().to_owned())
+            .or_insert(description)
+            .clone()
+    }
+
+    /// Descriptions are rendered anew from the next request. A compaction calls it: the
+    /// calls that showed the model what changed are summarized away, and its new context
+    /// is read cold anyway.
+    pub fn refresh_descriptions(&self) {
+        self.shown.lock().clear();
     }
 
     /// Never fails: an unknown, switched-off or failed call becomes an error result for
@@ -261,6 +316,7 @@ impl ToolRegistry {
             approvals: self.approvals.clone(),
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
+            graph: self.graph.clone(),
         };
         let started = Instant::now();
         if !tool.available(&context) {
@@ -318,7 +374,8 @@ mod tests {
         state::artifacts::ArtifactStore,
         testing::{temp_dir, temp_state},
         tools::{
-            AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Tasks,
+            AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Show,
+            Tasks,
         },
     };
 
@@ -428,6 +485,7 @@ mod tests {
         tools.push(Box::new(Remember::user(dir.clone())));
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
+        tools.push(Box::new(Show));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {

@@ -9,6 +9,11 @@ use crate::{
     tools::ToolKind,
 };
 
+/// Tools that landed before the clients draw what they make, or before the evals show
+/// they help. Each is off in every mode until `tools:` in the config switches it on by
+/// name; take a name out when it is ready.
+const OFF_UNTIL_SWITCHED_ON: [&str; 0] = [];
+
 impl Config {
     /// Whether the file switches the tool on, whatever the mode; the tests read it back.
     #[cfg(test)]
@@ -30,6 +35,10 @@ impl Config {
 
     /// A tool's switch in a mode: the user's, else the mode's default, else MAIN's.
     pub fn mode_tool_enabled(&self, mode: &str, name: &str, kind: ToolKind) -> bool {
+        // A mode's own default or switch cannot turn on what the user has not asked for.
+        if OFF_UNTIL_SWITCHED_ON.contains(&name) && self.tools.get(name) != Some(&true) {
+            return false;
+        }
         let main = || {
             self.tools
                 .get(name)

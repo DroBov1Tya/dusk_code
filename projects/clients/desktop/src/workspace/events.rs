@@ -63,6 +63,8 @@ impl Workspace {
                 );
                 self.notify_event(&thread_id, &event, cx);
                 self.watch_plan(&thread_id, &event, cx);
+                self.overview_heard(&thread_id, &event, cx);
+                self.plan_heard(&thread_id, &event, cx);
                 if matches!(*event, dusk_protocol::thread::ThreadEvent::Tokens { .. }) {
                     self.context_counted(&thread_id, cx);
                 }
@@ -113,6 +115,7 @@ impl Workspace {
                 jpeg,
             } => self.plugin_frame(plugin, part, widget, jpeg, cx),
             Event::PluginNotice { plugin, text } => self.plugin_notice(&plugin, &text, cx),
+            Event::GitChanged { project_id } => self.git_changed(&project_id, cx),
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.working = false;

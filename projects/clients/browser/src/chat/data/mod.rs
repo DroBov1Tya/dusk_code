@@ -3,10 +3,11 @@
 
 use dusk_protocol::{
     config::ApprovalPolicy,
-    model::ModelEvent,
+    model::{ModelEvent, ToolCall},
     thread::{
-        AgentState, JobResult, Message, MessageRole, Note, Task, ThreadEvent, Tool, ToolState,
-        agent_name, clip, note,
+        AgentState, Block, JobResult, Message, MessageRole, Note, Retry, RetryRow, Task,
+        ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, agent_name, clip, note,
+        retry_row, turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind, Question},
 };
@@ -27,6 +28,8 @@ pub enum Item {
         reasoning: String,
     },
     Tool(Tool),
+    /// What a `show` call put in the chat, in place of its step.
+    Block(Block),
     Image(Shown),
     Audio(Shown),
     Notice(String),
@@ -74,9 +77,24 @@ pub struct Agent {
 pub struct ChatData {
     pub items: Vec<Entry>,
     pub working: bool,
+    /// When the running turn began, in Unix milliseconds of the core's clock.
+    pub turn_started: Option<i64>,
+    /// What the running turn waits for, until its next `TurnRunning`.
+    pub waiting: Option<TurnWait>,
+    /// What the running turn has used so far, as the core counted it.
+    pub spend: Option<TurnSpend>,
+    /// The context is being compacted.
+    pub compacting: bool,
+    /// The model call being tried again and when its event came, in Unix milliseconds.
+    pub retry: Option<(Retry, i64)>,
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
     pub cost: Option<String>,
+    /// The token report as the core last sent it, for the Overview.
+    pub usage: Option<ThreadTokens>,
+    /// Counts the turns that ended and the plan's and team's changes, so the open
+    /// Overview knows to ask again.
+    pub moved: u64,
     pub access: Option<ApprovalPolicy>,
     pub tasks: Vec<Task>,
     pub agents: Vec<Agent>,
@@ -96,6 +114,8 @@ pub struct ChatData {
     /// The stream broke or the thread ended; sending opens it again.
     pub ended: bool,
     asked: Asked,
+    /// The blocks of `show` calls whose result has not come yet, by call ID.
+    showing: BTreeMap<String, Block>,
     next_id: u64,
     /// The time new items take: a stored message's own, or now for a live event.
     clock: i64,
@@ -141,18 +161,47 @@ impl ChatData {
                     });
                 }
                 for call in &message.tool_calls {
-                    self.asked.call(call);
-                    self.push(Item::Tool(Tool::new(call, ToolState::Done)));
+                    self.add_call(call, ToolState::Done);
                 }
             }
             MessageRole::Tool => {
                 let id = message.tool_call_id.as_deref().unwrap_or_default();
-                if let Some(tool) = self.tool_mut(id) {
+                if !self.show_block(id, &message.content)
+                    && let Some(tool) = self.tool_mut(id)
+                {
                     tool.output = clip(&message.content);
                 }
             }
         }
         self.add_cards(&message.artifacts);
+    }
+
+    fn add_call(&mut self, call: &ToolCall, state: ToolState) {
+        self.asked.call(call);
+        if let Some(block) = Block::asked(call) {
+            self.showing.insert(call.id.clone(), block);
+        }
+        self.push(Item::Tool(Tool::new(call, state)));
+    }
+
+    /// Puts the block of call `id` in place of its step when `result` says it was shown;
+    /// a call that was not shown stays a step with its error.
+    fn show_block(&mut self, id: &str, result: &str) -> bool {
+        let Some(block) = self.showing.remove(id).filter(|b| b.shown_by(result)) else {
+            return false;
+        };
+        let step = self
+            .items
+            .iter_mut()
+            .rev()
+            .find(|entry| matches!(&entry.item, Item::Tool(tool) if tool.call_id == id));
+        match step {
+            Some(entry) => {
+                entry.item = Item::Block(block);
+                true
+            }
+            None => false,
+        }
     }
 
     fn add_user(&mut self, text: String) {
@@ -177,8 +226,52 @@ impl ChatData {
         self.pending.push(text);
     }
 
+    /// What the working row says about the running turn.
+    fn track_turn(&mut self, event: &ThreadEvent) {
+        if let Some(spend) = turn_spend(event) {
+            self.spend = spend;
+        }
+        match event {
+            ThreadEvent::TurnStarted(turn)
+            | ThreadEvent::TurnRunning(turn)
+            | ThreadEvent::TurnWaiting(turn) => {
+                self.turn_started = Some(turn.started_at);
+                self.waiting = turn.waiting;
+            }
+            ThreadEvent::TurnFinished(_)
+            | ThreadEvent::TurnFailed(_)
+            | ThreadEvent::Failed(_)
+            | ThreadEvent::Idle => {
+                self.turn_started = None;
+                self.waiting = None;
+                self.compacting = false;
+            }
+            ThreadEvent::CompactionStarted => self.compacting = true,
+            ThreadEvent::CompactionFinished(_) | ThreadEvent::CompactionFailed { .. } => {
+                self.compacting = false;
+            }
+            _ => {}
+        }
+    }
+
     pub fn apply(&mut self, event: ThreadEvent) {
         self.clock = now_ms();
+        self.track_turn(&event);
+        if matches!(
+            event,
+            ThreadEvent::TurnFinished(_) | ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_)
+        ) {
+            self.moved += 1;
+        }
+        match retry_row(&event) {
+            Some(RetryRow::Show(retry)) => self.retry = Some((retry, self.clock)),
+            Some(RetryRow::Clear) => self.retry = None,
+            None => {}
+        }
+        // The row is the whole of a retry: it leaves no notice.
+        if matches!(event, ThreadEvent::Retrying { .. }) {
+            return;
+        }
         if let Some(note) = note(&event) {
             if matches!(event, ThreadEvent::Failed(_)) {
                 self.working = false;
@@ -214,12 +307,11 @@ impl ChatData {
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
-            ThreadEvent::ToolStarted(call) => {
-                self.asked.call(&call);
-                self.push(Item::Tool(Tool::new(&call, ToolState::Running)))
-            }
+            ThreadEvent::ToolStarted(call) => self.add_call(&call, ToolState::Running),
             ThreadEvent::ToolFinished { call_id, result } => {
-                if let Some(tool) = self.tool_mut(&call_id) {
+                if !self.show_block(&call_id, &result.content)
+                    && let Some(tool) = self.tool_mut(&call_id)
+                {
                     tool.finish(&result);
                 }
                 self.add_cards(&result.artifacts);
@@ -227,6 +319,7 @@ impl ChatData {
             ThreadEvent::Tokens { tokens, limit } => {
                 self.tokens = Some((tokens.context, limit));
                 self.cost = tokens.cost();
+                self.usage = Some(tokens);
             }
             ThreadEvent::ModelSelected { input_limit, .. } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);
@@ -305,6 +398,15 @@ impl ChatData {
     }
 }
 
+impl ChatData {
+    /// The retry row's words at `now` in Unix milliseconds; none when no call is tried
+    /// again.
+    pub fn retry_line(&self, now: i64) -> Option<String> {
+        let (retry, arrived) = self.retry.as_ref()?;
+        Some(retry.line(u64::try_from(now.saturating_sub(*arrived)).unwrap_or(0)))
+    }
+}
+
 impl Agent {
     fn follow(&mut self, event: &ThreadEvent) {
         self.state = match event {
@@ -313,7 +415,7 @@ impl Agent {
             ThreadEvent::Model(ModelEvent::Text(_)) => AgentState::Writing,
             ThreadEvent::ToolStarted(call) => AgentState::Tool(call.name.clone()),
             ThreadEvent::Idle => AgentState::Done,
-            ThreadEvent::Failed(_) => AgentState::Failed,
+            ThreadEvent::Failed(_) | ThreadEvent::TurnFailed(_) => AgentState::Failed,
             _ => return,
         };
     }

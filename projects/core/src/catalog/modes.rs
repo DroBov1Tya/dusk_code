@@ -23,22 +23,26 @@ pub const ORCHESTRATOR: &str = "ORCHESTRATOR";
 const BUILTIN: [&str; 3] = [MAIN, PLAN, ORCHESTRATOR];
 
 /// What PLAN can do: read, look things up, and write the plan down.
-const PLAN_TOOLS: [&str; 6] = [
+const PLAN_TOOLS: [&str; 9] = [
     "read_file",
     "search_files",
+    "project_graph",
+    "recall",
     "read_history",
     "load_skill",
     "tasks",
     "ask_user",
+    "show",
 ];
 
 /// What ORCHESTRATOR can do: hand work out and keep track of it.
-const ORCHESTRATOR_TOOLS: [&str; 5] = [
+const ORCHESTRATOR_TOOLS: [&str; 6] = [
     "ask_agent",
     "read_history",
     "load_skill",
     "tasks",
     "ask_user",
+    "show",
 ];
 
 /// The modes in one folder.

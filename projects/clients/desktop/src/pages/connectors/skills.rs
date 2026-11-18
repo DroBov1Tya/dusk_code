@@ -1,4 +1,4 @@
-//! Skills as cards, with their source and switch.
+//! Skills as rows of one card, with their source and switch.
 
 use dusk_protocol::{catalog::SkillKind, client::Switch as CoreSwitch, config::Settings};
 use gpui_kit::{component::ActiveTheme, *};
@@ -8,7 +8,7 @@ use crate::{modal::detail::Detail, workspace::Workspace};
 
 pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
     let danger = cx.theme().danger;
-    let mut cards = grid();
+    let mut cards = grid(cx);
     let mut any = false;
     for skill in settings
         .skills

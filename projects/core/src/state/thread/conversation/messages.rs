@@ -1,5 +1,7 @@
 //! Thread messages in order: what the system prompt, the user, the model and the tools said.
 
+use std::collections::{HashMap, HashSet};
+
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 use uuid::Uuid;
@@ -147,10 +149,14 @@ impl State {
     /// What the user and the agent said in any chat that contains `text`, best matches
     /// first. Tool calls and subagents' threads are left out: the search is for what a
     /// person remembers reading.
+    /// `within` keeps the search to these chats. They are chosen before the limit: cut
+    /// from the answer afterwards, a match that went missing would tell of the matches
+    /// in other chats that took its place.
     pub async fn search_chats(
         &self,
         text: &str,
         limit: u32,
+        within: Option<&HashSet<String>>,
     ) -> Result<Vec<dusk_protocol::thread::Found>> {
         let text = text.trim();
         ensure!(
@@ -159,16 +165,23 @@ impl State {
         );
         // A quoted phrase in the text column: never read as query syntax.
         let phrase = format!("content : \"{}\"", text.replace('"', "\"\""));
+        // The ids go as one bound value, a JSON list, never into the query's text.
+        let within = within
+            .map(serde_json::to_string)
+            .transpose()
+            .context("list the chats to search")?;
         let rows = sqlx::query(
             "SELECT messages.thread_id, messages.sequence, messages.content, threads.title
              FROM messages_search
              JOIN messages ON messages.rowid = messages_search.rowid
              JOIN threads ON threads.id = messages.thread_id
-             WHERE messages_search MATCH ? AND threads.parent_thread_id IS NULL
+             WHERE messages_search MATCH ?1 AND threads.parent_thread_id IS NULL
                AND messages.role IN ('user', 'assistant')
-             ORDER BY messages_search.rank LIMIT ?",
+               AND (?2 IS NULL OR threads.id IN (SELECT value FROM json_each(?2)))
+             ORDER BY messages_search.rank LIMIT ?3",
         )
         .bind(phrase)
+        .bind(within)
         .bind(limit)
         .fetch_all(&self.pool)
         .await
@@ -284,6 +297,29 @@ pub fn estimate_tokens(text: &str) -> u64 {
 /// The role markup around each message in a request.
 const MESSAGE_OVERHEAD: u64 = 4;
 
+/// The estimated size of a message whose content is `content`, its markup included.
+pub fn content_tokens(content: &str) -> u64 {
+    estimate_tokens(content) + MESSAGE_OVERHEAD
+}
+
+/// The call each tool result of `messages`, in thread order, answers, by the result's
+/// message ID, with the assistant message that made it. Some providers number calls per
+/// step, so an ID can come back later; a result takes the newest call before it.
+pub fn calls_of(messages: &[Message]) -> HashMap<&str, (&Message, &ToolCall)> {
+    let mut made = HashMap::new();
+    let mut answered = HashMap::new();
+    for message in messages {
+        for call in &message.tool_calls {
+            made.insert(call.id.as_str(), (message, call));
+        }
+        let call = message.tool_call_id.as_deref().and_then(|id| made.get(id));
+        if let Some(&call) = call.filter(|_| message.role == MessageRole::Tool) {
+            answered.insert(message.message_id.as_str(), call);
+        }
+    }
+    answered
+}
+
 /// Appends a message at the end of the thread inside the caller's transaction.
 pub async fn insert_message(
     transaction: &mut Transaction<'_, Sqlite>,
@@ -296,7 +332,7 @@ pub async fn insert_message(
         [] => None,
         calls => Some(serde_json::to_string(calls).context("encode tool calls")?),
     };
-    let content_tokens = estimate_tokens(&message.content) + MESSAGE_OVERHEAD;
+    let content_tokens = content_tokens(&message.content);
     let tool_calls_tokens = tool_calls.as_deref().map_or(0, estimate_tokens);
     let reasoning_tokens = message.reasoning.as_deref().map_or(0, estimate_tokens);
     let artifacts = if message.artifacts.is_empty() {

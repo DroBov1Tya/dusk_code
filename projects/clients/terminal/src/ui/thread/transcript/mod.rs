@@ -3,6 +3,7 @@
 
 mod blocks;
 mod lines;
+mod shown;
 
 pub use lines::thread_lines;
 use lines::{Placed, append_entry};
@@ -399,7 +400,9 @@ impl TranscriptView<'_> {
             Activity::Tool(name) => Some(name.clone()),
             Activity::Compacting => Some("compacting".into()),
             Activity::Forking => Some("forking".into()),
-            Activity::Retrying(attempt) => Some(format!("retrying, attempt {attempt}")),
+            // The attempt and the countdown live in the footer: a changing step would lay the
+            // transcript out again.
+            Activity::Retrying(..) => Some("retrying".into()),
         }
     }
 
@@ -414,3 +417,6 @@ impl TranscriptView<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

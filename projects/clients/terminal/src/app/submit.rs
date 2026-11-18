@@ -24,10 +24,13 @@ impl App {
                 return Action::None;
             }
             "/plan" => return Action::OpenPlan,
+            "/overview" => return Action::Overview,
             "/schedules" => return Action::Schedule(ScheduleAction::Open),
             "/files" => return Action::ChangedFiles,
             "/diff" => return Action::Diff,
             "/me" => return Action::OpenMe,
+            "/pins" => return Action::Pin(super::PinAsk::List),
+            "/pin" => return Action::Pin(super::PinAsk::Last),
             "/plugins store" => {
                 self.panel = Some(Panel::Workshop(Box::default()));
                 return Action::LoadStore;
@@ -59,6 +62,15 @@ impl App {
                 Ok((repeat, prompt)) => Action::Schedule(ScheduleAction::Add { repeat, prompt }),
                 Err(error) => {
                     self.flash = Some(error);
+                    Action::None
+                }
+            };
+        }
+        if let Some(number) = trimmed.strip_prefix("/unpin ") {
+            return match number.trim().parse::<usize>() {
+                Ok(number) if number > 0 => Action::Pin(super::PinAsk::Unpin(number)),
+                _ => {
+                    self.flash = Some("Use /unpin N, N as /pins numbers them".into());
                     Action::None
                 }
             };

@@ -1,4 +1,4 @@
-//! MCP servers as cards: how each stands, a restart, a sign-in and its switch.
+//! MCP servers as rows: how each stands, a restart, a sign-in and its switch.
 
 use std::{collections::HashSet, time::Duration};
 
@@ -57,7 +57,7 @@ pub fn render(
             cx,
         ));
     }
-    let mut cards = grid();
+    let mut cards = grid(cx);
     for server in servers {
         let busy = restarting.contains(&server.name);
         let (state, color) = match &server.state {

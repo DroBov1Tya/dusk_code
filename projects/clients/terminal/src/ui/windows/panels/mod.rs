@@ -7,6 +7,7 @@ mod frame;
 mod help;
 mod jobs;
 mod models;
+pub mod overview;
 mod paste;
 mod plugins;
 mod schedules;
@@ -15,4 +16,4 @@ mod unsent;
 mod update;
 mod workshop;
 
-pub use frame::{draw, window};
+pub use frame::{draw, fit, window};

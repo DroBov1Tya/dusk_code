@@ -51,6 +51,7 @@ impl Render for Workspace {
             Center::Review => review::render(self, cx).into_any_element(),
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
+            Center::Overview => inspector::overview::page(self, cx).into_any_element(),
         };
         let terminal = crate::columns::terminal::render(self, window, cx);
         let right_dock = crate::plugins::right_dock(self, window, cx);
@@ -193,6 +194,9 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_side_panel))
             .on_action(cx.listener(Self::on_toggle_terminal))
             .on_action(cx.listener(Self::on_save_file))
+            .on_action(cx.listener(Self::on_toggle_views))
+            .on_action(cx.listener(Self::on_toggle_plan))
+            .on_action(cx.listener(Self::on_next_pin))
             .on_action(cx.listener(Self::run_code))
             .capture_key_down(cx.listener(Self::menu_keys))
     }

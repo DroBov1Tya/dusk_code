@@ -64,6 +64,10 @@ pub struct Status {
     /// The rate limits of the current model's account, when its provider reports them.
     #[serde(default)]
     pub limits: Option<crate::model::RateLimits>,
+    /// How the calls to each configured provider went, by name; a provider not asked
+    /// since the core started is missing.
+    #[serde(default)]
+    pub provider_health: Vec<crate::model::ProviderHealth>,
     /// Where pictures of messages and tool results are kept.
     pub artifacts_dir: PathBuf,
     /// Where a chat without a project works: the root of the workspace folders.

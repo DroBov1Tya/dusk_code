@@ -1,6 +1,6 @@
 //! The Workshop: what the store's sources offer, read through the core, as a storefront.
 //! A featured carousel of official picks, then shelves of capsules (a tier each, the
-//! newest, the latest updated, the most starred, the local packs); a capsule opens the
+//! newest, the latest updated, the local packs); a capsule opens the
 //! listing's window, a pack also has a page of its skills and their switches. The core
 //! checks, sorts, filters by category and picks the shelves; this page only shows what
 //! it read, narrows by tier and kind, and asks before anything changes.
@@ -14,6 +14,7 @@ mod gallery;
 mod grid;
 mod hero;
 mod pack;
+mod placeholder;
 mod shelves;
 pub mod tier;
 
@@ -48,7 +49,7 @@ pub struct Workshop {
     pub open: bool,
     /// The store's listings, once read; kept while it is read again.
     pub listings: Option<Vec<Listing>>,
-    /// The core's picks for the New, Recently updated and Top rated shelves.
+    /// The core's picks for the New and Recently updated shelves.
     pub picks: Picks,
     /// The sources the last read could not reach; the others are listed all the same.
     pub failed_sources: Vec<SourceFailure>,
@@ -90,6 +91,8 @@ pub struct Workshop {
     /// What the last "Update all" did, until it is closed.
     pub report: Option<UpdateReport>,
     pub updating: bool,
+    /// The page's width as last drawn, which the grid's columns come from.
+    pub measured: grid::Measured,
 }
 
 pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
@@ -101,8 +104,13 @@ pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Wor
         };
     };
     let grid = Grid::of(ws, window);
+    // The page fills the column so its width can be measured; the grid stays inside it.
+    let measured = div()
+        .relative()
+        .w_full()
+        .child(grid::measure(&shop.measured));
     if let Some(name) = &shop.pack {
-        return pack::render(ws, name, grid, cx);
+        return measured.child(pack::render(ws, name, grid, cx));
     }
     let mut page = div()
         .flex()
@@ -133,7 +141,7 @@ pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Wor
             page = page.child(hero::render(ws, &featured, grid, cx));
         }
     }
-    page.child(shelves::render(ws, &shown, query, grid, cx))
+    measured.child(page.child(shelves::render(ws, &shown, query, grid, cx)))
 }
 
 /// Nothing narrows the list and it is in trust order: the storefront, not results.
@@ -375,9 +383,11 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Asks before installing or removing; nothing happens until the yes.
-    pub fn confirm_store(&mut self, confirm: Confirm, cx: &mut Context<Self>) {
+    /// Asks before installing or removing; nothing happens until the yes. The keyboard
+    /// starts on Cancel, so Enter alone never installs or removes.
+    pub fn confirm_store(&mut self, confirm: Confirm, window: &mut Window, cx: &mut Context<Self>) {
         self.modal = Some(Modal::Workshop(confirm));
+        self.confirm_focus.focus(window, cx);
         cx.notify();
     }
 

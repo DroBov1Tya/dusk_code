@@ -165,6 +165,10 @@ fn provider_card(
                 .px_0()
                 .opacity(0.5)
         });
+    if let Some(health) = ws.status.provider_health.iter().find(|h| h.name == name) {
+        card = card
+            .child(widgets::muted(health.calls.text(dusk_protocol::system::now_ms()), cx).p_0());
+    }
     if let Some(limits) = provider.limits.as_ref().filter(|_| enabled) {
         card = card.child(widgets::muted(format!("Limits: {}", limits.text()), cx).p_0());
     }

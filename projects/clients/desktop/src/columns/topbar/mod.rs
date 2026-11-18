@@ -248,6 +248,7 @@ fn title(ws: &Workspace, muted: Hsla) -> Stateful<Div> {
         Center::Schedules => Some("Scheduled tasks"),
         Center::Review => Some("Changes"),
         Center::File => Some("File"),
+        Center::Overview => Some("Overview"),
     };
     let base = div()
         .id("top-title")

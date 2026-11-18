@@ -1,11 +1,11 @@
-//! A thread's jobs, sources, plan and changes.
+//! A thread's jobs, sources, plan, team, changes and Overview.
 
 use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, WorkRequest},
-    project::{Change, FileDiff},
-    thread::JobInfo,
+    project::{Change, FileChange, FileDiff},
+    thread::{JobInfo, LogEntry, Overview, PlanPage, Team},
 };
 
 /// A thread's background jobs and sources.
@@ -58,6 +58,78 @@ impl Work<'_> {
             .await?
         {
             Response::Changes(changes) => Ok(changes),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// What the chat's commands changed in its project, newest first, with diffs.
+    pub async fn file_changes(&self, thread_id: &str) -> Result<Vec<FileChange>> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::FileChanges { thread_id }))
+            .await?
+        {
+            Response::FileChanges(changes) => Ok(changes),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// How the thread's work stands: activity, changes and the newest log lines.
+    pub async fn overview(&self, thread_id: &str) -> Result<Overview> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::Overview { thread_id }))
+            .await?
+        {
+            Response::Overview(overview) => Ok(overview),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// A page of the thread's event log older than `before`, newest first.
+    pub async fn events(
+        &self,
+        thread_id: &str,
+        before: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<LogEntry>> {
+        let thread_id = thread_id.to_owned();
+        let request = WorkRequest::Events {
+            thread_id,
+            before,
+            limit,
+        };
+        match self.0.call(Request::Work(request)).await? {
+            Response::Events(entries) => Ok(entries),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// One page of the plan: every task not done, then up to `limit` done ones.
+    pub async fn plan_tasks(&self, thread_id: &str, limit: u32) -> Result<PlanPage> {
+        let thread_id = thread_id.to_owned();
+        let request = WorkRequest::PlanTasks {
+            thread_id,
+            done_before: None,
+            limit,
+        };
+        match self.0.call(Request::Work(request)).await? {
+            Response::PlanPage(page) => Ok(page),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// The team running the chat's plan, or none before one ran.
+    pub async fn team(&self, thread_id: &str) -> Result<Option<Team>> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::Team { thread_id }))
+            .await?
+        {
+            Response::Team(team) => Ok(team),
             other => Err(unexpected(other)),
         }
     }

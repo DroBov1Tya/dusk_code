@@ -1,4 +1,4 @@
-//! The middle column: the shown chat's transcript, the cards that wait for the user,
+//! The middle column: the pinned bar, the shown chat's transcript, the cards that wait for the user,
 //! the composer and the bar under it.
 
 mod access_menu;
@@ -8,8 +8,10 @@ pub mod code;
 mod commands;
 pub mod composer;
 pub mod dictation;
+pub mod dock;
 mod fireflies;
 pub mod links;
+mod marks;
 mod media;
 pub mod messages;
 pub mod mode_menu;
@@ -17,6 +19,7 @@ mod model_bar;
 mod model_menu;
 mod navigator;
 mod parts;
+pub mod pins;
 pub mod queue;
 mod ring;
 pub mod timing;
@@ -75,6 +78,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             ws.attachments.extend(paths.paths().iter().cloned());
             cx.notify();
         }))
+        .children(pins::render(ws, cx))
         .children(notice)
         .children(crate::pages::schedules::report::render(ws, cx))
         .child(
@@ -86,7 +90,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .children(fireflies::render(ws, cx))
                 .children(to_bottom(ws, cx)),
         )
+        .children(dock::plan_strip(ws, cx))
         .child(approval::render(ws, cx))
+        .children(dock::views_tab(ws, window, cx))
         .child(composer::render(ws, window, cx))
         .child(div().h(px(12.)))
 }

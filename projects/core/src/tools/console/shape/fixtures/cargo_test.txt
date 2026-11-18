@@ -1,0 +1,140 @@
+exit code: 101
+stdout:
+
+running 67 tests
+test tests::adds ... ok
+test tests::case_00 ... ok
+test tests::case_01 ... ok
+test tests::adds_negative ... ok
+test tests::case_02 ... ok
+test tests::case_03 ... ok
+test tests::case_04 ... ok
+test tests::case_05 ... ok
+test tests::case_06 ... ok
+test tests::case_07 ... ok
+test tests::another_failure ... FAILED
+test tests::case_08 ... ok
+test tests::case_09 ... ok
+test tests::case_10 ... ok
+test tests::case_11 ... ok
+test tests::case_12 ... ok
+test tests::case_13 ... ok
+test tests::case_14 ... ok
+test tests::case_15 ... ok
+test tests::case_16 ... ok
+test tests::case_17 ... ok
+test tests::case_18 ... ok
+test tests::case_19 ... ok
+test tests::case_20 ... ok
+test tests::case_21 ... ok
+test tests::case_22 ... ok
+test tests::case_23 ... ok
+test tests::case_24 ... ok
+test tests::case_25 ... ok
+test tests::case_26 ... ok
+test tests::case_27 ... ok
+test tests::case_28 ... ok
+test tests::case_29 ... ok
+test tests::case_30 ... ok
+test tests::case_31 ... ok
+test tests::case_32 ... ok
+test tests::case_33 ... ok
+test tests::case_34 ... ok
+test tests::case_35 ... ok
+test tests::case_36 ... ok
+test tests::case_37 ... ok
+test tests::case_38 ... ok
+test tests::case_39 ... ok
+test tests::case_40 ... ok
+test tests::case_41 ... ok
+test tests::case_42 ... ok
+test tests::case_43 ... ok
+test tests::case_44 ... ok
+test tests::case_45 ... ok
+test tests::case_46 ... ok
+test tests::case_47 ... ok
+test tests::case_48 ... ok
+test tests::case_49 ... ok
+test tests::case_50 ... ok
+test tests::case_51 ... ok
+test tests::case_52 ... ok
+test tests::case_53 ... ok
+test tests::case_54 ... ok
+test tests::case_55 ... ok
+test tests::case_56 ... ok
+test tests::case_57 ... ok
+test tests::case_58 ... ok
+test tests::case_59 ... ok
+test tests::error_code_parses ... ok
+test tests::slow ... ignored
+test tests::zero ... ok
+test tests::fails_on_purpose ... FAILED
+
+failures:
+
+---- tests::another_failure stdout ----
+
+thread 'tests::another_failure' (1632448) panicked at src/lib.rs:72:36:
+boom at the end
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tests::fails_on_purpose stdout ----
+
+thread 'tests::fails_on_purpose' (1632510) panicked at src/lib.rs:9:37:
+assertion `left == right` failed: math is broken
+  left: 4
+ right: 5
+
+
+failures:
+    tests::another_failure
+    tests::fails_on_purpose
+
+test result: FAILED. 64 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+stderr:
+     Locking 10 packages to highest compatible versions
+      Adding anyhow v1.0.104
+      Adding proc-macro2 v1.0.107
+      Adding quote v1.0.47
+      Adding serde v1.0.229
+      Adding serde_core v1.0.229
+      Adding serde_derive v1.0.229
+      Adding syn v3.0.10
+      Adding thiserror v2.0.21
+      Adding thiserror-impl v2.0.21
+      Adding unicode-ident v1.0.27
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling anyhow v1.0.104
+   Compiling thiserror v2.0.21
+   Compiling syn v3.0.10
+   Compiling thiserror-impl v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling fixcrate v0.1.0 (/home/dev/fixcrate)
+warning: unused variable: `unused`
+ --> src/lib.rs:1:41
+  |
+1 | pub fn add(a: i32, b: i32) -> i32 { let unused = 3; a + b }
+  |                                         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_unused`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fixcrate` (lib) generated 1 warning (run `cargo fix --lib -p fixcrate` to apply 1 suggestion)
+warning: unused variable: `unused`
+ --> src/main.rs:1:17
+  |
+1 | fn main() { let unused = 3; println!("hi"); }
+  |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_unused`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fixcrate` (bin "other" test) generated 1 warning (run `cargo fix --bin "other" -p fixcrate --tests` to apply 1 suggestion)
+warning: `fixcrate` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.67s
+     Running unittests src/lib.rs (/home/dev/fixcrate/target/debug/deps/fixcrate-90f0d5d2a870bf2e)
+error: test failed, to rerun pass `--lib`

@@ -8,11 +8,18 @@ mod switches;
 #[cfg(test)]
 mod tests;
 
-use super::sections::{is_zero, yes};
+use super::sections::{
+    MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS,
+    MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE, MAX_TEAM_MAX_MINUTES, MAX_TEAM_MAX_STEPS,
+    MAX_TEAM_MAX_TOKENS, MIN_COMPACT_TAIL_TOKENS, MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS,
+    MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS, MIN_TEAM_AT_ONCE, MIN_TEAM_MAX_MINUTES,
+    MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, is_zero, yes,
+};
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
-    MAX_MODEL_TIMEOUT_SECONDS, MIN_ATTEMPTS, MIN_MODEL_TIMEOUT_SECONDS, McpServerConfig, Memory,
-    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory, Workshop,
+    MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
+    MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, McpServerConfig, Memory, Plugged,
+    PluginConfig, ProviderConfig, Team, ThreadConfig, VersionControl, WorkHistory, Workshop,
 };
 use crate::release::update::Channel;
 use anyhow::{Context, Result, anyhow, ensure};
@@ -122,6 +129,9 @@ pub struct Config {
     /// Mirrors of the store the user added.
     #[serde(default, skip_serializing_if = "Workshop::is_default")]
     workshop: Workshop,
+    /// The model a team's members answer on, and one per role.
+    #[serde(default, skip_serializing_if = "Team::is_default")]
+    team: Team,
     /// What the plugins that are on add; never saved.
     #[serde(skip)]
     plugged: Plugged,
@@ -288,6 +298,62 @@ impl Config {
             (MIN_ATTEMPTS..=MAX_ATTEMPTS).contains(&self.limits.max_attempts),
             "limits.max_attempts must be between {MIN_ATTEMPTS} and {MAX_ATTEMPTS}"
         );
+        let limits = &self.limits;
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.failure_note_at
+                && limits.failure_note_at < limits.failure_replan_at
+                && limits.failure_replan_at < limits.failure_stop_at
+                && limits.failure_stop_at <= MAX_FAILURE_RUNG,
+            "limits.failure_note_at, failure_replan_at and failure_stop_at must rise in this \
+             order, from {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            (MIN_RETRY_UNREACHABLE_SECONDS..=MAX_RETRY_UNREACHABLE_SECONDS)
+                .contains(&self.limits.retry_unreachable_seconds),
+            "limits.retry_unreachable_seconds must be between {MIN_RETRY_UNREACHABLE_SECONDS} \
+             and {MAX_RETRY_UNREACHABLE_SECONDS}"
+        );
+        ensure!(
+            (MIN_RESUME_WITHIN_SECONDS..=MAX_RESUME_WITHIN_SECONDS)
+                .contains(&self.limits.resume_within_seconds),
+            "limits.resume_within_seconds must be between {MIN_RESUME_WITHIN_SECONDS} and \
+             {MAX_RESUME_WITHIN_SECONDS}"
+        );
+        ensure!(
+            (MIN_STUB_KEEP_STEPS..=MAX_STUB_KEEP_STEPS).contains(&self.limits.stub_keep_steps),
+            "limits.stub_keep_steps must be between {MIN_STUB_KEEP_STEPS} and \
+             {MAX_STUB_KEEP_STEPS}"
+        );
+        ensure!(
+            (MIN_STUB_MIN_TOKENS..=MAX_STUB_MIN_TOKENS).contains(&self.limits.stub_min_tokens),
+            "limits.stub_min_tokens must be between {MIN_STUB_MIN_TOKENS} and \
+             {MAX_STUB_MIN_TOKENS}"
+        );
+        ensure!(
+            (MIN_COMPACT_TAIL_TOKENS..=MAX_COMPACT_TAIL_TOKENS)
+                .contains(&self.limits.compact_tail_tokens),
+            "limits.compact_tail_tokens must be between {MIN_COMPACT_TAIL_TOKENS} and \
+             {MAX_COMPACT_TAIL_TOKENS}"
+        );
+        ensure!(
+            (MIN_TEAM_AT_ONCE..=MAX_TEAM_AT_ONCE).contains(&limits.team_at_once),
+            "limits.team_at_once must be between {MIN_TEAM_AT_ONCE} and {MAX_TEAM_AT_ONCE}"
+        );
+        ensure!(
+            (MIN_TEAM_MAX_STEPS..=MAX_TEAM_MAX_STEPS).contains(&limits.team_max_steps),
+            "limits.team_max_steps must be between {MIN_TEAM_MAX_STEPS} and {MAX_TEAM_MAX_STEPS}"
+        );
+        ensure!(
+            (MIN_TEAM_MAX_TOKENS..=MAX_TEAM_MAX_TOKENS).contains(&limits.team_max_tokens),
+            "limits.team_max_tokens must be between {MIN_TEAM_MAX_TOKENS} and \
+             {MAX_TEAM_MAX_TOKENS}"
+        );
+        ensure!(
+            (MIN_TEAM_MAX_MINUTES..=MAX_TEAM_MAX_MINUTES).contains(&limits.team_max_minutes),
+            "limits.team_max_minutes must be between {MIN_TEAM_MAX_MINUTES} and \
+             {MAX_TEAM_MAX_MINUTES}"
+        );
+        self.team.validate()?;
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,
             "appearance.idle_screen_minutes must be at most {}",

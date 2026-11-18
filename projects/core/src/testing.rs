@@ -64,6 +64,16 @@ pub fn tool_context(scope: &ToolScope) -> ToolContext {
         approvals: None,
         state: None,
         thread_id: String::new(),
+        graph: None,
+    }
+}
+
+/// The same with more settings appended as YAML, for a tool that reads one.
+pub fn tool_context_with(scope: &ToolScope, settings: &str) -> ToolContext {
+    let config = Config::parse(format!("{TEST_CONFIG}{settings}").as_bytes()).unwrap();
+    ToolContext {
+        config: Arc::new(config),
+        ..tool_context(scope)
     }
 }
 

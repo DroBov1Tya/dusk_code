@@ -1,18 +1,20 @@
 //! One step of a turn: a model call and the tools it asks for.
 
+use super::calls::Called;
+use super::wait::waits_out;
 use super::{Agent, StepEnd, insert_project, interrupted, missing_tools, recorded_reasoning};
 use crate::runtime::agent::Inbox;
 use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
     message::sources::{SourceBlock, ThreadSources},
     providers::{
-        ChatMessage, ChatRequest, ToolSpec, is_output_limit, is_transient, is_unsupported_pictures,
-        text_calls,
+        ChatMessage, ChatRequest, ProviderErrorKind, ToolSpec, is_output_limit,
+        is_unsupported_pictures, text_calls,
     },
     runtime::goal::action as goal,
     state::{
-        CallPurpose, GoalStatus, MessageRole, ModelCall, Turn, TurnAnswer, TurnOutcome,
-        estimate_tokens,
+        CallPurpose, GoalStatus, MessageRole, ModelCall, ProviderFailure, Turn, TurnAnswer,
+        TurnFailure, TurnOutcome, estimate_tokens,
     },
 };
 use anyhow::{Context, Result};
@@ -21,14 +23,23 @@ use tracing::info;
 impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     /// `received` gathers the sources a model call took in full, for the turn to mark.
+    /// `waited` says the turn's provider wait is stored, to end once the model answers.
     #[tracing::instrument(name = "step", skip_all)]
     pub(super) async fn step(
         &self,
         turn: &Turn,
         inbox: &mut Inbox,
         received: &mut Vec<String>,
+        waited: bool,
     ) -> Result<StepEnd> {
-        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+        // One snapshot per step: switches flipped meanwhile apply from the next step.
+        let config = self.config.current();
+        // A team's member steps only while it holds its task and the team has budget.
+        crate::runtime::team::may_step(&self.state, &config, &self.thread_id, self.depth).await?;
+        let stub_results = config.limits().stub_results;
+        let mut conversation =
+            Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        self.put_away_old_results(&mut conversation, &config).await;
         // Messages that joined between steps are answered by this turn, not a next one.
         let newest_user = conversation
             .messages
@@ -40,8 +51,6 @@ impl Agent {
         if newest_user > conversation.answered_through {
             self.state.extend_turn(&turn.turn_id, newest_user).await?;
         }
-        // One snapshot per step: switches flipped meanwhile apply from the next step.
-        let config = self.config.current();
         let mut tools = self.tools.specs(&self.scope, &config);
         let screen = |spec: &ToolSpec| {
             self.tools.kind_of(&spec.name) == Some(crate::tools::ToolKind::Computer)
@@ -77,7 +86,8 @@ impl Agent {
         let attached = project + sources.as_ref().map_or(0, SourceBlock::tokens);
         // Tool results grow the context within a turn, so every step checks it.
         if let Some(error) = self.context_too_large(&conversation, &tools, attached) {
-            return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
+            let provider = None;
+            return Ok(StepEnd::TooLarge(TurnFailure { error, provider }));
         }
         let mut messages = conversation.chat_messages();
         if with_pictures {
@@ -110,7 +120,11 @@ impl Agent {
             cache_key: Some(&self.thread_id),
         };
         let mut called = self.call_model(&choice, request, &config, inbox).await;
-        if matches!(&called, Ok((_, Ok(Err(error)))) if is_unsupported_pictures(error)) {
+        let pictures_refused = matches!(
+            &called,
+            Ok(Called { generated: Ok(Err(error)), .. }) if is_unsupported_pictures(error)
+        );
+        if pictures_refused {
             self.refuse_pictures(&choice.model.id, &mut messages);
             let request = ChatRequest {
                 model: &choice.model.id,
@@ -122,7 +136,11 @@ impl Agent {
             };
             called = self.call_model(&choice, request, &config, inbox).await;
         }
-        let (output, generated) = match called {
+        let Called {
+            output,
+            generated,
+            attempts,
+        } = match called {
             Ok(called) => called,
             Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
         };
@@ -158,8 +176,9 @@ impl Agent {
             };
             if let Err(error) = self.state.record_usage(&call, usage).await {
                 let error = format!("cannot store the model usage: {error:#}");
-                return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
+                return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
             }
+            self.report_progress(&turn.turn_id).await;
         }
         let reasoning = recorded_reasoning(&config, &output);
         let (content, generated) = match generated {
@@ -206,16 +225,45 @@ impl Agent {
                 return Ok(StepEnd::Answered(interrupted(answer)));
             }
             Ok(Err(error)) => {
-                if is_transient(&error) {
-                    self.emit(ThreadEvent::ProviderUnavailable);
-                }
-                return Ok(StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))));
+                let failed = crate::providers::provider_error(&error);
+                let provider = failed.map(|failure| {
+                    tracing::warn!(
+                        kind = ?failure.kind,
+                        status = failure.status,
+                        cause = failure.cause.as_deref(),
+                        attempts,
+                        "model call failed: {}",
+                        failure.message
+                    );
+                    ProviderFailure {
+                        kind: failure.kind,
+                        attempts,
+                    }
+                });
+                let wait = failed
+                    .filter(|failure| config.limits().wait_for_provider && waits_out(failure.kind))
+                    .cloned();
+                let too_long =
+                    failed.is_some_and(|failure| failure.kind == ProviderErrorKind::TooLong);
+                let failure = TurnFailure {
+                    error: format!("{error:#}"),
+                    provider,
+                };
+                return Ok(match wait {
+                    Some(wait) => StepEnd::Wait(wait, failure),
+                    None if too_long => StepEnd::TooLarge(failure),
+                    None => StepEnd::Answered(TurnOutcome::Failed(failure)),
+                });
             }
             Ok(Ok(calls)) if calls.is_empty() => {
                 return Ok(StepEnd::Answered(TurnOutcome::Completed(answer)));
             }
             Ok(Ok(calls)) => calls,
         };
+        // The model answered: the waits for it are over, and a later one counts anew.
+        if waited {
+            self.state.end_wait(&turn.turn_id).await?;
+        }
 
         // On record before anything runs, so no tool takes effect without a trace.
         let recorded = self
@@ -223,12 +271,8 @@ impl Agent {
             .record_tool_calls(&turn.turn_id, answer, calls.clone());
         if let Err(error) = recorded.await {
             let error = format!("cannot store the tool calls: {error:#}");
-            return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
+            return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
         }
-        Ok(match self.call_tools(turn, &calls, &config, inbox).await {
-            Err(error) => StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))),
-            Ok(Some(stop)) => StepEnd::Stopped(stop, TurnOutcome::Interrupted(None)),
-            Ok(None) => StepEnd::CalledTools,
-        })
+        Ok(self.run_calls(turn, &calls, &config, inbox).await)
     }
 }

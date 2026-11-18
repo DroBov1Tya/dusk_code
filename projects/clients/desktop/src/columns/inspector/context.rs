@@ -7,10 +7,7 @@ use dusk_protocol::{
 };
 use gpui_kit::{component::ActiveTheme, *};
 
-use crate::{
-    ui::widgets,
-    workspace::{Right, Workspace},
-};
+use crate::{ui::widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(report) = &ws.context else {
@@ -200,10 +197,9 @@ impl Workspace {
         );
     }
 
-    /// The shown thread counted its context again: the open Statistics follow it.
+    /// The shown thread counted its context again: the open Overview follows it.
     pub fn context_counted(&mut self, thread_id: &str, cx: &mut Context<Self>) {
-        let open = !self.right_hidden && !self.folded.contains(&Right::Statistics);
-        if open && self.shown.as_deref() == Some(thread_id) {
+        if self.overview_open() && self.shown.as_deref() == Some(thread_id) {
             self.load_context(cx);
         }
     }

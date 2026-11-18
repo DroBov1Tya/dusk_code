@@ -8,6 +8,9 @@ use super::{State, timestamp_ms};
 
 pub use dusk_protocol::thread::Thread;
 
+/// The `source` of a thread a team made for a task.
+pub const MEMBER_SOURCE: &str = "member";
+
 impl State {
     pub async fn create_thread(&self, id: &str, source: &str) -> Result<Thread> {
         self.insert_thread(id, source, None, None, None).await
@@ -75,6 +78,20 @@ impl State {
         name: &str,
     ) -> Result<Thread> {
         self.insert_thread(id, "agent", Some(parent), Some(agent), Some(name))
+            .await
+    }
+
+    /// A thread the team made under its lead for one task of the plan, working as the
+    /// task's role. Its source marks it, so the team finds its own threads again and no
+    /// thread an agent asked for is ever taken for one.
+    pub async fn create_member_thread(
+        &self,
+        id: &str,
+        lead: &str,
+        role: &str,
+        name: &str,
+    ) -> Result<Thread> {
+        self.insert_thread(id, MEMBER_SOURCE, Some(lead), Some(role), Some(name))
             .await
     }
 
@@ -160,10 +177,12 @@ impl State {
 
     /// The chat a thread belongs to: itself for a chat, the top of its tree for an agent.
     pub async fn root_thread(&self, id: &str) -> Result<String> {
+        // UNION, here and in the walks below: parent links that loop, which only a
+        // damaged database has, end the walk instead of running it for ever.
         sqlx::query_scalar(
             "WITH RECURSIVE above(id, parent) AS (
                 SELECT id, parent_thread_id FROM threads WHERE id = ?
-                UNION ALL
+                UNION
                 SELECT threads.id, threads.parent_thread_id
                 FROM threads JOIN above ON threads.id = above.parent
              ) SELECT id FROM above WHERE parent IS NULL",
@@ -179,7 +198,7 @@ impl State {
         sqlx::query_scalar(
             "WITH RECURSIVE below(id) AS (
                 SELECT id FROM threads WHERE parent_thread_id = ?
-                UNION ALL
+                UNION
                 SELECT threads.id FROM threads JOIN below ON threads.parent_thread_id = below.id
              ) SELECT id FROM below",
         )
@@ -209,7 +228,7 @@ impl State {
         let depth: i64 = sqlx::query_scalar(
             "WITH RECURSIVE above(id) AS (
                 SELECT parent_thread_id FROM threads WHERE id = ?
-                UNION ALL
+                UNION
                 SELECT threads.parent_thread_id FROM threads JOIN above ON threads.id = above.id
              ) SELECT COUNT(*) FROM above WHERE id IS NOT NULL",
         )
@@ -381,6 +400,36 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
 #[cfg(test)]
 mod tests {
     use crate::testing::temp_state;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn parent_links_that_loop_end_the_walk_up_and_down() {
+        let state = temp_state("thread_loop").await;
+        state.create_thread("chat", "test").await.unwrap();
+        for (id, parent) in [("one", "chat"), ("two", "one")] {
+            state
+                .create_agent_thread(id, parent, "agent", id)
+                .await
+                .unwrap();
+        }
+        assert_eq!(state.root_thread("two").await.unwrap(), "chat");
+        assert_eq!(state.thread_depth("two").await.unwrap(), 2);
+        // No code writes this; a damaged file could hold it.
+        sqlx::query("UPDATE threads SET parent_thread_id = 'two' WHERE id = 'one'")
+            .execute(&state.pool)
+            .await
+            .unwrap();
+
+        let soon = Duration::from_secs(5);
+        let root = tokio::time::timeout(soon, state.root_thread("two")).await;
+        assert!(root.expect("the walk up never ends").is_err());
+        let below = tokio::time::timeout(soon, state.descendant_threads("one")).await;
+        let mut below = below.expect("the walk down never ends").unwrap();
+        below.sort();
+        assert_eq!(below, ["one", "two"]);
+        let depth = tokio::time::timeout(soon, state.thread_depth("two")).await;
+        assert_eq!(depth.expect("the count never ends").unwrap(), 2);
+    }
 
     #[tokio::test]
     async fn a_manual_title_takes_precedence_over_an_in_flight_generated_title() {

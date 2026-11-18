@@ -2236,7 +2236,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dusk_browser"
-version = "0.74.4"
+version = "0.75.0"
 dependencies = [
  "console_error_panic_hook",
  "dusk_protocol",
@@ -2253,7 +2253,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_core"
-version = "0.74.4"
+version = "0.75.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2295,18 +2295,21 @@ dependencies = [
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.1",
+ "similar",
  "sqlx",
  "tar",
  "tokio",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "tree-sitter",
+ "tree-sitter-rust",
  "uuid",
 ]
 
 [[package]]
 name = "dusk_desktop"
-version = "0.74.4"
+version = "0.75.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -2333,7 +2336,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_evals"
-version = "0.74.4"
+version = "0.75.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2341,6 +2344,7 @@ dependencies = [
  "dusk_protocol",
  "regex",
  "serde",
+ "serde-saphyr 2.0.0",
  "serde_json",
  "tokio",
  "uuid",
@@ -2348,9 +2352,10 @@ dependencies = [
 
 [[package]]
 name = "dusk_protocol"
-version = "0.74.4"
+version = "0.75.0"
 dependencies = [
  "anyhow",
+ "proptest",
  "schemars",
  "serde",
  "serde_json",
@@ -2358,7 +2363,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_server"
-version = "0.74.4"
+version = "0.75.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2380,7 +2385,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_terminal"
-version = "0.74.4"
+version = "0.75.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -9352,6 +9357,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d08889ec5408683408db66ad89e0e1f93dff55c73a4ccc71c427d5b277ee47e6"
 
 [[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
+
+[[package]]
 name = "strict-num"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10370,6 +10381,35 @@ dependencies = [
  "thread_local",
  "tracing",
  "tracing-core",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37b2bed8f39a73439f3b0b7ed8f452be5d2911b5e9da69d352ef113bb7448fb8"
+dependencies = [
+ "cc",
+ "regex",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]

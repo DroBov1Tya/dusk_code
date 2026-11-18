@@ -105,6 +105,7 @@ impl Runtime {
             skills,
             mcp,
             memory,
+            stub_results: config.limits().stub_results,
         }
     }
 }

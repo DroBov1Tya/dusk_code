@@ -1,5 +1,5 @@
-//! One row of the list: the user's words, an answer, a command, a picture, a notice;
-//! and going back to a sent message.
+//! One row of the list: the user's words, an answer, a command, a block, a picture, a
+//! notice, the working row; and going back to a sent message.
 
 use gpui_kit::{
     component::{
@@ -13,6 +13,7 @@ use gpui_kit::{
 use super::{
     Row,
     activity::{agent_report, notice, turn_activity},
+    block,
     command::command_card,
     cost::TurnCost,
     picture::picture,
@@ -20,7 +21,7 @@ use super::{
 };
 
 use crate::{
-    pages::chat::{links, transcript::Item, working},
+    pages::chat::{links, transcript::Item},
     ui::{Type, clipboard},
     workspace::Workspace,
 };
@@ -43,28 +44,7 @@ impl Workspace {
         let (muted, accent, danger) = (theme.muted_foreground, theme.primary, theme.danger);
         // Space between rows lives in the rows, as the list has no gap of its own.
         let content = match row {
-            Row::Working => div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_3()
-                .meta()
-                .text_color(muted)
-                .child(working::render(
-                    SharedString::from(format!("working-{shown}")),
-                    accent,
-                    theme.foreground,
-                ))
-                .child(match chat.span(chat.activity_boundaries.len()) {
-                    Some((began, None)) => format!(
-                        "Working \u{00B7} {}",
-                        crate::pages::chat::timing::duration(
-                            dusk_protocol::system::now_ms() - began
-                        )
-                    ),
-                    _ => "Working".to_owned(),
-                })
-                .into_any_element(),
+            Row::Working => super::working_row::render(&shown, chat, cx),
             Row::Activity {
                 start,
                 end,
@@ -101,6 +81,8 @@ impl Workspace {
                                     clipboard::copy(&copy_id, copied.clone(), cx)
                                 }),
                         );
+                        tools =
+                            tools.children(crate::pages::chat::pins::button(self, &shown, at, cx));
                         // The core refuses to go back inside a turn, so the button waits.
                         if let (Some(sequence), false) = (*sequence, chat.working) {
                             let (thread_id, text) = (shown.clone(), text.clone());
@@ -232,11 +214,15 @@ impl Workspace {
                                                     ws.speak_answer(&spoken_key, &spoken, cx);
                                                 }
                                             })),
-                                    ),
+                                    )
+                                    .children(crate::pages::chat::pins::button(
+                                        self, &shown, at, cx,
+                                    )),
                             );
                         }
                         answer.into_any_element()
                     }
+                    Item::Block(shown_block) => block::render(self, &shown, at, shown_block, cx),
                     Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
                     Item::Audio(clip) => crate::pages::chat::audio::card(self, &key, clip, cx),
                     Item::Notice(text) => {
@@ -263,9 +249,12 @@ impl Workspace {
         } else {
             gutter
         };
+        // A message gone to from the pinned bar is tinted for a moment, then plain.
+        let flashed = matches!(row, Row::Item(at) if self.flashed(&shown, at));
         div()
             .pt(px(top))
             .pb(px(bottom))
+            .when(flashed, |row| row.bg(accent.opacity(0.12)))
             .child(lane(content))
             .into_any_element()
     }

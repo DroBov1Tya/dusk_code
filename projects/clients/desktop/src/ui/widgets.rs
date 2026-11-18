@@ -148,14 +148,8 @@ where
     )
 }
 
-/// `12.3k` for a token count.
-pub fn short(tokens: u64) -> String {
-    match tokens {
-        0..1_000 => tokens.to_string(),
-        1_000..1_000_000 => format!("{:.1}k", tokens as f64 / 1e3),
-        _ => format!("{:.1}M", tokens as f64 / 1e6),
-    }
-}
+/// `12.3k` for a token count, as every client says it.
+pub use dusk_protocol::thread::short_count as short;
 
 pub fn capitalize(text: &str) -> String {
     let mut chars = text.chars();

@@ -31,6 +31,7 @@ impl OpenThread {
         let thread_id = threads.resume(thread_id, env::current_dir()?).await?;
         app.open(Some(thread_id.clone()), title, &history);
         app.tasks = threads.tasks(&thread_id).await?;
+        app.pins = threads.pins(&thread_id).await?;
         for message in threads.local_unsent(&thread_id).await? {
             app.show_local_unsent(message);
         }

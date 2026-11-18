@@ -3,7 +3,9 @@
 //! client keeps of it, the input that feeds it and the output that tells it.
 
 mod handle;
+mod resume;
 mod run;
+mod take_in;
 #[cfg(test)]
 mod tests;
 

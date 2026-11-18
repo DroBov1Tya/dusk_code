@@ -4,7 +4,7 @@ use crate::runtime::Runtime;
 use crate::runtime::jobs::JobInfo;
 use crate::{
     catalog::mentions::Mentions,
-    message::sources::ThreadSources,
+    message::sources::{HostFiles, ThreadSources},
     runtime::thread::start::{self},
     state::{Source, UndoPoint},
     tools::Decision,
@@ -44,13 +44,20 @@ impl Runtime {
             approvals: None,
             state: Some(Arc::clone(state)),
             thread_id: thread_id.to_owned(),
+            graph: launcher.graph.clone(),
         };
         crate::tools::console::run_for_user(command, &context).await
     }
 
-    /// `message` with its long pastes, and what its `@` mentions bring, moved to the
-    /// thread's sources.
-    pub async fn keep_pastes(&self, thread_id: &str, message: &str) -> Result<String> {
+    /// `message` with its long pastes moved to the thread's sources and, when `files`
+    /// are taken, the pictures and sounds it names by path and what its `@` mentions
+    /// bring.
+    pub async fn keep_pastes(
+        &self,
+        thread_id: &str,
+        message: &str,
+        files: HostFiles,
+    ) -> Result<String> {
         let launcher = self.of(thread_id).await;
         let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         let sources = ThreadSources {
@@ -58,6 +65,9 @@ impl Runtime {
             workspace: &workspace,
             thread_id,
         };
+        if files == HostFiles::Left {
+            return sources.keep_pasted_blocks(message).await;
+        }
         let sounds = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());
         let kept = sources.keep_pastes(message, &sounds).await?;
         sources.keep_mentions(&kept, &self.mentions()).await
@@ -176,6 +186,32 @@ impl Runtime {
     ) -> Result<Vec<dusk_protocol::project::Change>> {
         let launcher = self.of(thread_id).await;
         launcher.state.thread_files(thread_id).await
+    }
+
+    /// The thread's change ledger, newest first, capped.
+    pub async fn file_changes(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<dusk_protocol::project::FileChange>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.thread_changes(thread_id).await
+    }
+
+    /// How the thread's work stands: activity, changes and the newest log lines.
+    pub async fn overview(&self, thread_id: &str) -> Result<dusk_protocol::thread::Overview> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.overview(thread_id).await
+    }
+
+    /// A page of the thread's event log older than `before`, newest first.
+    pub async fn events(
+        &self,
+        thread_id: &str,
+        before: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<dusk_protocol::thread::LogEntry>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.events(thread_id, before, limit).await
     }
 
     /// The background jobs of a thread, oldest first.

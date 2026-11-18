@@ -21,6 +21,19 @@ pub struct Palette {
     pub success: &'static str,
     pub warning: &'static str,
     pub danger: &'static str,
+    /// A solid fill for the final step of a destructive action. Optional: a palette
+    /// without it leaves the kit's pale tint of `danger`.
+    pub danger_button: Option<DangerButton>,
+}
+
+/// The `button.danger.*` colors: the fill, the label on it, and the fill under the
+/// pointer and when pressed. Hover and press move the fill away from the label's color,
+/// so the label's contrast only grows.
+pub struct DangerButton {
+    pub background: &'static str,
+    pub foreground: &'static str,
+    pub hover: &'static str,
+    pub active: &'static str,
 }
 
 pub const DEFAULT: &str = "Dusk";
@@ -44,6 +57,12 @@ pub const PALETTES: &[Palette] = &[
         success: "#74d4b3",
         warning: "#ecc46e",
         danger: "#f27a96",
+        danger_button: Some(DangerButton {
+            background: "#f27a96",
+            foreground: "#13121d",
+            hover: "#f48aa3",
+            active: "#f597ad",
+        }),
     },
     Palette {
         name: "Light",
@@ -60,6 +79,12 @@ pub const PALETTES: &[Palette] = &[
         success: "#16a34a",
         warning: "#b7791f",
         danger: "#dc2626",
+        danger_button: Some(DangerButton {
+            background: "#dc2626",
+            foreground: "#ffffff",
+            hover: "#c22121",
+            active: "#ac1e1e",
+        }),
     },
     Palette {
         name: "Dark",
@@ -76,6 +101,12 @@ pub const PALETTES: &[Palette] = &[
         success: "#4cc38a",
         warning: "#e0b050",
         danger: "#e5484d",
+        danger_button: Some(DangerButton {
+            background: "#e5484d",
+            foreground: "#161618",
+            hover: "#e85e62",
+            active: "#eb7074",
+        }),
     },
     // Warm dusk light on wood and paper, with amber for the accent.
     Palette {
@@ -93,6 +124,12 @@ pub const PALETTES: &[Palette] = &[
         success: "#8fb37a",
         warning: "#e3a447",
         danger: "#e06a55",
+        danger_button: Some(DangerButton {
+            background: "#e06a55",
+            foreground: "#1d1b18",
+            hover: "#e47c69",
+            active: "#e78b7a",
+        }),
     },
     // A sky gone dark around a black sun; its corona is the accent.
     Palette {
@@ -110,6 +147,12 @@ pub const PALETTES: &[Palette] = &[
         success: "#86b07a",
         warning: "#e8a54a",
         danger: "#e0505a",
+        danger_button: Some(DangerButton {
+            background: "#e0505a",
+            foreground: "#161517",
+            hover: "#e4656e",
+            active: "#e7767e",
+        }),
     },
 ];
 

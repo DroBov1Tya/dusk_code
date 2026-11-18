@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::{
     config::{Effort, ProviderConfig, ProviderKind},
     providers::{
-        errors::{Transient, UnsupportedEffort, UnsupportedPictures},
+        errors::{UnsupportedEffort, UnsupportedPictures},
         limits::{Account, Headers},
         registry::Model,
         request::{ChatMessage, ChatRequest},
@@ -145,13 +145,13 @@ impl OpenAiCompatible {
             .json(&request)
             .send()
             .await
-            .map_err(|_| Transient("provider completion request failed".into()))?;
+            .map_err(http::unsent)?;
         self.account.note(Headers::OpenAi, response.headers());
         let status = response.status();
         if !status.is_success() {
-            let message = http::refused("completion", status);
-            if http::is_retryable(status) {
-                return Err(http::retry_failure(&response, message));
+            let failure = http::status_failure(&response, http::refused("completion", status));
+            if failure.kind.is_retryable() {
+                bail!(failure);
             }
             if has_pictures && matches!(status.as_u16(), 400 | 413 | 415 | 422) {
                 bail!(UnsupportedPictures);
@@ -165,7 +165,7 @@ impl OpenAiCompatible {
                     bail!(UnsupportedEffort);
                 }
             }
-            bail!(message);
+            bail!(failure);
         }
         ensure!(
             http::is_event_stream(&response),

@@ -15,8 +15,8 @@ pub use event::Event;
 pub use frame::{RequestFrame, ServerFrame};
 pub use hello::{Hello, PROTOCOL_VERSION};
 pub use request::{
-    CatalogRequest, MAX_PICTURE_UPLOAD, MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE, MAX_TERMINALS,
-    PluginRequest, ProjectRequest, ProviderTarget, Request, SettingsRequest, Switch,
+    CatalogRequest, GitRequest, MAX_PICTURE_UPLOAD, MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE,
+    MAX_TERMINALS, PluginRequest, ProjectRequest, ProviderTarget, Request, SettingsRequest, Switch,
     TerminalRequest, ThreadRequest, VoiceRequest, WorkRequest, wav,
 };
 pub use response::Response;

@@ -1,27 +1,37 @@
 //! The core's side of the protocol: one task that owns the runtime, answers requests in
 //! the order they come, forwards the events of open threads and keeps the status fresh.
 
+mod admit;
 mod catalog;
+mod git;
+#[cfg(test)]
+mod plan_tests;
 mod plugin;
 mod projects;
+mod publish;
 mod schedules;
 mod settings;
 mod status;
 mod terminal;
+#[cfg(test)]
+mod tests;
 mod thread;
 mod voice;
 mod work;
 
+pub use status::blank_status;
 use status::read_status;
 
 use crate::{
-    message::commands,
+    client::Scope,
+    message::{commands, sources::HostFiles},
     runtime::{Runtime, ThreadInput},
     terminal::Terminals,
 };
 use anyhow::{Result, anyhow};
-use dusk_protocol::client::{Event, Request, Response, Status};
+use dusk_protocol::client::{Event, ProjectRequest, Request, Response, Status};
 use dusk_protocol::thread::Turn;
+use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
 use std::{
     collections::{HashMap, HashSet},
@@ -49,14 +59,22 @@ const SCHEDULE_PERIOD: Duration = Duration::from_secs(30);
 /// Who is attached to the core; ids are never reused within a run.
 pub type ClientId = u64;
 
-/// Where the events of open threads go: one queue for each attached client.
-pub type Subscribers = Arc<Mutex<Vec<(ClientId, mpsc::UnboundedSender<Event>)>>>;
+/// Where the events of open threads go: one queue for each attached client, and the scope
+/// that says which threads' events it gets.
+pub type Subscribers = Arc<Mutex<Vec<Subscriber>>>;
+
+pub struct Subscriber {
+    pub client: ClientId,
+    pub scope: Scope,
+    pub queue: mpsc::UnboundedSender<Event>,
+}
 
 pub enum Message {
-    /// A client joined; `source` is the name its threads carry.
+    /// A client joined; `source` is the name its threads carry, `scope` what it may ask.
     Attach {
         client: ClientId,
         source: String,
+        scope: Scope,
     },
     Call(Call),
     /// A client went away: it leaves every thread it had open.
@@ -85,13 +103,27 @@ struct OpenThread {
     done: Arc<std::sync::atomic::AtomicBool>,
     /// The turn running now, as the forwarding task sees it; a client that joins
     /// mid-turn is told so before any later event.
-    running: Arc<Mutex<Option<Turn>>>,
+    running: Arc<Mutex<Option<Running>>>,
+}
+
+/// A running turn as a client that joins is told of it.
+#[derive(Clone)]
+struct Running {
+    turn: Turn,
+    /// What the user is asked while the turn waits for a decision.
+    question: Option<Question>,
+}
+
+/// An attached client as the core knows it.
+struct Attached {
+    /// The source of the threads it creates.
+    source: String,
+    scope: Scope,
 }
 
 pub struct Server {
     runtime: Arc<Runtime>,
-    /// The name of each attached client, the source of the threads it creates.
-    sources: HashMap<ClientId, String>,
+    clients: HashMap<ClientId, Attached>,
     /// The client whose request is being answered.
     caller: ClientId,
     subscribers: Subscribers,
@@ -106,7 +138,7 @@ impl Server {
         let (sender, receiver) = watch::channel(status);
         let server = Self {
             runtime: Arc::new(runtime),
-            sources: HashMap::new(),
+            clients: HashMap::new(),
             caller: 0,
             subscribers,
             status: Arc::new(sender),
@@ -118,9 +150,23 @@ impl Server {
 
     /// The name of the client being answered.
     pub(super) fn source(&self) -> &str {
-        self.sources
+        self.clients
             .get(&self.caller)
-            .map_or("client", String::as_str)
+            .map_or("client", |attached| attached.source.as_str())
+    }
+
+    /// The chats the client being answered is bound to, or none when it sees them all.
+    /// A caller that is not attached was refused before any handler.
+    pub(super) fn bound(&self) -> Option<Arc<HashSet<String>>> {
+        let attached = self.clients.get(&self.caller)?;
+        attached.scope.bound().cloned()
+    }
+
+    /// Whether a message of the client being answered may name files of this machine.
+    pub(super) fn host_files(&self) -> HostFiles {
+        self.clients
+            .get(&self.caller)
+            .map_or(HostFiles::Left, |attached| attached.scope.host_files())
     }
 
     /// Answers calls until the client asks to shut down or goes away, then closes every
@@ -135,28 +181,40 @@ impl Server {
             tokio::select! {
                 call = calls.recv() => match call {
                     None => break None,
-                    Some(Message::Attach { client, source }) => {
-                        self.sources.insert(client, source);
+                    Some(Message::Attach { client, source, scope }) => {
+                        self.clients.insert(client, Attached { source, scope });
                     }
                     Some(Message::Detach(client)) => self.detach(client).await,
-                    Some(Message::Call(Call { request: Request::Shutdown, reply, .. })) => {
-                        break Some(reply);
-                    }
-                    Some(Message::Call(Call { request: Request::InstallUpdate { tag }, reply, .. })) => {
-                        self.install_update(tag, reply);
-                    }
-                    Some(Message::Call(Call { request: Request::Store(request), reply, .. })) => {
-                        self.store(request, reply);
-                    }
                     Some(Message::Call(Call { client, request, reply })) => {
-                        self.caller = client;
-                        let response = match self.handle(request).await {
-                            Ok(response) => response,
-                            Err(error) => Response::Error(format!("{error:#}")),
+                        // Every request passes here first, whichever part answers it.
+                        let listed = match self.admit(client, &request).await {
+                            Ok(listed) => listed,
+                            Err(refusal) => {
+                                let _ = reply.send(Response::Error(refusal.to_owned()));
+                                continue;
+                            }
                         };
-                        // The client reads the status once it has the answer.
-                        self.refresh_status();
-                        let _ = reply.send(response);
+                        match request {
+                            Request::Shutdown => break Some(reply),
+                            Request::InstallUpdate { tag } => self.install_update(tag, reply),
+                            Request::Store(request) => self.store(request, reply),
+                            Request::Project(ProjectRequest::Repository { id, request }) => {
+                                self.repository(id, request, reply)
+                            }
+                            request => {
+                                self.caller = client;
+                                let mut response = match self.handle(request).await {
+                                    Ok(response) => response,
+                                    Err(error) => Response::Error(format!("{error:#}")),
+                                };
+                                if let Some(ids) = listed {
+                                    response = self.cut(&ids, response).await;
+                                }
+                                // The client reads the status once it has the answer.
+                                self.refresh_status();
+                                let _ = reply.send(response);
+                            }
+                        }
                     }
                 },
                 _ = clock.tick() => {

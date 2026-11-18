@@ -16,7 +16,7 @@ mod submit;
 mod tabs;
 mod thread;
 
-pub use action::{Action, commands};
+pub use action::{Action, PinAsk, commands};
 pub use composer::PathPopup;
 pub use composer::{EditorButton, EditorHit, EditorTarget, Input, PasteEditor, paste};
 pub use hits::{
@@ -26,11 +26,13 @@ pub use hits::{
 pub use keys::EFFORTS;
 pub use panels::{
     AgentRow, AgentWindow, Connection, DiffView, FileButton, FileEditor, HitTarget, JobsView,
-    McpRow, ModelList, Panel, PluginRow, Preset, Preview, SecretEntry, SettingCategory,
-    SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
+    McpRow, ModelList, OverviewView, Panel, PluginRow, Preset, Preview, SecretEntry,
+    SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
 pub use panels::{Choice, Confirm, PackPage, Row, Step, Workshop, choices, order_word};
 pub use state::{App, compact_number};
+#[cfg(test)]
+pub(crate) use tabs::tests::app as test_app;
 pub use tabs::{Tab, TabHit, TabMove};
 #[cfg(test)]
 pub(crate) use thread::approval::tests::batch as approval_batch;

@@ -18,12 +18,18 @@ pub fn one_line(text: &str) -> String {
         .join(" ")
 }
 
-/// `text` with every control character a program could steer the terminal with turned
-/// into a space.
+/// `text` with every control character a program could steer the terminal with, and every
+/// bidirectional control that could reorder what is drawn around it, turned into a space.
 pub fn printable(text: &str) -> String {
     text.chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
+        .map(|c| if c.is_control() || is_bidi(c) { ' ' } else { c })
         .collect()
+}
+
+/// Marks, embeddings, overrides and isolates: they are invisible and flip the order of
+/// the text next to them (CWE-451).
+fn is_bidi(c: char) -> bool {
+    matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
 #[cfg(test)]

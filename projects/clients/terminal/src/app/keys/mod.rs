@@ -165,6 +165,13 @@ impl App {
         if self.panel.is_some() {
             return self.panel_key(key);
         }
+        // A reply row takes Alt+1 to Alt+4 before tabs do, while it is shown.
+        if alt
+            && let KeyCode::Char(digit @ '1'..='4') = key.code
+            && let Some(action) = self.reply_key(digit)
+        {
+            return action;
+        }
         match key.code {
             // Tabs take Alt, which the box and the transcript leave free.
             KeyCode::Char('t') if alt => return Action::Tab(TabMove::New),

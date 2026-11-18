@@ -52,6 +52,10 @@ impl ThreadRunner {
             if let Some(reviewed) =
                 super::verification::verify(&self.agent.state, &self.agent.thread_id).await?
             {
+                // `verify` moves a goal from checking to passed only here, once.
+                if reviewed.verification == "passed" {
+                    self.agent.record_verified(&reviewed).await;
+                }
                 let note = goal::describe(&reviewed);
                 self.agent.emit(ThreadEvent::Goal {
                     goal: Some(reviewed.clone()),

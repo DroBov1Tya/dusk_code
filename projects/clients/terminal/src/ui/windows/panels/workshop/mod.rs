@@ -15,6 +15,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use unicode_width::UnicodeWidthStr;
+
 use super::frame::selectable;
 use crate::app::{Row, Step, Workshop, order_word};
 use crate::ui::text::format::one_line;
@@ -28,7 +30,7 @@ use crate::ui::windows::{
 
 /// The lines, and the line of the selected row.
 pub fn workshop(view: &Workshop, width: usize) -> (Vec<Line<'static>>, usize) {
-    let width = width.clamp(1, 70);
+    let width = width.clamp(1, 100);
     if let Some(confirm) = &view.confirm {
         return (confirm::confirm_box(confirm, width), 0);
     }
@@ -197,17 +199,20 @@ fn about(tier: Tier) -> &'static str {
     }
 }
 
-fn kind_word(kind: Kind) -> &'static str {
+/// The width of the longest tag, `[plugin]`, so the states line up.
+const KIND_WIDTH: usize = 8;
+
+fn kind_tag(kind: Kind) -> &'static str {
     match kind {
-        Kind::Plugin => "plugin",
-        Kind::Skill => "skill",
-        Kind::Pack => "pack",
-        Kind::Agent => "agent",
+        Kind::Plugin => "[plugin]",
+        Kind::Skill => "[skill]",
+        Kind::Pack => "[pack]",
+        Kind::Agent => "[agent]",
     }
 }
 
-/// A listing: its mark, name and version with its state on the right, then its tier,
-/// kind and stars, and what it is about.
+/// A listing: its mark, name and version with its kind and state on the right, then its
+/// tier, and what it is about.
 fn listing_rows(listing: &Listing, selected: bool, width: usize) -> Vec<Line<'static>> {
     let (state, style) = match (&listing.installed, &listing.update, &listing.unfit) {
         (Some(_), Some(update), None) => (format!("update to {}", one_line(update)), fg(ACCENT)),
@@ -217,21 +222,18 @@ fn listing_rows(listing: &Listing, selected: bool, width: usize) -> Vec<Line<'st
     };
     let (glyph, mark_style) = mark(listing.tier);
     let name = format!("{} {}", one_line(&listing.name), one_line(&listing.version));
+    // The kind and the state are the right part; the name gives way to them.
+    let right = format!("{:<KIND_WIDTH$}  {state} ", kind_tag(listing.kind));
+    let name_room = width.saturating_sub(right.width() + 5);
     let mut lines = vec![selectable(
         vec![
             Span::styled(format!(" {glyph} "), mark_style),
-            Span::raw(name),
+            Span::raw(wrap::clip(&name, name_room)),
         ],
-        Span::styled(format!("{state} "), style),
+        Span::styled(right, style),
         selected,
     )];
-    let mut facts = vec![
-        word(listing.tier).to_owned(),
-        kind_word(listing.kind).to_owned(),
-    ];
-    if listing.stars > 0 {
-        facts.push(format!("\u{2605} {}", listing.stars));
-    }
+    let mut facts = vec![word(listing.tier).to_owned()];
     if !listing.category.is_empty() {
         facts.push(one_line(&listing.category));
     }

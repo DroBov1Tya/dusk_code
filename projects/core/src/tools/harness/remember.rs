@@ -4,7 +4,9 @@
 //! `~/Documents/duskcode`: on this machine only, never in the repository. The memory is shown in the tool's
 //! description, so every request carries it while it is on in the settings; switched
 //! off, the tool is gone and the memory with it. Each call writes the whole memory
-//! again, which keeps it a short summary rather than a log.
+//! again, which keeps it a short summary rather than a log. With `limits.stable_prefix`
+//! a thread keeps showing the memory it started with until its next compaction; the
+//! model sees a rewrite as its own call.
 
 use std::{
     fs,
@@ -171,6 +173,10 @@ impl Tool for Remember {
         schema::of::<RememberArguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let (enabled, max_chars) = self.settings(&context);
@@ -214,6 +220,7 @@ mod tests {
             approvals: None,
             state: None,
             thread_id: String::new(),
+            graph: None,
         };
         assert!(tool.description(&context).ends_with("(empty)"));
         tool.call(json!({"memory": "- prefers Russian"}), context.clone())
@@ -267,6 +274,7 @@ mod tests {
             approvals: None,
             state: None,
             thread_id: String::new(),
+            graph: None,
         };
         assert!(!tool.available(&context(&one, &off)));
         assert!(

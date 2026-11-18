@@ -28,7 +28,9 @@ pub struct Project {
 
 mod diff;
 mod files;
+mod forge;
 mod git;
+mod ledger;
 mod path;
 mod schedule;
 
@@ -37,7 +39,9 @@ pub use files::{
     FileEntry, FileStamp, FileText, MAX_EDIT_BYTES, MAX_PREVIEW_BYTES, OutputFile, OutputKind,
     OutputPreview,
 };
-pub use git::{Change, ChangeKind, GitInfo, GitSummary, Worktree};
+pub use forge::{Check, CheckState, PullRequest, PullRequestDetail};
+pub use git::{Change, ChangeKind, GitInfo, GitOutcome, GitSummary, Worktree};
+pub use ledger::{EditKind, FileChange, MAX_FILE_CHANGES};
 pub use path::{PathCompletion, PathEntry};
 pub use schedule::{
     Clock, DAY_NAMES, EVERY_DAY, MAX_INTERVAL_MINUTES, MAX_PROMPT_CHARS, MAX_SCHEDULES,

@@ -2,7 +2,7 @@
 //! messages; the channel only wakes the thread, and `send_now` and `cancel` stop the
 //! running work.
 
-use std::future::Future;
+use std::{future::Future, time::Duration};
 
 use tokio::sync::mpsc;
 
@@ -56,6 +56,26 @@ impl Inbox {
                 value = &mut work => return Ok(value),
                 input = self.inputs.recv(), if self.open => match input {
                     Some(Input::Sent | Input::DependencyFinished) => {}
+                    Some(Input::SentNow) => return Err(Stop::Preempted),
+                    Some(Input::Cancel) => return Err(Stop::Cancelled),
+                    None => self.open = false,
+                },
+            }
+        }
+    }
+
+    /// Sleeps for `duration` while taking input: `send_now` and `cancel` stop it, and a
+    /// sent message ends it early, since the user may have fixed what it waits out; the
+    /// caller tells whose message it was. Gone clients let it sleep on.
+    pub async fn pause(&mut self, duration: Duration) -> Result<(), Stop> {
+        let sleep = tokio::time::sleep(duration);
+        tokio::pin!(sleep);
+        loop {
+            tokio::select! {
+                () = &mut sleep => return Ok(()),
+                input = self.inputs.recv(), if self.open => match input {
+                    Some(Input::Sent) => return Ok(()),
+                    Some(Input::DependencyFinished) => {}
                     Some(Input::SentNow) => return Err(Stop::Preempted),
                     Some(Input::Cancel) => return Err(Stop::Cancelled),
                     None => self.open = false,

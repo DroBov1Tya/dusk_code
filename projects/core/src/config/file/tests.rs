@@ -176,14 +176,258 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
     let plain = parse(PROVIDERS).unwrap();
     assert_eq!(plain.limits().model_timeout_seconds, 120);
     assert_eq!(plain.limits().max_attempts, 6);
-    let set = parse("limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n").unwrap();
+    assert_eq!(plain.limits().retry_unreachable_seconds, 300);
+    assert_eq!(plain.limits().resume_within_seconds, 3600);
+    assert!(plain.limits().wait_for_provider);
+    assert!(plain.limits().shrink_context);
+    assert!(plain.limits().read_many_files && plain.limits().parallel_reads);
+    assert!(plain.limits().stable_prefix);
+    assert!(plain.limits().record_changes);
+    let set = parse(
+        "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n  wait_for_provider: false\n  shrink_context: false\n  stable_prefix: false\n  record_changes: false\n",
+    )
+    .unwrap();
+    assert!(!set.limits().record_changes);
+    assert!(!set.limits().wait_for_provider);
+    assert!(!set.limits().shrink_context);
+    let reads = parse("limits:\n  read_many_files: false\n  parallel_reads: false\n").unwrap();
+    assert!(!reads.limits().read_many_files && !reads.limits().parallel_reads);
+    assert!(!set.limits().stable_prefix);
     assert_eq!(set.limits().model_timeout_seconds, 300);
     assert_eq!(set.limits().max_attempts, 3);
+    assert_eq!(set.limits().retry_unreachable_seconds, 60);
     for bad in [
         "limits:\n  model_timeout_seconds: 4\n",
         "limits:\n  model_timeout_seconds: 3601\n",
         "limits:\n  max_attempts: 0\n",
         "limits:\n  max_attempts: 21\n",
+        "limits:\n  retry_unreachable_seconds: 9\n",
+        "limits:\n  retry_unreachable_seconds: 3601\n",
+        "limits:\n  resume_within_seconds: 59\n",
+        "limits:\n  resume_within_seconds: 604801\n",
+        "limits:\n  wait_for_provider: 3\n",
+        "limits:\n  shrink_context: often\n",
+        "limits:\n  read_many_files: 1\n",
+        "limits:\n  parallel_reads: sometimes\n",
+        "limits:\n  stable_prefix: 1\n",
+        "limits:\n  record_changes: sometimes\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn stubs_are_on_and_their_limits_stay_inside_their_bounds() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.stub_results);
+    assert_eq!((plain.stub_keep_steps, plain.stub_min_tokens), (8, 200));
+    let set =
+        parse("limits:\n  stub_results: false\n  stub_keep_steps: 2\n  stub_min_tokens: 4000\n")
+            .unwrap()
+            .limits();
+    assert!(!set.stub_results);
+    assert_eq!((set.stub_keep_steps, set.stub_min_tokens), (2, 4000));
+    let set = parse("limits:\n  stub_keep_steps: 50\n  stub_min_tokens: 50\n")
+        .unwrap()
+        .limits();
+    assert_eq!((set.stub_keep_steps, set.stub_min_tokens), (50, 50));
+    for bad in [
+        "limits:\n  stub_results: 1\n",
+        "limits:\n  stub_keep_steps: 1\n",
+        "limits:\n  stub_keep_steps: 51\n",
+        "limits:\n  stub_keep_steps: -8\n",
+        "limits:\n  stub_min_tokens: 49\n",
+        "limits:\n  stub_min_tokens: 4001\n",
+        "limits:\n  stub_min_tokens: many\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn shaped_output_is_on_until_unset() {
+    assert!(parse(PROVIDERS).unwrap().limits().shape_output);
+    let set = parse("limits:\n  shape_output: false\n").unwrap().limits();
+    assert!(!set.shape_output);
+    for bad in [
+        "limits:\n  shape_output: 1\n",
+        "limits:\n  shape_output: yes please\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_graph_and_episodes_are_on_until_unset() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.project_graph && plain.episodes && plain.episode_lesson);
+    let set =
+        parse("limits:\n  project_graph: false\n  episodes: false\n  episode_lesson: false\n")
+            .unwrap()
+            .limits();
+    assert!(!set.project_graph && !set.episodes && !set.episode_lesson);
+    for bad in [
+        "limits:\n  project_graph: 1\n",
+        "limits:\n  episodes: sometimes\n",
+        "limits:\n  episode_lesson: yes please\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_graph_and_recall_tools_are_on_until_switched_off() {
+    use crate::{catalog::modes, tools::ToolKind};
+    let tools = [
+        ("project_graph", ToolKind::Files),
+        ("recall", ToolKind::Harness),
+    ];
+    let config = parse(PROVIDERS).unwrap();
+    for (name, kind) in tools {
+        for mode in [modes::MAIN, modes::PLAN] {
+            assert!(
+                config.mode_tool_enabled(mode, name, kind),
+                "{name} in {mode}"
+            );
+        }
+    }
+    let off = parse("tools:\n  project_graph: false\n  recall: false\n").unwrap();
+    for (name, kind) in tools {
+        assert!(!off.mode_tool_enabled(modes::MAIN, name, kind), "{name}");
+    }
+}
+
+#[test]
+fn the_kept_tail_is_on_and_stays_inside_its_bounds() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.compact_tail && plain.compact_early);
+    assert_eq!(plain.compact_tail_tokens, 16_000);
+    let set = parse(
+        "limits:\n  compact_tail: false\n  compact_early: false\n  compact_tail_tokens: 2000\n",
+    )
+    .unwrap()
+    .limits();
+    assert!(!set.compact_tail && !set.compact_early);
+    assert_eq!(set.compact_tail_tokens, 2_000);
+    let set = parse("limits:\n  compact_tail_tokens: 64000\n")
+        .unwrap()
+        .limits();
+    assert_eq!(set.compact_tail_tokens, 64_000);
+    for bad in [
+        "limits:\n  compact_tail: yes please\n",
+        "limits:\n  compact_early: 1\n",
+        "limits:\n  compact_tail_tokens: 1999\n",
+        "limits:\n  compact_tail_tokens: 64001\n",
+        "limits:\n  compact_tail_tokens: -16000\n",
+        "limits:\n  compact_tail_tokens: lots\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_failure_ladder_is_on_and_its_rungs_rise() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.failure_ladder);
+    let rungs = (
+        plain.failure_note_at,
+        plain.failure_replan_at,
+        plain.failure_stop_at,
+    );
+    assert_eq!(rungs, (3, 5, 8));
+    let set = parse("limits:\n  failure_ladder: false\n  failure_stop_at: 12\n").unwrap();
+    assert!(!set.limits().failure_ladder);
+    assert_eq!(set.limits().failure_stop_at, 12);
+    for bad in [
+        "limits:\n  failure_note_at: 1\n",
+        "limits:\n  failure_replan_at: 3\n",
+        "limits:\n  failure_stop_at: 5\n",
+        "limits:\n  failure_stop_at: 51\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_team_switches_are_off_and_its_ceilings_have_defaults() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(!plain.plan_graph && !plain.task_packets && !plain.member_worktrees);
+    assert!(!plain.peer_messages && !plain.procedures);
+    let ceilings = (
+        plain.team_at_once,
+        plain.team_max_steps,
+        plain.team_max_tokens,
+        plain.team_max_minutes,
+    );
+    assert_eq!(ceilings, (3, 400, 4_000_000, 120));
+    let set = parse(
+        "limits:\n  plan_graph: true\n  task_packets: true\n  member_worktrees: true\n  \
+         peer_messages: true\n  procedures: true\n",
+    )
+    .unwrap()
+    .limits();
+    assert!(set.plan_graph && set.task_packets && set.member_worktrees);
+    assert!(set.peer_messages && set.procedures);
+    for bad in [
+        "limits:\n  plan_graph: 1\n",
+        "limits:\n  procedures: maybe\n",
+        "limits:\n  team_unknown: 1\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_team_ceilings_accept_their_bounds_and_refuse_beyond() {
+    let limit = |key: &str, value: u64| parse(&format!("limits:\n  {key}: {value}\n"));
+    for (key, low, high) in [
+        ("team_at_once", 1, 8),
+        ("team_max_steps", 10, 5_000),
+        ("team_max_tokens", 100_000, 100_000_000),
+        ("team_max_minutes", 5, 1_440),
+    ] {
+        assert!(limit(key, low).is_ok(), "{key} {low}");
+        assert!(limit(key, high).is_ok(), "{key} {high}");
+        assert!(limit(key, low - 1).is_err(), "{key} {}", low - 1);
+        assert!(limit(key, high + 1).is_err(), "{key} {}", high + 1);
+    }
+}
+
+#[test]
+fn a_team_never_runs_more_at_once_than_agents_may_work() {
+    let limits = |yaml: &str| parse(yaml).unwrap().limits();
+    assert_eq!(
+        limits("limits:\n  max_agents_at_work: 8\n").team_members_at_once(),
+        3
+    );
+    // The default of 3 would be too many for a user who allows two agents; it is cut.
+    assert_eq!(
+        limits("limits:\n  max_agents_at_work: 2\n").team_members_at_once(),
+        2
+    );
+    let both = "limits:\n  max_agents_at_work: 4\n  team_at_once: 6\n";
+    assert_eq!(limits(both).team_members_at_once(), 4);
+}
+
+#[test]
+fn the_team_section_names_models_and_roles() {
+    let plain = parse(PROVIDERS).unwrap();
+    assert!(plain.team().model.is_none() && plain.team().models.is_empty());
+    let set = parse(
+        "team:\n  model: main/small\n  models:\n    code-reviewer: main/strong\n    general: main/small\n",
+    )
+    .unwrap();
+    assert_eq!(set.team().model.as_deref(), Some("main/small"));
+    assert_eq!(set.team().models["code-reviewer"], "main/strong");
+    let yaml = set.to_yaml().unwrap();
+    assert_eq!(parse(&yaml).unwrap().team(), set.team());
+    for bad in [
+        "team:\n  model: small\n",
+        "team:\n  model: '/small'\n",
+        "team:\n  models:\n    reviewer: nowhere\n",
+        "team:\n  models:\n    '../x': main/small\n",
+        "team:\n  models:\n    '': main/small\n",
+        "team:\n  speed: fast\n",
     ] {
         assert!(parse(bad).is_err(), "{bad:?}");
     }

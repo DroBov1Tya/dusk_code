@@ -95,6 +95,43 @@ const TIER_LOCAL_SVG: &[u8] = lucide!(
     r#"<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />"#
 );
 
+/// Lucide's shapes drawn thin, for a glyph shown large: 2 px at 40 px.
+macro_rules! lucide_thin {
+    ($shapes:literal) => {
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+            $shapes,
+            "</svg>"
+        )
+        .as_bytes()
+    };
+}
+
+/// The kinds of a Workshop listing in the place of a missing cover: the puzzle for a
+/// plugin, layers for a pack, an open book for a skill, a robot for an agent; and the
+/// cloud struck out for a cover that could not be fetched while offline.
+pub const KIND_PLUGIN: &str = "icons/dusk/kind-plugin.svg";
+pub const KIND_PACK: &str = "icons/dusk/kind-pack.svg";
+pub const KIND_SKILL: &str = "icons/dusk/kind-skill.svg";
+pub const KIND_AGENT: &str = "icons/dusk/kind-agent.svg";
+pub const CLOUD_OFF: &str = "icons/dusk/cloud-off.svg";
+
+const KIND_PLUGIN_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" />"#
+);
+const KIND_PACK_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" /><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" /><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" />"#
+);
+const KIND_SKILL_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M12 5v16" /><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z" />"#
+);
+const KIND_AGENT_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />"#
+);
+const CLOUD_OFF_SVG: &[u8] = lucide!(
+    r#"<path d="M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057" /><path d="M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78" /><path d="m2 2 20 20" />"#
+);
+
 /// A funnel: the Workshop's filters, the same shape as the browser's.
 pub const FILTER: &str = "icons/dusk/filter.svg";
 
@@ -139,6 +176,11 @@ impl AssetSource for Assets {
             TIER_COMMUNITY => return Ok(Some(Cow::Borrowed(TIER_COMMUNITY_SVG))),
             TIER_LOCAL => return Ok(Some(Cow::Borrowed(TIER_LOCAL_SVG))),
             FILTER => return Ok(Some(Cow::Borrowed(FILTER_SVG))),
+            KIND_PLUGIN => return Ok(Some(Cow::Borrowed(KIND_PLUGIN_SVG))),
+            KIND_PACK => return Ok(Some(Cow::Borrowed(KIND_PACK_SVG))),
+            KIND_SKILL => return Ok(Some(Cow::Borrowed(KIND_SKILL_SVG))),
+            KIND_AGENT => return Ok(Some(Cow::Borrowed(KIND_AGENT_SVG))),
+            CLOUD_OFF => return Ok(Some(Cow::Borrowed(CLOUD_OFF_SVG))),
             _ => {}
         }
         gpui_kit::assets::Assets.load(path)

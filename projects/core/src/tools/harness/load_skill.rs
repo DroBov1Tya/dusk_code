@@ -92,6 +92,14 @@ impl Tool for LoadSkill {
             .any(|skill| context.config.skill_enabled(&skill.name))
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
+    fn read_only(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: LoadSkillArguments = parse_arguments(arguments)?;

@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 #[cfg(target_os = "macos")]
 use super::approvals::WindowAccess;
 use super::{
+    Shaped,
     approvals::{Approvals, Request},
     scope::{Place, ToolScope},
 };
@@ -37,6 +38,9 @@ pub struct ToolContext {
     pub state: Option<Arc<crate::state::State>>,
     /// The thread the tool acts for, with `state`.
     pub thread_id: String,
+    /// The indexer of the project graph; `None` where no runtime runs the tools, and in
+    /// a chat that leaves nothing behind.
+    pub graph: Option<Arc<crate::project::graph::Indexer>>,
 }
 
 impl ToolContext {
@@ -183,6 +187,12 @@ pub trait Tool: Send + Sync {
     /// JSON Schema of the arguments object.
     fn parameters(&self) -> Value;
 
+    /// The schema the model is shown. It differs from `parameters`, which a call is
+    /// checked against, only for a tool whose arguments depend on a setting.
+    fn offered_parameters(&self, _context: &ToolContext) -> Value {
+        self.parameters()
+    }
+
     /// A tool with nothing to offer right now is not shown to the model.
     fn available(&self, _context: &ToolContext) -> bool {
         true
@@ -192,6 +202,28 @@ pub trait Tool: Send + Sync {
     /// plugin hooks judge every one as if it were called alone. An error rejects the call.
     fn calls_within(&self, _arguments: &Value) -> Result<Vec<(String, Value)>> {
         Ok(Vec::new())
+    }
+
+    /// Running the call again after its result was lost changes nothing the first run
+    /// did not: it only reads, or sets the same state again.
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        false
+    }
+
+    /// The call changes nothing anywhere (no file, no state, no process, nothing shown to
+    /// the user) and does not depend on another call of the same step, so it may run
+    /// together with the read-only calls next to it. Stricter than `repeatable`: a memory
+    /// rewrite is repeatable but not read-only. A read-only call must be repeatable, since
+    /// a restart runs the open calls of such a group again.
+    fn read_only(&self, _arguments: &Value) -> bool {
+        false
+    }
+
+    /// The result as the model is to be sent it when that is shorter than what is
+    /// stored (`limits.shape_output`); `None` sends it whole. Decided from the call and
+    /// its result alone, so the same call always gives the same text.
+    fn shape(&self, _arguments: &Value, _result: &super::registry::ToolResult) -> Option<Shaped> {
+        None
     }
 
     /// An error is shown to the model as the result, so it can correct itself.

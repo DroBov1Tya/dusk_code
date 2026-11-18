@@ -105,6 +105,7 @@ per_thread! {
     goal: Option<Goal>,
     turn_started_at: Option<i64>,
     last_turn_duration_ms: Option<u64>,
+    turn_spend: Option<dusk_protocol::thread::TurnSpend>,
     turn_running: bool,
     compacting: bool,
     sent: Vec<String>,
@@ -268,6 +269,7 @@ impl App {
         self.tabs[index].unseen = false;
         self.tabs[index].closed = false;
         self.jobs_stale = true;
+        self.forget_overview();
         // What the last frame drew belongs to the thread shown before.
         self.layout = None;
         self.tail_text.clear();
@@ -284,7 +286,7 @@ impl App {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::app::Entry;
     use dusk_protocol::{
@@ -294,7 +296,7 @@ mod tests {
         thread::ThreadEvent,
     };
 
-    fn app() -> App {
+    pub(crate) fn app() -> App {
         App::new(Status {
             model: None,
             discovering_model: false,
@@ -317,6 +319,7 @@ mod tests {
             chatgpt_model: false,
             plugin_parts: Default::default(),
             limits: None,
+            provider_health: Vec::new(),
             artifacts_dir: Default::default(),
             workspace_dir: Default::default(),
         })
@@ -384,5 +387,25 @@ mod tests {
         assert_eq!(app.forget_closed(), ["a"]);
         assert_eq!(app.tab_of("a"), None);
         assert_eq!(app.thread_id.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn a_retry_is_one_footer_state_that_leaves_no_line_and_goes_with_the_answer() {
+        let retrying = |attempt| ThreadEvent::Retrying {
+            attempt,
+            error: "timeout".into(),
+            kind: dusk_protocol::model::ProviderErrorKind::Overloaded,
+            wait_ms: 1000,
+            max_attempts: Some(3),
+        };
+        let mut app = app();
+        let lines = app.transcript.entries.len();
+        app.apply(retrying(1));
+        app.apply(retrying(2));
+        assert!(matches!(&app.activity, Activity::Retrying(retry, _) if retry.attempt == 2));
+        assert_eq!(app.transcript.entries.len(), lines);
+
+        app.apply(text("hi"));
+        assert!(app.activity == Activity::Writing);
     }
 }

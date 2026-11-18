@@ -141,3 +141,186 @@ fn answers_and_job_results_are_distinct_in_history_and_live_events() {
         matches!(&fallback.items[0].item, Item::Job(result) if result.output == "unrecognised")
     );
 }
+
+#[test]
+fn one_retry_row_is_replaced_counts_down_and_goes_when_the_call_answers() {
+    let retrying = |attempt| ThreadEvent::Retrying {
+        attempt,
+        error: "timeout".into(),
+        kind: dusk_protocol::model::ProviderErrorKind::Overloaded,
+        wait_ms: 8000,
+        max_attempts: Some(3),
+    };
+    let mut chat = ChatData::default();
+    chat.apply(retrying(1));
+    chat.apply(retrying(2));
+    // No notice per attempt; the row holds the newest.
+    assert!(chat.items.is_empty());
+    let line = chat.retry_line(0).expect("a row");
+    assert!(
+        line.ends_with("attempt 3 of 3 \u{00B7} next in 8 s"),
+        "{line}"
+    );
+    assert!(
+        chat.retry_line(7_500)
+            .expect("a row")
+            .ends_with("next in 1 s")
+    );
+    assert!(
+        chat.retry_line(8_000)
+            .expect("a row")
+            .ends_with("trying now")
+    );
+
+    chat.apply(ThreadEvent::Model(ModelEvent::Text("hi".into())));
+    assert_eq!(chat.retry_line(0), None);
+}
+
+fn show(id: &str, arguments: serde_json::Value) -> ToolCall {
+    ToolCall {
+        id: id.into(),
+        name: dusk_protocol::thread::SHOW_TOOL.into(),
+        arguments,
+    }
+}
+
+fn tool_message(id: &str, content: &str) -> Message {
+    let mut message = message(MessageRole::Tool, content);
+    message.tool_call_id = Some(id.into());
+    message
+}
+
+/// The chat a `show` call and its result make, live and read back from history.
+fn live_and_restored(call: ToolCall, result: &str) -> [ChatData; 2] {
+    let mut assistant = message(MessageRole::Assistant, "Here is the plan");
+    assistant.tool_calls.push(call.clone());
+    let history = [
+        message(MessageRole::User, "plan it"),
+        assistant,
+        tool_message(&call.id, result),
+        message(MessageRole::Assistant, "Done"),
+    ];
+    let mut live = ChatData::default();
+    live.apply(ThreadEvent::UserMessage(message(
+        MessageRole::User,
+        "plan it",
+    )));
+    live.apply(ThreadEvent::Model(ModelEvent::Text(
+        "Here is the plan".into(),
+    )));
+    live.apply(ThreadEvent::ToolStarted(call.clone()));
+    live.apply(ThreadEvent::ToolFinished {
+        call_id: call.id,
+        result: ToolResult::text(result.into()),
+    });
+    live.apply(ThreadEvent::Model(ModelEvent::Text("Done".into())));
+    [ChatData::from_history(&history), live]
+}
+
+fn kinds(chat: &ChatData) -> Vec<&'static str> {
+    chat.items
+        .iter()
+        .map(|entry| match &entry.item {
+            Item::User(_) => "user",
+            Item::Assistant { .. } => "answer",
+            Item::Tool(_) => "tool",
+            Item::Block(_) => "block",
+            _ => "other",
+        })
+        .collect()
+}
+
+fn flow(title: &str, line: &str) -> serde_json::Value {
+    serde_json::json!({ "flow": { "layers": [
+        { "title": title, "cards": [{ "title": "card", "line": line }] },
+        { "title": "next", "emphasis": true },
+    ] } })
+}
+
+#[test]
+fn a_shown_block_takes_its_steps_place_in_order_live_and_restored() {
+    let checks = serde_json::json!({ "checks": { "items": [
+        { "name": "unit tests", "state": "passed", "counts": { "passed": 2, "failed": 0, "total": 2 } },
+    ] } });
+    for arguments in [
+        flow("Build", "compile"),
+        checks,
+        serde_json::json!({ "choices": { "labels": ["Yes", "No"] } }),
+    ] {
+        let call = show("s", arguments);
+        let block = Block::asked(&call).expect("a block within caps");
+        let chats = live_and_restored(call, &block.text());
+        for chat in &chats {
+            assert_eq!(kinds(chat), ["user", "answer", "block", "answer"]);
+            assert!(matches!(&chat.items[2].item, Item::Block(shown) if *shown == block));
+        }
+        assert!(
+            chats[0]
+                .items
+                .iter()
+                .map(|e| &e.item)
+                .eq(chats[1].items.iter().map(|e| &e.item))
+        );
+    }
+}
+
+#[test]
+fn a_show_call_that_was_not_shown_stays_a_step() {
+    let call = show("s", flow("Build", "compile"));
+    for chat in live_and_restored(call, "the show tool is switched off") {
+        assert_eq!(kinds(&chat), ["user", "answer", "tool", "answer"]);
+        assert!(
+            matches!(&chat.items[2].item, Item::Tool(tool) if tool.output == "the show tool is switched off")
+        );
+    }
+    // Another tool whose answer happens to start with a block's heading stays a step too.
+    let mut chat = ChatData::default();
+    chat.apply(ThreadEvent::ToolStarted(call_with_flow_arguments()));
+    chat.apply(ThreadEvent::ToolFinished {
+        call_id: "b".into(),
+        result: ToolResult::text("Flow:\nBuild".into()),
+    });
+    assert_eq!(kinds(&chat), ["tool"]);
+}
+
+fn call_with_flow_arguments() -> ToolCall {
+    ToolCall {
+        id: "b".into(),
+        name: "bash".into(),
+        arguments: flow("Build", "compile"),
+    }
+}
+
+#[test]
+fn hostile_block_content_stays_plain_text() {
+    let script = "<script>alert(1)</script>";
+    let link = "[open](javascript:alert(1))";
+    let call = show("s", flow(script, link));
+    let block = Block::asked(&call).expect("markup is plain text within caps");
+    for chat in live_and_restored(call, &block.text()) {
+        let Item::Block(Block::Flow(shown)) = &chat.items[2].item else {
+            panic!("no flow");
+        };
+        let layer = &shown.layers()[0];
+        assert_eq!(layer.title.as_str(), script);
+        assert_eq!(
+            layer.cards()[0].line.as_ref().map(|l| l.as_str()),
+            Some(link)
+        );
+    }
+
+    // Over a cap, several lines, or control characters: refused by the protocol, so the
+    // call stays a step whose text is clipped, and nothing panics.
+    let long = "x".repeat(100_000);
+    for title in [long.as_str(), "one\ntwo", "bell\u{7}", "\u{202e}reversed"] {
+        let call = show("s", flow(title, "line"));
+        assert!(Block::asked(&call).is_none());
+        for chat in live_and_restored(call, "Flow:\nwhatever the tool said") {
+            assert_eq!(kinds(&chat), ["user", "answer", "tool", "answer"]);
+            let Item::Tool(tool) = &chat.items[2].item else {
+                panic!("no step");
+            };
+            assert!(tool.arguments.chars().count() <= dusk_protocol::thread::SHOWN_CHARS + 4);
+        }
+    }
+}

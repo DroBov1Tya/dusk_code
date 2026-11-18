@@ -6,12 +6,13 @@ use crate::runtime::jobs::{JobManager, JobOwner};
 use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result, ensure};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::init::create_private_dir;
 use crate::platform::Platform;
 use crate::runtime::ThreadHandle;
 use crate::runtime::agent::Mailboxes;
+use crate::runtime::team;
 use crate::runtime::thread::project;
 use crate::runtime::thread::start::{self, project_dir, start_thread};
 use crate::runtime::{ThreadLock, ThreadRunner, ThreadSetup, model_choice::ModelChoice};
@@ -24,8 +25,8 @@ use crate::{
     state::{Identity, State},
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
-        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry,
-        ToolScope,
+        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Show, Tasks,
+        ToolRegistry, ToolScope, console::project_folder,
     },
 };
 
@@ -50,6 +51,13 @@ pub struct Launcher {
     pub threads: Arc<parking_lot::Mutex<tokio::task::JoinSet<()>>>,
     /// What plugins run when something happens in a thread.
     pub hooks: Arc<crate::plugins::Hooks>,
+    /// How each provider's calls go, learned by every thread's calls.
+    pub health: Arc<crate::providers::Health>,
+    /// Keeps the graph of saved projects current; `None` for chats that leave nothing
+    /// behind.
+    pub graph: Option<Arc<crate::project::graph::Indexer>>,
+    /// What the teams that run plans keep in memory: a lock and caches.
+    pub(crate) team: Arc<crate::runtime::team::Teams>,
     /// Its chats leave nothing behind: the database is in memory, their files are in the
     /// system's temporary folder, and they write no memory.
     pub temporary: bool,
@@ -76,13 +84,18 @@ impl Launcher {
         agent: Option<&Identity>,
         depth: usize,
     ) -> Result<ThreadSetup> {
+        let scope = Arc::new(self.scope(cwd, workspace)?);
+        // The thread's task starts: its project is looked over, in the background.
+        if let Some(graph) = &self.graph {
+            graph.refresh(project_folder(&scope));
+        }
         Ok(ThreadSetup {
             state: Arc::clone(&self.state),
             model: Arc::clone(&self.model),
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
-            scope: Arc::new(self.scope(cwd, workspace)?),
+            scope,
             project: project::context(cwd),
             compact_prompt: self.paths.compact_prompt(),
             fork_prompt: self.paths.fork_prompt(),
@@ -93,6 +106,7 @@ impl Launcher {
             ends_when_idle: false,
             lock: ThreadLock::take(workspace)?,
             hooks: Arc::clone(&self.hooks),
+            health: Arc::clone(&self.health),
         })
     }
 
@@ -108,6 +122,7 @@ impl Launcher {
         tools.approvals = Some(Arc::clone(&self.approvals));
         tools.platform = self.platform;
         tools.state = Some(Arc::clone(&self.state));
+        tools.graph = self.graph.clone();
         tools.thread_id = thread_id.to_owned();
         for server in self.mcp.ready() {
             let pictures = ArtifactStore::new(self.paths.artifacts_dir());
@@ -123,10 +138,15 @@ impl Launcher {
         tools.add(Box::new(Jobs(owner)));
         let history = ReadHistory::new(Arc::clone(&self.state), thread_id.to_owned());
         tools.add(Box::new(history));
-        tools.add(Box::new(Tasks::new(
-            Arc::clone(&self.state),
-            thread_id.to_owned(),
-        )));
+        let tasks = Tasks::new(Arc::clone(&self.state), thread_id.to_owned());
+        // Only a chat leads a team: its `tasks` is the plan the core runs, when the
+        // switch and the mode say so.
+        tools.add(Box::new(match depth {
+            0 => tasks
+                .lead(Arc::clone(&self.agents))
+                .with_team(Arc::new(team::Runner::new(self.clone()))),
+            _ => tasks,
+        }));
         // A temporary chat reads what is remembered and adds nothing to it.
         if !self.temporary {
             tools.add(Box::new(Remember::user(self.paths.rules_root())));
@@ -161,6 +181,7 @@ impl Launcher {
         // Only a chat has the user to ask.
         if depth == 0 {
             tools.add(Box::new(AskUser));
+            tools.add(Box::new(Show));
             tools.add(Box::new(GoalTool::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
@@ -214,8 +235,8 @@ impl Launcher {
     }
 
     /// Picks a stored thread up again, with its tools working in `cwd`. What it left
-    /// unfinished is closed first: a running turn ends as interrupted, and messages sent
-    /// before a crash are taken in.
+    /// unfinished is settled first: a running turn goes on or waits for the user (see
+    /// `Agent::recover`), and messages sent before a crash are taken in.
     pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
         let thread = self
             .state
@@ -233,7 +254,14 @@ impl Launcher {
             .adopt_thread(thread_id, &project_dir(cwd))
             .await?;
         info!("thread {thread_id} resumed in {}", workspace.display());
-        self.run_thread(thread_id.to_owned(), &workspace, cwd).await
+        let handle = self
+            .run_thread(thread_id.to_owned(), &workspace, cwd)
+            .await?;
+        // Its agents a stopped process left at work go on, or tell it they stopped.
+        if let Err(error) = self.wake_unfinished(Some(thread_id), cwd).await {
+            warn!("thread {thread_id}: cannot start its agents left at work: {error:#}");
+        }
+        Ok(handle)
     }
 
     /// One task per thread: two would answer the same messages twice.
@@ -278,5 +306,127 @@ impl Launcher {
             input,
             output,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use serde_json::{Value, json};
+
+    use crate::{init::paths::Paths, runtime::Runtime};
+
+    /// Every built-in tool, whether a call whose result was lost may run again, and
+    /// whether the call only reads, so it may run with the reads next to it. A tool added
+    /// without a decision here fails the test.
+    const DECISIONS: &[(&str, bool, bool)] = &[
+        ("agent_state", true, false),
+        ("ask_agent", false, false),
+        ("ask_user", true, false),
+        ("changes", true, true),
+        ("click", false, false),
+        ("computer_actions", false, false),
+        ("display_audio", true, false),
+        ("display_image", true, false),
+        ("goal", false, false), // true for the show action only; see `argument_dependent_tools`
+        ("jobs", false, false), // true for list, status and output only, both ways
+        ("load_skill", true, true),
+        ("message_parent", false, false),
+        ("plan_edit", true, false),
+        ("project_graph", true, true),
+        ("press_keys", false, false),
+        ("read_file", true, true),
+        ("read_history", true, true),
+        ("recall", true, true),
+        ("remember", true, false),
+        ("remember_project", true, false),
+        ("run_command", false, false),
+        ("screenshot", true, false),
+        ("scroll", false, false),
+        ("search_files", true, true),
+        ("show", true, false),
+        ("tasks", false, false),
+        ("type_text", false, false),
+        ("window_session", false, false),
+    ];
+
+    /// The registries a chat (depth 0) and an agent (depth 1) get, as the launcher builds
+    /// them; the first call is `repeatable` with the arguments each test needs.
+    async fn registries(name: &str) -> (crate::tools::ToolRegistry, crate::tools::ToolRegistry) {
+        let root =
+            std::env::temp_dir().join(format!("dusk-repeatable-{name}-{}", std::process::id()));
+        let paths = Paths::new(root.join("config"), root.join("work"));
+        let runtime = Runtime::start(paths, Some(root.join("state.db")))
+            .await
+            .unwrap();
+        let launcher = &runtime.launcher;
+        (launcher.tools("t", None, 0), launcher.tools("t", None, 1))
+    }
+
+    #[tokio::test]
+    async fn every_built_in_tool_has_a_repeat_decision() {
+        let (chat, agent) = registries("table").await;
+        let mut built: BTreeSet<String> = BTreeSet::new();
+        built.extend(chat.names().map(str::to_owned));
+        built.extend(agent.names().map(str::to_owned));
+        let decided: BTreeSet<String> = DECISIONS.iter().map(|(n, _, _)| (*n).to_owned()).collect();
+        let undecided: Vec<_> = built.difference(&decided).collect();
+        assert!(undecided.is_empty(), "no repeat decision for {undecided:?}");
+        // window_session exists on macOS only.
+        let missing: Vec<_> = decided
+            .difference(&built)
+            .filter(|name| cfg!(target_os = "macos") || *name != "window_session")
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "the table names unknown tools {missing:?}"
+        );
+        for (name, repeatable, read_only) in DECISIONS {
+            // A group of reads is run again after a restart, so a read-only call must be
+            // one that may run again.
+            assert!(
+                *repeatable || !read_only,
+                "{name} reads only, yet is not repeatable"
+            );
+            for registry in [&chat, &agent] {
+                if registry.names().any(|n| n == *name) {
+                    let got = registry.repeatable(name, &json!({}));
+                    assert_eq!(got, *repeatable, "{name}");
+                    let got = registry.read_only(name, &json!({}));
+                    assert_eq!(got, *read_only, "{name} read-only");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn argument_dependent_tools_repeat_only_for_reads() {
+        let (chat, _) = registries("arguments").await;
+        let cases: [(&str, Value, bool); 8] = [
+            ("goal", json!({"action": "show"}), true),
+            ("goal", json!({"action": "propose"}), false),
+            ("goal", json!({"action": "request_verification"}), false),
+            ("jobs", json!({"action": "list"}), true),
+            ("jobs", json!({"action": "status", "job_id": "j"}), true),
+            ("jobs", json!({"action": "output", "job_id": "j"}), true),
+            ("jobs", json!({"action": "cancel", "job_id": "j"}), false),
+            ("jobs", json!({}), false),
+        ];
+        for (name, arguments, expected) in cases {
+            assert_eq!(
+                chat.repeatable(name, &arguments),
+                expected,
+                "{name} {arguments}"
+            );
+            assert_eq!(
+                chat.read_only(name, &arguments),
+                // Only the job reads are read-only; goal show is repeatable but writes.
+                expected && name == "jobs",
+                "{name} {arguments} read-only"
+            );
+        }
+        assert!(!chat.repeatable("no_such_tool", &json!({})));
+        assert!(!chat.read_only("no_such_tool", &json!({})));
     }
 }
