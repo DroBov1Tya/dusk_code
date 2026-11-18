@@ -15,10 +15,17 @@ pub async fn create_branch(
     project: &Project,
     name: &str,
     base: Option<&str>,
+    switch: bool,
 ) -> Result<GitOutcome> {
     let name = check::branch(name)?;
     let base = base.map(check::branch).transpose()?;
-    let mut args = vec!["branch", "--no-track", "--end-of-options", name];
+    // `git switch` carries the work tree's changes along and refuses to lose any.
+    let create = format!("--create={name}");
+    let mut args = if switch {
+        vec!["switch", "--no-track", &create, "--end-of-options"]
+    } else {
+        vec!["branch", "--no-track", "--end-of-options", name]
+    };
     args.extend(base);
     done(project, &args).await
 }

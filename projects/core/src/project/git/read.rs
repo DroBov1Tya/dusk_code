@@ -85,7 +85,7 @@ async fn ahead_behind(dir: &Path) -> Option<(u64, u64)> {
 /// The https page of a remote such as `git@github.com:owner/repo.git`,
 /// `ssh://git@host/owner/repo` or `https://user:key@host/owner/repo.git`. Credentials
 /// are dropped; a host or path with anything but plain characters gives none.
-fn web_page(remote: &str) -> Option<String> {
+pub(in crate::project) fn web_page(remote: &str) -> Option<String> {
     let rest = remote
         .strip_prefix("https://")
         .or_else(|| remote.strip_prefix("http://"))

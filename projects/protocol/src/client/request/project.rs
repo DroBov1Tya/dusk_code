@@ -41,6 +41,16 @@ pub enum ProjectRequest {
         id: String,
         request: GitRequest,
     },
+    /// The work tree's changes and the pull requests of the repository, answered beside
+    /// the loop. The asking client then watches the project, in place of the one it
+    /// watched before: while it stays attached the core reads it again, often while
+    /// checks run and seldom otherwise, and sends `Event::RepositoryStatus` on a change.
+    RepositoryStatus {
+        id: String,
+    },
+    /// The pull requests of each saved project's current branch, from what the core
+    /// last read; a project not read yet is read in the background.
+    PullSummaries,
     /// The entries of `path`, a folder relative to the project's, `""` for its top.
     Files {
         id: String,

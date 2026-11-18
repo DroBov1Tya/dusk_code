@@ -253,6 +253,8 @@ fn project(request: &Project) -> Area {
         // repositories. A scope bound to threads takes none of them; push and discard
         // are asked of the user by the client before they are sent.
         | Project::Repository { .. }
+        | Project::RepositoryStatus { .. }
+        | Project::PullSummaries
         | Project::Files { .. }
         | Project::Outputs
         | Project::Env { .. }

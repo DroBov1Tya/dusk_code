@@ -122,7 +122,7 @@ struct RawAuthor {
 
 /// A check run (`name`, `status`, `conclusion`) or a commit status (`context`, `state`).
 #[derive(Deserialize)]
-struct RawCheck {
+pub(super) struct RawCheck {
     #[serde(default)]
     name: String,
     #[serde(default)]
@@ -144,7 +144,7 @@ impl RawCheck {
         }
     }
 
-    fn state(&self) -> CheckState {
+    pub(super) fn state(&self) -> CheckState {
         let failed = [
             "FAILURE",
             "CANCELLED",

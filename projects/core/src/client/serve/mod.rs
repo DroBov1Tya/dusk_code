@@ -9,6 +9,7 @@ mod plan_tests;
 mod plugin;
 mod projects;
 mod publish;
+mod pulls;
 mod schedules;
 mod settings;
 mod status;
@@ -130,6 +131,8 @@ pub struct Server {
     status: Arc<watch::Sender<Status>>,
     threads: HashMap<String, OpenThread>,
     terminals: Terminals,
+    /// The repository status of the projects clients watch.
+    pulls: crate::project::forge::Tracker,
 }
 
 impl Server {
@@ -144,6 +147,7 @@ impl Server {
             status: Arc::new(sender),
             threads: HashMap::new(),
             terminals: Terminals::new(crate::terminal::login_shell()),
+            pulls: crate::project::forge::Tracker::default(),
         };
         (server, receiver)
     }
@@ -177,6 +181,8 @@ impl Server {
         // The first tick is at once, so runs missed while the app was closed start now.
         let mut timetable = tokio::time::interval(SCHEDULE_PERIOD);
         timetable.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut repositories = tokio::time::interval(crate::project::forge::TRACK_PERIOD);
+        repositories.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let last = loop {
             tokio::select! {
                 call = calls.recv() => match call {
@@ -201,6 +207,9 @@ impl Server {
                             Request::Project(ProjectRequest::Repository { id, request }) => {
                                 self.repository(id, request, reply)
                             }
+                            Request::Project(ProjectRequest::RepositoryStatus { id }) => {
+                                self.repository_status(client, id, reply)
+                            }
                             request => {
                                 self.caller = client;
                                 let mut response = match self.handle(request).await {
@@ -222,6 +231,7 @@ impl Server {
                     self.close_orphans().await;
                 }
                 _ = timetable.tick() => self.run_due_schedules().await,
+                _ = repositories.tick() => self.track_repositories(),
             }
         };
         self.terminals.close_all();

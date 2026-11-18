@@ -16,6 +16,11 @@ pub(super) const MISSING: &str = "GitHub CLI is not installed or signed in";
 /// what it said, plain.
 pub(super) async fn gh(program: &str, dir: &Path, args: &[&str]) -> Result<String> {
     ready(program, dir).await?;
+    output(program, dir, args).await
+}
+
+/// Runs `gh` without asking first whether it is signed in, for a caller that did.
+pub(super) async fn output(program: &str, dir: &Path, args: &[&str]) -> Result<String> {
     let output = run(program, dir, args).await?;
     if !output.success {
         bail!("gh: {}", output.message());
@@ -24,7 +29,7 @@ pub(super) async fn gh(program: &str, dir: &Path, args: &[&str]) -> Result<Strin
 }
 
 /// `gh` is installed and signed in; otherwise `MISSING`, whatever the cause.
-async fn ready(program: &str, dir: &Path) -> Result<()> {
+pub(super) async fn ready(program: &str, dir: &Path) -> Result<()> {
     match run(program, dir, &["auth", "status"]).await {
         Ok(output) if output.success => Ok(()),
         _ => bail!(MISSING),
