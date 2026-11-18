@@ -170,7 +170,7 @@ impl Render for Workspace {
             // follows the pointer.
             .when(dragging, |root| {
                 root.on_mouse_move(cx.listener(|ws, event: &MouseMoveEvent, window, cx| {
-                    ws.drag_terminal(event, cx);
+                    ws.drag_terminal(event, window, cx);
                     ws.drag_plugin_dock(event, window, cx);
                 }))
                 .on_mouse_up(

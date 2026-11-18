@@ -211,6 +211,7 @@ impl Workspace {
             replied: None,
             pins: Default::default(),
             list_chat: None,
+            texts: Default::default(),
             measure_again: false,
         };
         workspace.pump_events(events, cx);

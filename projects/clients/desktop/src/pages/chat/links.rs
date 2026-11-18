@@ -3,7 +3,10 @@
 //! One scheme of our own: a path in code, such as `src/main.rs:42`, becomes a link that
 //! opens the file in the viewer. The core reads it, and only inside a project.
 
-use gpui_kit::{component::text::TextView, *};
+use gpui_kit::{
+    component::text::{TextView, TextViewState},
+    *,
+};
 
 use crate::workspace::Workspace;
 
@@ -16,17 +19,26 @@ const EXTENSIONS: &[&str] = &[
 ];
 
 pub fn markdown(id: impl Into<ElementId>, text: String) -> TextView {
-    view(id, linkify(&text, false))
+    view(TextView::markdown(id, linkify(&text, false)))
 }
 
 /// The model's own answer: as `markdown`, and its `{{tone: label}}` drawn as labels.
 pub fn answer(id: impl Into<ElementId>, text: String) -> TextView {
-    view(id, linkify(&text, true)).markdown_extensions(super::marks::extensions())
+    view(TextView::markdown(id, linkify(&text, true)))
+        .markdown_extensions(super::marks::extensions())
 }
 
-fn view(id: impl Into<ElementId>, text: String) -> TextView {
-    TextView::markdown(id, text)
-        .selectable(true)
+/// A view of a state kept apart, set up as `markdown` or, `marked`, as `answer`.
+pub fn kept(state: &Entity<TextViewState>, marked: bool) -> TextView {
+    let view = view(TextView::new(state));
+    match marked {
+        true => view.markdown_extensions(super::marks::extensions()),
+        false => view,
+    }
+}
+
+fn view(view: TextView) -> TextView {
+    view.selectable(true)
         .code_block_actions(super::code::actions)
         .on_link_click(|url, _, window, cx| {
             if let Some(path) = url.strip_prefix(FILE_SCHEME) {
@@ -57,7 +69,7 @@ fn is_web(url: &str) -> bool {
 /// Turns each path in a single-backtick span into a link of ours and, when `marked`, each
 /// label in the prose around them into one too. Fenced code is left alone, and our schemes
 /// are cut from anything the model wrote itself, so only what we made can carry them.
-fn linkify(text: &str, marked: bool) -> String {
+pub fn linkify(text: &str, marked: bool) -> String {
     let text = text
         .replace(FILE_SCHEME, "dusk-file-")
         .replace(super::marks::SCHEME, "dusk-mark-");
