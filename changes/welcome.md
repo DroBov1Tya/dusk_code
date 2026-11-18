@@ -1,0 +1,2 @@
+Added
+The desktop app greets a clean install, one with no provider connected, with one large "I want to connect my own AI" button; it opens a form with only an address and a token, which the core checks and saves as an OpenAI-compatible provider named after the address's host, the token going to the keychain. "Not now" hides it until the next start, and it does not come back once a provider is connected.

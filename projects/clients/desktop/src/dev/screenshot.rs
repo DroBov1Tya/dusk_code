@@ -36,6 +36,8 @@
 //!   `viewer=picture`: the same picture large over the window;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
+//! - `fake=welcome`: no providers, so the chat page shows the welcome; `welcome=form`: its
+//!   form, as the button opens it; `welcome=address:URL`: type the address in it;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
 //! - `terminal`: show or hide the terminal panel; `run=COMMAND`: type the command in its
 //!   shown shell, with Return;
@@ -484,6 +486,12 @@ fn act(
             });
             cx.notify();
         }
+        "fake" if value == "welcome" => {
+            ws.providers.clear();
+            ws.center = Center::Chat;
+            ws.welcome.step = crate::pages::welcome::Step::Intro;
+            cx.notify();
+        }
         // Two providers, to look at a row's switch and buttons.
         "fake" if value == "providers" => {
             use dusk_protocol::model::ProviderStatus;
@@ -775,6 +783,10 @@ fn act(
             cx.notify();
         }
         "theme" => crate::ui::theme::change(cx, |prefs| prefs.theme = value.to_owned()),
+        "welcome" => match value.split_once(':') {
+            Some(("address", address)) => ws.welcome_address(address, window, cx),
+            _ => ws.welcome_form(window, cx),
+        },
         "file" => {
             let (path, line) = match value.rsplit_once(':') {
                 Some((path, line)) if line.parse::<u32>().is_ok() => (path, line.parse().ok()),
