@@ -96,6 +96,8 @@ pub fn busy(listing: &Listing, doing: &'static str) -> Button {
     Button::new(id("busy", listing))
         .ghost()
         .min_w(px(WIDTH))
+        // The kit turns the ring only in the place of an icon.
+        .icon(Icon::new(IconName::LoaderCircle))
         .loading(true)
         .label(doing)
         .disabled(true)
