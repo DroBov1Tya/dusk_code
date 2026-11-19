@@ -90,8 +90,14 @@ impl Confinement {
 }
 
 /// The developer tools `xcrun` starts: Xcode's chosen folder and the private frameworks
-/// its tools run from. Empty where there are none.
+/// its tools run from. Empty where there are none. Asked once: every plugin scan needs
+/// it, and Xcode's choice seldom changes while the core runs.
 pub fn developer_tools() -> Vec<PathBuf> {
+    static FOLDERS: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+    FOLDERS.get_or_init(find_developer_tools).clone()
+}
+
+fn find_developer_tools() -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         let mut folders = Vec::new();

@@ -9,4 +9,3 @@ mod signatures;
 mod stream;
 
 pub use client::Google;
-pub use stream::GenerateStream;

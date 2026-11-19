@@ -34,7 +34,7 @@ use tokio::{
 };
 use tracing::debug;
 
-pub use policy::{Key, Origin, Policy, is_public};
+pub use policy::{Key, Origin, Policy};
 
 /// A request's line and headers; more is not a request a plugin needs to send.
 const MAX_HEAD: usize = 64 * 1024;
