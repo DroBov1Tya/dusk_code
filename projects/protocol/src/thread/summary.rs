@@ -23,6 +23,11 @@ pub struct Thread {
     /// It is kept in memory only and is gone when the core stops.
     #[serde(default)]
     pub temporary: bool,
+    /// The id of the token that started the chat; `None` for the local clients' chats. It is
+    /// the token id for now; Phase 3 maps it to the name before any non-full scope sees
+    /// other chats.
+    #[serde(default)]
+    pub owner: Option<String>,
 }
 
 /// A message found by searching the text of every chat.

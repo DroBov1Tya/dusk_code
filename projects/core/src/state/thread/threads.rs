@@ -157,6 +157,49 @@ impl State {
         .collect()
     }
 
+    /// Records which token owns a chat, once. Only the New, NewTemporary, Fork and ForkAt
+    /// handlers call it, for the chat they just created. It fails for an unknown thread, a
+    /// subagent thread, and a chat another token owns; the same token again is a no-op.
+    pub async fn set_thread_owner(&self, thread_id: &str, owner: &str) -> Result<()> {
+        ensure!(!owner.trim().is_empty(), "thread owner is empty");
+        let changed = sqlx::query(
+            "UPDATE threads SET owner = ?
+             WHERE id = ? AND parent_thread_id IS NULL AND (owner IS NULL OR owner = ?)",
+        )
+        .bind(owner)
+        .bind(thread_id)
+        .bind(owner)
+        .execute(&self.pool)
+        .await
+        .context("store the thread's owner")?
+        .rows_affected();
+        ensure!(changed == 1, "thread cannot take this owner");
+        Ok(())
+    }
+
+    /// The id of the token that owns the chat, `None` when no token does.
+    pub async fn thread_owner(&self, thread_id: &str) -> Result<Option<String>> {
+        let owner: Option<Option<String>> =
+            sqlx::query_scalar("SELECT owner FROM threads WHERE id = ?")
+                .bind(thread_id)
+                .fetch_optional(&self.pool)
+                .await
+                .context("read the thread's owner")?;
+        Ok(owner.flatten())
+    }
+
+    /// The chats a token owns, oldest first. Subagent threads are not listed.
+    pub async fn threads_owned_by(&self, owner: &str) -> Result<Vec<String>> {
+        sqlx::query_scalar(
+            "SELECT id FROM threads WHERE owner = ? AND parent_thread_id IS NULL
+             ORDER BY created_at, id",
+        )
+        .bind(owner)
+        .fetch_all(&self.pool)
+        .await
+        .context("list the threads a token owns")
+    }
+
     /// The subagent threads a thread started, oldest first.
     pub async fn agent_threads(&self, parent: &str) -> Result<Vec<Thread>> {
         sqlx::query(
@@ -394,12 +437,14 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         project: row.try_get("project")?,
         // The runtime marks the threads of its database in memory.
         temporary: false,
+        owner: row.try_get("owner")?,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::temp_state;
+    use crate::state::State;
+    use crate::testing::{temp_dir, temp_state};
     use std::time::Duration;
 
     #[tokio::test]
@@ -546,5 +591,76 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(state.agent_messages_since_client("chat").await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn an_old_database_gets_owner_null() {
+        let path = temp_dir("owner_migration").join("state.db");
+        let older: Vec<_> = sqlx::migrate!("src/state/db/migrations")
+            .iter()
+            .filter(|migration| migration.version < 41)
+            .cloned()
+            .collect();
+        assert_eq!(older.last().map(|migration| migration.version), Some(40));
+        let migrator = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(older),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        migrator.run(&pool).await.unwrap();
+        sqlx::raw_sql("INSERT INTO threads (id, source, created_at) VALUES ('old', 'test', 1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let state = State::open(&path).await.unwrap();
+        assert_eq!(state.thread_owner("old").await.unwrap(), None);
+        let threads = state.list_threads().await.unwrap();
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].owner, None);
+        state.close().await;
+    }
+
+    #[tokio::test]
+    async fn owner_is_set_once_and_listed() {
+        let state = temp_state("thread_owner").await;
+        state.create_thread("a", "test").await.unwrap();
+        state.create_thread("b", "test").await.unwrap();
+        state
+            .create_agent_thread("agent", "a", "general", "agent")
+            .await
+            .unwrap();
+        state.set_thread_owner("a", "t1").await.unwrap();
+        assert!(state.set_thread_owner("agent", "t1").await.is_err());
+        state.set_thread_owner("a", "t1").await.unwrap();
+        assert!(state.set_thread_owner("a", "t2").await.is_err());
+        assert_eq!(
+            state.thread_owner("a").await.unwrap().as_deref(),
+            Some("t1")
+        );
+        assert_eq!(
+            state.thread_owner("a").await.unwrap().as_deref(),
+            Some("t1")
+        );
+        assert_eq!(state.thread_owner("agent").await.unwrap(), None);
+        assert_eq!(state.thread_owner("b").await.unwrap(), None);
+        assert_eq!(state.threads_owned_by("t1").await.unwrap(), ["a"]);
+        assert!(state.threads_owned_by("t2").await.unwrap().is_empty());
+        assert!(state.set_thread_owner("ghost", "t1").await.is_err());
+        assert!(state.set_thread_owner("b", " ").await.is_err());
+        let listed = state.load_thread("a").await.unwrap().unwrap();
+        assert_eq!(listed.owner.as_deref(), Some("t1"));
     }
 }
