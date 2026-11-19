@@ -25,7 +25,7 @@ use crate::{
         limits::{Account, Headers, PlanUse},
         output::{FinishReason, ModelEvent, Usage},
         registry::Model,
-        request::{ChatMessage, ChatRequest, Picture},
+        request::{ChatMessage, ChatRequest, Picture, arguments_text},
         transport::{
             http,
             sse::{EventParser, SseDecoder, SseStream},
@@ -320,10 +320,7 @@ fn wire_request(request: &ChatRequest<'_>) -> Value {
                     }));
                 }
                 for call in tool_calls {
-                    let arguments = match &call.arguments {
-                        Value::String(raw) => raw.clone(),
-                        arguments => arguments.to_string(),
-                    };
+                    let arguments = arguments_text(call);
                     input.push(json!({
                         "type": "function_call",
                         "call_id": call.id,
@@ -390,7 +387,7 @@ fn spoken(role: &str, text: &str, pictures: &[Picture]) -> Value {
     content.extend(pictures.iter().map(|picture| {
         json!({
             "type": "input_image",
-            "image_url": format!("data:{};base64,{}", picture.mime_type, picture.base64),
+            "image_url": picture.data_url(),
         })
     }));
     json!({ "role": role, "content": content })

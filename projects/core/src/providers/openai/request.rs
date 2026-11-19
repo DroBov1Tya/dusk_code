@@ -7,7 +7,7 @@ use crate::{
     config::Effort,
     providers::{
         output::ToolCall,
-        request::{ChatMessage, ChatRequest, Picture, ToolSpec},
+        request::{ChatMessage, ChatRequest, Picture, ToolSpec, arguments_text},
     },
 };
 
@@ -154,7 +154,7 @@ fn tool_pictures(pictures: Vec<WirePart>) -> WireMessage {
 fn image_part(picture: &Picture) -> WirePart {
     WirePart::ImageUrl {
         image_url: WireImageUrl {
-            url: format!("data:{};base64,{}", picture.mime_type, picture.base64),
+            url: picture.data_url(),
         },
     }
 }
@@ -194,11 +194,7 @@ impl From<&ToolCall> for WireToolCall {
             r#type: "function",
             function: WireFunctionCall {
                 name: call.name.clone(),
-                // Arguments that were not JSON go back as the model wrote them.
-                arguments: match &call.arguments {
-                    Value::String(raw) => raw.clone(),
-                    arguments => arguments.to_string(),
-                },
+                arguments: arguments_text(call),
             },
         }
     }
