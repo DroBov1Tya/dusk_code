@@ -94,6 +94,7 @@ fn threads() -> Vec<T> {
         },
         T::Delete { thread_id: id() },
         T::Approve {
+            thread_id: id(),
             id: 1,
             decision: Decision::Deny,
         },

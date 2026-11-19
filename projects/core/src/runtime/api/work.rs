@@ -236,9 +236,30 @@ impl Runtime {
         launcher.state.undo_points(thread_id).await
     }
 
+    /// The approvals of stored chats, for the tests that ask one.
+    #[cfg(test)]
+    pub(crate) fn approvals(&self) -> std::sync::Arc<crate::tools::Approvals> {
+        std::sync::Arc::clone(&self.launcher.approvals)
+    }
+
     /// False when the request is no longer waiting, such as after its turn was stopped.
-    pub fn answer_approval(&self, id: u64, decision: Decision) -> bool {
-        self.launcher.approvals.answer(id, decision)
-            || self.temporary.approvals.answer(id, decision)
+    ///
+    /// Only the chat it was asked in, or the chat above the agent thread that asked,
+    /// may answer: a request asked elsewhere counts as unknown.
+    pub async fn answer_approval(&self, thread_id: &str, id: u64, decision: Decision) -> bool {
+        for launcher in [&self.launcher, &self.temporary] {
+            let Some(asked) = launcher.approvals.thread_of(id) else {
+                continue;
+            };
+            let state = &launcher.state;
+            let (Ok(asked_chat), Ok(named_chat)) = (
+                state.root_thread(&asked).await,
+                state.root_thread(thread_id).await,
+            ) else {
+                return false;
+            };
+            return asked_chat == named_chat && launcher.approvals.answer(id, decision);
+        }
+        false
     }
 }

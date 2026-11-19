@@ -189,9 +189,11 @@ impl Server {
                 }
                 Response::Done
             }
-            ThreadRequest::Approve { id, decision } => {
-                Response::Waiting(runtime.answer_approval(id, decision))
-            }
+            ThreadRequest::Approve {
+                thread_id,
+                id,
+                decision,
+            } => Response::Waiting(runtime.answer_approval(&thread_id, id, decision).await),
             ThreadRequest::SetApprovals { thread_id, policy } => {
                 runtime
                     .state_of(&thread_id)

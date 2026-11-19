@@ -63,7 +63,11 @@ pub async fn apply(
         Action::UpdateAll => store::update_all(client, app, terminal).await?,
         Action::PackSwitch(switch, on) => store::switch(client, app, switch, on).await,
         Action::Send(text) => send(client, app, open, text, false).await,
-        Action::Approve { id, decision } => thread::approve(client, app, id, decision).await,
+        Action::Approve {
+            thread_id,
+            id,
+            decision,
+        } => thread::approve(client, app, &thread_id, id, decision).await,
         Action::SendNow(text) => send(client, app, open, text, true).await,
         Action::Connect {
             kind,

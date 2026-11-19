@@ -34,7 +34,8 @@ pub struct Verdict {
 #[derive(Default)]
 pub struct Approvals {
     next: AtomicU64,
-    pending: Mutex<HashMap<u64, oneshot::Sender<Decision>>>,
+    /// Each open request with the thread that asked it.
+    pending: Mutex<HashMap<u64, (String, oneshot::Sender<Decision>)>>,
     grants: Mutex<Grants>,
     judge: std::sync::OnceLock<std::sync::Arc<dyn Judge>>,
 }
@@ -57,6 +58,7 @@ impl Approvals {
     /// client listens, so only full access or a session grant lets the request through.
     pub async fn ask(
         &self,
+        thread_id: &str,
         request: Request,
         progress: Option<Progress>,
         policy: ApprovalPolicy,
@@ -68,10 +70,11 @@ impl Approvals {
             return Ok(());
         }
         if policy == ApprovalPolicy::Arbiter {
-            return self.arbitrate(request, progress).await;
+            return self.arbitrate(thread_id, request, progress).await;
         }
         let session = session_grant(&request);
-        self.prompt(request, session, Vec::new(), progress).await
+        self.prompt(thread_id, request, session, Vec::new(), progress)
+            .await
     }
 
     /// Screen actions asked as one: never less than asking each alone. A request the
@@ -82,6 +85,7 @@ impl Approvals {
     /// judges each step on its own.
     pub async fn ask_all(
         &self,
+        thread_id: &str,
         requests: Vec<Request>,
         progress: Option<Progress>,
         policy: ApprovalPolicy,
@@ -92,7 +96,8 @@ impl Approvals {
         if requests.len() < 2 || requests.iter().any(|r| strictness(r).is_none()) {
             // A single request looks as it always has; only screen kinds merge.
             for request in requests {
-                self.ask(request, progress.clone(), policy).await?;
+                self.ask(thread_id, request, progress.clone(), policy)
+                    .await?;
             }
             return Ok(());
         }
@@ -114,7 +119,7 @@ impl Approvals {
         };
         if policy == ApprovalPolicy::Arbiter {
             for step in &open {
-                let judged = self.arbitrate(step.request.clone(), progress.clone());
+                let judged = self.arbitrate(thread_id, step.request.clone(), progress.clone());
                 judged
                     .await
                     .with_context(|| format!("step {} of the batch", step.number))?;
@@ -133,7 +138,8 @@ impl Approvals {
         let action = format!("{} computer actions:\n{}", steps.len(), lines.join("\n"));
         let request = with_action(strictest, action);
         let session = if same { session_grant(&request) } else { None };
-        self.prompt(request, session, steps, progress).await
+        self.prompt(thread_id, request, session, steps, progress)
+            .await
     }
 
     /// Command lines asked as one list, for a yes that covers exactly these lines: the
@@ -142,6 +148,7 @@ impl Approvals {
     /// caller asks only in a mode that would ask for each command.
     pub async fn ask_commands(
         &self,
+        thread_id: &str,
         commands: &[String],
         progress: Option<Progress>,
     ) -> Result<()> {
@@ -168,13 +175,14 @@ impl Approvals {
         let request = Request::Command {
             command: commands.join("\n"),
         };
-        self.prompt(request, None, steps, progress).await
+        self.prompt(thread_id, request, None, steps, progress).await
     }
 
     /// Shows the request to the user and waits. A yes for the session
     /// adds a grant only when `session` offered one.
     async fn prompt(
         &self,
+        thread_id: &str,
         request: Request,
         session: Option<String>,
         steps: Vec<ApprovalStep>,
@@ -194,7 +202,9 @@ impl Approvals {
         };
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (sender, answer) = oneshot::channel();
-        self.pending.lock().insert(id, sender);
+        self.pending
+            .lock()
+            .insert(id, (thread_id.to_owned(), sender));
         // Closes the request on the client however the wait ends, a stopped turn included.
         let _open = Open {
             approvals: self,
@@ -224,7 +234,12 @@ impl Approvals {
     }
 
     /// The arbiter's verdict stands for the user's answer; the thread that asked hears it.
-    async fn arbitrate(&self, request: Request, progress: Option<Progress>) -> Result<()> {
+    async fn arbitrate(
+        &self,
+        thread_id: &str,
+        request: Request,
+        progress: Option<Progress>,
+    ) -> Result<()> {
         let what = request.what();
         let verdict = match self.judge.get() {
             Some(judge) => judge.judge(&request).await,
@@ -233,7 +248,9 @@ impl Approvals {
         // An unclear answer or a failure is not a no the user gave: they are asked.
         let Ok(verdict) = verdict else {
             let session = session_grant(&request);
-            return self.prompt(request, session, Vec::new(), progress).await;
+            return self
+                .prompt(thread_id, request, session, Vec::new(), progress)
+                .await;
         };
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::ArbiterDecided {
@@ -257,7 +274,15 @@ impl Approvals {
         self.pending
             .lock()
             .remove(&id)
-            .is_some_and(|sender| sender.send(decision).is_ok())
+            .is_some_and(|(_, sender)| sender.send(decision).is_ok())
+    }
+
+    /// The thread that asked request `id`; `None` when nothing waits for it.
+    pub fn thread_of(&self, id: u64) -> Option<String> {
+        self.pending
+            .lock()
+            .get(&id)
+            .map(|(thread, _)| thread.clone())
     }
 }
 
@@ -413,6 +438,7 @@ mod tests {
     async fn decide(approvals: &Approvals, request: Request, decision: Decision) -> Result<()> {
         let (events, mut seen) = mpsc::unbounded_channel();
         let ask = approvals.ask(
+            "t",
             request,
             Some(Progress {
                 call_id: "pointer-test".into(),
@@ -444,7 +470,7 @@ mod tests {
             .unwrap();
         assert!(
             approvals
-                .ask(screen, None, ApprovalPolicy::Ask)
+                .ask("t", screen, None, ApprovalPolicy::Ask)
                 .await
                 .is_ok()
         );
@@ -454,7 +480,10 @@ mod tests {
             ApprovalPolicy::Arbiter,
         ] {
             assert!(
-                approvals.ask(pointer.clone(), None, policy).await.is_err(),
+                approvals
+                    .ask("t", pointer.clone(), None, policy)
+                    .await
+                    .is_err(),
                 "{policy:?}"
             );
         }
@@ -465,7 +494,7 @@ mod tests {
         );
         assert!(
             approvals
-                .ask(pointer.clone(), None, ApprovalPolicy::Ask)
+                .ask("t", pointer.clone(), None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
@@ -474,14 +503,14 @@ mod tests {
             .unwrap();
         assert!(
             approvals
-                .ask(pointer.clone(), None, ApprovalPolicy::Ask)
+                .ask("t", pointer.clone(), None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
         // FullAccess is an explicit global policy, not an inferred screen grant.
         assert!(
             approvals
-                .ask(pointer.clone(), None, ApprovalPolicy::FullAccess)
+                .ask("t", pointer.clone(), None, ApprovalPolicy::FullAccess)
                 .await
                 .is_ok()
         );
@@ -490,7 +519,7 @@ mod tests {
             .unwrap();
         assert!(
             approvals
-                .ask(pointer, None, ApprovalPolicy::Ask)
+                .ask("t", pointer, None, ApprovalPolicy::Ask)
                 .await
                 .is_ok()
         );
@@ -519,12 +548,12 @@ mod tests {
         assert_eq!(session_grant(&release), None);
         decide(&approvals, select, Decision::Session).await.unwrap();
         approvals
-            .ask(capture.clone(), None, ApprovalPolicy::Ask)
+            .ask("t", capture.clone(), None, ApprovalPolicy::Ask)
             .await
             .unwrap();
         assert!(
             approvals
-                .ask(press.clone(), None, ApprovalPolicy::Ask)
+                .ask("t", press.clone(), None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
@@ -534,12 +563,12 @@ mod tests {
             .await
             .unwrap();
         action_only
-            .ask(press, None, ApprovalPolicy::Ask)
+            .ask("t", press, None, ApprovalPolicy::Ask)
             .await
             .unwrap();
         assert!(
             action_only
-                .ask(capture, None, ApprovalPolicy::Ask)
+                .ask("t", capture, None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
@@ -571,14 +600,14 @@ mod tests {
             ] {
                 assert!(
                     approvals
-                        .ask(request, None, ApprovalPolicy::Ask)
+                        .ask("t", request, None, ApprovalPolicy::Ask)
                         .await
                         .is_err()
                 );
             }
         }
         approvals
-            .ask(release, None, ApprovalPolicy::FullAccess)
+            .ask("t", release, None, ApprovalPolicy::FullAccess)
             .await
             .unwrap();
     }
@@ -597,7 +626,7 @@ mod tests {
             .await
             .unwrap();
         approvals
-            .ask(list.clone(), None, ApprovalPolicy::Ask)
+            .ask("t", list.clone(), None, ApprovalPolicy::Ask)
             .await
             .unwrap();
         for request in [
@@ -619,7 +648,7 @@ mod tests {
         ] {
             assert!(
                 approvals
-                    .ask(request, None, ApprovalPolicy::Ask)
+                    .ask("t", request, None, ApprovalPolicy::Ask)
                     .await
                     .is_err()
             );
@@ -630,7 +659,7 @@ mod tests {
             .unwrap();
         assert!(
             desktop_only
-                .ask(list, None, ApprovalPolicy::Ask)
+                .ask("t", list, None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
@@ -710,7 +739,7 @@ mod tests {
             call_id: "c".into(),
             events: events.clone(),
         };
-        let ask = approvals.ask(command("ls"), Some(progress), ApprovalPolicy::Ask);
+        let ask = approvals.ask("t", command("ls"), Some(progress), ApprovalPolicy::Ask);
         let answer = async {
             let Some(ThreadEvent::Approval(asked)) = seen.recv().await else {
                 panic!("no request");
@@ -725,20 +754,20 @@ mod tests {
         ));
         assert!(
             approvals
-                .ask(command("ls"), None, ApprovalPolicy::Ask)
+                .ask("t", command("ls"), None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
         assert!(
             approvals
-                .ask(command("ls"), None, ApprovalPolicy::FullAccess)
+                .ask("t", command("ls"), None, ApprovalPolicy::FullAccess)
                 .await
                 .is_ok()
         );
         // The sandbox confines commands, so they pass; nothing else does.
         assert!(
             approvals
-                .ask(command("ls"), None, ApprovalPolicy::Sandbox)
+                .ask("t", command("ls"), None, ApprovalPolicy::Sandbox)
                 .await
                 .is_ok()
         );
@@ -747,7 +776,7 @@ mod tests {
         };
         assert!(
             approvals
-                .ask(screen, None, ApprovalPolicy::Sandbox)
+                .ask("t", screen, None, ApprovalPolicy::Sandbox)
                 .await
                 .is_err()
         );

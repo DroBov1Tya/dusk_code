@@ -57,7 +57,7 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
             </Show>
             {id.clone().map(|id| view! { <pins::Pins id chat /> })}
             <Transcript chat thread=id.clone() />
-            <approval::Approvals chat />
+            <approval::Approvals chat id=id.clone() />
             <approval::AskUser chat id=id.clone() />
             {id.clone().map(|id| view! { <plan::PlanStrip id chat /> })}
             <Composer id chat />

@@ -140,7 +140,7 @@ async fn allow_screen(approvals: &Approvals) {
         call_id: "grant".into(),
         events,
     };
-    let ask = approvals.ask(fake(), Some(progress), ApprovalPolicy::Ask);
+    let ask = approvals.ask("t", fake(), Some(progress), ApprovalPolicy::Ask);
     let answer = async {
         let Some(ThreadEvent::Approval(asked)) = seen.recv().await else {
             panic!("missing request");
@@ -242,14 +242,14 @@ async fn the_arbiter_judges_every_step_alone() {
         },
     ];
     let denied = approvals
-        .ask_all(requests, None, ApprovalPolicy::Arbiter)
+        .ask_all("t", requests, None, ApprovalPolicy::Arbiter)
         .await
         .expect_err("one step is denied");
     let message = format!("{denied:#}");
     assert!(message.starts_with("step 2 of the batch"), "{message}");
     assert!(message.contains("keys are not allowed"), "{message}");
     approvals
-        .ask_all(vec![fake(), fake()], None, ApprovalPolicy::Arbiter)
+        .ask_all("t", vec![fake(), fake()], None, ApprovalPolicy::Arbiter)
         .await
         .unwrap();
 }
@@ -268,7 +268,7 @@ async fn mixed_kinds_offer_no_session_grant() {
         call_id: "mixed".into(),
         events,
     };
-    let ask = approvals.ask_all(requests.clone(), Some(progress), ApprovalPolicy::Ask);
+    let ask = approvals.ask_all("t", requests.clone(), Some(progress), ApprovalPolicy::Ask);
     let answer = async {
         let Some(ThreadEvent::Approval(asked)) = seen.recv().await else {
             panic!("missing request");
@@ -283,7 +283,7 @@ async fn mixed_kinds_offer_no_session_grant() {
     for request in requests {
         assert!(
             approvals
-                .ask(request, None, ApprovalPolicy::Ask)
+                .ask("t", request, None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );

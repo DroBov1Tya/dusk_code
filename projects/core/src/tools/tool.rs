@@ -71,7 +71,7 @@ impl ToolContext {
             };
             let policy = self.approvals_policy().await;
             approvals
-                .ask(request, self.progress.clone(), policy)
+                .ask(&self.thread_id, request, self.progress.clone(), policy)
                 .await?;
         }
         Ok(resolved)
@@ -98,7 +98,7 @@ impl ToolContext {
         };
         let policy = self.approvals_policy().await;
         approvals
-            .ask_all(requests, self.progress.clone(), policy)
+            .ask_all(&self.thread_id, requests, self.progress.clone(), policy)
             .await
     }
 
@@ -117,6 +117,7 @@ impl ToolContext {
         let policy = self.approvals_policy().await;
         approvals
             .ask(
+                &self.thread_id,
                 Request::Window {
                     grant,
                     action: action.to_owned(),
@@ -136,7 +137,9 @@ impl ToolContext {
             command: command.to_owned(),
         };
         let policy = self.approvals_policy().await;
-        approvals.ask(request, self.progress.clone(), policy).await
+        approvals
+            .ask(&self.thread_id, request, self.progress.clone(), policy)
+            .await
     }
 }
 

@@ -3,11 +3,18 @@
 
 use super::*;
 use crate::{
-    client::Scope, init::paths::Paths, providers::ToolCall, state::TurnAnswer, testing::temp_dir,
+    client::Scope,
+    config::ApprovalPolicy,
+    init::paths::Paths,
+    providers::ToolCall,
+    state::TurnAnswer,
+    testing::temp_dir,
+    tools::{Approvals, Progress},
 };
 use dusk_protocol::{
     client::ThreadRequest,
     thread::{ThreadEvent, TurnWait},
+    tools::{Decision, Request as ToolRequest},
 };
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
@@ -134,4 +141,93 @@ async fn a_stopped_run_is_killed_with_what_it_started() {
     tokio::time::sleep(Duration::from_millis(3500)).await;
     assert!(!cwd.join("survived").exists());
     assert!(!cwd.join("child_survived").exists());
+}
+
+/// Starts a core with chats `a` and `b`, and the agent thread `a1` below `a`.
+async fn rig_with_chats(name: &str) -> (Server, Arc<Approvals>) {
+    let root = temp_dir(name);
+    let paths = Paths::new(root.join("config"), root.join("work"));
+    let runtime = Runtime::start(paths, Some(root.join("state.db")))
+        .await
+        .unwrap();
+    let state = runtime.state();
+    state.create_thread("a", "test").await.unwrap();
+    state.create_thread("b", "test").await.unwrap();
+    state
+        .create_agent_thread("a1", "a", "reviewer", "check")
+        .await
+        .unwrap();
+    let approvals = runtime.approvals();
+    let (server, _) = Server::new(runtime, Subscribers::default());
+    (server, approvals)
+}
+
+/// Asks for a yes in `thread`; gives the request number and the task that waits for it.
+async fn ask_in(
+    approvals: &Arc<Approvals>,
+    thread: &str,
+) -> (u64, tokio::task::JoinHandle<anyhow::Result<()>>) {
+    let (events, mut seen) = mpsc::unbounded_channel();
+    let progress = Progress {
+        call_id: "c".into(),
+        events,
+    };
+    let (approvals, thread) = (Arc::clone(approvals), thread.to_owned());
+    let waiting = tokio::spawn(async move {
+        let request = ToolRequest::Command {
+            command: "make".into(),
+        };
+        approvals
+            .ask(&thread, request, Some(progress), ApprovalPolicy::Ask)
+            .await
+    });
+    let Some(ThreadEvent::Approval(asked)) = seen.recv().await else {
+        panic!("missing request");
+    };
+    (asked.id, waiting)
+}
+
+async fn approve(server: &mut Server, thread: &str, id: u64) -> Response {
+    let request = ThreadRequest::Approve {
+        thread_id: thread.into(),
+        id,
+        decision: Decision::Once,
+    };
+    server.thread(request).await.unwrap()
+}
+
+#[tokio::test]
+async fn approve_with_another_thread_answers_false() {
+    let (mut server, approvals) = rig_with_chats("serve_approve_other").await;
+    let (id, waiting) = ask_in(&approvals, "a").await;
+    assert!(matches!(
+        approve(&mut server, "b", id).await,
+        Response::Waiting(false)
+    ));
+    assert!(!waiting.is_finished(), "the turn still waits");
+    assert!(matches!(
+        approve(&mut server, "a", id).await,
+        Response::Waiting(true)
+    ));
+    waiting.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn approve_for_a_subagent_of_the_named_chat_answers() {
+    let (mut server, approvals) = rig_with_chats("serve_approve_agent").await;
+    let (id, waiting) = ask_in(&approvals, "a1").await;
+    assert!(matches!(
+        approve(&mut server, "a", id).await,
+        Response::Waiting(true)
+    ));
+    waiting.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn approve_with_an_unknown_id_answers_false() {
+    let (mut server, _) = rig_with_chats("serve_approve_unknown").await;
+    assert!(matches!(
+        approve(&mut server, "a", 99).await,
+        Response::Waiting(false)
+    ));
 }

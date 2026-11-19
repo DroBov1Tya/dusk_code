@@ -141,7 +141,10 @@ pub async fn run(options: Headless) -> Result<()> {
                         "denied: {:?}; run with --access to allow it",
                         request.request
                     );
-                    client.threads().approve(request.id, Decision::Deny).await?;
+                    client
+                        .threads()
+                        .approve(&thread_id, request.id, Decision::Deny)
+                        .await?;
                 }
                 ThreadEvent::Question(_) => asked = true,
                 ThreadEvent::Idle if asked && notes < MAX_NOTES => {
