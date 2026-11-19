@@ -353,6 +353,14 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>, chat: Chat) -> impl IntoView {
             .unwrap_or_else(|| "Thinking".to_owned()),
     };
     let names = summary_line(&entries);
+    // A folded turn still shows what its steps changed in skills, as the desktop does.
+    let calls: Vec<String> = entries
+        .iter()
+        .filter_map(|e| match &e.item {
+            Item::Tool(tool) => Some(tool.call_id.clone()),
+            _ => None,
+        })
+        .collect();
     view! {
         <details class="steps">
             <summary>
@@ -362,10 +370,7 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>, chat: Chat) -> impl IntoView {
                 {(failed > 0).then(|| view! { <span class="bad">{format!("{failed} failed")}</span> })}
             </summary>
             {entries.into_iter().map(|entry| match entry.item {
-                Item::Tool(tool) => {
-                    let call_id = tool.call_id.clone();
-                    view! { <ToolStep tool /><SkillChanges call_id chat /> }.into_any()
-                }
+                Item::Tool(tool) => view! { <ToolStep tool /> }.into_any(),
                 Item::Assistant { text, reasoning } => view! {
                     <div class="step-said">
                         {(!reasoning.trim().is_empty()).then(|| view! {
@@ -383,6 +388,7 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>, chat: Chat) -> impl IntoView {
                 _ => ().into_any(),
             }).collect_view()}
         </details>
+        {calls.into_iter().map(|call_id| view! { <SkillChanges call_id chat /> }).collect_view()}
     }
 }
 

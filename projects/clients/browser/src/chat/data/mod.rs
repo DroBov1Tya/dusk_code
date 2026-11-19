@@ -385,7 +385,15 @@ impl ChatData {
     /// Keeps `change` in place of the row with its `id`, or as a new one.
     pub fn put_skill_change(&mut self, change: SkillChange) {
         match self.skill_changes.iter_mut().find(|c| c.id == change.id) {
-            Some(known) => *known = change,
+            // An undo is final: a stale list must not offer Undo again.
+            Some(known) => {
+                let undone = known.undone || change.undone;
+                *known = change;
+                if undone {
+                    known.undone = true;
+                    known.can_undo = false;
+                }
+            }
             None => self.skill_changes.push(change),
         }
     }

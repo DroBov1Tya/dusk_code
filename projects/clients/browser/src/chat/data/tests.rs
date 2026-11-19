@@ -345,6 +345,8 @@ fn a_skill_change_replaces_its_row_by_id_and_hangs_on_its_step() {
     chat.apply(ThreadEvent::SkillChanged(change(7, "1", false)));
     chat.apply(ThreadEvent::SkillChanged(change(8, "other", false)));
     chat.apply(ThreadEvent::SkillChanged(change(7, "1", true)));
+    // A stale list read before the undo does not bring Undo back.
+    chat.put_skill_change(change(7, "1", false));
     assert_eq!(chat.skill_changes.len(), 2);
     let rows = chat.skill_changes_of("1");
     assert_eq!(rows.len(), 1);
