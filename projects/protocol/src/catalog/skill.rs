@@ -93,6 +93,7 @@ impl SkillSave {
 }
 
 /// One change an agent made to a skill file, kept so it can be seen and undone.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillChange {
     pub id: i64,
@@ -109,6 +110,7 @@ pub struct SkillChange {
 }
 
 /// A change as lines. The text is skill data: shown as plain text, never as markup.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillDiff {
     pub change: SkillChange,
@@ -117,13 +119,17 @@ pub struct SkillDiff {
     pub cut: bool,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", schemars(rename = "SkillDiffLine"))]
 pub struct DiffLine {
     pub kind: DiffKind,
     pub text: String,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", schemars(rename = "SkillDiffKind"))]
 pub enum DiffKind {
     Same,
     Added,
