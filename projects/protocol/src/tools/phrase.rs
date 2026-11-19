@@ -43,7 +43,6 @@ pub fn phrase(tool: &str, seed: &str) -> &'static str {
         "goal" => &["Checking the goal", "Weighing the goal"],
         "jobs" => &["Checking background jobs"],
         "name_session" => &["Naming the chat"],
-        "suggest_next" => &["Suggesting a reply"],
         _ => &["Using a tool"],
     };
     let pick = seed.bytes().fold(0usize, |sum, byte| {
