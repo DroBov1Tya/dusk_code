@@ -167,7 +167,8 @@ fn group(
         }
         let more = count.saturating_sub(listed.len());
         if more > 0 {
-            // The core gives the checks page, https only; none, no button.
+            // The row stays when the forge gave no checks page; `open` then ignores
+            // the click.
             let page = pull.checks_url.clone();
             lines = lines.child(
                 div()

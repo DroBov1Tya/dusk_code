@@ -969,7 +969,6 @@ pub(super) fn demo_png() -> Vec<u8> {
     bytes.into_inner()
 }
 
-/// Pull requests in every state, for the Changes module and a chat row's icon.
 /// A repository whose forge asks to sign in, or has no plugin: the quiet line in Changes.
 fn fake_forge(ws: &mut Workspace, sign_in: bool, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{Forge, ForgeSignIn, RepositoryStatus};
@@ -991,6 +990,7 @@ fn fake_forge(ws: &mut Workspace, sign_in: bool, cx: &mut Context<Workspace>) {
     cx.notify();
 }
 
+/// Pull requests in every state, for the Changes module and a chat row's icon.
 fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{
         Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
