@@ -184,10 +184,27 @@ mod tests {
 
     #[test]
     fn only_an_id_of_hex_and_dashes_names_a_card() {
-        let (store, folder) = store_with("card_part_ids");
-        fs::write(folder.join("image"), b"png").unwrap();
+        // The store is a child of `top`, and a real file lies where each bad id would
+        // resolve, so a refusal can only come from the check of the id.
+        let top = temp_dir("card_part_ids");
+        let sub = top.join("sub");
+        let store = ArtifactStore::new(sub.clone());
+        let planted = [
+            sub.join("image"),
+            top.join("image"),
+            top.join("etc/image"),
+            sub.join("a/b/image"),
+            sub.join("a\\b/image"),
+            sub.join(ID).join("image"),
+        ];
+        for file in &planted {
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, b"png").unwrap();
+        }
+        fs::create_dir_all(sub.join("ab")).unwrap();
         assert_eq!(store.read_part(ID, "image").unwrap(), b"png");
         for id in ["../etc", "a/b", "a\\b", "", "..", "ab/../0a1b-2c"] {
+            assert!(!is_card_id(id), "{id}");
             assert!(store.read_part(id, "image").is_err(), "{id}");
         }
     }
