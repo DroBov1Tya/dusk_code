@@ -1,4 +1,4 @@
-//! Connectors: agents, skills, MCP servers, plugins, tools and voice.
+//! Customize: agents, skills, connectors (the MCP servers), plugins, tools and voice.
 
 use crate::{
     api,
@@ -21,25 +21,25 @@ pub enum Tab {
 const TABS: [(Tab, &str); 6] = [
     (Tab::Agents, "Agents"),
     (Tab::Skills, "Skills"),
-    (Tab::Mcp, "MCP"),
+    (Tab::Mcp, "Connectors"),
     (Tab::Plugins, "Plugins"),
     (Tab::Tools, "Tools"),
     (Tab::Voice, "Voice"),
 ];
 
 #[component]
-pub fn Connectors(tab: Tab) -> impl IntoView {
+pub fn Customize(tab: Tab) -> impl IntoView {
     let app = state();
     let panel = RwSignal::new(None::<Settings>);
     let reload = move || run(api::settings_panel(), move |p| panel.set(Some(p)));
     reload();
     view! {
         <div class="page">
-            <h2>"Connectors"</h2>
+            <h2>"Customize"</h2>
             <div class="tabs">
                 {TABS.map(|(t, label)| view! {
                     <button class="tab" class:active=move || t == tab
-                        on:click=move |_| app.show(View::Connectors(t))>{label}</button>
+                        on:click=move |_| app.show(View::Customize(t))>{label}</button>
                 })}
             </div>
             {match tab {

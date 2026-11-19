@@ -40,7 +40,7 @@ use crate::{
 pub enum Center {
     Chat,
     Artifacts,
-    Connectors,
+    Customize,
     Settings,
     /// The project's changes, file by file.
     Review,
@@ -157,7 +157,7 @@ pub struct Workspace {
     pub center: Center,
     pub shelf: Shelf,
     pub shelf_search: Entity<InputState>,
-    /// Where the connectors page is scrolled to; a shelf shown whole starts at its top.
+    /// Where the Customize page is scrolled to; a shelf shown whole starts at its top.
     pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,

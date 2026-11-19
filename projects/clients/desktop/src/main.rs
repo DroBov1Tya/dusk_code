@@ -5,7 +5,7 @@
 //! - `columns`: the side columns: the `sidebar` (projects, chats, search) and the
 //!   `inspector` (git, files, context, todo, agents, jobs);
 //! - `pages`: what the middle column shows: the `chat`, the `artifacts` the agents made, the
-//!   `connectors` (servers, skills, plugins, tools, speech), the `settings`, the `review` of
+//!   `customize` page (connectors, skills, plugins, tools, agents), the `settings`, the `review` of
 //!   changes and a `file` in full;
 //! - `modal`: what opens over the window: search, a new project, a file viewer, confirmations;
 //! - `plugins`: the parts plugins add: their icons, the menu of them, the docks they open in;

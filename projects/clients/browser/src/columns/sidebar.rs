@@ -88,7 +88,7 @@ pub fn Sidebar() -> impl IntoView {
             <nav class="nav" aria-label="Workspace and account">
                 <div class="sidebar-destinations">
                     <NavButton label="Scheduled tasks" target=View::Schedules />
-                    <NavButton label="Connectors" target=View::Connectors(Tab::Agents) />
+                    <NavButton label="Customize" target=View::Customize(Tab::Agents) />
                     <NavButton label="Artifacts" target=View::Artifacts />
                     <NavButton label="Settings" target=View::Settings(Page::Appearance) />
                 </div>

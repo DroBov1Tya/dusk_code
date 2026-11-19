@@ -23,7 +23,7 @@ pub enum View {
     /// A chat; none is a draft whose thread is made with its first message.
     Chat(Option<String>),
     Settings(Page),
-    Connectors(Tab),
+    Customize(Tab),
     Artifacts,
     Schedules,
     Project(String),

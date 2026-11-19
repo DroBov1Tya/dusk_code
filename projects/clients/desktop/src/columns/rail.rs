@@ -126,15 +126,15 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
             ws.load_outputs(cx);
         }))
         .into_any_element(),
-        Part::Connectors => item(
-            "rail-connectors",
+        Part::Customize => item(
+            "rail-customize",
             Icon::default().path(crate::ui::icons::BLOCKS),
-            "Connectors".into(),
-            ws.center == Center::Connectors,
+            "Customize".into(),
+            ws.center == Center::Customize,
             cx,
         )
         .on_click(cx.listener(|ws, _, _, cx| {
-            ws.center = Center::Connectors;
+            ws.center = Center::Customize;
             ws.load_settings(cx);
         }))
         .into_any_element(),

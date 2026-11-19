@@ -1,4 +1,4 @@
-//! Connectors: agents, skills, MCP servers, plugins, tools and voice.
+//! Customize: agents, skills, connectors (the MCP servers), plugins, tools and voice.
 
 use super::editor::Editor;
 use crate::{

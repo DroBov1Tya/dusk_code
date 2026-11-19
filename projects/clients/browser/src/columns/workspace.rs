@@ -116,7 +116,7 @@ pub fn Workspace(children: Children) -> impl IntoView {
         }
         .into(),
         View::Settings(_) => "Settings".into(),
-        View::Connectors(_) => "Connectors".into(),
+        View::Customize(_) => "Customize".into(),
         View::Artifacts => "Artifacts".into(),
         View::Schedules => "Scheduled tasks".into(),
         View::Project(id) => app
@@ -224,7 +224,7 @@ pub fn Workspace(children: Children) -> impl IntoView {
                     <div class="rail-divider"></div>
                     <RailButton label="Chats" icon=IconName::Inbox target=View::Chat(None) />
                     <RailButton label="Scheduled tasks" icon=IconName::Calendar target=View::Schedules />
-                    <RailButton label="Connectors" icon=IconName::Blocks target=View::Connectors(Tab::Agents) />
+                    <RailButton label="Customize" icon=IconName::Blocks target=View::Customize(Tab::Agents) />
                     <RailButton label="Artifacts" icon=IconName::LayoutDashboard target=View::Artifacts />
                     <div class="grow"></div>
                     <button class="icon" title="Temporary chat" aria-label="Temporary chat"

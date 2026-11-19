@@ -1,5 +1,5 @@
-//! The connectors page, in the middle column: MCP servers, skills, plugins, tools and
-//! the agents' graph, each a tab, with one search over the open tab. The core saves
+//! The Customize page, in the middle column: connectors (the MCP servers), skills,
+//! plugins, tools and the agents' graph, each a tab, with one search over the open tab. The core saves
 //! every switch; this page only asks.
 
 mod card;
@@ -38,7 +38,7 @@ pub fn render(
 ) -> Stateful<Div> {
     let Some(settings) = ws.settings.clone() else {
         return div()
-            .id("connectors")
+            .id("customize")
             .child(widgets::muted("Loading...", cx));
     };
     ws.ensure_store(cx);
@@ -101,7 +101,7 @@ pub fn render(
         Shelf::Agents => graph::render(ws, &settings.agents, cx),
     };
     div()
-        .id("connectors")
+        .id("customize")
         .size_full()
         .overflow_y_scroll()
         .track_scroll(&ws.shelf_scroll)
@@ -112,7 +112,7 @@ pub fn render(
                 .flex()
                 .flex_col()
                 .child(crate::ui::page_title(
-                    "Connectors",
+                    "Customize",
                     "What the agents can reach: servers, skills, plugins, tools and other agents.",
                     cx,
                 ))

@@ -15,7 +15,8 @@ pub enum Part {
     Chats,
     Schedules,
     Artifacts,
-    Connectors,
+    #[serde(alias = "connectors")]
+    Customize,
     Terminal,
     /// A new chat that is kept in memory only.
     Temporary,
@@ -89,7 +90,7 @@ impl Default for Layout {
         use Part::*;
         Self {
             rail: vec![
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Plugins, Spacer,
+                NewChat, Search, Divider, Chats, Schedules, Customize, Artifacts, Plugins, Spacer,
                 Temporary, Terminal, Quiet, Settings,
             ],
             header: vec![Review, Search, More, Plugins, SidePanel],
@@ -111,19 +112,19 @@ impl Layout {
         use Part::*;
         let before: [&[Part]; 4] = [
             &[
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
+                NewChat, Search, Divider, Chats, Schedules, Customize, Artifacts, Spacer,
                 Temporary, Terminal, Quiet, Settings,
             ],
             &[
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
-                Terminal, Quiet, Settings,
+                NewChat, Search, Divider, Chats, Schedules, Customize, Artifacts, Spacer, Terminal,
+                Quiet, Settings,
             ],
             &[
-                NewChat, Search, Divider, Chats, Schedules, Artifacts, Connectors, Spacer, Quiet,
+                NewChat, Search, Divider, Chats, Schedules, Artifacts, Customize, Spacer, Quiet,
                 Settings,
             ],
             &[
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer, Quiet,
+                NewChat, Search, Divider, Chats, Schedules, Customize, Artifacts, Spacer, Quiet,
                 Settings,
             ],
         ];
@@ -194,5 +195,20 @@ mod tests {
             ..Layout::default()
         };
         assert_eq!(own.refreshed().header, vec![Part::Search]);
+    }
+
+    #[test]
+    fn a_rail_kept_with_connectors_opens_customize() {
+        let kept: Layout =
+            serde_json::from_str(r#"{ "rail": ["chats", "connectors", "settings"] }"#).unwrap();
+        assert_eq!(kept.rail, [Part::Chats, Part::Customize, Part::Settings]);
+        let written = serde_json::to_string(&kept).unwrap();
+        assert!(written.contains(r#""customize""#), "{written}");
+        let shipped: Layout = serde_json::from_str(
+            r#"{ "rail": ["new_chat", "search", "divider", "chats", "schedules", "connectors",
+                          "artifacts", "spacer", "quiet", "settings"] }"#,
+        )
+        .unwrap();
+        assert_eq!(shipped.refreshed().rail, Layout::default().rail);
     }
 }

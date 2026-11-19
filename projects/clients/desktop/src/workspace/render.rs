@@ -48,7 +48,7 @@ impl Render for Workspace {
             Center::Chat if welcome::shown(self) => welcome::render(self, cx).into_any_element(),
             Center::Chat => chat::render(self, window, cx).into_any_element(),
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
-            Center::Connectors => customize::render(self, window, cx).into_any_element(),
+            Center::Customize => customize::render(self, window, cx).into_any_element(),
             Center::Settings => settings::render(self, window, cx).into_any_element(),
             Center::Review => review::render(self, window, cx).into_any_element(),
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),

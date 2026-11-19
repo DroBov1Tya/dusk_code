@@ -555,7 +555,7 @@ pub fn fake(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 /// `workshop=coming:NAME`: its cover still coming; `workshop=offline:`: the store could not
 /// be read again, so covers not here are drawn offline; `workshop=filters:`: the filter menu open; `workshop=scroll:PX`: the page that far down; `workshop=report`: what "Update all" did.
 pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Context<Workspace>) {
-    ws.center = Center::Connectors;
+    ws.center = Center::Customize;
     // `skills:` shows the Skills page's Workshop of single skills instead.
     let skills = value == "skills";
     ws.shelf = if skills {

@@ -17,7 +17,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 |---|---|
 | `wait=MS` | lets the core answer and the window draw |
 | `project=N`, `thread=N` | chooses the Nth project or chat of the lists |
-| `center=chat\|review\|settings\|connectors\|artifacts` | switches the middle column (it does not load that page's data; use the click paths for that) |
+| `center=chat\|review\|settings\|customize\|artifacts` | switches the middle column (`connectors` still names Customize) (it does not load that page's data; use the click paths for that) |
 | `review` | opens the review page |
 | `file=PATH[:LINE]` | opens a file in the viewer |
 | `fake=welcome`, `welcome=form`, `welcome=address:URL` | the first screen of a clean install, its form, an address typed in it (`key=enter` connects) |
