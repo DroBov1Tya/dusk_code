@@ -20,6 +20,7 @@ mod hero;
 mod pack;
 mod placeholder;
 mod shelves;
+pub mod suggested;
 pub mod tier;
 
 use std::{collections::HashMap, time::Instant};
@@ -112,6 +113,9 @@ pub struct Workshop {
     pub updating: bool,
     /// The page's width as last drawn, which the grid's columns come from.
     pub measured: grid::Measured,
+    /// Every listing of every kind, read for the cards the agent put in a chat: what
+    /// their rows say of being installed, and what their Add installs.
+    pub suggested: suggested::Read,
 }
 
 pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
@@ -189,10 +193,11 @@ fn visible<'a>(shop: &Workshop, listings: &'a [Listing], query: &str) -> Vec<&'a
 
 /// The listing a window or a page is about, by its source and name.
 pub fn find<'a>(ws: &'a Workspace, source: &str, name: &str) -> Option<&'a Listing> {
-    ws.workshop
-        .listings
+    let shop = &ws.workshop;
+    shop.listings
         .iter()
         .flatten()
+        .chain(shop.suggested.listings.iter().flatten())
         .find(|listing| listing.source == source && listing.name == name)
 }
 
@@ -562,6 +567,7 @@ impl Workspace {
                 ws.workshop.failed.insert(name, format!("{error:#}"));
             }
             ws.load_store(cx);
+            ws.reload_suggested(cx);
             // A skill installed or removed shows on the Skills page at once.
             ws.load_settings(cx);
         });

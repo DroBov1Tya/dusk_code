@@ -3,7 +3,7 @@
 use super::blocks::{
     answered, fold_mark, folded, from_agent, indent, job, plain, tokens, tool, user,
 };
-use super::{shown, spinner};
+use super::{shown, spinner, suggested};
 use crate::app::{App, Entry, ImageSpot, Tone, Transcript};
 use crate::ui::thread::{
     markdown,
@@ -156,6 +156,7 @@ pub(super) fn hidden_line(entry: &Entry, text: &str) -> Line<'static> {
         Entry::Skill { .. } => "skill change",
         Entry::Job { .. } => "job result",
         Entry::Block(_) => "block",
+        Entry::Suggestion(_) => "Workshop card",
     };
     let lines = text.lines().count().max(1);
     Line::from(vec![
@@ -176,7 +177,10 @@ pub(super) fn ends_turn(entries: &[Entry], index: usize) -> bool {
         )
     });
     // A shown block is a step of the turn, as its tool call was.
-    let step = matches!(next, Some(Entry::Tool { .. } | Entry::Block(_)));
+    let step = matches!(
+        next,
+        Some(Entry::Tool { .. } | Entry::Block(_) | Entry::Suggestion(_))
+    );
     matches!(entries[index], Entry::Answer(_)) && !step
 }
 
@@ -239,6 +243,7 @@ pub(super) fn entry_lines(
             open,
         } => from_agent(thread_id, text, *open, width),
         Entry::Block(block) => shown::render(block, width),
+        Entry::Suggestion(card) => suggested::render(card, width),
         Entry::Notice { text, tone, .. } | Entry::Skill { text, tone, .. } => {
             let (mark, style) = match tone {
                 Tone::Info => (DOT, dim()),

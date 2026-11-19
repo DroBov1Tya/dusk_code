@@ -10,6 +10,7 @@
 //! - `place`: where a plugin's part shows and what a click on it opens;
 //! - `scope`: which listings each shelf of Customize offers in its Workshop;
 //! - `store`: the plugins the store offers and what a client asks of it;
+//! - `suggestion`: a card of listings the agent put in a chat;
 //! - `view`: the widget tree a part is drawn from, and the events it sends back;
 //! - `wire`: the messages between the core and the plugin's process.
 
@@ -20,6 +21,7 @@ mod permission;
 mod place;
 mod scope;
 mod store;
+mod suggestion;
 mod view;
 mod wire;
 
@@ -33,6 +35,10 @@ pub use store::{
     CATEGORIES, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind,
     LOCAL_SOURCE, Listing, OFFICIAL_SOURCE, Order, PICKS, PREVIEW_BYTES, Picks, Probe, RepoStars,
     Runs, ScreenshotRef, SourceFailure, SourceRow, StoreList, StoreRequest, Tier, UpdateReport,
+};
+pub use suggestion::{
+    MAX_LABEL_CHARS, MAX_SUGGESTED, SEARCH_WORKSHOP_TOOL, SUGGEST_TOOL, Suggested, Suggestion,
+    listing_id,
 };
 pub use view::{
     ButtonIcon, ListItem, MAX_NODES, MAX_TEXT, RowLayout, Size, Tone, TouchPhase, UiEvent, Widget,

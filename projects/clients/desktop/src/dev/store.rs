@@ -545,6 +545,56 @@ pub fn fake(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     cx.notify();
 }
 
+/// `fake=suggest`: a chat whose agent put a card of three made-up listings in it, one of
+/// them installed, read as the store's for the card; after `fake=store`.
+pub fn suggest(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    use crate::pages::chat::transcript::{Item, Transcript};
+    use dusk_protocol::plugin::{Kind, Suggested, Suggestion};
+    let listings = ws.workshop.listings.clone().unwrap_or_else(listings);
+    let pick = |kind: Kind, installed: bool| {
+        listings
+            .iter()
+            .find(|listing| listing.kind == kind && listing.installed.is_some() == installed)
+            .map(Suggested::of)
+    };
+    let rows: Vec<Suggested> = [
+        pick(Kind::Pack, false),
+        pick(Kind::Plugin, true),
+        pick(Kind::Skill, false),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let mut chat = Transcript::default();
+    chat.push(
+        Item::User {
+            text: "Find me something for interface animation".into(),
+            sequence: Some(1),
+            answered: Vec::new(),
+        },
+        0,
+    );
+    chat.push(
+        Item::Suggestion(Suggestion {
+            label: "Design and interface animation skills".into(),
+            listings: rows,
+        }),
+        0,
+    );
+    chat.push(
+        Item::Assistant {
+            text: "These two fit the motion work; add the one you want.".into(),
+            reasoning: String::new(),
+        },
+        0,
+    );
+    ws.workshop.suggested.listings = Some(listings);
+    ws.chats.insert("suggest".into(), chat);
+    ws.shown = Some("suggest".into());
+    ws.center = Center::Chat;
+    cx.notify();
+}
+
 /// `workshop`: the Plugins shelf's Workshop shown, `workshop=connectors|skills|agents`
 /// another shelf's, `workshop=installed:SHELF` a shelf's Installed list; `workshop=install:NAME|remove:NAME`: its window that
 /// asks first; `workshop=busy:NAME`: the capsule at work; `workshop=failed:NAME`: the

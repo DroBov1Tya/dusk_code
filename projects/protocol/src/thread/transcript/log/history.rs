@@ -90,7 +90,8 @@ impl<L> ChatLog<L> {
             }
             MessageRole::Tool => {
                 let call_id = message.tool_call_id.as_deref().unwrap_or_default();
-                if !self.show_block(call_id, &message.content)
+                if !self.suggestion(call_id, &message.content)
+                    && !self.show_block(call_id, &message.content)
                     && let Some(index) = self.tool_index(call_id)
                 {
                     if let Item::Tool(tool) = &mut self.items[index] {

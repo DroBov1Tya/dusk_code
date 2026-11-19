@@ -792,6 +792,21 @@ button.link, a.link { background: none; border: 0; padding: 0; color: var(--acce
 .slot-state.installed { color: var(--good); }
 .slot-state.waiting { color: var(--accent); }
 .slot-note { font-size: 12px; color: var(--muted); white-space: nowrap; }
+/* A card of listings the agent put in a chat: a heading, then rows of a small tile,
+   the name with its kind and tier, one line of text, and the Workshop card's slot. */
+.suggested { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.suggested h3 { margin: 0; padding: var(--s3) var(--s4); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.suggested-row { position: relative; display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s4); border-top: 1px solid var(--line); min-width: 0; }
+.suggested-row:hover { background: color-mix(in srgb, var(--surface) 50%, var(--raised)); }
+.suggested-row .tile { position: relative; flex: none; width: 40px; height: 40px; border-radius: 8px; overflow: hidden; }
+.suggested-row .tile .ph > svg { width: 20px; height: 20px; }
+.suggested-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.suggested-name { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.suggested-name .open { min-width: 0; padding: 0; border: 0; background: none; color: inherit; text-align: left; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.suggested-name .open::after { content: ""; position: absolute; inset: 0; }
+.suggested-name .open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.suggested-name .kind { flex: none; font-size: 12px; color: var(--muted); }
+.suggested-text .desc { margin: 0; font-size: 12px; line-height: 18px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Light's success and warning are under 4.5:1 on white: the glyph keeps the colour,
    the words take the secondary text. */
 [data-theme="light"] .slot-state.installed, [data-theme="light"] .capsule .notice { color: var(--fg2); }

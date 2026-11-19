@@ -210,3 +210,50 @@ fn checks_at_their_caps_stay_inside_the_width() {
         screen(&shown(arguments.clone()), width);
     }
 }
+
+/// A Workshop card is a short list in place of its step, every text on one plain line,
+/// with how to add a listing through the Workshop; nothing in it installs.
+#[test]
+fn a_workshop_card_lists_its_rows_and_says_how_to_add_one() {
+    use dusk_protocol::plugin::{Kind, Listing, SUGGEST_TOOL, Suggested, Suggestion};
+    let listing = Listing {
+        source: "official".into(),
+        name: "motion-kit".into(),
+        kind: Kind::Pack,
+        description: "Springs\x1b[2J and \u{202e}easing".into(),
+        skills: vec!["a".into(), "b".into()],
+        ..Listing::default()
+    };
+    let card = Suggestion {
+        label: "Animation skills".into(),
+        listings: vec![Suggested::of(&listing)],
+    };
+    let call = ToolCall {
+        id: "s".into(),
+        name: SUGGEST_TOOL.into(),
+        arguments: json!({ "ids": ["official/motion-kit"], "label": "Animation skills" }),
+    };
+    let mut transcript = Transcript::default();
+    transcript.add_user("go");
+    transcript.apply(ThreadEvent::ToolStarted(call));
+    transcript.apply(ThreadEvent::ToolFinished {
+        call_id: "s".into(),
+        result: ToolResult::text(card.result()),
+    });
+    assert!(matches!(
+        transcript.entries[1],
+        crate::app::Entry::Suggestion(_)
+    ));
+    let wide = screen(&transcript, 100).join("\n");
+    assert!(wide.contains("Animation skills"), "{wide}");
+    assert!(wide.contains("motion-kit  pack"), "{wide}");
+    assert!(wide.contains("2 skills"), "{wide}");
+    assert!(wide.contains("/plugins store <name>"), "{wide}");
+    assert!(!wide.contains(['\x1b', '\u{202e}']), "{wide}");
+    assert!(
+        !wide.contains(SUGGEST_TOOL),
+        "the tool step is gone: {wide}"
+    );
+    // Narrow, every line still fits.
+    screen(&transcript, 20);
+}

@@ -154,7 +154,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ),
         (
             "/plugins",
-            "the plugins found, to switch on or off; /plugins store installs more",
+            "the plugins found, to switch on or off; /plugins store [name] installs more",
         ),
         (
             "/tab",

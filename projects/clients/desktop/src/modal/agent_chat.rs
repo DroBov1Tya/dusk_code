@@ -101,7 +101,8 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 }
                 said.into_any_element()
             }
-            Item::Tool(_) => div().into_any_element(),
+            // Only a chat shows Workshop cards; an agent has no user to show one to.
+            Item::Tool(_) | Item::Suggestion(_) => div().into_any_element(),
             Item::Block(shown) => crate::pages::chat::messages::block(ws, agent, at, shown, cx),
             Item::Job(result) => {
                 crate::pages::chat::messages::job(ws, agent, at, result, cx).into_any_element()

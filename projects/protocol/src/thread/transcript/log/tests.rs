@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::catalog::SkillSaveAction;
+use crate::plugin::{Kind, Listing, SUGGEST_TOOL, Suggested, Suggestion};
 use crate::thread::{
     FAILED_PREFIXES, Message, MessageRole, SHOW_TOOL, SUGGEST_NEXT_TOOL, Turn, TurnStatus,
     stored_failure,
@@ -401,6 +402,8 @@ fn a_conversation_reads_the_same_from_history_and_live() {
         from_thread_id: Some("sub1".into()),
         ..message(MessageRole::User, "the report")
     };
+    let card = suggestion();
+    let suggest = call("s", SUGGEST_TOOL, json!({ "ids": ["official/motion-kit"] }));
     let mut step = calling(vec![read.clone(), run.clone(), ask_agent.clone()]);
     step.content = "Let me look.".into();
     step.reasoning = Some("think".into());
@@ -416,7 +419,9 @@ fn a_conversation_reads_the_same_from_history_and_live() {
         at(message(MessageRole::User, &answer), 9),
         at(message(MessageRole::Assistant, "done"), 10),
         at(message(MessageRole::User, "again"), 11),
-        at(message(MessageRole::Assistant, "second"), 12),
+        at(calling(vec![suggest.clone()]), 12),
+        at(result("s", &card.result()), 13),
+        at(message(MessageRole::Assistant, "second"), 14),
     ];
     let change = |undone: bool| SkillChange {
         id: 1,
@@ -472,6 +477,8 @@ fn a_conversation_reads_the_same_from_history_and_live() {
         ThreadEvent::Idle,
         ThreadEvent::UserMessage(history[10].clone()),
         ThreadEvent::TurnStarted(turn()),
+        ThreadEvent::ToolStarted(suggest),
+        finished("s", &card.result(), false),
         text("second"),
         ThreadEvent::TurnFinished(ended()),
         ThreadEvent::Idle,
@@ -488,7 +495,66 @@ fn a_conversation_reads_the_same_from_history_and_live() {
     assert!(matches!(&stored.items[3], Item::Tool(tool) if tool.state == ToolState::Failed));
     assert!(matches!(&stored.items[5], Item::Agent { from, .. } if *from == agent_name("sub1")));
     assert!(matches!(&stored.items[7], Item::User { answered, .. } if answered.len() == 1));
-    assert_eq!(stored.activity_boundaries, [1, 9, 10, 11]);
+    assert!(matches!(&stored.items[10], Item::Suggestion(shown) if *shown == card));
+    assert_eq!(stored.activity_boundaries, [1, 9, 10, 12]);
+}
+
+fn suggestion() -> Suggestion {
+    let listing = Listing {
+        name: "motion-kit".into(),
+        source: "official".into(),
+        version: "1.0.0".into(),
+        description: "Interface animation.".into(),
+        kind: Kind::Pack,
+        ..Listing::default()
+    };
+    Suggestion {
+        label: "Animation skills".into(),
+        listings: vec![Suggested::of(&listing)],
+    }
+}
+
+/// A card takes the place of its step only for `suggest_from_workshop`, and only when
+/// its result holds one: a refused call, or another tool answering with the same text,
+/// stays a step.
+#[test]
+fn a_workshop_card_replaces_only_its_own_call() {
+    let card = suggestion();
+    let finished = |id: &str, content: &str, is_error: bool| ThreadEvent::ToolFinished {
+        call_id: id.into(),
+        result: ToolResult {
+            is_error,
+            ..ToolResult::text(content.into())
+        },
+    };
+    let mut chat = Chat::default();
+    chat.apply(
+        ThreadEvent::ToolStarted(call("s", SUGGEST_TOOL, json!({}))),
+        1,
+    );
+    chat.apply(finished("s", &card.result(), false), 2);
+    assert!(matches!(&chat.items[0], Item::Suggestion(shown) if *shown == card));
+
+    chat.apply(
+        ThreadEvent::ToolStarted(call("x", "mcp_echo", json!({}))),
+        3,
+    );
+    chat.apply(finished("x", &card.result(), false), 4);
+    assert!(matches!(&chat.items[1], Item::Tool(tool) if tool.call_id == "x"));
+
+    chat.apply(
+        ThreadEvent::ToolStarted(call("e", SUGGEST_TOOL, json!({}))),
+        5,
+    );
+    chat.apply(finished("e", "error: not in the Workshop: a/b", true), 6);
+    assert!(matches!(&chat.items[2], Item::Tool(tool) if tool.state == ToolState::Failed));
+
+    let history = [
+        calling(vec![call("e", SUGGEST_TOOL, json!({}))]),
+        result("e", "error: not in the Workshop: a/b"),
+    ];
+    let stored = Chat::from_history(&history);
+    assert!(matches!(&stored.items[0], Item::Tool(tool) if tool.state == ToolState::Failed));
 }
 
 /// `suggest_next` is no step, live or read back: its text reaches the composer in

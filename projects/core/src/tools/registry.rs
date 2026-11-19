@@ -79,7 +79,11 @@ impl ToolRegistry {
     pub fn add(&mut self, tool: Box<dyn Tool>) {
         // This name belongs to the core tool, including when an MCP server attempts
         // to expose a colliding name in a child thread.
-        if matches!(tool.name(), "display_image" | "display_audio") && !tool.root_only() {
+        if matches!(
+            tool.name(),
+            "display_image" | "display_audio" | dusk_protocol::plugin::SUGGEST_TOOL
+        ) && !tool.root_only()
+        {
             return;
         }
         let name = tool.name().to_owned();
@@ -510,6 +514,9 @@ mod tests {
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
         tools.push(Box::new(Show));
+        let paths = crate::init::paths::Paths::new(dir.join("config"), dir.join("work"));
+        tools.push(Box::new(crate::tools::SearchWorkshop::new(paths.clone())));
+        tools.push(Box::new(crate::tools::SuggestFromWorkshop::new(paths)));
         tools.push(Box::new(SuggestNext));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
         #[cfg(any(target_os = "macos", target_os = "linux"))]

@@ -126,7 +126,8 @@ impl Workspace {
     pub(super) fn load_covers(&mut self, cx: &mut Context<Self>) {
         let mut wanted = Vec::new();
         let shop = &mut self.workshop;
-        for listing in shop.listings.iter().flatten() {
+        let suggested = shop.suggested.listings.iter().flatten();
+        for listing in shop.listings.iter().flatten().chain(suggested) {
             let Some(cover) = &listing.cover else {
                 continue;
             };

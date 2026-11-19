@@ -20,6 +20,16 @@ pub enum Tab {
 }
 
 impl Tab {
+    /// The tab of a shelf's Workshop.
+    pub fn of(scope: Scope) -> Self {
+        match scope {
+            Scope::Agents => Self::Agents,
+            Scope::Skills => Self::Skills,
+            Scope::Connectors => Self::Mcp,
+            Scope::Plugins => Self::Plugins,
+        }
+    }
+
     /// The Workshop the tab has; Tools and Voice have none in the store.
     fn scope(self) -> Option<Scope> {
         match self {
@@ -82,6 +92,8 @@ mod skills;
 mod tools;
 mod voice;
 mod workshop;
+
+pub use workshop::SuggestedCard;
 
 use agents::Agents;
 use mcp::Mcp;
