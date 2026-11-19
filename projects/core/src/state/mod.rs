@@ -17,6 +17,7 @@ pub use agents::{AgentPhase, Identity};
 pub use db::State;
 pub use project::{Episode, Recall};
 pub use project::{EpisodeKind, NewEpisode};
+pub use skill_changes::{NewSkillChange, StoredSkillChange};
 pub use thread::MEMBER_SOURCE;
 pub use thread::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Delivery,
@@ -35,7 +36,6 @@ pub use thread::{
 };
 // The team's store. Its callers are the team's runtime (T1), serving (P1) and recovery
 // (R1); until they land only its tests use these.
-pub use skill_changes::{NewSkillChange, StoredSkillChange};
 #[allow(unused_imports)]
 pub use thread::{
     BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamCounts, TeamError, TeamRun,

@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS skill_changes (
     skill TEXT NOT NULL,
     thread_id TEXT NOT NULL,
     call_id TEXT NOT NULL,
-    action TEXT NOT NULL CHECK (action IN ('created', 'updated')),
+    action TEXT NOT NULL CHECK (action IN ('created', 'updated', 'deleted')),
     reason TEXT NOT NULL,
     before TEXT,
     after TEXT NOT NULL,
