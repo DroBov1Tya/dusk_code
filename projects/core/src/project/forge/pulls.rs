@@ -45,7 +45,8 @@ pub async fn list(project: &Project) -> Result<Vec<PullRequest>> {
 }
 
 pub async fn view(project: &Project, number: u64) -> Result<PullRequestDetail> {
-    view_of(project, Some(number)).await
+    let number = number.to_string();
+    view_of(project, Some(&number), None).await
 }
 
 /// A pull request from the current branch into `base`, or the repository's default
@@ -71,16 +72,22 @@ pub async fn create(
         return Ok(detail(made, base, body));
     }
     if remote.host != "github.com" || remote.path.split('/').count() != 2 {
-        bail!("no plugin that is on serves {}", remote.host);
+        let plugins = if forges.on {
+            ", and no plugin that is on serves it"
+        } else {
+            ""
+        };
+        bail!(
+            "{} is not served: only github.com is built in{plugins}",
+            remote.host
+        );
     }
-    let title = format!("--title={title}");
-    let body = format!("--body={body}");
-    let base = base.map(|base| format!("--base={base}"));
-    let mut args = vec!["pr", "create", &title, &body];
-    args.extend(base.as_deref());
-    gh(PROGRAM, &project.dir, &args).await?;
-    let made = view_of(project, None).await?;
-    // `gh` may make it in the repository a fork came from: only the remote's own counts.
+    let head = head(project).await?;
+    let args = create_args(&remote, &head, title, body, base);
+    gh(PROGRAM, &project.dir, &as_strs(&args)).await?;
+    let repo = repo_arg(&remote);
+    let made = view_of(project, Some(&head), Some(&repo)).await?;
+    // Named by `--repo`, so made on the remote's own; checked still, in case `gh` did not.
     let page = format!(
         "https://github.com/{}/pull/{}",
         remote.path, made.pull.number
@@ -103,11 +110,8 @@ async fn ask(
     base: Option<&str>,
 ) -> Result<PullStatus> {
     let plugin = &served.plugin;
-    let head = git::git(&project.dir, &["branch", "--show-current"]).await?;
-    let head = head.trim();
-    if head.is_empty() {
-        bail!("a detached head has no branch to propose");
-    }
+    let head = head(project).await?;
+    let head = head.as_str();
     let dir = &project.dir;
     let status = StatusArgs {
         host: remote.host.clone(),
@@ -141,12 +145,60 @@ async fn ask(
         .map_err(|error| refusal(&error, name, true))?;
     match checked::pull(ok, &status.pull_prefix, &remote.host, None) {
         Ok(Some(pull)) => Ok(pull),
-        Ok(None) => bail!(
-            "{name} did not answer with a pull request of {}",
-            remote.path
-        ),
-        Err(error) => Err(refusal(&error, name, true)),
+        // It may well have been made: the user is told to look rather than to try again.
+        answer => {
+            if let Err(error) = answer {
+                tracing::debug!(
+                    "{name} made a pull request answered amiss: {}",
+                    error.message
+                );
+            }
+            bail!(
+                "{name} answered with no pull request of {}; it may have been made, check {name}",
+                remote.path
+            )
+        }
     }
+}
+
+/// The current branch, the head of a new pull request.
+async fn head(project: &Project) -> Result<String> {
+    let head = git::git(&project.dir, &["branch", "--show-current"]).await?;
+    let head = head.trim();
+    if head.is_empty() {
+        bail!("a detached head has no branch to propose");
+    }
+    Ok(git::check_branch(head)?.to_owned())
+}
+
+/// `--repo` naming the remote's own repository, so `gh` never picks another, such as
+/// the one a fork came from.
+fn repo_arg(remote: &Remote) -> String {
+    format!("--repo={}/{}", remote.host, remote.path)
+}
+
+/// `gh pr create` from `head` on the remote's own repository.
+fn create_args(
+    remote: &Remote,
+    head: &str,
+    title: &str,
+    body: &str,
+    base: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "pr".to_owned(),
+        "create".to_owned(),
+        repo_arg(remote),
+        format!("--head={head}"),
+        format!("--title={title}"),
+        format!("--body={body}"),
+    ];
+    args.extend(base.map(|base| format!("--base={base}")));
+    args
+}
+
+fn as_strs(args: &[String]) -> Vec<&str> {
+    args.iter().map(String::as_str).collect()
 }
 
 /// What the user reads when the forge `name` did not make it: a refusal of `create_pull`
@@ -191,12 +243,17 @@ fn detail(pull: PullStatus, base: Option<&str>, body: &str) -> PullRequestDetail
     }
 }
 
-/// One pull request with its body and checks; the current branch's when `number` is none.
-async fn view_of(project: &Project, number: Option<u64>) -> Result<PullRequestDetail> {
+/// One pull request with its body and checks, by number or head branch, of `repo` when
+/// named.
+async fn view_of(
+    project: &Project,
+    which: Option<&str>,
+    repo: Option<&str>,
+) -> Result<PullRequestDetail> {
     let fields = format!("--json={LIST_FIELDS},body,state");
-    let number = number.map(|number| number.to_string());
     let mut args = vec!["pr", "view"];
-    args.extend(number.as_deref());
+    args.extend(which);
+    args.extend(repo);
     args.push(&fields);
     let text = gh(PROGRAM, &project.dir, &args).await?;
     let raw: RawPull =
@@ -375,5 +432,32 @@ impl RawPull {
             checks,
             url: link(&self.url),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gh_creates_only_on_the_remotes_own_repository() {
+        let remote = Remote {
+            host: "github.com".into(),
+            path: "o/r".into(),
+        };
+        let args = create_args(&remote, "x", "Fix", "b", Some("main"));
+        assert_eq!(
+            args,
+            [
+                "pr",
+                "create",
+                "--repo=github.com/o/r",
+                "--head=x",
+                "--title=Fix",
+                "--body=b",
+                "--base=main"
+            ]
+        );
+        assert_eq!(create_args(&remote, "x", "Fix", "", None).len(), 6);
     }
 }

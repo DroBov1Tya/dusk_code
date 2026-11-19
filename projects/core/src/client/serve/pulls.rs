@@ -133,17 +133,23 @@ async fn refresh(
 /// now, and every other saved project's folder to hide from the call.
 pub(super) async fn forges(runtime: &Runtime, id: &str) -> Result<forge::Forges> {
     let config = runtime.config().current();
-    let others = runtime
-        .state()
-        .list_projects()
-        .await?
-        .into_iter()
-        .filter(|project| project.id != id)
-        .map(|project| project.dir)
-        .collect();
+    let on = config.contracts_on();
+    // Only a plugin's call hides them; with the switch off none is made.
+    let others = if on {
+        runtime
+            .state()
+            .list_projects()
+            .await?
+            .into_iter()
+            .filter(|project| project.id != id)
+            .map(|project| project.dir)
+            .collect()
+    } else {
+        Vec::new()
+    };
     Ok(forge::Forges {
         contracts: runtime.contracts(),
-        on: config.contracts_on(),
+        on,
         chosen: config.contracts().forge.clone(),
         others,
     })

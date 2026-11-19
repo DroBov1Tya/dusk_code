@@ -26,6 +26,7 @@ use crate::{
 /// Answers with the file named for the operation asked.
 const SCRIPT: &str = r#"#!/bin/sh
 data="$1"
+touch "$data/ran"
 IFS= read -r line
 case "$line" in
   *'"op":"status"'*) cat "$data/status" ;;
@@ -188,6 +189,26 @@ async fn a_served_host_reads_through_the_plugin() {
         ("github.com", "github", hint)
     );
     assert!(!reading.trouble);
+}
+
+/// With the switch off the plugin is never started: github.com goes to `gh`.
+#[tokio::test]
+async fn the_switch_off_never_starts_the_plugin() {
+    let Some(mut setup) = setup("off") else {
+        return;
+    };
+    setup.answer("status", status_answer());
+    setup.forges.on = false;
+    let reading =
+        super::status::read_with("/nonexistent/gh", &setup.project.dir, &setup.forges).await;
+    let Forge::SignIn(sign_in) = &reading.status.forge else {
+        panic!("{:?}", reading.status.forge);
+    };
+    assert_eq!(sign_in.hint, "gh auth login", "the built-in path answered");
+    assert!(!setup.data.join("ran").exists(), "the plugin was started");
+    setup.forges.on = true;
+    read_status(&setup.project, &setup.forges).await;
+    assert!(setup.data.join("ran").exists());
 }
 
 /// A plugin that does not answer is trouble: the tracker keeps the pulls, the name and

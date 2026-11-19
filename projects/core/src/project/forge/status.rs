@@ -50,7 +50,7 @@ pub async fn read(project: &Project, forges: &Forges) -> Reading {
     read_with(PROGRAM, &project.dir, forges).await
 }
 
-async fn read_with(program: &str, dir: &Path, forges: &Forges) -> Reading {
+pub(super) async fn read_with(program: &str, dir: &Path, forges: &Forges) -> Reading {
     let mut reading = Reading {
         status: RepositoryStatus::default(),
         mine: 0,
