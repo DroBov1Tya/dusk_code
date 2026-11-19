@@ -514,7 +514,7 @@ fn the_store_reaches_only_public_addresses() {
 async fn a_name_that_resolves_here_is_refused() {
     use reqwest::dns::Resolve;
     let name: reqwest::dns::Name = "localhost".parse().unwrap();
-    assert!(fetch::PublicOnly.resolve(name).await.is_err());
+    assert!(crate::net::public::PublicOnly.resolve(name).await.is_err());
 }
 
 #[test]

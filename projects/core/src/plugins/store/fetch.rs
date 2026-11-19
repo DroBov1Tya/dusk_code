@@ -8,17 +8,22 @@
 //! hosts. Its SHA-256 is checked either way; the limits keep the core from being sent
 //! to fetch from anywhere a list or a redirect names.
 
-use std::{net::SocketAddr, sync::Arc, sync::LazyLock, time::Duration};
+use std::{sync::Arc, sync::LazyLock, time::Duration};
 
 use anyhow::{Context, Result, anyhow, ensure};
 use reqwest::{
     Client, Url,
-    dns::{Addrs, Name, Resolve, Resolving},
     redirect::{Attempt, Policy},
 };
 use sha2::{Digest, Sha256};
 
-use crate::{net::BodyError, plugins::broker::is_public, release::update::VERSION};
+use crate::{
+    net::{
+        BodyError,
+        public::{PublicOnly, is_public},
+    },
+    release::update::VERSION,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(120);
 /// A list or a picture is small; a source that takes longer is reported, not waited on.
@@ -151,25 +156,4 @@ fn client(redirects: Policy) -> Result<Client, String> {
         .user_agent(format!("duskcode/{VERSION}"))
         .build()
         .map_err(|error| format!("cannot start the store's client: {error}"))
-}
-
-/// Resolves a name only when every address it has is a public one, so a list cannot
-/// point the core at this machine, the local network or a cloud's metadata service.
-pub struct PublicOnly;
-
-impl Resolve for PublicOnly {
-    fn resolve(&self, name: Name) -> Resolving {
-        let host = name.as_str().to_owned();
-        Box::pin(async move {
-            let addresses: Vec<SocketAddr> =
-                tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
-            if addresses.is_empty() || !addresses.iter().all(|address| is_public(address.ip())) {
-                return Err(format!(
-                    "{host} resolves to an address on this machine or a private network"
-                )
-                .into());
-            }
-            Ok(Box::new(addresses.into_iter()) as Addrs)
-        })
-    }
 }
