@@ -42,6 +42,7 @@ pub fn render(
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     composer::show_draft(ws, window, cx);
+    composer::show_suggestion(ws, window, cx);
     code::show(ws.shown.as_ref(), cx);
     let theme = cx.theme();
     let danger = theme.danger;

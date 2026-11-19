@@ -12,6 +12,7 @@ mod recall;
 mod remember;
 mod show;
 mod stored_result;
+mod suggest_next;
 mod tasks;
 
 pub use ask_user::{AskUser, Question};
@@ -27,4 +28,5 @@ pub use recall::RecallTool;
 pub use remember::Remember;
 pub(crate) use remember::project_folder;
 pub use show::Show;
+pub use suggest_next::SuggestNext;
 pub use tasks::{GatesYes, Started, Tasks, TeamRunner};

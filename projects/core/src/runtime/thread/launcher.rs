@@ -25,8 +25,8 @@ use crate::{
     state::{Identity, State},
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
-        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Show, Tasks,
-        ToolRegistry, ToolScope,
+        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Show, SuggestNext,
+        Tasks, ToolRegistry, ToolScope,
     },
 };
 
@@ -179,6 +179,7 @@ impl Launcher {
         if depth == 0 {
             tools.add(Box::new(AskUser));
             tools.add(Box::new(Show));
+            tools.add(Box::new(SuggestNext));
             tools.add(Box::new(GoalTool::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
@@ -345,6 +346,7 @@ mod tests {
         ("screenshot", true, false),
         ("search_files", true, true),
         ("show", true, false),
+        ("suggest_next", true, false),
         ("tasks", false, false),
         ("type_text", false, false),
         ("window_session", false, false),

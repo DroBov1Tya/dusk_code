@@ -11,6 +11,7 @@ use super::{Activity, App, Entry, Focus, Poll, Tone};
 
 impl App {
     pub fn apply(&mut self, event: ThreadEvent) {
+        self.suggestion.hear(&event);
         // The chat folds the event as every client's does, and says the same lines. This
         // client shows its own message as it sends it, and a goal's note its own way.
         if !matches!(

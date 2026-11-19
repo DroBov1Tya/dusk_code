@@ -26,7 +26,7 @@ pub const TEAM: &str = "TEAM";
 const BUILTIN: [&str; 4] = [MAIN, PLAN, ORCHESTRATOR, TEAM];
 
 /// What PLAN can do: read, look things up, and write the plan down.
-const PLAN_TOOLS: [&str; 9] = [
+const PLAN_TOOLS: [&str; 10] = [
     "read_file",
     "search_files",
     "project_graph",
@@ -36,16 +36,18 @@ const PLAN_TOOLS: [&str; 9] = [
     "tasks",
     "ask_user",
     "show",
+    "suggest_next",
 ];
 
 /// What ORCHESTRATOR and TEAM can do: hand work out and keep track of it.
-const ORCHESTRATOR_TOOLS: [&str; 6] = [
+const ORCHESTRATOR_TOOLS: [&str; 7] = [
     "ask_agent",
     "read_history",
     "load_skill",
     "tasks",
     "ask_user",
     "show",
+    "suggest_next",
 ];
 
 /// The modes in one folder.

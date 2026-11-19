@@ -5,7 +5,7 @@
 
 use dusk_protocol::{
     config::ApprovalPolicy,
-    thread::{Applied, ChatLog, Message, ThreadEvent},
+    thread::{Applied, ChatLog, Message, Suggestion, ThreadEvent},
     tools::Question,
 };
 use leptos::prelude::{ArcTrigger, Notify, Track};
@@ -31,6 +31,8 @@ pub struct ChatData {
     pub pending: Vec<String>,
     /// The stream broke or the thread ended; sending opens it again.
     pub ended: bool,
+    /// The user's likely next message, as the model proposed it, for the composer.
+    pub suggestion: Suggestion,
     /// Fires when only one item's content changed, as a streamed piece of the answer
     /// does; the chat's own signal then stays quiet.
     pub streamed: ArcTrigger,
@@ -49,6 +51,7 @@ impl Default for ChatData {
             answers: Vec::new(),
             pending: Vec::new(),
             ended: false,
+            suggestion: Suggestion::default(),
             streamed: ArcTrigger::new(),
             subagents: ArcTrigger::new(),
         }
@@ -96,6 +99,7 @@ impl ChatData {
     }
 
     pub fn apply(&mut self, event: ThreadEvent) -> Applied {
+        self.suggestion.hear(&event);
         if matches!(
             event,
             ThreadEvent::TurnFinished(_) | ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_)

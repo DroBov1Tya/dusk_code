@@ -578,6 +578,18 @@ a { text-underline-offset: 3px; }
   display: block; min-height: 56px; max-height: min(220px, 27dvh); padding: var(--s1); font-size: 14px;
 }
 .composer textarea::placeholder { color: var(--muted); }
+/* The box itself marks a suggestion: its edge takes the accent while one is offered and
+   flares once as Tab takes it in. Only colour and shadow change, so nothing moves. */
+.composer.suggesting { border-color: color-mix(in srgb, var(--accent) 80%, transparent); }
+.composer.taken { animation: suggestion-taken 600ms ease-out; }
+@keyframes suggestion-taken {
+  from { border-color: var(--accent); box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 30%, transparent); }
+}
+.composer .tab-hint {
+  position: absolute; top: 14px; right: 16px; color: var(--muted); font-size: 11px; line-height: 16px;
+  pointer-events: none;
+}
+.composer.suggesting textarea { padding-right: 96px; }
 .composer-actions { flex-wrap: wrap; }
 .composer-submit {
   display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap;

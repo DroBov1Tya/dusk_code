@@ -218,6 +218,12 @@ pub enum ThreadEvent {
     Forked {
         summary: String,
     },
+    /// The model proposed the user's next message (`suggest_next`); a composer shows it
+    /// greyed in its empty input until the user says something or a new turn starts
+    /// (`ThreadEvent::ends_suggestion`). Only a chat's own: a subagent has no user.
+    NextSuggested {
+        text: String,
+    },
     /// Nothing is running and nothing will start until the next message.
     Idle,
     /// The thread stopped on an error it could not handle, such as a database failure.

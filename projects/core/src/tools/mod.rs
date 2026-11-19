@@ -31,7 +31,7 @@ pub use computer::{
 pub use console::{Jobs, RunCommand, Shaped};
 pub use harness::{
     AskUser, DisplayAudio, DisplayImage, GatesYes, GoalTool, PlanEdit, Question, ReadHistory,
-    Remember, Show, Started, Tasks, TeamRunner, is_sound, save_sound,
+    Remember, Show, Started, SuggestNext, Tasks, TeamRunner, is_sound, save_sound,
 };
 pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_plan};
 pub use mcp::McpTool;

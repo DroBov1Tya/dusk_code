@@ -93,6 +93,7 @@ per_thread! {
     poll: Option<Poll>,
     polls_waiting: VecDeque<Question>,
     poll_answers: Vec<String>,
+    suggestion: dusk_protocol::thread::Suggestion,
     approvals: Vec<Asked>,
     local_unsent: Vec<LocalUnsent>,
     jobs: Vec<JobInfo>,

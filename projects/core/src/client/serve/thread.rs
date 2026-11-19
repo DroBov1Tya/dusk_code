@@ -21,6 +21,17 @@ use tracing::warn;
 /// For a client bound to chats that asks to open one with no folder stored.
 const NO_FOLDER: &str = "this chat cannot be opened from this client";
 
+/// What a chat's event does to the suggestion kept for a client that joins: a new one,
+/// none any more, or (`None`) nothing. A subagent's event comes wrapped and changes
+/// nothing: only the chat has a user.
+pub(super) fn suggestion_after(event: &ThreadEvent) -> Option<Option<String>> {
+    match event {
+        ThreadEvent::NextSuggested { text } => Some(Some(text.clone())),
+        event if event.ends_suggestion() => Some(None),
+        _ => None,
+    }
+}
+
 impl Server {
     pub(super) async fn thread(&mut self, request: ThreadRequest) -> Result<Response> {
         let runtime = Arc::clone(&self.runtime);
@@ -52,6 +63,8 @@ impl Server {
                     // without a fold boundary, or waits, with the question it waits on.
                     // The lock keeps it before the end. With no turn running, it sees why
                     // the newest one failed, as the others did.
+                    // In the forwarding task's order: the suggestion, then the turn.
+                    let suggested = open.suggested.lock();
                     let running = open.running.lock();
                     let events = match (running.clone(), failure) {
                         (Some(Running { turn, question }), _) if turn.waiting.is_some() => {
@@ -65,7 +78,10 @@ impl Server {
                         (None, None) => [None, None],
                     };
                     let agents = agents.then_some(ThreadEvent::AgentsWorking(true));
-                    for event in events.into_iter().chain([agents]).flatten() {
+                    let suggestion = suggested
+                        .clone()
+                        .map(|text| ThreadEvent::NextSuggested { text });
+                    for event in events.into_iter().chain([agents, suggestion]).flatten() {
                         send_to(
                             &self.subscribers,
                             self.caller,
@@ -242,6 +258,8 @@ impl Server {
         let flag = Arc::clone(&done);
         let running: Arc<Mutex<Option<Running>>> = Arc::new(Mutex::new(None));
         let current = Arc::clone(&running);
+        let suggested: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let suggestion = Arc::clone(&suggested);
         let forward = tokio::spawn(async move {
             // A thread may say it is idle as it opens; it is done only once it has worked.
             let mut worked = false;
@@ -298,6 +316,12 @@ impl Server {
                     }
                     _ => None,
                 };
+                // Kept under the lock a joining client takes, as the turn is.
+                let _suggested = suggestion_after(&event).map(|text| {
+                    let mut kept = suggestion.lock();
+                    *kept = text;
+                    kept
+                });
                 let event = Event::Thread {
                     thread_id: id.clone(),
                     event: Box::new(event),
@@ -330,6 +354,7 @@ impl Server {
                 unattended: false,
                 done,
                 running,
+                suggested,
             },
         );
         Response::Opened { thread_id }

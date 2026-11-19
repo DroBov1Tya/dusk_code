@@ -109,3 +109,27 @@ fn skipping_moves_on_and_the_last_skip_sends_every_answer() {
     assert_eq!(sent, [first.skipped(), second.skipped()].join("\n\n"));
     assert!(chat.question.is_none() && chat.answers.is_empty());
 }
+
+#[test]
+fn the_composer_offers_the_chats_own_suggestion_until_the_user_speaks() {
+    let mut chat = ChatData::default();
+    chat.apply(ThreadEvent::Subagent {
+        thread_id: "child".into(),
+        event: Box::new(ThreadEvent::NextSuggested {
+            text: "from a subagent".into(),
+        }),
+    });
+    assert_eq!(chat.suggestion.ghost(""), None);
+    chat.apply(ThreadEvent::NextSuggested {
+        text: "commit it".into(),
+    });
+    assert_eq!(chat.suggestion.ghost(""), Some("commit it"));
+    // Typing hides it and Tab over text keeps its meaning; the empty box shows it again.
+    assert_eq!(chat.suggestion.ghost("c"), None);
+    assert_eq!(chat.suggestion.accept("c"), None);
+    assert_eq!(chat.suggestion.accept("").as_deref(), Some("commit it"));
+    chat.apply(ThreadEvent::Queued {
+        message_id: "m".into(),
+    });
+    assert_eq!(chat.suggestion.ghost(""), None);
+}

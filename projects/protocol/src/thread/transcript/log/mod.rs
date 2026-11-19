@@ -21,8 +21,8 @@ use crate::{
     catalog::SkillChange,
     model::{ModelEvent, ToolCall},
     thread::{
-        Block, JobResult, LiveTurn, Pin, Task, ThreadEvent, ThreadTokens, TurnStatus, TurnWait,
-        Work, WorkKind, activity, agent_name,
+        Block, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, ThreadEvent, ThreadTokens,
+        TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind},
 };
@@ -900,6 +900,11 @@ impl<L> ChatLog<L> {
     /// A step that starts, live or read from history; a `show` call also keeps the block it
     /// asks for, which its result may put in the step's place.
     fn start_tool(&mut self, call: &ToolCall, state: ToolState, at: i64) {
+        // A suggested next message is no step: the composer shows it, from
+        // `NextSuggested`, and its result finds no row to land on.
+        if call.name == SUGGEST_NEXT_TOOL {
+            return;
+        }
         self.asked.call(call);
         if let Some(block) = Block::asked(call) {
             self.showing.insert(call.id.clone(), block);

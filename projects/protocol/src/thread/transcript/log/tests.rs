@@ -4,7 +4,8 @@
 use super::*;
 use crate::catalog::SkillSaveAction;
 use crate::thread::{
-    FAILED_PREFIXES, Message, MessageRole, SHOW_TOOL, Turn, TurnStatus, stored_failure,
+    FAILED_PREFIXES, Message, MessageRole, SHOW_TOOL, SUGGEST_NEXT_TOOL, Turn, TurnStatus,
+    stored_failure,
 };
 use crate::tools::ToolResult;
 use serde_json::json;
@@ -488,4 +489,35 @@ fn a_conversation_reads_the_same_from_history_and_live() {
     assert!(matches!(&stored.items[5], Item::Agent { from, .. } if *from == agent_name("sub1")));
     assert!(matches!(&stored.items[7], Item::User { answered, .. } if answered.len() == 1));
     assert_eq!(stored.activity_boundaries, [1, 9, 10, 11]);
+}
+
+/// `suggest_next` is no step, live or read back: its text reaches the composer in
+/// `NextSuggested`, and the transcript shows nothing for it.
+#[test]
+fn a_suggested_next_message_is_no_step() {
+    let suggest = call("s", SUGGEST_NEXT_TOOL, json!({ "text": "commit it" }));
+    let mut live = Chat::default();
+    live.apply(ThreadEvent::ToolStarted(suggest.clone()), 0);
+    live.apply(
+        ThreadEvent::ToolFinished {
+            call_id: "s".into(),
+            result: ToolResult::text("Suggested.".into()),
+        },
+        0,
+    );
+    live.apply(
+        ThreadEvent::NextSuggested {
+            text: "commit it".into(),
+        },
+        0,
+    );
+    let read = call("r", "read_file", json!({ "path": "a" }));
+    let restored = Chat::from_history(&[
+        calling(vec![read, suggest]),
+        result("r", "text"),
+        result("s", "Suggested."),
+    ]);
+    assert!(live.items.is_empty(), "{:?}", live.items);
+    assert_eq!(restored.items.len(), 1);
+    assert!(matches!(&restored.items[0], Item::Tool(tool) if tool.name == "read_file"));
 }

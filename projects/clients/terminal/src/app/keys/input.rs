@@ -90,6 +90,8 @@ impl App {
                     poll.active = true;
                 }
             }
+            // Over the empty box, Tab takes in the suggestion shown there.
+            KeyCode::Tab if self.accept_suggestion() => {}
             KeyCode::Tab => return Action::NextMode,
             KeyCode::BackTab => {
                 if let Some(last) = self.transcript.last_foldable() {
@@ -100,6 +102,10 @@ impl App {
             KeyCode::Esc if self.is_busy() || self.agents_at_work() => {
                 self.unqueue_into_box();
                 return Action::Cancel;
+            }
+            // Esc puts the suggestion away until the next one.
+            KeyCode::Esc if self.suggestion_ghost().is_some() => {
+                self.suggestion.dismiss();
             }
             _ => {}
         }
