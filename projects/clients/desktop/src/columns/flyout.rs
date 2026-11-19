@@ -25,14 +25,10 @@ pub enum Flyout {
 }
 
 /// The panel, when one is up; drawn over the work, beside the rail.
-pub fn render(
-    ws: &mut Workspace,
-    window: &mut Window,
-    cx: &mut Context<Workspace>,
-) -> Option<Deferred> {
+pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Option<Deferred> {
     let kind = ws.flyout?;
     let body = match kind {
-        Flyout::Chats => crate::columns::sidebar::render(ws, window, cx),
+        Flyout::Chats => crate::columns::sidebar::render(ws, cx),
         Flyout::Schedules => schedules(ws, cx),
     };
     let theme = cx.theme();

@@ -1,7 +1,7 @@
 //! A project's chats, and opening one: a chat opened in this window stays open, so its
 //! work goes on while another one is shown.
 
-use std::path::PathBuf;
+use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 
 use dusk_protocol::{project::Project, thread::Thread};
 use gpui_kit::{
@@ -20,17 +20,8 @@ use crate::{
 /// The box the working ring and the resting dot stand in.
 const MARK: f32 = 12.;
 
-pub fn render(
-    ws: &Workspace,
-    project: &Project,
-    _: &mut Window,
-    cx: &mut Context<Workspace>,
-) -> Div {
-    let dir = project.dir.to_string_lossy();
-    let threads: Vec<&Thread> = super::listed(ws, cx)
-        .into_iter()
-        .filter(|thread| thread.project.as_deref() == Some(dir.as_ref()))
-        .collect();
+/// A project's chats, indented under it.
+pub fn render(ws: &Workspace, threads: &[&Thread], cx: &mut Context<Workspace>) -> Div {
     let mut list = div().flex().flex_col().gap_0p5().pl_5().pt_1();
     if threads.is_empty() {
         return list.child(widgets::muted("No chats yet.", cx));
@@ -41,14 +32,40 @@ pub fn render(
     list
 }
 
-/// The chats that stand under no saved project: started outside one, or in a folder that
-/// is not a project any more.
-pub fn loose(ws: &Workspace, cx: &App) -> Vec<Thread> {
-    super::listed(ws, cx)
-        .into_iter()
-        .filter(|thread| project_of(ws, thread).is_none())
-        .cloned()
-        .collect()
+/// The listed chats sorted out in one pass: those under the folder of each saved project,
+/// and the loose ones, started outside a project or in a folder that is not one any more.
+pub struct Grouped<'a> {
+    by_dir: HashMap<Cow<'a, str>, Vec<&'a Thread>>,
+    pub loose: Vec<&'a Thread>,
+}
+
+impl<'a> Grouped<'a> {
+    pub fn new(ws: &'a Workspace, cx: &App) -> Self {
+        let mut by_dir: HashMap<Cow<'a, str>, Vec<&'a Thread>> = ws
+            .projects
+            .iter()
+            .map(|project| (project.dir.to_string_lossy(), Vec::new()))
+            .collect();
+        let mut loose = Vec::new();
+        for thread in super::listed(ws, cx) {
+            match thread
+                .project
+                .as_deref()
+                .and_then(|dir| by_dir.get_mut(dir))
+            {
+                Some(group) => group.push(thread),
+                None => loose.push(thread),
+            }
+        }
+        Self { by_dir, loose }
+    }
+
+    /// The chats in `project`'s folder, in the listed order.
+    pub fn of(&self, project: &Project) -> &[&'a Thread] {
+        self.by_dir
+            .get(project.dir.to_string_lossy().as_ref())
+            .map_or(&[], Vec::as_slice)
+    }
 }
 
 fn project_of<'a>(ws: &'a Workspace, thread: &Thread) -> Option<&'a Project> {
@@ -65,6 +82,19 @@ pub fn place(ws: &Workspace, thread: &Thread) -> Option<String> {
         return Some(thread.source.clone());
     }
     project_of(ws, thread).map(|project| project.name.clone())
+}
+
+/// What the search box keeps: its words trimmed and lowercased.
+pub struct Search(String);
+
+impl Search {
+    pub fn keeps(&self, thread: &Thread) -> bool {
+        self.0.is_empty()
+            || thread
+                .title
+                .as_deref()
+                .is_some_and(|title| title.to_lowercase().contains(&self.0))
+    }
 }
 
 /// One chat in a list; `place` is said at the row's end, in a list that is not grouped.
@@ -207,13 +237,9 @@ fn pulls_badge(ws: &Workspace, thread: &Thread, prefix: &str, cx: &App) -> Optio
 }
 
 impl Workspace {
-    pub fn matches_search(&self, thread: &Thread, cx: &App) -> bool {
-        let query = self.search.read(cx).value().trim().to_lowercase();
-        query.is_empty()
-            || thread
-                .title
-                .as_deref()
-                .is_some_and(|title| title.to_lowercase().contains(&query))
+    /// The search box's words, read once for a whole list.
+    pub fn search_words(&self, cx: &App) -> Search {
+        Search(self.search.read(cx).value().trim().to_lowercase())
     }
 
     /// A new chat in a project's folder, or in the workspace root without one. Only its

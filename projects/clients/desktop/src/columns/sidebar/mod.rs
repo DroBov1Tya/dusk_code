@@ -33,7 +33,7 @@ pub enum Order {
     Recent,
 }
 
-pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let panel = theme.sidebar;
     div()
@@ -85,7 +85,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .child(switch(cx))
                 .children(pinned(ws, cx))
                 .child(match crate::ui::theme::prefs(cx).chats_by {
-                    Order::Project => projects::render(ws, window, cx),
+                    Order::Project => projects::render(ws, cx),
                     Order::Recent => recent::render(ws, cx),
                 }),
         )
@@ -134,11 +134,12 @@ fn switch(cx: &mut Context<Workspace>) -> Div {
 /// The chats pinned to the top, in the order they were pinned. A pinned chat stands here
 /// and nowhere below.
 fn pinned(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+    let search = ws.search_words(cx);
     let pinned: Vec<_> = crate::ui::theme::prefs(cx)
         .pinned
         .iter()
         .filter_map(|id| ws.threads.iter().find(|thread| thread.id == *id))
-        .filter(|thread| ws.matches_search(thread, cx))
+        .filter(|thread| search.keeps(thread))
         .cloned()
         .collect();
     if pinned.is_empty() {
@@ -161,11 +162,13 @@ fn pinned(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
 }
 
 /// The chats a list below the pinned ones shows: those the search keeps, less the pinned.
-fn listed<'a>(ws: &'a Workspace, cx: &App) -> Vec<&'a dusk_protocol::thread::Thread> {
+fn listed<'a>(
+    ws: &'a Workspace,
+    cx: &App,
+) -> impl Iterator<Item = &'a dusk_protocol::thread::Thread> {
     let pinned = &crate::ui::theme::prefs(cx).pinned;
+    let search = ws.search_words(cx);
     ws.threads
         .iter()
-        .filter(|thread| !pinned.contains(&thread.id))
-        .filter(|thread| ws.matches_search(thread, cx))
-        .collect()
+        .filter(move |thread| !pinned.contains(&thread.id) && search.keeps(thread))
 }
