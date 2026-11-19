@@ -1337,8 +1337,15 @@ mod tests {
                 .collect()
         };
         let succeeds = async |call: &Isolation, line: Vec<String>| {
-            let line: Vec<&str> = line.iter().map(String::as_str).collect();
-            run(call, &line).await.status.success()
+            // Keep Git discovery inside the fixture, which can live in a checkout.
+            call.command(&line)
+                .unwrap()
+                .env("GIT_CEILING_DIRECTORIES", &setup.root)
+                .output()
+                .await
+                .unwrap()
+                .status
+                .success()
         };
         let mono_git = format!("{:?}", mono.join(".git"));
         let mono_head = mono.join(".git/HEAD").display().to_string();
@@ -1350,12 +1357,15 @@ mod tests {
         assert!(!format!("{call:?}").contains(&mono_git), "{call:?}");
         assert!(call.confinement.listed.is_empty(), "{call:?}");
         assert!(!succeeds(&call, in_a(&["show", "HEAD:b/x"])).await);
-        assert!(!succeeds(&call, in_a(&["rev-parse", "HEAD"])).await);
+        // Require Git to read the commit object, even if it can resolve a ref.
+        let verify_head = ["rev-parse", "--verify", "HEAD^{commit}"];
+        assert!(!succeeds(&call, in_a(&verify_head)).await);
         assert!(!run(&call, &["/bin/cat", &mono_head]).await.status.success());
         // Alone in its repository, A gets git.
         let call = setup.isolation.for_call(home, &a, &[]).unwrap();
         assert!(format!("{call:?}").contains(&mono_git), "{call:?}");
         assert!(succeeds(&call, in_a(&["show", "HEAD:a/x"])).await);
+        assert!(succeeds(&call, in_a(&verify_head)).await);
         let b_file = b.join("x").display().to_string();
         assert!(!run(&call, &["/bin/cat", &b_file]).await.status.success());
         // The top's names are listed, not the folders under it (Landlock lists none).
