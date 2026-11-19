@@ -277,7 +277,7 @@ impl TranscriptView<'_> {
             return;
         };
         let mut offered: Vec<(Button, &str, Color)> = match self.app.transcript.entries.get(index) {
-            Some(Entry::Notice { .. }) | None => Vec::new(),
+            Some(Entry::Notice { .. } | Entry::Skill { .. }) | None => Vec::new(),
             Some(_) if self.app.transcript.is_hidden(index) => {
                 vec![(Button::Copy, " copy ", TEXT_SOFT)]
             }

@@ -158,6 +158,7 @@ pub(super) fn hidden_line(entry: &Entry, text: &str) -> Line<'static> {
         Entry::Summary { .. } => "summary",
         Entry::FromAgent { .. } => "agent message",
         Entry::Notice { .. } => "notice",
+        Entry::Skill { .. } => "skill change",
         Entry::Job { .. } => "job result",
         Entry::Block(_) => "block",
     };
@@ -173,7 +174,10 @@ pub(super) fn ends_turn(entries: &[Entry], index: usize) -> bool {
     let next = entries[index + 1..].iter().find(|entry| {
         !matches!(
             entry,
-            Entry::Activity { .. } | Entry::Reasoning { .. } | Entry::Notice { .. }
+            Entry::Activity { .. }
+                | Entry::Reasoning { .. }
+                | Entry::Notice { .. }
+                | Entry::Skill { .. }
         )
     });
     // A shown block is a step of the turn, as its tool call was.
@@ -238,7 +242,7 @@ pub(super) fn entry_lines(
             open,
         } => from_agent(thread_id, text, *open, width),
         Entry::Block(block) => shown::render(block, width),
-        Entry::Notice { text, tone, .. } => {
+        Entry::Notice { text, tone, .. } | Entry::Skill { text, tone, .. } => {
             let (mark, style) = match tone {
                 Tone::Info => (DOT, dim()),
                 Tone::Error => (FAILED, fg(NEGATIVE)),

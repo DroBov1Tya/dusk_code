@@ -185,6 +185,7 @@ impl App {
                 self.transcript
                     .push(Entry::from_agent(from, message.content));
             }
+            ThreadEvent::SkillChanged(change) => self.transcript.skill_change(&change),
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
             ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_) => self.overview_stale = true,
             ThreadEvent::Goal {
