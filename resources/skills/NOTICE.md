@@ -1,8 +1,7 @@
 # Built-in skills
 
 duskcode ships these skills into `skills/` next to the config: `duskcode`,
-`skill-creator`, `skill-improve`, `skill-from-practice`, `computer-use` and
-`token-thrift`. They are duskcode's own and share its MIT license, as do the agents in
+`skill-creator`, `skill-evolve`, `computer-use` and `token-thrift`. They are duskcode's own and share its MIT license, as do the agents in
 `agents/`. The front matter of each `SKILL.md` names its `source`, `author` and
 `license`.
 
