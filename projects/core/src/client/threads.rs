@@ -111,15 +111,22 @@ impl Threads<'_> {
     }
 
     /// Runs a command the user confirmed, in the chat's folder; returns its output.
-    pub async fn run_command(&self, thread_id: &str, command: &str) -> Result<String> {
+    pub async fn run_command(&self, thread_id: &str, command: &str, run: u64) -> Result<String> {
         let request = ThreadRequest::RunCommand {
             thread_id: thread_id.to_owned(),
             command: command.to_owned(),
+            run,
         };
         match self.call(request).await? {
             Response::Text(output) => Ok(output),
             other => Err(anyhow::anyhow!("unexpected answer: {other:?}")),
         }
+    }
+
+    /// Kills a command this client started with `run_command`.
+    pub async fn stop_run(&self, thread_id: &str, run: u64) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.done(ThreadRequest::StopRun { thread_id, run }).await
     }
 
     pub async fn cancel(&self, thread_id: &str) -> Result<()> {

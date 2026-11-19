@@ -203,6 +203,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_plan))
             .on_action(cx.listener(Self::on_next_pin))
             .on_action(cx.listener(Self::run_code))
+            .on_action(cx.listener(Self::stop_code))
             .capture_key_down(cx.listener(Self::menu_keys))
     }
 }

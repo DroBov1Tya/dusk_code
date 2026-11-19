@@ -4,7 +4,7 @@ use super::ClientId;
 use super::publish::{publish, send_to};
 use super::{CLOSE_TIMEOUT, OpenThread, Running, Server};
 use crate::runtime::ThreadHandle;
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
 use dusk_protocol::thread::{ThreadEvent, TurnWait};
 use parking_lot::Mutex;
@@ -144,8 +144,9 @@ impl Server {
                 runtime.send_to_background(&thread_id, &call_id).await?;
                 Response::Done
             }
-            ThreadRequest::RunCommand { thread_id, command } => {
-                Response::Text(runtime.run_for_user(&thread_id, &command).await?)
+            // Answered beside the loop, by the server.
+            ThreadRequest::RunCommand { .. } | ThreadRequest::StopRun { .. } => {
+                bail!("a command the user runs is answered beside the loop")
             }
             ThreadRequest::Cancel { thread_id } => {
                 self.open_thread(&thread_id)?.input.cancel().await?;
@@ -386,6 +387,7 @@ impl Server {
     pub(super) async fn detach(&mut self, client: ClientId) {
         self.clients.remove(&client);
         self.pulls.forget(client);
+        self.user_runs.stop_client(client);
         self.subscribers
             .lock()
             .retain(|subscriber| subscriber.client != client);

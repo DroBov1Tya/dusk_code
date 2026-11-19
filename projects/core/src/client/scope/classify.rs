@@ -125,7 +125,9 @@ fn thread(request: &Thread) -> Access<'_> {
         // An approval is known by its number alone, so it is about no thread: a scope
         // bound to threads cannot answer one.
         Thread::Approve { .. } => apart(Area::ThreadWrite),
-        Thread::RunCommand { thread_id, .. } => of(Area::ThreadCommand, thread_id),
+        Thread::RunCommand { thread_id, .. } | Thread::StopRun { thread_id, .. } => {
+            of(Area::ThreadCommand, thread_id)
+        }
         Thread::Delete { thread_id } => of(Area::ThreadDelete, thread_id),
         Thread::SetApprovals { thread_id, .. } => of(Area::ThreadApprovals, thread_id),
     }

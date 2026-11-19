@@ -80,6 +80,11 @@ fn threads() -> Vec<T> {
         T::RunCommand {
             thread_id: id(),
             command: word(),
+            run: 1,
+        },
+        T::StopRun {
+            thread_id: id(),
+            run: 1,
         },
         T::Close { thread_id: id() },
         T::StopAgent { thread_id: id() },

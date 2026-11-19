@@ -68,9 +68,18 @@ pub enum ThreadRequest {
         call_id: String,
     },
     /// Runs a command the user confirmed, in the chat's folder; answers with its output.
+    /// `run` is the client's number for it, so `StopRun` can name it.
     RunCommand {
         thread_id: String,
         command: String,
+        #[serde(default)]
+        run: u64,
+    },
+    /// Kills a command the same client started with `RunCommand`, with everything it
+    /// started; its `RunCommand` then answers with an error.
+    StopRun {
+        thread_id: String,
+        run: u64,
     },
     /// Stops the thread's turn and waits for it to end, so it can be opened again.
     Close {

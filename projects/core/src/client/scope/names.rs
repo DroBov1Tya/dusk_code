@@ -39,6 +39,7 @@ named! {
     R::Thread(T::Cancel { .. }) => "thread.cancel",
     R::Thread(T::Background { .. }) => "thread.background",
     R::Thread(T::RunCommand { .. }) => "thread.run_command",
+    R::Thread(T::StopRun { .. }) => "thread.stop_run",
     R::Thread(T::Close { .. }) => "thread.close",
     R::Thread(T::StopAgent { .. }) => "thread.stop_agent",
     R::Thread(T::Rename { .. }) => "thread.rename",

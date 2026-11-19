@@ -118,6 +118,7 @@ fn about(thread_id: &str, folder: &Path) -> Vec<Request> {
         ThreadRequest::RunCommand {
             thread_id: id(),
             command: "true".to_owned(),
+            run: 1,
         },
         ThreadRequest::Rename {
             thread_id: id(),
