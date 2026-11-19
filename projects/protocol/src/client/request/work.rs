@@ -47,6 +47,14 @@ pub enum WorkRequest {
         thread_id: String,
         name: String,
     },
+    /// A part of a card a message of the thread, or of an agent thread below it, carries:
+    /// `image`, `audio` or `thumb`. Answers with `Response::Picture`, or an error when the
+    /// thread has no such card.
+    Card {
+        thread_id: String,
+        card_id: String,
+        part: String,
+    },
     /// The chat's pinned plan, a Markdown text the user and the model both edit.
     Plan {
         thread_id: String,

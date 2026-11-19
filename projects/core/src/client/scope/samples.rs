@@ -141,6 +141,11 @@ fn work() -> Vec<W> {
             thread_id: id(),
             name: word(),
         },
+        W::Card {
+            thread_id: id(),
+            card_id: word(),
+            part: word(),
+        },
         W::Plan { thread_id: id() },
         W::SavePlan {
             thread_id: id(),

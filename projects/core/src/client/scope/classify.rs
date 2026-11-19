@@ -136,6 +136,7 @@ fn work(request: &Work) -> Access<'_> {
         Work::Jobs { thread_id }
         | Work::JobOutput { thread_id, .. }
         | Work::SourcePicture { thread_id, .. }
+        | Work::Card { thread_id, .. }
         | Work::Plan { thread_id }
         | Work::ChangedFiles { thread_id }
         | Work::FileChanges { thread_id }

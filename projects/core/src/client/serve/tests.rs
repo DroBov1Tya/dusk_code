@@ -12,7 +12,7 @@ use crate::{
     tools::{Approvals, Progress},
 };
 use dusk_protocol::{
-    client::ThreadRequest,
+    client::{ThreadRequest, WorkRequest},
     thread::{ThreadEvent, TurnWait},
     tools::{Decision, Request as ToolRequest},
 };
@@ -406,4 +406,100 @@ async fn a_client_detached_for_refusals_is_known_until_its_handle_goes() {
     assert!(server.refused_too_often(1));
     assert!(!server.clients.contains_key(&1));
     assert!(!server.refused_too_often(2));
+}
+
+/// A core with chats `a` and `b` and the agent thread `a1` below `a`, each holding a card
+/// in a message of its own; the cards' ids are in that order.
+async fn rig_with_cards(name: &str) -> (Server, [String; 3]) {
+    use crate::state::artifacts::{ArtifactStore, Card};
+    let root = temp_dir(name);
+    let paths = Paths::new(root.join("config"), root.join("work"));
+    let store = ArtifactStore::new(paths.artifacts_dir());
+    let runtime = Runtime::start(paths, Some(root.join("state.db")))
+        .await
+        .unwrap();
+    let state = runtime.state();
+    state.create_thread("a", "test").await.unwrap();
+    state.create_thread("b", "test").await.unwrap();
+    state
+        .create_agent_thread("a1", "a", "reviewer", "check")
+        .await
+        .unwrap();
+    let mut ids = Vec::new();
+    for thread in ["a", "a1", "b"] {
+        let card = store
+            .save(Card::default(), thread.as_bytes(), b"small")
+            .unwrap();
+        ids.push(card.id.clone());
+        let pending = state.add_pending(thread, "go").await.unwrap();
+        state.admit_pending(thread, &pending).await.unwrap();
+        let turn = state.start_turn(thread).await.unwrap().unwrap().turn_id;
+        let call = ToolCall {
+            id: "c".into(),
+            name: "display_image".into(),
+            arguments: serde_json::json!({}),
+        };
+        let answer = TurnAnswer {
+            content: String::new(),
+            reasoning: None,
+        };
+        state
+            .record_tool_calls(&turn, answer, vec![call])
+            .await
+            .unwrap();
+        let result =
+            state.record_tool_result_with_artifacts(&turn, "c", "shown".into(), vec![card]);
+        result.await.unwrap();
+    }
+    let (server, _) = Server::new(runtime, Subscribers::default());
+    (server, ids.try_into().unwrap())
+}
+
+async fn card_of(server: &Server, thread: &str, card: &str, part: &str) -> Response {
+    let request = WorkRequest::Card {
+        thread_id: thread.into(),
+        card_id: card.into(),
+        part: part.into(),
+    };
+    server.work(request).await.unwrap()
+}
+
+#[tokio::test]
+async fn a_card_of_the_thread_is_served() {
+    let (server, [own, agent, _]) = rig_with_cards("serve_card_own").await;
+    let Response::Picture(bytes) = card_of(&server, "a", &own, "image").await else {
+        panic!("not served");
+    };
+    assert_eq!(bytes, b"a");
+    // A card of an agent thread below the thread, and a part other than the original.
+    let Response::Picture(bytes) = card_of(&server, "a", &agent, "thumb").await else {
+        panic!("not served");
+    };
+    assert_eq!(bytes, b"small");
+}
+
+#[tokio::test]
+async fn a_card_of_another_thread_is_refused() {
+    let (server, [own, agent, other]) = rig_with_cards("serve_card_other").await;
+    for (thread, card) in [("a", &other), ("b", &own), ("b", &agent), ("a1", &own)] {
+        let answer = card_of(&server, thread, card, "image").await;
+        assert!(matches!(answer, Response::Error(ref e) if e == "no such card"));
+    }
+}
+
+#[tokio::test]
+async fn a_card_id_with_a_path_is_refused() {
+    let (server, [own, ..]) = rig_with_cards("serve_card_path").await;
+    for card in [
+        format!("../{own}"),
+        format!("{own}/.."),
+        format!("{own}\\x"),
+        "..".to_owned(),
+        String::new(),
+    ] {
+        let answer = card_of(&server, "a", &card, "image").await;
+        assert!(matches!(answer, Response::Error(_)), "{card}");
+    }
+    let answer = card_of(&server, "a", &own, "../image").await;
+    assert!(matches!(answer, Response::Error(_)));
 }
