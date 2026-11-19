@@ -4,6 +4,7 @@
 mod blocks;
 mod lines;
 mod shown;
+mod suggested;
 
 pub use lines::thread_lines;
 use lines::{Placed, append_entry, ends_turn, is_meta};

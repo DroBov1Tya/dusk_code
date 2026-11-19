@@ -76,6 +76,21 @@ pub enum Entry {
     },
     /// What the agent showed with the `show` tool, in place of that tool step.
     Block(dusk_protocol::thread::Block),
+    /// The Workshop listings the agent suggested, in place of that tool step.
+    Suggestion(dusk_protocol::plugin::Suggestion),
+}
+
+/// A Workshop card's plain text, for the copy button: its heading and a line a listing.
+fn card_text(card: &dusk_protocol::plugin::Suggestion) -> String {
+    let mut text = card.label.clone();
+    for listing in &card.listings {
+        let kind = format!("{:?}", listing.kind).to_lowercase();
+        text.push_str(&format!(
+            "\n- {} ({kind}): {}",
+            listing.name, listing.description
+        ));
+    }
+    text
 }
 
 /// Thinking and tool calls: the steps an activity line stands for.
@@ -481,6 +496,7 @@ impl Transcript {
                 return;
             }
             Item::Block(block) => Entry::Block(block.clone()),
+            Item::Suggestion(card) => Entry::Suggestion(card.clone()),
             // A picture `display_image` showed stays with its step.
             Item::Image {
                 card,
@@ -501,7 +517,7 @@ impl Transcript {
                 return;
             }
             // Sounds, and pictures the model took to see, are not drawn here.
-            Item::Image { .. } | Item::Audio(_) | Item::Suggestion(_) => return,
+            Item::Image { .. } | Item::Audio(_) => return,
             Item::Notice(text) => Entry::Notice {
                 text: text.clone(),
                 tone: Tone::Info,
@@ -581,6 +597,7 @@ impl Transcript {
             | Entry::Skill { text, .. } => text.clone(),
             Entry::Job { result, .. } => format!("{}\n{}", result.title(), result.output),
             Entry::Block(block) => block.text(),
+            Entry::Suggestion(card) => card_text(card),
             Entry::Tool { tool, .. } => match tool.state {
                 ToolState::Running => tool.arguments.clone(),
                 _ => tool.output.clone(),
