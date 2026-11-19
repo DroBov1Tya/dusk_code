@@ -254,20 +254,33 @@ impl Agent {
                 }
                 continue;
             }
-            let message = self.state.admit_pending(&self.thread_id, &pending).await?;
-            if message.from_thread_id.is_some() {
-                sqlx::query("UPDATE goals SET work_epoch = work_epoch + 1 WHERE thread_id = ? AND approved_at IS NOT NULL")
-                    .bind(&self.thread_id).execute(&self.state.pool).await?;
-            }
-            self.emit(ThreadEvent::Queued {
-                message_id: message.message_id.clone(),
-            });
-            self.emit(if message.from_job_id.is_some() {
-                ThreadEvent::FromJob(message)
-            } else {
-                ThreadEvent::FromAgent(message)
-            });
+            self.admit(&pending, Admit::MID_TURN).await?;
         }
+        Ok(())
+    }
+
+    /// Adds a sent message to the thread, with its effect on the goal, and tells the
+    /// clients. `admit` says what else taking it in does.
+    pub(crate) async fn admit(&self, pending: &PendingMessage, admit: Admit) -> Result<()> {
+        let message = self.state.admit_pending(&self.thread_id, pending).await?;
+        let from_user = message.from_thread_id.is_none() && message.from_job_id.is_none();
+        if admit.title && message.from_job_id.is_none() {
+            self.title_from_first_message(&message).await?;
+        }
+        if admit.user_hook && from_user {
+            let details = json!({ "text": message.content });
+            self.hook_notes(HookEvent::UserMessage, details).await?;
+        }
+        self.emit(ThreadEvent::Queued {
+            message_id: message.message_id.clone(),
+        });
+        self.emit(if message.from_job_id.is_some() {
+            ThreadEvent::FromJob(message)
+        } else if message.from_thread_id.is_some() {
+            ThreadEvent::FromAgent(message)
+        } else {
+            ThreadEvent::UserMessage(message)
+        });
         Ok(())
     }
 
@@ -281,15 +294,29 @@ impl Agent {
 
     pub(super) async fn take_answer(&self, pending: &PendingMessage) -> Result<()> {
         self.asking.lock().clear();
-        let message = self.state.admit_pending(&self.thread_id, pending).await?;
-        sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
-            .bind(&self.thread_id)
-            .execute(&self.state.pool)
-            .await?;
-        self.emit(ThreadEvent::Queued {
-            message_id: message.message_id.clone(),
-        });
-        self.emit(ThreadEvent::UserMessage(message));
-        Ok(())
+        self.admit(pending, Admit::MID_TURN).await
     }
+}
+
+/// What taking a message in does beyond adding it and its goal effect.
+#[derive(Clone, Copy)]
+pub(crate) struct Admit {
+    /// Name an untitled thread after it, unless it is a job's result.
+    pub title: bool,
+    /// Run the `UserMessage` hook for a message the user wrote.
+    pub user_hook: bool,
+}
+
+impl Admit {
+    /// Between turns: the message starts the thread's work.
+    pub(crate) const BETWEEN_TURNS: Self = Self {
+        title: true,
+        user_hook: true,
+    };
+    /// Into a running turn: another agent's message, or the answer to a question asked
+    /// in it, which the turn's step reads next.
+    pub(crate) const MID_TURN: Self = Self {
+        title: false,
+        user_hook: false,
+    };
 }

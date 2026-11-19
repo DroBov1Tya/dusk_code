@@ -14,6 +14,7 @@ mod rate;
 mod repeats;
 mod vision;
 
+pub(crate) use agent::Admit;
 pub use agent::{Agent, Decision, Recovered};
 pub use compaction::Keep;
 pub use inbox::{Inbox, Input, Stop};
