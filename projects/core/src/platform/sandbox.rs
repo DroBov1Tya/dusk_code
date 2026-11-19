@@ -38,8 +38,9 @@ pub struct Confinement {
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub stat: Vec<PathBuf>,
     /// Folders whose list of entries, not the files in them, may be read inside a hidden
-    /// one: the top of a repository git moves to and asks its own path. Landlock never
-    /// closes that, so only macOS needs it.
+    /// one: the top of a repository git moves to and asks its own path. Every name there
+    /// shows, those of entries git does not track or ignores too. Only macOS needs it:
+    /// git on Linux learns its path from the kernel, and Landlock keeps the list closed.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub listed: Vec<PathBuf>,
 }
@@ -52,6 +53,10 @@ pub enum Network {
     Closed,
     /// Only this port on this machine: the core's broker for the program.
     Broker(u16),
+    /// Linux: a network namespace of its own, whose only socket is the broker's, made
+    /// by `namespaced_program`. Never built on other systems.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    Namespace,
 }
 
 // Read by the Seatbelt profile; Landlock cannot keep a single port, so Linux does not.
@@ -64,7 +69,7 @@ impl Network {
     pub fn only_port(self) -> Option<u16> {
         match self {
             Self::Broker(port) => Some(port),
-            Self::Open | Self::Closed => None,
+            Self::Open | Self::Closed | Self::Namespace => None,
         }
     }
 }
@@ -170,6 +175,27 @@ pub fn confined_program(
         "this system has no sandbox, so the program is not started"
     );
     confined(program, arguments, confinement)
+}
+
+/// `program` with `arguments`, no shell, confined, in a user and network namespace of
+/// its own whose only socket is the one the receiver hands over once it has started:
+/// the broker's. Fails where this Linux cannot make one.
+#[cfg(target_os = "linux")]
+pub fn namespaced_program(
+    program: &Path,
+    arguments: &[String],
+    confinement: &Confinement,
+) -> Result<(Command, super::linux::netns::Receiver)> {
+    anyhow::ensure!(
+        available() && confinement.network == Network::Namespace,
+        "this system cannot confine the program in a network of its own"
+    );
+    let mut command = Command::new(program);
+    command.args(arguments);
+    // First: Landlock, applied after it, would close /proc to the namespace's maps.
+    let receiver = super::linux::netns::enter(&mut command)?;
+    super::linux::sandbox::confine(&mut command, confinement)?;
+    Ok((command, receiver))
 }
 
 #[cfg(target_os = "macos")]

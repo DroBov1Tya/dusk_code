@@ -255,8 +255,12 @@ impl Plugins {
         let data = data_folder(&self.paths, folder)?;
         let env = env(folder, &data, values);
         let permissions = &manifest.permissions;
+        let isolation = match manifest.provides {
+            Some(_) => Isolation::for_contract,
+            None => Isolation::new,
+        };
         if permissions.network.is_empty() {
-            return Isolation::new(&self.paths, folder, &data, permissions, env, None);
+            return isolation(&self.paths, folder, &data, permissions, env, None);
         }
         let policy = policy(permissions, keys)?;
         let mut brokers = self.brokers.lock();
@@ -268,7 +272,7 @@ impl Plugins {
             }
         }
         let broker = brokers.get(&manifest.name);
-        Isolation::new(&self.paths, folder, &data, permissions, env, broker)
+        isolation(&self.paths, folder, &data, permissions, env, broker)
     }
 
     /// Reads the folder again every `period`.
@@ -661,5 +665,51 @@ mod tests {
         let error = check_secret(&manifest(), "token", "sk\u{7}-secret").unwrap_err();
         assert!(!format!("{error:#}").contains("secret"));
         assert_eq!(format!("{:?}", Secret("sk-secret".into())), "[REDACTED]");
+    }
+
+    /// A plugin that serves a contract and connects: on Linux without user namespaces
+    /// it does not start, and its row says why.
+    #[tokio::test]
+    async fn a_contract_plugin_says_why_it_cannot_start() {
+        let paths = crate::testing::temp_paths("catalog-contract");
+        let plugin = folder(&paths).join("g");
+        std::fs::create_dir_all(&plugin).unwrap();
+        let provides = "{command: [./p], forge: {versions: [1], hosts: [github.com]}}";
+        let permissions = "{network: ['https://api.github.com']}";
+        std::fs::write(
+            plugin.join(MANIFEST_FILE),
+            format!("name: g\npermissions: {permissions}\nprovides: {provides}\n"),
+        )
+        .unwrap();
+        std::fs::write(plugin.join("p"), "#!/bin/sh\n").unwrap();
+        let settings = format!(
+            "plugins:\n  g:\n    enabled: true\n    allowed: {permissions}\n    \
+             allowed_provides: {provides}\n"
+        );
+        let config = Arc::new(crate::testing::temp_live_config_with(
+            "catalog-contract",
+            &settings,
+        ));
+        let mcp = McpServers::start(&config.current(), paths.mcp_tokens_dir());
+        let plugins = Plugins::new(paths, config, mcp, Arc::default(), Arc::default());
+        plugins.scan();
+        let row = plugins
+            .list()
+            .into_iter()
+            .find(|row| row.name == "g")
+            .unwrap();
+        #[cfg(target_os = "linux")]
+        if !crate::platform::netns::available() {
+            let problem = row.problem.unwrap_or_default();
+            assert!(!row.enabled);
+            assert!(
+                problem.starts_with("this Linux does not let a program have a network"),
+                "{problem}"
+            );
+            return;
+        }
+        if crate::platform::sandbox_available() {
+            assert!(row.enabled && row.problem.is_none(), "{row:?}");
+        }
     }
 }

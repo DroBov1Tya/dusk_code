@@ -8,7 +8,7 @@ use std::path::Path;
 use anyhow::{Result, ensure};
 use tokio::process::Command;
 
-use crate::platform::Confinement;
+use crate::platform::{Confinement, Network};
 
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 /// Programs of the system, which SIP keeps from being changed; whatever they do stays
@@ -42,6 +42,10 @@ pub fn available() -> bool {
 }
 
 pub fn command(program: &Path, arguments: &[String], confinement: &Confinement) -> Result<Command> {
+    ensure!(
+        confinement.network != Network::Namespace,
+        "macOS has no network namespaces; a program reaches its broker by port here"
+    );
     let mut sandboxed = Command::new(SANDBOX_EXEC);
     sandboxed
         .arg("-p")
