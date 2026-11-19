@@ -33,6 +33,8 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         update_channel: config.update_channel(),
         approvals: config.approvals(),
         version_control: config.version_control().clone(),
+        arbiter: config.arbiter().clone(),
+        arbiter_default_prompt: crate::runtime::arbiter::default_prompt()?,
         notifications: config.notifications(),
         sound_notifications: config.sound_notifications(),
         sandbox: runtime.platform().sandbox,

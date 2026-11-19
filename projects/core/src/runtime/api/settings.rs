@@ -124,6 +124,13 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_arbiter(&self, arbiter: crate::config::Arbiter) -> Result<()> {
+        let arbiter = arbiter.normalized();
+        arbiter.validate().map_err(anyhow::Error::msg)?;
+        self.config().update(|config| config.set_arbiter(arbiter))?;
+        Ok(())
+    }
+
     pub fn set_sound_notifications(&self, on: bool) -> Result<()> {
         self.config()
             .update(|config| config.set_sound_notifications(on))?;

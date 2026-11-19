@@ -1,0 +1,2 @@
+Added
+Settings > Safety configures auto mode's arbiter: the model it judges on (empty uses the chat's) and its review prompt, shown in full with "Reset to default" and capped at 8000 characters. The prompt only guides: the answer format is fixed in code, an unclear or failed answer (or `ASK`) now goes to the user instead of denying, and the arbiter is still only asked about what the approval mode leaves to it.

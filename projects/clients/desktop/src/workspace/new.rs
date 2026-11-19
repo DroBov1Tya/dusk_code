@@ -132,6 +132,7 @@ impl Workspace {
             fill_composer: Vec::new(),
             drafts: Default::default(),
             me: crate::pages::settings::about_me::AboutMe::new(window, cx),
+            arbiter: crate::pages::settings::arbiter::ArbiterForm::new(window, cx),
             notice: None,
             toast: None,
             pending: Vec::new(),

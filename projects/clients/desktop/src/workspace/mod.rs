@@ -195,6 +195,7 @@ pub struct Workspace {
     pub drafts: chat::composer::Drafts,
     /// The profile and snippets a message names with `@`, and their settings fields.
     pub me: crate::pages::settings::about_me::AboutMe,
+    pub arbiter: crate::pages::settings::arbiter::ArbiterForm,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
     /// A short note over any page, and when it came; see `toast`.

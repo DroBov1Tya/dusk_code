@@ -10,7 +10,7 @@ mod providers;
 mod sections;
 mod workshop;
 
-pub use dusk_protocol::config::{ContextPolicy, UNKNOWN_WINDOW, VersionControl};
+pub use dusk_protocol::config::{Arbiter, ContextPolicy, UNKNOWN_WINDOW, VersionControl};
 pub use dusk_protocol::model::Effort;
 pub use file::Config;
 pub use mcp::{

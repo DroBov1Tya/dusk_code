@@ -1,6 +1,7 @@
 //! What the user configures: policies, memory, providers, secrets, speech, MCP servers, plugins
 //! and the profile.
 
+mod arbiter;
 mod mcp;
 mod memory;
 mod mention;
@@ -13,6 +14,7 @@ mod version_control;
 mod voice;
 mod voice_models;
 
+pub use arbiter::{Arbiter, MAX_ARBITER_PROMPT_CHARS};
 pub use mcp::{McpInfo, McpState, McpStatus, McpToolInfo};
 pub use memory::{Memory, WorkHistory, default_memory_chars, yes};
 pub use mention::{MAX_NAME_CHARS, ME, Profile, ProfileFile, Snippet, find, is_name, is_name_char};

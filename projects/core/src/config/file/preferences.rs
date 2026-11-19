@@ -2,8 +2,8 @@
 
 use super::Config;
 use crate::config::{
-    Appearance, ApprovalPolicy, Limits, Logging, Memory, Team, ThreadConfig, VersionControl,
-    WorkHistory,
+    Appearance, ApprovalPolicy, Arbiter, Limits, Logging, Memory, Team, ThreadConfig,
+    VersionControl, WorkHistory,
 };
 use crate::release::update::Channel;
 use dusk_protocol::config::VoiceSettings;
@@ -44,6 +44,14 @@ impl Config {
 
     pub fn set_branch_prefix(&mut self, prefix: &str) {
         self.version_control.branch_prefix = prefix.trim().to_owned();
+    }
+
+    pub fn arbiter(&self) -> &Arbiter {
+        &self.arbiter
+    }
+
+    pub fn set_arbiter(&mut self, arbiter: Arbiter) {
+        self.arbiter = arbiter;
     }
 
     pub fn appearance(&self) -> Appearance {

@@ -184,6 +184,7 @@ fn settings() -> Vec<S> {
             on: true,
         },
         S::BranchPrefix(word()),
+        S::Arbiter(Default::default()),
         S::NextMode,
         S::Mode(word()),
         S::Connect {

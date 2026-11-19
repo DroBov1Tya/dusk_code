@@ -205,6 +205,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::WorkHistoryChars(_)
         | Settings::Switch { .. }
         | Settings::BranchPrefix(_)
+        | Settings::Arbiter(_)
         | Settings::NextMode
         | Settings::Mode(_)
         | Settings::Connect { .. }
