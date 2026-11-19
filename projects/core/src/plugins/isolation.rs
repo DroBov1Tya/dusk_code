@@ -186,6 +186,13 @@ impl Isolation {
     /// built, are hidden too, and the program cannot hand work
     /// to launchd, LaunchServices or Apple events (macOS), which run it unconfined.
     ///
+    /// It asks git, outside any sandbox, where the project's git dir is, and waits for
+    /// it: async callers run it through `spawn_blocking`. A worktree's git dir is
+    /// reopened read-only even inside another saved project, once its link checks out
+    /// both ways: the worktree already holds the same history, so that `.git` shows
+    /// nothing the call could not read in the project itself; the other project's
+    /// working files stay hidden.
+    ///
     /// Left open, by nature or design: a project under the temporary folders stays
     /// writable there, as they are for every plugin (projects are not kept there); a
     /// hard link inside the project to a file elsewhere is read as the project's own;
@@ -244,19 +251,29 @@ impl Isolation {
         }
         // A link such as `~/.config/git -> ~/.config` must not reopen the config
         // folder, home or another project.
-        let safe = |path: &Path| {
+        let safe_from_core = |path: &Path| {
             !path.starts_with(&self.config_root)
                 && !self.config_root.starts_with(path)
                 && !home.starts_with(path)
-                && !overlaps(path)
         };
+        let safe = |path: &Path| safe_from_core(path) && !overlaps(path);
         let mut reopened = vec![project.clone()];
         // A worktree's or a sub-folder's git dir lies outside the project; one that
-        // fails the project's own checks is left closed, and git fails.
-        for git in git_dirs(&project) {
+        // fails the project's own checks is left closed, and git fails. The one
+        // exception is the repository of a worktree whose link git confirms both ways:
+        // its git dir may lie in another saved project.
+        let dirs = git_dirs(&project);
+        let linked = worktree_common_dir(&project, &dirs).filter(|common| {
+            safe_from_core(common) && !hidden[1..].iter().any(|other| other.starts_with(common))
+        });
+        for git in dirs {
+            let allowed = safe(&git)
+                || linked
+                    .as_ref()
+                    .is_some_and(|common| git.starts_with(common) && safe_from_core(&git));
             if !git.starts_with(&project)
                 && !project.starts_with(&git)
-                && safe(&git)
+                && allowed
                 && !reopened.contains(&git)
             {
                 // Git resolves the path one folder at a time.
@@ -354,6 +371,37 @@ fn git_dirs(project: &Path) -> Vec<PathBuf> {
         .lines()
         .filter_map(|line| project.join(line).canonicalize().ok())
         .collect()
+}
+
+/// The common git dir of the worktree in `project`, when git's link holds both ways:
+/// the project's `.git` file names `<common>/worktrees/<name>`, and that folder's
+/// `gitdir` names the project's `.git` and its `commondir` names `<common>`. `dirs` is
+/// what `git_dirs` found: the git dir, then the common dir.
+fn worktree_common_dir(project: &Path, dirs: &[PathBuf]) -> Option<PathBuf> {
+    let [git_dir, common] = dirs else {
+        return None;
+    };
+    let dot_git = project.join(".git");
+    if !std::fs::symlink_metadata(&dot_git).ok()?.is_file() {
+        return None;
+    }
+    let named = |file: &Path, prefix: &str, base: &Path| -> Option<PathBuf> {
+        if std::fs::metadata(file).ok()?.len() > 4096 {
+            return None;
+        }
+        let text = std::fs::read_to_string(file).ok()?;
+        let line = text.lines().next()?;
+        let path = line.strip_prefix(prefix)?.trim();
+        base.join(path).canonicalize().ok()
+    };
+    let linked = named(&dot_git, "gitdir:", project)?;
+    let back = named(&linked.join("gitdir"), "", &linked)?;
+    let shared = named(&linked.join("commondir"), "", &linked)?;
+    (linked == *git_dir
+        && linked.parent() == Some(common.join("worktrees").as_path())
+        && back == dot_git.canonicalize().ok()?
+        && shared == *common)
+        .then(|| common.clone())
 }
 
 /// The variables a program needs to run, and nothing that could be a key.
@@ -855,11 +903,40 @@ mod tests {
         assert!(output.status.success(), "{output:?}");
         let secret = main.join("secret").display().to_string();
         assert!(!run(&call, &["/bin/cat", &secret]).await.status.success());
-        // Saved as a project of its own, the main repository stays closed: git fails.
+        // Saved as a project of its own, the main repository gives its git dir, as the
+        // worktree's link holds both ways, and nothing else.
+        let others = std::slice::from_ref(&main);
         let call = setup
             .isolation
-            .for_call(&setup.home, &worktree, std::slice::from_ref(&main))
+            .for_call(&setup.home, &worktree, others)
             .unwrap();
-        assert!(!run(&call, &head).await.status.success());
+        let output = run(&call, &head).await;
+        assert!(output.status.success(), "{output:?}");
+        assert!(!run(&call, &["/bin/cat", &secret]).await.status.success());
+        // A forged `.git` naming that worktree's git dir has no link back: closed.
+        let forged = setup.home.join("forged");
+        std::fs::create_dir_all(&forged).unwrap();
+        let git_dir = main.join(".git/worktrees/wt").canonicalize().unwrap();
+        std::fs::write(
+            forged.join(".git"),
+            format!("gitdir: {}\n", git_dir.display()),
+        )
+        .unwrap();
+        let call = setup
+            .isolation
+            .for_call(&setup.home, &forged, others)
+            .unwrap();
+        let forged_head = [
+            "/usr/bin/git",
+            "-C",
+            &forged.display().to_string(),
+            "rev-parse",
+            "HEAD",
+        ]
+        .map(str::to_owned);
+        let forged_head: Vec<&str> = forged_head.iter().map(String::as_str).collect();
+        assert!(!run(&call, &forged_head).await.status.success());
+        let main_head = main.join(".git/HEAD").display().to_string();
+        assert!(!run(&call, &["/bin/cat", &main_head]).await.status.success());
     }
 }
