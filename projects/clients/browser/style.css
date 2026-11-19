@@ -199,9 +199,11 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .pull-state { padding: 0 6px; border-radius: 6px; font-size: 11px; flex: none; }
 .pull-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .pulls .add { color: var(--good); } .pulls .del { color: var(--bad); } .pulls .dot { flex: none; }
-.pulls li:has(.pull-checks) { flex-wrap: wrap; }
-.pull-checks { flex-basis: 100%; font-size: 12px; }
-.pull-checks ul { list-style: none; padding: 0 0 0 12px; margin: 4px 0; display: flex; flex-direction: column; gap: 2px; }
+.pull-checks { position: relative; flex: none; font-size: 12px; }
+.pull-count { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: var(--fg2); font-size: 12px; }
+.pull-count:hover { background: var(--raised); }
+.checks-pop { position: absolute; right: 0; top: calc(100% + 4px); width: 280px; max-height: 320px; overflow: auto; padding: var(--s2); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px color-mix(in srgb, var(--bg) 60%, transparent); z-index: 5; animation: rise var(--t-open) var(--ease); }
+.pull-checks ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .pull-checks li a { color: var(--fg); }
 .dot.running { animation: breathe 1.4s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: 0.35; } }
