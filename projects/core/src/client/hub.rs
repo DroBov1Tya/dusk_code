@@ -5,7 +5,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, anyhow, ensure};
 use dusk_protocol::client::{Hello, PROTOCOL_VERSION, Status};
 use tokio::sync::{mpsc, watch};
 
@@ -51,11 +51,13 @@ impl Hub {
     /// scope is the caller's decision, never the client's, and holds until the client is
     /// dropped: dropping it is how access is taken back.
     pub fn attach(self: &Arc<Self>, hello: Hello, scope: Scope) -> Result<Client> {
+        // In-process clients are built with this core, so they speak its version exactly.
         ensure!(
             hello.protocol == PROTOCOL_VERSION,
             "the client speaks protocol {}, the core {PROTOCOL_VERSION}",
             hello.protocol
         );
+        hello.accepted().map_err(|refusal| anyhow!("{refusal}"))?;
         let id = self.next_client.fetch_add(1, Ordering::Relaxed);
         let (queue, events) = mpsc::unbounded_channel();
         // Subscribed before the core hears of the client, so no event is missed.

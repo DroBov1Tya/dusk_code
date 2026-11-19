@@ -10,7 +10,7 @@ use dusk_core::{
     app::{self, Paths},
     client::Client,
 };
-use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
+use dusk_protocol::client::Hello;
 use tokio::runtime::Runtime;
 
 const SOURCE: &str = "evals";
@@ -34,10 +34,7 @@ impl Core {
             .thread_name("dusk-core")
             .build()
             .context("cannot make a runtime for the core")?;
-        let hello = Hello {
-            protocol: PROTOCOL_VERSION,
-            client: SOURCE.to_owned(),
-        };
+        let hello = Hello::new(SOURCE);
         // Its start is not `Send`, so it runs on a thread of its own, in the core's
         // runtime, where what it spawns lives.
         let (handle, start_paths) = (runtime.handle().clone(), paths.clone());

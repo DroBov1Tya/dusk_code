@@ -9,9 +9,9 @@ use dusk_core::{
 };
 use dusk_protocol::{
     client::{
-        Answer, CatalogRequest, Command, Event, Hello, PROTOCOL_VERSION, PluginRequest,
-        ProjectRequest, Request, Response, Secret, SettingsRequest, TerminalRequest, ThreadRequest,
-        VoiceRequest, WorkRequest,
+        Answer, CatalogRequest, Command, Event, Hello, PluginRequest, ProjectRequest, Request,
+        Response, Secret, SettingsRequest, TerminalRequest, ThreadRequest, VoiceRequest,
+        WorkRequest,
     },
     plugin::StoreRequest,
     tools::Decision,
@@ -61,10 +61,7 @@ async fn core(name: &str) -> Core {
 }
 
 fn attach(core: &Core, name: &str, scope: Scope) -> Client {
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: name.to_owned(),
-    };
+    let hello = Hello::new(name);
     core.hub.attach(hello, scope).unwrap()
 }
 
