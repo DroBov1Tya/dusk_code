@@ -5,19 +5,23 @@ use crate::{
     api,
     ui::{Switch, run},
 };
-use dusk_protocol::{client::Switch as Flag, config::Settings};
+use dusk_protocol::{client::Switch as Flag, config::Settings, plugin::Scope};
 use leptos::prelude::*;
 
 #[component]
 pub fn Skills(
     panel: RwSignal<Option<Settings>>,
     reload: impl Fn() + Clone + Send + Sync + 'static,
+    discover: RwSignal<bool>,
 ) -> impl IntoView {
     let open = RwSignal::new(None::<String>);
     let text = RwSignal::new(String::new());
     view! {
         {move || panel.get().map(|p| {
             let reload = reload.clone();
+            if p.skills.is_empty() {
+                return super::workshop::nothing_installed(Scope::Skills, discover).into_any();
+            }
             view! {
                 <div class="cards">{p.skills.clone().into_iter().map(|skill| {
                     let (toggle, edit) = (skill.name.clone(), skill.name.clone());
@@ -42,6 +46,7 @@ pub fn Skills(
                     }
                 }).collect_view()}</div>
             }
+            .into_any()
         })}
         {move || open.get().map(|name| {
             let saved = name.clone();

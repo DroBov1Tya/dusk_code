@@ -6,16 +6,16 @@ use crate::link::request;
 use dusk_protocol::{
     catalog::SkillPack,
     client::{CatalogRequest, Request, Response},
-    plugin::{Order, StoreList, StoreRequest},
+    plugin::{Kind, Order, StoreList, StoreRequest},
 };
 
 use super::*;
 
-pub async fn store(order: Order, category: Option<String>) -> Res<StoreList> {
+pub async fn store(order: Order, category: Option<String>, kinds: Vec<Kind>) -> Res<StoreList> {
     let call = Request::Store(StoreRequest::List {
         order,
         category,
-        kinds: Vec::new(),
+        kinds,
     });
     ask!(call, Response::Store(list) => list)
 }

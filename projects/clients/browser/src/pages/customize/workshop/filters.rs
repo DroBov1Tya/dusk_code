@@ -2,7 +2,7 @@
 //! menu of Sort, Category, Tier and Kind; what is on shows as chips under the search.
 //! The order and the category are the core's, so changing one reads the store again.
 
-use dusk_protocol::plugin::{Kind, Order};
+use dusk_protocol::plugin::Order;
 use leptos::prelude::*;
 
 use super::{Shop, TIERS, card};
@@ -13,8 +13,6 @@ const ORDERS: [(Order, &str); 3] = [
     (Order::Newest, "Newest"),
     (Order::Updated, "Recently updated"),
 ];
-
-const KINDS: [Kind; 4] = [Kind::Plugin, Kind::Skill, Kind::Pack, Kind::Agent];
 
 fn active(shop: Shop) -> usize {
     usize::from(shop.category.with(Option::is_some))
@@ -112,17 +110,24 @@ fn menu(shop: Shop) -> impl IntoView {
         })
         .into_iter()
         .collect_view();
-    let kinds = KINDS
-        .map(|kind| {
-            view! {
-                <label class="menu-row"><input type="checkbox"
-                    prop:checked=move || shop.kinds.with(|kinds| kinds.contains(&kind))
-                    on:change=move |_| { shop.kinds.update(|kinds| flip(kinds, kind)); shop.shelf.set(None); } />
-                    {format!("{}s", card::kind_word(kind))}</label>
-            }
-        })
-        .into_iter()
-        .collect_view();
+    // A shelf of one kind has none to choose.
+    let kinds = Some(shop.scope.kinds())
+        .filter(|kinds| kinds.len() > 1)
+        .unwrap_or_default();
+    let kinds = (!kinds.is_empty()).then(|| {
+        let rows = kinds
+            .into_iter()
+            .map(|kind| {
+                view! {
+                    <label class="menu-row"><input type="checkbox"
+                        prop:checked=move || shop.kinds.with(|kinds| kinds.contains(&kind))
+                        on:change=move |_| { shop.kinds.update(|kinds| flip(kinds, kind)); shop.shelf.set(None); } />
+                        {format!("{}s", card::kind_word(kind))}</label>
+                }
+            })
+            .collect_view();
+        view! { <p class="menu-title">"Kind"</p>{rows} }
+    });
     view! {
         <div class="filter-menu" role="dialog" aria-label="Filters"
             on:keydown=move |ev| if ev.key() == "Escape" { shop.menu.set(false) }>
@@ -130,7 +135,7 @@ fn menu(shop: Shop) -> impl IntoView {
                 <p class="menu-title">"Sort"</p>{sorts}
                 {categories}
                 <p class="menu-title">"Tier"</p>{tiers}
-                <p class="menu-title">"Kind"</p>{kinds}
+                {kinds}
             </div>
             <div class="menu-foot">
                 <button class="ghost quiet" on:click=move |_| clear(shop)>"Clear all"</button>

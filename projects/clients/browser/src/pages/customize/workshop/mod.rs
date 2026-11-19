@@ -1,4 +1,5 @@
-//! The Workshop in the browser: the same storefront as the desktop app. A featured hero
+//! The Workshop in the browser: the same storefront as the desktop app, on each shelf of
+//! Customize with the listings of its `Scope`. A featured hero
 //! of official picks, shelves of cards (a tier each, the core's picks of the newest and
 //! the latest updated, the local packs), one Filters menu, a
 //! listing's window with its gallery, and a pack's page with its switches. A browser may
@@ -18,7 +19,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use dusk_protocol::{
     catalog::SkillPack,
-    plugin::{Kind, Listing, Order, StoreList, Tier},
+    plugin::{Kind, Listing, Order, Scope, StoreList, Tier},
 };
 use leptos::{html, prelude::*};
 use wasm_bindgen::{JsCast, closure::Closure};
@@ -71,6 +72,8 @@ impl Shelf {
 /// The page's state; every field is a signal, so the struct is copied into handlers.
 #[derive(Clone, Copy)]
 pub struct Shop {
+    /// The shelf of Customize this Workshop is on, which says what it lists.
+    scope: Scope,
     list: RwSignal<Option<StoreList>>,
     packs: RwSignal<Vec<SkillPack>>,
     order: RwSignal<Order>,
@@ -102,13 +105,16 @@ impl Shop {
     fn load(self) {
         let (order, category) = (self.order.get_untracked(), self.category.get_untracked());
         let all = category.is_none();
-        run(api::store(order, category), move |list| {
-            if all {
-                self.categories.set(categories(&list.listings));
-            }
-            self.load_covers(&list.listings);
-            self.list.set(Some(list));
-        });
+        run(
+            api::store(order, category, self.scope.kinds()),
+            move |list| {
+                if all {
+                    self.categories.set(categories(&list.listings));
+                }
+                self.load_covers(&list.listings);
+                self.list.set(Some(list));
+            },
+        );
         self.load_packs();
     }
 
@@ -261,10 +267,35 @@ fn shots_key(listing: &Listing) -> String {
     format!("{}/{}@{}", listing.source, listing.name, listing.version)
 }
 
+/// "Workshop  Discover | Installed" of a tab of Customize.
 #[component]
-pub fn Workshop() -> impl IntoView {
+pub fn ViewSwitch(discover: RwSignal<bool>) -> impl IntoView {
+    view! {
+        <div class="shelf-head" role="group" aria-label="Workshop">
+            <h3>"Workshop"</h3>
+            <button class="tab" class:active=move || discover.get()
+                on:click=move |_| discover.set(true)>"Discover"</button>
+            <button class="tab" class:active=move || !discover.get()
+                on:click=move |_| discover.set(false)>"Installed"</button>
+        </div>
+    }
+}
+
+/// An empty Installed list, with the way to the tab's Discover.
+pub fn nothing_installed(scope: Scope, discover: RwSignal<bool>) -> impl IntoView {
+    view! {
+        <div class="row-actions">
+            <p class="muted">{format!("Nothing installed yet. Discover {} in the Workshop.", scope.noun())}</p>
+            <button class="ghost" on:click=move |_| discover.set(true)>"Discover"</button>
+        </div>
+    }
+}
+
+#[component]
+pub fn Workshop(scope: Scope) -> impl IntoView {
     let width = RwSignal::new(0);
     let shop = Shop {
+        scope,
         list: RwSignal::new(None),
         packs: RwSignal::new(Vec::new()),
         order: RwSignal::new(Order::Trust),
@@ -382,6 +413,7 @@ fn items(shop: Shop, shelf: Shelf, list: &StoreList, shown: &[Listing]) -> Vec<I
         indices
             .iter()
             .filter_map(|&index| list.listings.get(index))
+            .filter(|listing| shop.scope.holds(listing))
             .cloned()
             .map(|listing| Item::Listing(Box::new(listing)))
             .collect()
@@ -486,12 +518,13 @@ fn heading(shelf: Option<Shelf>, title: &str, count: usize, end: Option<AnyView>
     }
 }
 
-/// Listings left after the search, tiers and kinds, in the core's order.
+/// The shelf's listings left after the search, tiers and kinds, in the core's order.
 fn visible(shop: Shop, listings: &[Listing]) -> Vec<Listing> {
     let query = shop.query.get().trim().to_lowercase();
     let (tiers, kinds) = (shop.tiers.get(), shop.kinds.get());
     listings
         .iter()
+        .filter(|listing| shop.scope.holds(listing))
         .filter(|listing| tiers.is_empty() || tiers.contains(&listing.tier))
         .filter(|listing| kinds.is_empty() || kinds.contains(&listing.kind))
         .filter(|listing| {
@@ -513,7 +546,8 @@ fn local_packs(shop: Shop, listings: &[Listing]) -> Vec<SkillPack> {
         .collect();
     let query = shop.query.get().trim().to_lowercase();
     let (tiers, kinds) = (shop.tiers.get(), shop.kinds.get());
-    let shown = (tiers.is_empty() || tiers.contains(&Tier::Local))
+    let shown = shop.scope.kinds().contains(&Kind::Pack)
+        && (tiers.is_empty() || tiers.contains(&Tier::Local))
         && (kinds.is_empty() || kinds.contains(&Kind::Pack))
         && shop.category.get().is_none();
     if !shown {

@@ -1,11 +1,12 @@
 //! Customize: agents, skills, connectors (the MCP servers), plugins, tools and voice.
+//! Every tab the store has listings for shows its own Workshop under "Discover".
 
 use crate::{
     api,
     state::{View, state},
     ui::run,
 };
-use dusk_protocol::config::Settings;
+use dusk_protocol::{config::Settings, plugin::Scope};
 use leptos::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -16,6 +17,19 @@ pub enum Tab {
     Plugins,
     Tools,
     Voice,
+}
+
+impl Tab {
+    /// The Workshop the tab has; Tools and Voice have none in the store.
+    fn scope(self) -> Option<Scope> {
+        match self {
+            Self::Agents => Some(Scope::Agents),
+            Self::Skills => Some(Scope::Skills),
+            Self::Mcp => Some(Scope::Connectors),
+            Self::Plugins => Some(Scope::Plugins),
+            Self::Tools | Self::Voice => None,
+        }
+    }
 }
 
 const TABS: [(Tab, &str); 6] = [
@@ -33,6 +47,7 @@ pub fn Customize(tab: Tab) -> impl IntoView {
     let panel = RwSignal::new(None::<Settings>);
     let reload = move || run(api::settings_panel(), move |p| panel.set(Some(p)));
     reload();
+    let discover = RwSignal::new(false);
     view! {
         <div class="page">
             <h2>"Customize"</h2>
@@ -42,13 +57,17 @@ pub fn Customize(tab: Tab) -> impl IntoView {
                         on:click=move |_| app.show(View::Customize(t))>{label}</button>
                 })}
             </div>
-            {match tab {
-                Tab::Agents => view! { <Agents panel reload /> }.into_any(),
-                Tab::Skills => view! { <Skills panel reload /> }.into_any(),
-                Tab::Mcp => view! { <Mcp /> }.into_any(),
-                Tab::Plugins => view! { <Plugins /> }.into_any(),
-                Tab::Tools => view! { <Tools panel reload /> }.into_any(),
-                Tab::Voice => view! { <Voice /> }.into_any(),
+            {tab.scope().map(|_| view! { <workshop::ViewSwitch discover /> })}
+            {move || match (tab.scope(), discover.get()) {
+                (Some(scope), true) => view! { <Workshop scope /> }.into_any(),
+                _ => match tab {
+                    Tab::Agents => view! { <Agents panel reload /> }.into_any(),
+                    Tab::Skills => view! { <Skills panel reload discover /> }.into_any(),
+                    Tab::Mcp => view! { <Mcp discover /> }.into_any(),
+                    Tab::Plugins => view! { <Plugins discover /> }.into_any(),
+                    Tab::Tools => view! { <Tools panel reload /> }.into_any(),
+                    Tab::Voice => view! { <Voice /> }.into_any(),
+                },
             }}
         </div>
     }
@@ -70,3 +89,4 @@ use plugins::Plugins;
 use skills::Skills;
 use tools::Tools;
 use voice::Voice;
+use workshop::Workshop;

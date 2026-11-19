@@ -9,13 +9,20 @@ use crate::{
 use dusk_protocol::{
     client::Switch as Flag,
     config::{McpInfo, McpState},
+    plugin::Scope,
 };
 use leptos::prelude::*;
 
 #[component]
-pub fn Mcp() -> impl IntoView {
+pub fn Mcp(discover: RwSignal<bool>) -> impl IntoView {
     let servers = RwSignal::new(Vec::<McpInfo>::new());
-    let load = move || run(api::mcp_servers(), move |s| servers.set(s));
+    let loaded = RwSignal::new(false);
+    let load = move || {
+        run(api::mcp_servers(), move |s| {
+            servers.set(s);
+            loaded.set(true);
+        })
+    };
     load();
     let editing = RwSignal::new(None::<Option<String>>);
     let text = RwSignal::new(String::new());
@@ -25,6 +32,8 @@ pub fn Mcp() -> impl IntoView {
     };
     view! {
         <div class="row-actions"><button class="primary" on:click=add>"Add a server"</button></div>
+        {move || (loaded.get() && servers.with(Vec::is_empty))
+            .then(|| super::workshop::nothing_installed(Scope::Connectors, discover))}
         <div class="cards">
             {move || servers.get().into_iter().map(|server| {
                 let (toggle, restart, sign_in, _edit) = (server.name.clone(), server.name.clone(), server.name.clone(), server.name.clone());
