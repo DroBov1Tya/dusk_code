@@ -693,8 +693,10 @@ names its address: only a key vouches. What it may bring is held tighter
 - its serial is not held to: whoever serves an unsigned list can write any serial, so the
   rule would protect nothing and could lock you out. The commit and file hashes the
   record keeps of what was installed are what holds;
-- its names never pass for a trusted or installed one: a name that is, or is one edit
-  from (dashes and case aside), a name an Official or Verified listing offers, anything
+- its names never pass for a trusted or installed one: a name that is, or is close to
+  (dashes and case aside: one edit for 5 letters or more, two for 8 or more, a swap of
+  two letters counting as one, or a name of 8 or more with words added), a name an
+  Official or Verified listing offers, the official list's names as last read, anything
   installed from another source, a built-in skill, the `duskcode` pack or a folder under
   `skills/` or `agents/` is shown and refused as taken;
 - a listing shows its source and the host of its list, and its `author` as that source's
@@ -718,7 +720,7 @@ only skills `load_skill` offers after it. Its text may still name another skill,
 model may load as it may any skill listed; the marker is what tells it whose words those
 are. When the store's record cannot be read, everything the store installed counts as
 from an unknown, unverified source. No source but the official one may bring an agent
-named as, or one edit from, an agent duskcode brings (`general` and the shipped ones).
+named as, or close to, an agent duskcode brings (`general` and the shipped ones).
 Its scripts are plain text, written readable and writable by you only, and run under the
 permission mode you chose, like any command.
 

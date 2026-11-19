@@ -344,6 +344,19 @@ fn an_unverified_name_never_passes_for_a_trusted_or_installed_one() {
     }
     assert!(guard::close("debugging", "debuging"));
     assert!(!guard::close("git", "gif"));
+    // A swap, two edits in a long name, and words added to a long one.
+    for near in [
+        "systematic-debuggnig",
+        "systematic-debuggin",
+        "systemattic-debuging",
+        "systematic-debugging-pro",
+        "my-systematic-debugging",
+    ] {
+        assert!(guard::close(near, "systematic-debugging"), "{near}");
+    }
+    assert!(guard::close("code-reviewer-pro", "code-reviewer"));
+    assert!(!guard::close("reviewer", "code-review"));
+    assert!(!guard::close("spike", "spice-up"));
 }
 
 #[test]
