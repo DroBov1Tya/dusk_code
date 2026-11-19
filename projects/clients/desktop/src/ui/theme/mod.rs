@@ -1,6 +1,7 @@
 //! Applies a palette and the chosen fonts to every component. The choice is kept in
 //! `gui.json` next to the config: it is how this window looks, not a core setting.
 
+mod code_pad;
 mod palettes;
 
 use std::{fs, path::PathBuf, rc::Rc};
@@ -141,6 +142,8 @@ fn apply(cx: &mut App) {
     let mode = config.mode;
     Theme::update(cx, |theme| theme.apply_config(&Rc::new(config)));
     Theme::change(mode, None, cx);
+    // Theme::change reinstalls the library's text defaults, so ours goes after it.
+    code_pad::install(cx);
     cx.refresh_windows();
 }
 

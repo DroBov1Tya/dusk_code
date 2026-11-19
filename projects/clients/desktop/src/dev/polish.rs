@@ -18,6 +18,7 @@ use crate::{
 };
 
 const ANSWER: &str = "Entries now expire. The change is in three places:\n\n\
+```bash\ncargo test -p cache --all-features -- --nocapture expiry::sweep_removes_entries_nobody_reads --test-threads=1 && cargo clippy -p cache --all-targets\n```\n\n\
 ## What changed\n\n\
 1. `Entry` carries a `deadline`, set from the cache's `ttl` when the value is stored.\n\
 2. `get()` compares the deadline with the clock and removes an entry that is past it.\n\
