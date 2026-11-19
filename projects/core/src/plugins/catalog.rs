@@ -15,7 +15,7 @@ use parking_lot::{Mutex, RwLock};
 use serde_json::json;
 use tracing::{info, warn};
 
-use dusk_protocol::plugin::{Part, Permissions};
+use dusk_protocol::plugin::{Part, Permissions, ProjectAccess, Provides};
 
 use super::{
     broker::{self, Broker, Key, Origin, Policy},
@@ -27,7 +27,7 @@ use super::{
     ui::{UiHost, UiSpec},
 };
 use crate::{
-    config::{McpServerConfig, Plugged, live::LiveConfig},
+    config::{McpServerConfig, Plugged, PluginConfig, live::LiveConfig},
     init::paths::{Paths, is_plain_folder_name},
     mcp::McpServers,
 };
@@ -98,9 +98,10 @@ impl Plugins {
     }
 
     /// What `plugin`'s manifest asks for now, to keep as allowed when it is switched on.
-    pub fn permissions(&self, plugin: &str) -> Result<Permissions> {
+    pub fn permissions(&self, plugin: &str) -> Result<(Permissions, Option<Provides>)> {
         ensure!(is_plain_folder_name(plugin), "invalid plugin name");
-        Ok(Manifest::load(&folder(&self.paths).join(plugin))?.permissions)
+        let manifest = Manifest::load(&folder(&self.paths).join(plugin))?;
+        Ok((manifest.permissions, manifest.provides))
     }
 
     pub fn list(&self) -> Vec<PluginInfo> {
@@ -171,11 +172,7 @@ impl Plugins {
                 .secrets()
                 .map(|key| (key.clone(), secret_of(key).is_some()))
                 .collect();
-            let allowed = settings
-                .allowed
-                .as_ref()
-                .is_some_and(|allowed| covers(allowed, &manifest.permissions))
-                || manifest.permissions == Permissions::default();
+            let allowed = allowed(&settings, &manifest);
             let mut problem = None;
             let here = manifest.runs_here();
             if !here {
@@ -389,6 +386,23 @@ fn resolve_mcp(server: &McpServerConfig, folder: &Path, isolation: &Isolation) -
     server
 }
 
+/// Whether what the user agreed to covers all the manifest asks for, permissions and
+/// contracts alike.
+pub(super) fn allowed(settings: &PluginConfig, manifest: &Manifest) -> bool {
+    let permissions = settings
+        .allowed
+        .as_ref()
+        .is_some_and(|allowed| covers(allowed, &manifest.permissions))
+        || manifest.permissions == Permissions::default();
+    let provides = manifest.provides.as_ref().is_none_or(|wanted| {
+        settings
+            .allowed_provides
+            .as_ref()
+            .is_some_and(|agreed| agreed.covers(wanted))
+    });
+    permissions && provides
+}
+
 /// Whether what the user allowed covers all that `wanted` asks for.
 pub(super) fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
     let within = |have: &[String], want: &[String]| want.iter().all(|item| have.contains(item));
@@ -396,6 +410,8 @@ pub(super) fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
         && within(&allowed.exec, &wanted.exec)
         && within(&allowed.read, &wanted.read)
         && within(&allowed.sockets, &wanted.sockets)
+        && (wanted.project == ProjectAccess::None || allowed.project == wanted.project)
+        && (!wanted.keychain || allowed.keychain)
         && wanted.keys.iter().all(|key| {
             allowed.keys.iter().any(|had| {
                 had.name == key.name
@@ -476,6 +492,7 @@ fn info(
         (!manifest.hooks.is_empty(), "hooks"),
         (manifest.platform.is_some(), "platform"),
         (manifest.ui.is_some(), "ui"),
+        (manifest.provides.is_some(), "provides"),
     ] {
         if has {
             parts.push(part.to_owned());
@@ -492,7 +509,12 @@ fn info(
             .then(|| format!("needs settings: {}", missing_settings.join(", "))),
         missing_settings,
         secrets,
-        permissions: manifest.permissions.lines(),
+        permissions: manifest
+            .provides
+            .iter()
+            .flat_map(Provides::lines)
+            .chain(manifest.permissions.lines())
+            .collect(),
         platforms: manifest.platforms.clone(),
         clients: manifest.clients.clone(),
     }
@@ -601,6 +623,37 @@ mod tests {
         ] {
             assert!(!covers(&allowed, &read(more)), "{more}");
         }
+    }
+
+    #[test]
+    fn an_update_that_serves_more_hosts_stays_off() {
+        let manifest = |hosts: &str, permissions: &str| -> Manifest {
+            serde_saphyr::from_str(&format!(
+                "name: g\npermissions: {{{permissions}}}\nprovides:\n  command: [./p]\n  \
+                 forge: {{versions: [1], hosts: [{hosts}]}}\n"
+            ))
+            .unwrap()
+        };
+        let agreed = |manifest: &Manifest| PluginConfig {
+            enabled: true,
+            allowed: Some(manifest.permissions.clone()),
+            allowed_provides: manifest.provides.clone(),
+            ..Default::default()
+        };
+        let one = manifest("github.com", "");
+        let two = manifest("github.com, ghe.example.com", "");
+        assert!(!allowed(&agreed(&one), &two));
+        assert!(allowed(&agreed(&two), &two));
+        assert!(allowed(&agreed(&two), &one));
+        // Asking for the keychain or a project folder is asking for more, too.
+        let without = agreed(&one);
+        assert!(!allowed(
+            &without,
+            &manifest("github.com", "keychain: true")
+        ));
+        assert!(!allowed(&without, &manifest("github.com", "project: read")));
+        // A plugin that provides and was never agreed to is off.
+        assert!(!allowed(&PluginConfig::default(), &one));
     }
 
     #[test]
