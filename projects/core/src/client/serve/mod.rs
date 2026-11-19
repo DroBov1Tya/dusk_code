@@ -22,8 +22,8 @@ mod user_runs;
 mod voice;
 mod work;
 
+use shown::ErrorView;
 pub use shown::Shown;
-use shown::shown_text;
 pub use status::blank_status;
 use status::read_status;
 
@@ -234,13 +234,17 @@ impl Server {
                         let area = classify(&request).area;
                         match request {
                             Request::Shutdown => break Some(reply),
-                            Request::InstallUpdate { tag } => self.install_update(tag, reply),
-                            Request::Store(request) => self.store(request, reply),
+                            Request::InstallUpdate { tag } => {
+                                self.install_update(tag, self.error_view(client, area), reply)
+                            }
+                            Request::Store(request) => {
+                                self.store(request, self.error_view(client, area), reply)
+                            }
                             Request::Project(ProjectRequest::Repository { id, request }) => {
-                                self.repository(id, request, reply)
+                                self.repository(id, request, self.error_view(client, area), reply)
                             }
                             Request::Project(ProjectRequest::RepositoryStatus { id }) => {
-                                self.repository_status(client, id, reply)
+                                self.repository_status(client, id, self.error_view(client, area), reply)
                             }
                             Request::Project(ProjectRequest::PullStatus { id, number }) => {
                                 self.pull_status(id, number, reply)
@@ -259,7 +263,7 @@ impl Server {
                                 self.caller = client;
                                 let mut response = match self.handle(request).await {
                                     Ok(response) => response,
-                                    Err(error) => Response::Error(self.error_text(client, area, &error)),
+                                    Err(error) => Response::Error(self.error_view(client, area).text(&error)),
                                 };
                                 if let Some(ids) = listed {
                                     response = self.cut(&ids, response).await;
@@ -293,21 +297,17 @@ impl Server {
         }
     }
 
-    /// How a failed request of `client` reads to it: whole for the user's own clients,
-    /// kept to what is meant for a reader (or a reference) for the rest.
-    pub(super) fn error_text(&self, client: ClientId, area: Area, error: &anyhow::Error) -> String {
-        let (raw, name) = self.error_view(client);
-        shown_text(error, raw, &name, area)
-    }
-
-    /// Whether `client` reads errors whole, and the name to log them under. A client that
-    /// is not attached is no one's own.
-    pub(super) fn error_view(&self, client: ClientId) -> (bool, String) {
-        self.clients
+    /// How the errors of a request of `client` in `area` read to it: whole for the user's
+    /// own clients, kept to what is meant for a reader (or a reference) for the rest. A
+    /// client that is not attached is no one's own.
+    pub(super) fn error_view(&self, client: ClientId, area: Area) -> ErrorView {
+        let (raw, client) = self
+            .clients
             .get(&client)
             .map_or((false, "client".to_owned()), |attached| {
                 (attached.scope.raw_errors(), attached.source.clone())
-            })
+            });
+        ErrorView { raw, client, area }
     }
 
     /// Notes a refused request of `client`; the one past `REFUSAL_LIMIT` within
@@ -337,7 +337,10 @@ impl Server {
 
     /// Whether `client` was detached for asking what it may not too often; the transport
     /// then tells it so and closes.
-    #[expect(dead_code, reason = "the transport of phase 3 reads it")]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the transport of phase 3 reads it")
+    )]
     pub fn refused_too_often(&self, client: ClientId) -> bool {
         self.refused_out.contains(&client)
     }

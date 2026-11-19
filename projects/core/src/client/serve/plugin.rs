@@ -52,12 +52,17 @@ impl Server {
 impl Server {
     /// Answers beside the loop: the store is on the network, and an install may take a
     /// while; the plugins list in the status shows the result.
-    pub(super) fn store(&self, request: StoreRequest, reply: oneshot::Sender<Response>) {
+    pub(super) fn store(
+        &self,
+        request: StoreRequest,
+        view: super::ErrorView,
+        reply: oneshot::Sender<Response>,
+    ) {
         let runtime = Arc::clone(&self.runtime);
         tokio::spawn(async move {
             let response = match runtime.store(request).await {
                 Ok(response) => response,
-                Err(error) => Response::Error(format!("{error:#}")),
+                Err(error) => Response::Error(view.text(&error)),
             };
             let _ = reply.send(response);
         });

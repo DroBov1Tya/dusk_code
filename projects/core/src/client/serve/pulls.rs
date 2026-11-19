@@ -24,6 +24,7 @@ impl Server {
         &self,
         client: ClientId,
         id: String,
+        view: super::ErrorView,
         reply: oneshot::Sender<Response>,
     ) {
         if let Some(status) = self.pulls.watch(client, &id) {
@@ -36,7 +37,7 @@ impl Server {
         tokio::spawn(async move {
             let response = match refresh(&runtime, &tracker, &subscribers, &id).await {
                 Ok(status) => Response::RepositoryStatus(Box::new(status)),
-                Err(error) => Response::Error(format!("{error:#}")),
+                Err(error) => Response::Error(view.text(&error)),
             };
             let _ = reply.send(response);
         });

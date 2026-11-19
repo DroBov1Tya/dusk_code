@@ -99,8 +99,8 @@ pub struct Scope(Kind);
 #[derive(Debug, Clone)]
 enum Kind {
     Full,
-    /// Every thread, these areas.
-    Areas(&'static [Area]),
+    /// A signed-in browser: the areas of `WEB`.
+    Web,
     /// These chats and the agent threads below them, and only requests about them.
     Threads {
         ids: Arc<HashSet<String>>,
@@ -117,7 +117,7 @@ impl Scope {
 
     /// A signed-in browser.
     pub fn web() -> Self {
-        Self(Kind::Areas(WEB))
+        Self(Kind::Web)
     }
 
     /// Only these chats, and of the requests about them only those in `areas`. An area
@@ -142,7 +142,7 @@ impl Scope {
     pub(super) fn takes(&self, access: &Access<'_>) -> bool {
         match &self.0 {
             Kind::Full => true,
-            Kind::Areas(areas) => areas.contains(&access.area),
+            Kind::Web => WEB.contains(&access.area),
             Kind::Threads { areas, .. } => {
                 access.subject != Subject::None && areas.contains(&access.area)
             }
@@ -152,7 +152,7 @@ impl Scope {
     /// The chats the scope is bound to, or none when it sees every thread.
     pub(super) fn bound(&self) -> Option<&Arc<HashSet<String>>> {
         match &self.0 {
-            Kind::Full | Kind::Areas(_) => None,
+            Kind::Full | Kind::Web => None,
             Kind::Threads { ids, .. } => Some(ids),
         }
     }
@@ -168,7 +168,8 @@ impl Scope {
     pub(super) fn host_files(&self) -> HostFiles {
         let held = match &self.0 {
             Kind::Full => true,
-            Kind::Areas(areas) | Kind::Threads { areas, .. } => areas.contains(&Area::Command),
+            Kind::Web => WEB.contains(&Area::Command),
+            Kind::Threads { areas, .. } => areas.contains(&Area::Command),
         };
         match held {
             true => HostFiles::Taken,
@@ -180,8 +181,7 @@ impl Scope {
     /// clients and the browser, which is the same person as the desktop. Any other gets
     /// `Shown` sentences and references.
     pub fn raw_errors(&self) -> bool {
-        matches!(&self.0, Kind::Full)
-            || matches!(&self.0, Kind::Areas(areas) if std::ptr::eq(*areas, WEB))
+        matches!(&self.0, Kind::Full | Kind::Web)
     }
 
     /// Whether the client gets the status: it is settings-level state, so only a scope
@@ -189,7 +189,7 @@ impl Scope {
     pub(super) fn reads_status(&self) -> bool {
         match &self.0 {
             Kind::Full => true,
-            Kind::Areas(areas) => areas.contains(&Area::Settings),
+            Kind::Web => WEB.contains(&Area::Settings),
             Kind::Threads { .. } => false,
         }
     }

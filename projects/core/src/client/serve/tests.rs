@@ -133,8 +133,9 @@ async fn a_stopped_run_is_killed_with_what_it_started() {
     assert!(!cwd.join("child_survived").exists());
 }
 
-/// A core with the chat `a` whose folder is a path that is not there, a client 1 bound to
-/// it, a client 2 that is the web and a client 3 with every scope; the loop is running.
+/// A core running with the chats `a` (its folder a path that is not there) and `c` (none);
+/// client 1 is bound to both, client 2 is the web and client 3 sees all. Returns the way
+/// in and client 1's events.
 async fn core_with_clients(
     name: &str,
 ) -> (
@@ -214,8 +215,7 @@ async fn a_bound_client_sees_a_ref_not_a_path() {
     let Response::Error(text) = ask(&calls, 1, resume("a")).await else {
         panic!("the diff of a folder that is not there fails");
     };
-    let shape = regex_lite_match(&text);
-    assert!(shape, "{text}");
+    assert!(is_a_ref_text(&text), "{text}");
     assert!(!text.contains("nowhere"));
     // The user's own clients read the whole text.
     for client in [2, 3] {
@@ -227,7 +227,7 @@ async fn a_bound_client_sees_a_ref_not_a_path() {
 }
 
 /// `^the request failed \(ref [0-9a-f]{8}\)$`
-fn regex_lite_match(text: &str) -> bool {
+fn is_a_ref_text(text: &str) -> bool {
     text.strip_prefix("the request failed (ref ")
         .and_then(|rest| rest.strip_suffix(')'))
         .is_some_and(|id| id.len() == 8 && id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')))
@@ -255,7 +255,7 @@ async fn a_shown_error_passes() {
         Response::Error("this chat cannot be opened from this client".into())
     );
     let error = anyhow::Error::new(Shown::new("the chat is busy")).context("deeper");
-    let text = shown_text(&error, false, "test", crate::client::Area::ThreadWrite);
+    let text = shown::shown_text(&error, false, "test", crate::client::Area::ThreadWrite);
     assert_eq!(text, "the chat is busy");
 }
 
@@ -287,4 +287,27 @@ async fn the_twenty_first_refusal_detaches() {
         ask(&calls, 2, Request::SystemReport).await,
         Response::Error(_)
     ));
+}
+
+/// The transport asks whether a client was detached for its refusals, to tell it so.
+#[tokio::test]
+async fn a_client_detached_for_refusals_is_known_until_its_handle_goes() {
+    let root = temp_dir("serve_refused_out");
+    let paths = Paths::new(root.join("config"), root.join("work"));
+    let runtime = Runtime::start(paths, Some(root.join("state.db")))
+        .await
+        .unwrap();
+    let (mut server, _) = Server::new(runtime, Subscribers::default());
+    for client in [1, 2] {
+        let attached = Attached::new("test".into(), Scope::full());
+        server.clients.insert(client, attached);
+    }
+    for _ in 0..REFUSAL_LIMIT {
+        server.count_refusal(1).await;
+    }
+    assert!(!server.refused_too_often(1));
+    server.count_refusal(1).await;
+    assert!(server.refused_too_often(1));
+    assert!(!server.clients.contains_key(&1));
+    assert!(!server.refused_too_often(2));
 }
