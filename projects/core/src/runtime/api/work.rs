@@ -131,9 +131,7 @@ impl Runtime {
         card_id: &str,
         part: &str,
     ) -> Result<Option<Vec<u8>>> {
-        let valid =
-            !card_id.is_empty() && card_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
-        if !valid {
+        if !crate::state::artifacts::is_card_id(card_id) {
             return Ok(None);
         }
         let launcher = self.of(thread_id).await;
