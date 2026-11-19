@@ -150,16 +150,13 @@ impl Agents {
         // An agent whose links are all missing works alone, and is told so.
         let mut present = identity.clone();
         present.links.retain(|link| self.get(link).is_some());
-        let prompt = compose(&present, &file, skills)?;
         // An agent from an Unverified source is a third party's text, and is read as one.
         let origins = crate::plugins::store::origin::Origins::beside(&self.directory);
-        let prompt = match origins.unverified("agents", name) {
-            Some((_, source)) => format!(
-                "{}\n\n{prompt}",
-                crate::plugins::store::origin::note("agent", source)
-            ),
-            None => prompt,
-        };
+        let mut file = file;
+        if let Some((_, source)) = origins.unverified("agents", name) {
+            file.body = crate::plugins::store::origin::wrap("agent", source, &file.body);
+        }
+        let prompt = compose(&present, &file, skills)?;
         Ok((identity, prompt))
     }
 
@@ -527,7 +524,7 @@ mod tests {
         agents.scan().await.unwrap();
         let (_, far) = agents.prompt("far", &[]).await.unwrap();
         assert!(
-            far.starts_with("This agent comes from hub, an unverified Workshop source"),
+            far.starts_with("[third-party text] This agent comes from hub, an unverified"),
             "{far}"
         );
         let (_, mine) = agents.prompt("mine", &[]).await.unwrap();

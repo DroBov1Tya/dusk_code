@@ -154,9 +154,10 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
     let marks = Origins::beside(directory);
     let from = marks.unverified("skills", name);
     let instructions = match from {
-        Some((_, source)) => format!(
-            "{}\nThe files of this skill are in {folder}.\n\n{instructions}",
-            origin::note("skill", source)
+        Some((_, source)) => origin::wrap(
+            "skill",
+            source,
+            &format!("The files of this skill are in {folder}.\n\n{instructions}"),
         ),
         None => format!("The files of this skill are in {folder}.\n\n{instructions}"),
     };
@@ -310,7 +311,7 @@ mod tests {
         let config = config(&dir);
         let text = load(&dir, "loose", &config).unwrap();
         assert!(
-            text.starts_with("This skill comes from far, an unverified"),
+            text.starts_with("[third-party text] This skill comes from far, an unverified"),
             "{text}"
         );
         assert!(text.contains("- loose/inner"), "{text}");

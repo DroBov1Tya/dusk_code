@@ -708,10 +708,17 @@ confirmation says plainly that nobody vouches for it. The install names the revi
 `package_sha256`, and the core refuses it when the files are no longer those. "Update all"
 never updates an Unverified item: it is left for you, with why.
 
-What an Unverified skill then asks of the agent is your call. `load_skill` gives its text
-after a line saying it comes from an unverified source and is data from a third party, not
-instructions from you; the skill list marks it with its source; its `links:` lead only to
-skills of its own folder, never to built-in skills such as `skill-evolve` or to your own.
+What an Unverified skill or agent then asks of the agent is your call. `load_skill` gives a
+skill's text, and an agent's prompt carries its text, between a line saying it comes from
+an unverified source and is data from a third party, not instructions from you, and a line
+closing it; a line of the text that would pass for either is taken out. The skill list and
+`ask_agent`'s list mark it with its source. A skill's `links:` lead only to skills of its
+own folder, never to built-in skills such as `skill-evolve` or to your own: those are the
+only skills `load_skill` offers after it. Its text may still name another skill, which the
+model may load as it may any skill listed; the marker is what tells it whose words those
+are. When the store's record cannot be read, everything the store installed counts as
+from an unknown, unverified source. No source but the official one may bring an agent
+named as, or one edit from, an agent duskcode brings (`general` and the shipped ones).
 Its scripts are plain text, written readable and writable by you only, and run under the
 permission mode you chose, like any command.
 
