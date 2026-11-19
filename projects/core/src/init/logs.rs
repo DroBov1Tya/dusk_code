@@ -62,9 +62,19 @@ impl Telemetry {
     }
 }
 
+/// What a process is to the core it logs for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogRole {
+    /// Runs the core: writes `core.log` too.
+    Owner,
+    /// Attached to a core another process runs, which writes `core.log`.
+    Attached,
+}
+
 /// Starts writing the logs of this process, as the config file has them. Events whose
-/// target is `client`, the client's crate name, go to `<file>.log`.
-pub fn init(paths: &Paths, client: &'static str, file: &str) -> Result<Telemetry> {
+/// target is `client`, the client's crate name, go to `<file>.log`; the rest go to
+/// `core.log` for the owner and nowhere for an attached client.
+pub fn init(paths: &Paths, client: &'static str, file: &str, role: LogRole) -> Result<Telemetry> {
     let logging = Config::load_from(paths.config_file())
         .map(|config| config.logging().clone())
         .unwrap_or_default();
@@ -74,7 +84,10 @@ pub fn init(paths: &Paths, client: &'static str, file: &str) -> Result<Telemetry
     }
     let directory = paths.logs_dir();
     create_private_dir(&directory)?;
-    let core = open(&directory.join("core.log"))?;
+    let core = match role {
+        LogRole::Owner => Some(open(&directory.join("core.log"))?),
+        LogRole::Attached => None,
+    };
     let own = open(&directory.join(format!("{file}.log")))?;
     let is_client =
         move |target: &str| target == client || target.starts_with(&format!("{client}::"));
@@ -94,14 +107,14 @@ pub fn init(paths: &Paths, client: &'static str, file: &str) -> Result<Telemetry
     });
     tracing_subscriber::registry()
         .with(level)
-        .with(
+        .with(core.map(|core| {
             fmt::layer()
                 .with_ansi(false)
                 .with_writer(Mutex::new(core))
                 .with_filter(filter_fn(move |meta| {
                     enabled() && !is_client(meta.target())
-                })),
-        )
+                }))
+        }))
         .with(
             fmt::layer()
                 .with_ansi(false)

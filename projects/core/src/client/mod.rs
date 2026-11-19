@@ -44,5 +44,5 @@ pub use crate::state::artifacts::ArtifactStore;
 /// Starts the core's side of the protocol over `runtime` for the one client that said
 /// `hello`, with `scope`. The core stops when that client goes away.
 pub fn serve(runtime: Runtime, hello: Hello, scope: Scope) -> Result<Client> {
-    Hub::start(runtime).attach(hello, scope)
+    Hub::start(runtime).attach_owner(hello, scope)
 }

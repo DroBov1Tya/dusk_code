@@ -18,7 +18,7 @@ pub use crate::{
     },
     catalog::mentions::complete as complete_mention,
     init::{
-        logs::{Telemetry, init as init_logs},
+        logs::{LogRole, Telemetry, init as init_logs},
         paths::{Paths, expand_home},
     },
     message::path_completion,

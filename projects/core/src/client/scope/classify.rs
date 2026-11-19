@@ -98,6 +98,7 @@ pub fn classify(request: &Request) -> Access<'_> {
         Request::SystemReport => apart(Area::System),
         Request::InstallUpdate { .. } => apart(Area::Update),
         Request::Shutdown => apart(Area::Shutdown),
+        Request::Clients | Request::Disconnect { .. } => apart(Area::Clients),
     }
 }
 

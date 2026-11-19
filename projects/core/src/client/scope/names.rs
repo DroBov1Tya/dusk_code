@@ -204,4 +204,6 @@ named! {
     R::Store(St::RemoveSource { .. }) => "store.remove_source",
     R::InstallUpdate { .. } => "install_update",
     R::Shutdown => "shutdown",
+    R::Clients => "clients",
+    R::Disconnect { .. } => "disconnect",
 }

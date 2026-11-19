@@ -72,6 +72,8 @@ pub enum Area {
     /// Installing a release of duskcode.
     Update,
     Shutdown,
+    /// Listing the attached clients and detaching one.
+    Clients,
 }
 
 /// What a browser may ask: everything but stopping the core, a shell, plugin parts,
@@ -180,6 +182,20 @@ impl Scope {
         match held {
             true => HostFiles::Taken,
             false => HostFiles::Left,
+        }
+    }
+
+    /// Whether it is full access: the only scope that learns which client stopped the core.
+    pub(super) fn is_full(&self) -> bool {
+        matches!(&self.0, Kind::Full)
+    }
+
+    /// What the scope is called in the list of clients.
+    pub(super) fn name(&self) -> &'static str {
+        match &self.0 {
+            Kind::Full => "full",
+            Kind::Web => "web",
+            Kind::Threads { .. } => "threads",
         }
     }
 

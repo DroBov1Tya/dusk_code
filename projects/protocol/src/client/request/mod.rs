@@ -26,8 +26,15 @@ pub enum Request {
     InstallUpdate {
         tag: String,
     },
-    /// Closes every thread and stops the core; the last request a client sends.
+    /// Closes every thread and stops the core for every attached client; the last
+    /// request a client sends. Full access only.
     Shutdown,
+    /// The clients attached to the core now.
+    Clients,
+    /// Detaches client `id`, closing its events. Full access only.
+    Disconnect {
+        id: u64,
+    },
 }
 
 mod catalog;
