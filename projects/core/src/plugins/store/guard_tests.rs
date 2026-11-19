@@ -380,6 +380,14 @@ fn a_review_shows_what_an_update_changes_on_disk() {
     )]);
     let review = review::compare("hash".into(), &BTreeMap::new(), &agent);
     assert!(review.agent && review.agent_tools.is_none());
+    // A first install shows the new instruction file whole, not only its name.
+    assert_eq!(review.diff_path.as_deref(), Some("AGENT.md"));
+    assert!(
+        review
+            .diff
+            .iter()
+            .any(|line| line.text.contains("You are."))
+    );
 }
 
 /// No source but the official one may bring an agent named as, or close to, one duskcode
