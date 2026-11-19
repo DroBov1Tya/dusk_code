@@ -96,7 +96,7 @@ impl Render for Workspace {
                 .h_full()
                 .flex_none()
                 .overflow_hidden()
-                .child(sidebar::render(self, window, cx))
+                .child(sidebar::render(self, cx))
         });
         let inspector = (right > px(0.5)).then(|| {
             div()
@@ -163,7 +163,7 @@ impl Render for Workspace {
                             .children(right_dock),
                     ),
             )
-            .children(crate::columns::flyout::render(self, window, cx))
+            .children(crate::columns::flyout::render(self, cx))
             .children(modal)
             .children(chat_menu)
             .children(artifact_menu)

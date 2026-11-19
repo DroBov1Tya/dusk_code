@@ -11,6 +11,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::ui::looping::Loop;
 use crate::workspace::Workspace;
 
 /// The marks beside the box, the history on the left and the subagents and the context on
@@ -34,22 +35,18 @@ pub fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let mut holder = div().relative().flex().items_center().justify_center();
     if on {
         // Two rings half a beat apart; each grows from the button's edge and thins out.
-        for (name, shift) in [("dictate-ring-a", 0.), ("dictate-ring-b", 0.5)] {
+        for shift in [0., 0.5] {
             holder = holder.child(
                 div()
                     .absolute()
                     .rounded_full()
                     .border_1()
                     .border_color(danger)
-                    .with_animation(
-                        name,
-                        Animation::new(std::time::Duration::from_millis(1600)).repeat(),
-                        move |ring, at| {
-                            let at = (at + shift).fract();
-                            let grown = 32. + 22. * at;
-                            ring.size(px(grown)).opacity(0.55 * (1. - at) * (1. - at))
-                        },
-                    ),
+                    .looping(std::time::Duration::from_millis(1600), move |ring, at| {
+                        let at = (at + shift).fract();
+                        let grown = 32. + 22. * at;
+                        ring.size(px(grown)).opacity(0.55 * (1. - at) * (1. - at))
+                    }),
             );
         }
     }

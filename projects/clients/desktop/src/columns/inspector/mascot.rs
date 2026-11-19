@@ -5,12 +5,9 @@
 //! function in units of a 100-wide box, drawn as rounded quads under one rectangular clip.
 
 use std::{
-    cell::Cell,
     f32::consts::{PI, TAU},
     hash::{DefaultHasher, Hash, Hasher},
-    rc::Rc,
-    sync::OnceLock,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use dusk_protocol::{agent::Doing, thread::AgentState};
@@ -24,9 +21,6 @@ const R: f32 = 24.;
 const BLEND: f32 = 0.28;
 /// Done and failed have played and hold still after this long.
 const SETTLED: f32 = 1.4;
-/// Enough for calm motion; frames of all mascots fall on the same ticks, so a row of
-/// them costs one redraw per tick.
-const FPS: f32 = 30.;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Kind {
@@ -566,13 +560,10 @@ struct Memory {
     since: Instant,
     from: Option<Pose>,
     last: Pose,
-    frame_pending: Rc<Cell<bool>>,
 }
 
-/// One clock for every mascot, so their frames fall on the same ticks.
-static EPOCH: OnceLock<Instant> = OnceLock::new();
-
-/// The pose to draw now; asks for the next frame while it moves.
+/// The pose to draw now; asks for the next frame while it moves, on the ticks every loop
+/// of the window shares, so mascots and rings side by side cost one redraw per tick.
 fn frame(kind: Kind, seed: f32, window: &mut Window, cx: &mut App) -> Pose {
     let now = cx.background_executor().now();
     let still = cx.reduce_motion();
@@ -584,7 +575,6 @@ fn frame(kind: Kind, seed: f32, window: &mut Window, cx: &mut App) -> Pose {
                 since: now,
                 from: None,
                 last: BASE,
-                frame_pending: Rc::new(Cell::new(false)),
             });
             if memory.kind != kind {
                 memory.from = Some(memory.last);
@@ -611,22 +601,8 @@ fn frame(kind: Kind, seed: f32, window: &mut Window, cx: &mut App) -> Pose {
             }
             memory.last = p;
             let moving = !kind.once() || ts < SETTLED || memory.from.is_some();
-            if moving && !still && !memory.frame_pending.get() {
-                memory.frame_pending.set(true);
-                let pending = memory.frame_pending.clone();
-                let view = window.current_view();
-                let interval = Duration::from_secs_f32(1. / FPS);
-                let epoch = *EPOCH.get_or_init(|| now);
-                let into =
-                    Duration::from_nanos(((now - epoch).as_nanos() % interval.as_nanos()) as u64);
-                let wait = interval - into;
-                window
-                    .spawn(cx, async move |cx| {
-                        cx.background_executor().timer(wait).await;
-                        pending.set(false);
-                        cx.update(move |_, cx| cx.notify(view)).ok();
-                    })
-                    .detach();
+            if moving && !still {
+                crate::ui::looping::ask_redraw(1, window, cx);
             }
             (p, memory)
         })

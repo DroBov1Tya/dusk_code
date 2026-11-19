@@ -12,6 +12,7 @@ use gpui_kit::{
 
 use super::{FIRST, ROW, back_row, catalog_status, model_row};
 use crate::pages::chat::model_bar::{picker_hint, picker_panel};
+use crate::ui::looping::Loop;
 use crate::{
     ui::{Type, icons::REFRESH, widgets},
     workspace::Workspace,
@@ -138,11 +139,9 @@ fn refresh_row(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 Icon::default()
                     .path(REFRESH)
                     .text_color(hint)
-                    .with_animation(
-                        "models-refreshing",
-                        Animation::new(std::time::Duration::from_millis(900)).repeat(),
-                        |icon, delta| icon.rotate(percentage(delta)),
-                    ),
+                    .looping(std::time::Duration::from_millis(900), |icon, delta| {
+                        icon.rotate(percentage(delta))
+                    }),
             )
             .into_any_element(),
         false => Button::new("models-refresh")
