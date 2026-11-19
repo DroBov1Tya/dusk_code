@@ -33,7 +33,11 @@ pub(super) async fn ask(
     if asked.is_empty() {
         return Ok(GatesYes::NotAsked);
     }
-    match launcher.approvals.ask_commands(&asked, progress).await {
+    match launcher
+        .approvals
+        .ask_commands(lead, &asked, progress)
+        .await
+    {
         Ok(()) => {
             let mut allowed = launcher.team.allowed.lock();
             allowed.entry(lead.to_owned()).or_default().extend(asked);

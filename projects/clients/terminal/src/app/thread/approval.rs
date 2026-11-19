@@ -124,6 +124,7 @@ impl App {
         }
         let asked = self.approvals.remove(0);
         Action::Approve {
+            thread_id: self.thread_id.clone().unwrap_or_default(),
             id: asked.request.id,
             decision: choices[at].0,
         }

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// What the application costs the machine right now.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SystemReport {
     /// The app's own process: the window and the core inside it.
@@ -36,6 +37,7 @@ impl SystemReport {
 }
 
 /// The processes below the app's own, summed.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Children {
     pub count: u32,
@@ -43,6 +45,7 @@ pub struct Children {
 }
 
 /// The running process as `ps` sees it; `None` where `ps` is missing.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ProcessUsage {
     pub resident_bytes: u64,

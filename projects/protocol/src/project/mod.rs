@@ -15,6 +15,7 @@ pub const MAX_ENV_NAME_CHARS: usize = 64;
 
 pub const MAX_ENV_VALUE_BYTES: usize = 8 * 1024;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Project {
     pub id: String,

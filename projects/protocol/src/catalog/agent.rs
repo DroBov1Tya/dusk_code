@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalog::Problem;
 /// One agent in the tree a client draws: the chat at the root, then whom each may ask.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentNode {
     pub name: String,
@@ -17,6 +18,7 @@ pub struct AgentNode {
     pub children: Vec<AgentNode>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentTree {
     pub root: AgentNode,

@@ -11,8 +11,11 @@ use crate::session::{
     thread::{OpenThread, close, ensure_open},
 };
 
-pub async fn approve(client: &Client, app: &mut App, id: u64, decision: Decision) {
-    if !matches!(client.threads().approve(id, decision).await, Ok(true)) {
+pub async fn approve(client: &Client, app: &mut App, thread_id: &str, id: u64, decision: Decision) {
+    if !matches!(
+        client.threads().approve(thread_id, id, decision).await,
+        Ok(true)
+    ) {
         app.flash = Some("that request is no longer waiting".into());
     }
 }

@@ -143,7 +143,7 @@ mod tests {
             (2, Scope::full()),
         ] {
             let source = "test".to_owned();
-            server.clients.insert(client, Attached { source, scope });
+            server.clients.insert(client, Attached::new(source, scope));
         }
         server
     }
@@ -185,7 +185,7 @@ mod tests {
         let with_files = Scope::threads(["a".to_owned()], &[Area::ThreadWrite, Area::Command]);
         let source = "test".to_owned();
         let scope = with_files;
-        server.clients.insert(3, Attached { source, scope });
+        server.clients.insert(3, Attached::new(source, scope));
         for (caller, files) in [
             (1, HostFiles::Left),
             (2, HostFiles::Taken),

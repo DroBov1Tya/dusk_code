@@ -101,7 +101,9 @@ pub fn plain_relative(relative: &Path) -> Result<()> {
     for part in relative.components() {
         match part {
             Component::Normal(_) | Component::CurDir => {}
-            _ => bail!("the path must stay inside the project"),
+            _ => bail!(crate::client::Shown::new(
+                "the path must stay inside the project"
+            )),
         }
     }
     Ok(())
@@ -120,7 +122,9 @@ pub async fn within(path: &Path, roots: &[PathBuf]) -> Result<PathBuf> {
             return Ok(path);
         }
     }
-    bail!("the path must be inside the workspace or a project")
+    bail!(crate::client::Shown::new(
+        "the path must be inside the workspace or a project"
+    ))
 }
 
 #[cfg(test)]

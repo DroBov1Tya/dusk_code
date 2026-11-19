@@ -60,15 +60,18 @@ pub async fn path<'a>(project: &Project, relative: &'a str) -> Result<&'a str> {
     loop {
         match tokio::fs::canonicalize(&probe).await {
             Ok(real) => {
-                ensure!(
-                    real.starts_with(&project.dir),
-                    "the path must stay inside the project"
-                );
+                if !real.starts_with(&project.dir) {
+                    bail!(crate::client::Shown::new(
+                        "the path must stay inside the project"
+                    ));
+                }
                 return Ok(relative);
             }
             Err(_) => {
                 if !probe.pop() || !probe.starts_with(&project.dir) {
-                    bail!("the path must stay inside the project");
+                    bail!(crate::client::Shown::new(
+                        "the path must stay inside the project"
+                    ));
                 }
             }
         }

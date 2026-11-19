@@ -13,6 +13,7 @@ pub const MAX_TEAM_STEPS: u32 = 5_000;
 pub const MAX_TEAM_TOKENS: u64 = 100_000_000;
 pub const MAX_TEAM_MINUTES: u32 = 1_440;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Team {
     /// The root thread, which leads it.
@@ -24,6 +25,7 @@ pub struct Team {
     pub members: Vec<TeamMember>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TeamStatus {
@@ -32,6 +34,7 @@ pub enum TeamStatus {
 }
 
 /// Why a team ended.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TeamEnd {
@@ -50,6 +53,7 @@ pub enum TeamEnd {
 
 /// How much a team may spend unasked. Built and read only through `new`, so a budget
 /// that exists is above zero and within the largest ceilings.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "TeamBudgetFields")]
 pub struct TeamBudget {
@@ -59,6 +63,7 @@ pub struct TeamBudget {
     minutes: u32,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TeamBudgetFields {
@@ -125,6 +130,7 @@ impl TeamBudget {
 
 /// What a team has used of its budget, counted by the core; it may pass the budget by
 /// the steps already under way.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamUsed {
     pub at_once: u32,
@@ -134,6 +140,7 @@ pub struct TeamUsed {
 }
 
 /// A thread that holds a task of the plan.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamMember {
     pub thread_id: String,

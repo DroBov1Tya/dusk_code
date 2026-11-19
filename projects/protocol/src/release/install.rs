@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InstallStage {
     Preparing,
@@ -13,6 +14,7 @@ pub enum InstallStage {
 
 /// Download byte counts stay available through verification and installation.
 /// A missing or zero content length does not give a useful percentage.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstallProgress {
     pub stage: InstallStage,

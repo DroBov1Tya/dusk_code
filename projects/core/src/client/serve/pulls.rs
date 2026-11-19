@@ -24,6 +24,7 @@ impl Server {
         &self,
         client: ClientId,
         id: String,
+        view: super::ErrorView,
         reply: oneshot::Sender<Response>,
     ) {
         if let Some(status) = self.pulls.watch(client, &id) {
@@ -36,7 +37,7 @@ impl Server {
         tokio::spawn(async move {
             let response = match refresh(&runtime, &tracker, &subscribers, &id).await {
                 Ok(status) => Response::RepositoryStatus(Box::new(status)),
-                Err(error) => Response::Error(format!("{error:#}")),
+                Err(error) => Response::Error(view.text(&error)),
             };
             let _ = reply.send(response);
         });
@@ -78,6 +79,7 @@ impl Server {
         title: String,
         body: String,
         base: Option<String>,
+        view: super::ErrorView,
         reply: oneshot::Sender<Response>,
     ) {
         let runtime = Arc::clone(&self.runtime);
@@ -90,7 +92,7 @@ impl Server {
             };
             let response = match made.await {
                 Ok(pull) => Response::PullStatus(Some(Box::new(pull))),
-                Err(error) => Response::Error(format!("{error:#}")),
+                Err(error) => Response::Error(view.text(&error)),
             };
             publish::git_changed(&subscribers, &id);
             tracker.changed(&id);

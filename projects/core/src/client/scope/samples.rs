@@ -94,6 +94,7 @@ fn threads() -> Vec<T> {
         },
         T::Delete { thread_id: id() },
         T::Approve {
+            thread_id: id(),
             id: 1,
             decision: Decision::Deny,
         },
@@ -139,6 +140,11 @@ fn work() -> Vec<W> {
         W::SourcePicture {
             thread_id: id(),
             name: word(),
+        },
+        W::Card {
+            thread_id: id(),
+            card_id: word(),
+            part: word(),
         },
         W::Plan { thread_id: id() },
         W::SavePlan {

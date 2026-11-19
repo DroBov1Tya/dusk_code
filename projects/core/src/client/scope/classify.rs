@@ -122,9 +122,7 @@ fn thread(request: &Thread) -> Access<'_> {
         | Thread::StopAgent { thread_id }
         | Thread::Rename { thread_id, .. }
         | Thread::Pin { thread_id, .. } => of(Area::ThreadWrite, thread_id),
-        // An approval is known by its number alone, so it is about no thread: a scope
-        // bound to threads cannot answer one.
-        Thread::Approve { .. } => apart(Area::ThreadWrite),
+        Thread::Approve { thread_id, .. } => of(Area::ThreadApprove, thread_id),
         Thread::RunCommand { thread_id, .. } | Thread::StopRun { thread_id, .. } => {
             of(Area::ThreadCommand, thread_id)
         }
@@ -138,6 +136,7 @@ fn work(request: &Work) -> Access<'_> {
         Work::Jobs { thread_id }
         | Work::JobOutput { thread_id, .. }
         | Work::SourcePicture { thread_id, .. }
+        | Work::Card { thread_id, .. }
         | Work::Plan { thread_id }
         | Work::ChangedFiles { thread_id }
         | Work::FileChanges { thread_id }

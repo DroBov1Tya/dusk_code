@@ -7,6 +7,7 @@ use crate::config::ApprovalPolicy;
 use crate::tools::Decision;
 /// Opening, feeding and closing threads. Events of an open thread arrive as
 /// `Event::Thread` until `Event::Ended`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadRequest {
     New {
@@ -96,8 +97,10 @@ pub enum ThreadRequest {
     Delete {
         thread_id: String,
     },
-    /// Answers a tool's request for a yes; `false` when it no longer waits.
+    /// Answers a tool's request for a yes; `false` when it no longer waits or was not
+    /// asked in this chat or an agent thread below it.
     Approve {
+        thread_id: String,
         id: u64,
         decision: Decision,
     },

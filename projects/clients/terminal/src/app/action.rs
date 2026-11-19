@@ -17,6 +17,7 @@ pub enum Action {
     Cancel,
     /// The answer to a tool's request for approval.
     Approve {
+        thread_id: String,
         id: u64,
         decision: Decision,
     },

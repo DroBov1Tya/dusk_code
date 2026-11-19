@@ -157,8 +157,14 @@ impl Threads<'_> {
     }
 
     /// Answers a tool's request; `false` when it no longer waits.
-    pub async fn approve(&self, id: u64, decision: Decision) -> Result<bool> {
-        match self.call(ThreadRequest::Approve { id, decision }).await? {
+    pub async fn approve(&self, thread_id: &str, id: u64, decision: Decision) -> Result<bool> {
+        let thread_id = thread_id.to_owned();
+        let request = ThreadRequest::Approve {
+            thread_id,
+            id,
+            decision,
+        };
+        match self.call(request).await? {
             Response::Waiting(waiting) => Ok(waiting),
             other => Err(unexpected(other)),
         }

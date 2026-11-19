@@ -3,8 +3,9 @@
 use std::collections::BTreeSet;
 
 use dusk_protocol::{
-    client::{CatalogRequest, ProjectRequest, Request, SettingsRequest},
+    client::{CatalogRequest, ProjectRequest, Request, SettingsRequest, ThreadRequest},
     plugin::StoreRequest,
+    tools::Decision,
 };
 
 use super::{
@@ -83,6 +84,7 @@ fn every_area() -> &'static [Area] {
         Area::ThreadCreate,
         Area::ThreadDelete,
         Area::ThreadCommand,
+        Area::ThreadApprove,
         Area::ThreadApprovals,
         Area::Settings,
         Area::PluginEnable,
@@ -107,6 +109,7 @@ fn every_area() -> &'static [Area] {
             | Area::ThreadCreate
             | Area::ThreadDelete
             | Area::ThreadCommand
+            | Area::ThreadApprove
             | Area::ThreadApprovals
             | Area::Settings
             | Area::PluginEnable
@@ -165,6 +168,22 @@ fn a_scope_bound_to_threads_reaches_nothing_but_threads() {
 /// The whole of what a scope for reading and driving shared chats may send. A new request
 /// that lands in these areas fails here until it is added on purpose.
 #[test]
+fn a_thread_bound_scope_without_thread_approve_cannot_answer() {
+    let approve = |thread_id: &str| {
+        Request::Thread(ThreadRequest::Approve {
+            thread_id: thread_id.into(),
+            id: 1,
+            decision: Decision::Once,
+        })
+    };
+    let scope = Scope::threads(["a".to_owned()], &[Area::ThreadRead, Area::ThreadWrite]);
+    assert!(!scope.permits(&approve("a")));
+    let scope = Scope::threads(["a".to_owned()], &[Area::ThreadApprove]);
+    assert!(scope.permits(&approve("a")));
+    assert!(scope.covers("a") && !scope.covers("b"));
+}
+
+#[test]
 fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
     let scope = Scope::threads([THREAD.to_owned()], &[Area::ThreadRead, Area::ThreadWrite]);
     let expected = [
@@ -188,6 +207,7 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.send",
         "thread.stop_agent",
         "thread.tasks",
+        "work.card",
         "work.changed_files",
         "work.confirm_task",
         "work.events",

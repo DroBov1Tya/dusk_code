@@ -52,6 +52,8 @@ schemars = "1.2"
 jsonschema = { version = "0.60", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 sha2 = "0.11"
+# Already in the tree under hkdf; signs the handshake of the open API.
+hmac = "0.13"
 async-trait = "0.1"
 teloxide = { version = "0.17", default-features = false, features = ["macros", "rustls", "throttle"] }
 opentelemetry = { version = "0.33", default-features = false, features = ["trace"] }

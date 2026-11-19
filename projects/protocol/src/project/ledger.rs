@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 /// The most rows `WorkRequest::FileChanges` answers with, newest first.
 pub const MAX_FILE_CHANGES: usize = 200;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EditKind {
     Created,
@@ -14,6 +15,7 @@ pub enum EditKind {
 }
 
 /// One file one tool call changed.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileChange {
     pub change_id: String,

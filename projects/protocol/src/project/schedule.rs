@@ -12,6 +12,7 @@ pub const MIN_INTERVAL_MINUTES: u32 = 5;
 /// The longest interval: a week.
 pub const MAX_INTERVAL_MINUTES: u32 = 7 * 24 * 60;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Schedule {
     pub id: String,
@@ -30,6 +31,7 @@ pub struct Schedule {
 }
 
 /// What a client sends to make or change a schedule; the core works out when it runs.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScheduleDraft {
     /// `None` makes a new one.
@@ -43,6 +45,7 @@ pub struct ScheduleDraft {
 }
 
 /// A time of day on this machine's clock.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Clock {
     pub hour: u8,
@@ -50,6 +53,7 @@ pub struct Clock {
 }
 
 /// When a schedule runs. Days are a bit set, bit 0 for Monday to bit 6 for Sunday.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Repeat {
     /// One run, at a moment in Unix milliseconds.

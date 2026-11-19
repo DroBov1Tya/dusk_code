@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::{Event, Request, Response, Status};
 
 /// What the remote client sends: a request and the number its response comes back under.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestFrame {
     pub id: u64,
@@ -13,6 +14,7 @@ pub struct RequestFrame {
 }
 
 /// What the core sends: answers, and what it pushes on its own.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ServerFrame {
     Response {

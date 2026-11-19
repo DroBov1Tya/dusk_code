@@ -565,6 +565,7 @@ mod tests {
              ALTER TABLE tasks DROP COLUMN gate_job;
              ALTER TABLE tasks DROP COLUMN checkpoint;
              ALTER TABLE tasks DROP COLUMN model;
+             ALTER TABLE threads DROP COLUMN owner;
              ALTER TABLE threads DROP COLUMN mode;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
@@ -639,6 +640,7 @@ mod tests {
              ALTER TABLE tasks DROP COLUMN gate_job;
              ALTER TABLE tasks DROP COLUMN checkpoint;
              ALTER TABLE tasks DROP COLUMN model;
+             ALTER TABLE threads DROP COLUMN owner;
              ALTER TABLE threads DROP COLUMN mode;
              DELETE FROM _sqlx_migrations WHERE version >= 13;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
@@ -736,7 +738,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

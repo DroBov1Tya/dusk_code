@@ -11,6 +11,7 @@ use crate::release::InstallProgress;
 pub const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/settings/usage";
 
 /// The sign-in with a ChatGPT account, which connects OpenAI without an API key.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChatGpt {
     #[default]
@@ -27,6 +28,7 @@ pub enum ChatGpt {
 
 /// Everything a client shows that changes without being asked: sent again whole
 /// whenever any of it changes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
     /// The model threads talk to, as `provider/model`.

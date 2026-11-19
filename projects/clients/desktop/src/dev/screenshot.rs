@@ -1161,6 +1161,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             name: None,
             project: Some(project.dir.to_string_lossy().into_owned()),
             temporary: false,
+            owner: None,
         },
     );
     crate::pages::chat::pull_link::show(ws, cx);

@@ -56,6 +56,7 @@ named! {
     R::Work(W::RemoveSource { .. }) => "work.remove_source",
     R::Work(W::UploadPicture { .. }) => "work.upload_picture",
     R::Work(W::SourcePicture { .. }) => "work.source_picture",
+    R::Work(W::Card { .. }) => "work.card",
     R::Work(W::Plan { .. }) => "work.plan",
     R::Work(W::SavePlan { .. }) => "work.save_plan",
     R::Work(W::Diff { .. }) => "work.diff",

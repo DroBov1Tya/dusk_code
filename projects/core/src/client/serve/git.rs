@@ -19,6 +19,7 @@ impl Server {
         &self,
         id: String,
         request: GitRequest,
+        view: super::ErrorView,
         reply: oneshot::Sender<Response>,
     ) {
         let runtime = Arc::clone(&self.runtime);
@@ -27,7 +28,7 @@ impl Server {
         tokio::spawn(async move {
             let response = match answer(&runtime, &id, request).await {
                 Ok(response) => response,
-                Err(error) => Response::Error(format!("{error:#}")),
+                Err(error) => Response::Error(view.text(&error)),
             };
             // A failed merge or pull can still leave the repository changed.
             publish::git_changed(&subscribers, &id);

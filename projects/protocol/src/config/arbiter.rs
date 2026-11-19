@@ -7,6 +7,7 @@ pub const MAX_ARBITER_PROMPT_CHARS: usize = 8_000;
 
 /// The arbiter's settings. The prompt only guides its judgment: the core still asks the
 /// user when the answer is unclear and never lets it allow what the approval mode forbids.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Arbiter {

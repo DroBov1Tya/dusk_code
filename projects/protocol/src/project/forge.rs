@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// How a pull request's checks, or one check, stand.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CheckState {
     Pending,
@@ -11,6 +12,7 @@ pub enum CheckState {
 }
 
 /// Where one check stands, finer than `CheckState`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CheckStage {
     Queued,
@@ -31,6 +33,7 @@ impl CheckStage {
 }
 
 /// One check of a pull request; text plain and capped by the core.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     pub name: String,
@@ -45,6 +48,7 @@ pub struct Check {
 }
 
 /// Where a pull request stands on the forge.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PullState {
     Open,
@@ -55,6 +59,7 @@ pub enum PullState {
 
 /// A pull request's checks counted. `state` is the worst of them: failing over
 /// running over passing; `None` when there are none.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checks {
     pub total: u32,
@@ -68,6 +73,7 @@ pub struct Checks {
 }
 
 /// One pull request as the repository status shows it; text plain and capped.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PullStatus {
     pub number: u64,
@@ -93,6 +99,7 @@ pub struct PullStatus {
 
 /// A project's repository at a glance. The core keeps it fresh while a client shows it
 /// and sends `Event::RepositoryStatus` when it changes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryStatus {
     /// The name of the repository's top folder; empty outside a repository.
@@ -107,6 +114,7 @@ pub struct RepositoryStatus {
 }
 
 /// Where the repository's pull requests come from.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Forge {
     /// No `origin`, or one whose address has no host the core can read.
@@ -134,6 +142,7 @@ impl Forge {
 }
 
 /// A plugin that would serve the host.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForgeOffer {
     /// The plugin's name, as the Workshop lists it.
@@ -142,6 +151,7 @@ pub struct ForgeOffer {
     pub installed: bool,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForgeSignIn {
     pub host: String,
@@ -151,6 +161,7 @@ pub struct ForgeSignIn {
     pub hint: String,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForgeStatus {
     /// The plugin that answered.
@@ -170,6 +181,7 @@ pub struct ForgeStatus {
 }
 
 /// The pull requests of a project's current branch, for an icon beside its chats.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PullSummary {
     pub project_id: String,
