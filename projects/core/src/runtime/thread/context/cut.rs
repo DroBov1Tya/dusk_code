@@ -56,7 +56,7 @@ impl Conversation {
             .messages
             .iter()
             .filter(|message| message.role != MessageRole::System && message.sequence <= through)
-            .filter(|message| self.chat_message(message).is_some())
+            .filter(|message| super::is_sent(message))
             .collect();
         let mut tokens = 0;
         let mut cuts = Vec::new();
