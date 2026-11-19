@@ -2,6 +2,7 @@
 # The plugin index public key (index.rs PUBLIC_KEY), quoted in a test: public, not a secret.
 8b365d8bca33ef6098cba7fcd8e1113f842b1e0f:projects/core/src/plugins/store/workshop_tests.rs:generic-api-key:56
 8b365d8bca33ef6098cba7fcd8e1113f842b1e0f:projects/core/src/plugins/store/workshop_tests.rs:generic-api-key:83
+a941ebb68aaa73effdbfbbaf4737e1d361ae2984:projects/core/src/plugins/store/guard_tests.rs:generic-api-key:84
 # The sample Sec-WebSocket-Key nonce from RFC 6455, section 1.3.
 d59429f25943a070cd6bb300f50a07ad144d85f9:projects/web/tests/browser.rs:generic-api-key:81
 # Made-up keys planted by tests that prove such text never reaches the project graph or an
