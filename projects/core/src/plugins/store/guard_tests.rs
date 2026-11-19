@@ -412,3 +412,29 @@ fn a_built_in_agent_s_name_is_taken_from_every_other_source() {
     let taken = listing::taken(&paths, &Record::default(), &[], "loose");
     assert!(taken.contains("general"));
 }
+
+/// A damaged record never drops a mark: whatever the store wrote counts as from an
+/// unknown, unverified source until the record is readable again.
+#[test]
+fn a_damaged_record_fails_closed() {
+    use super::origin::{Origins, UNKNOWN};
+    let paths = crate::testing::temp_paths("guard-damaged");
+    let plugins = crate::plugins::catalog::folder(&paths);
+    std::fs::create_dir_all(&plugins).unwrap();
+    std::fs::write(paths.config_root().join("store.json"), b"{ not json").unwrap();
+    std::fs::write(
+        plugins.join(".store-loose"),
+        "ab skills/loose/SKILL.md\ncd skills/loose/run.sh\nef agents/crew/a/AGENT.md\n",
+    )
+    .unwrap();
+    let origins = Origins::load(&paths);
+    assert_eq!(
+        origins.unverified("skills", "loose"),
+        Some(("skills/loose", UNKNOWN))
+    );
+    assert_eq!(
+        origins.unverified("agents", "crew/a"),
+        Some(("agents/crew", UNKNOWN))
+    );
+    assert_eq!(origins.unverified("skills", "mine"), None);
+}

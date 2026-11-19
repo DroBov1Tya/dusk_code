@@ -1,12 +1,16 @@
 //! Where a folder under the rules folder came from, as the store's record says: the one
 //! answer to "is this skill or agent from an unverified source" for everything that
 //! shows one to the model or the user. A folder the record does not name is the user's
-//! own or shipped with duskcode.
+//! own or shipped with duskcode. A record that cannot be read fails closed: every folder
+//! the store wrote, as its file lists say, counts as from an unknown, unverified source.
 
 use std::{collections::BTreeMap, path::Path};
 
 use super::record::Record;
 use crate::init::paths::Paths;
+
+/// Who installed what, when the record that says it is damaged.
+pub const UNKNOWN: &str = "an unknown source (the Workshop's record is damaged)";
 
 /// The store's installs, by their folder under the rules folder (`skills/x`, `agents/y`).
 #[derive(Debug, Default, Clone)]
@@ -23,7 +27,16 @@ pub struct Origin {
 
 impl Origins {
     pub fn load(paths: &Paths) -> Self {
-        let record = Record::load(paths).unwrap_or_default();
+        let record = match Record::load(paths) {
+            Ok(record) => record,
+            Err(error) => {
+                tracing::warn!(
+                    "the Workshop's record cannot be read ({error:#}); everything it \
+                     installed counts as unverified"
+                );
+                return Self::written(paths);
+            }
+        };
         let items = record
             .installed
             .iter()
@@ -36,6 +49,33 @@ impl Origins {
                 (item.folder.clone(), origin)
             })
             .collect();
+        Self { items }
+    }
+
+    /// Every folder the store's lists of written files name, each from `UNKNOWN`.
+    fn written(paths: &Paths) -> Self {
+        let mut items = BTreeMap::new();
+        let folder = crate::plugins::catalog::folder(paths);
+        for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+            let name = entry.file_name();
+            if !name.to_string_lossy().starts_with(".store-") {
+                continue;
+            }
+            for path in crate::plugins::install::read_record(&entry.path()).into_keys() {
+                let parts: Vec<String> = path
+                    .iter()
+                    .take(2)
+                    .map(|part| part.to_string_lossy().into_owned())
+                    .collect();
+                if parts.len() == 2 {
+                    let origin = Origin {
+                        source: UNKNOWN.to_owned(),
+                        unverified: true,
+                    };
+                    items.insert(parts.join("/"), origin);
+                }
+            }
+        }
         Self { items }
     }
 
