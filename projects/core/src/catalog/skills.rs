@@ -7,7 +7,7 @@
 //! license beside it. A skill whose front matter names a `source` came from elsewhere.
 //! Every other skill is the user's own.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::{
     catalog::graph::{Graph, SKILL_FILE},
@@ -58,13 +58,23 @@ pub const BUILTIN_PACK: &str = "duskcode";
 /// The pack a skill is in: the first folder of a nested one, `duskcode` for a built-in
 /// one; none for a skill at the top that is not built in.
 pub fn pack_of(name: &str) -> Option<String> {
+    pack_in(name, builtin_dir().as_deref())
+}
+
+/// The built-in skills' folder; none when the release resources cannot be read.
+pub(crate) fn builtin_dir() -> Option<PathBuf> {
+    crate::release::resources::root()
+        .ok()
+        .map(|root| root.join("skills"))
+}
+
+/// `pack_of` with the built-in folder already resolved, for callers that ask several
+/// times and would otherwise validate the resources each time.
+pub(crate) fn pack_in(name: &str, builtin: Option<&Path>) -> Option<String> {
     if let Some((pack, _)) = name.split_once('/') {
         return Some(pack.to_owned());
     }
-    let builtin = crate::release::resources::root()
-        .ok()
-        .map(|root| root.join("skills"));
-    is_builtin(name, builtin.as_deref()).then(|| BUILTIN_PACK.to_owned())
+    is_builtin(name, builtin).then(|| BUILTIN_PACK.to_owned())
 }
 
 pub(crate) fn is_builtin(name: &str, builtin: Option<&Path>) -> bool {
