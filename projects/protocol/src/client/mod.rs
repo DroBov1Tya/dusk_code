@@ -13,7 +13,10 @@ mod status;
 pub use command::{Answer, COMMANDS, Command, parse};
 pub use event::Event;
 pub use frame::{RequestFrame, ServerFrame};
-pub use hello::{Hello, PROTOCOL_VERSION};
+pub use hello::{
+    Busy, Claim, CoreInfo, Greeting, Hello, OLDEST_PROTOCOL, OwnerKind, PROTOCOL_VERSION, Proof,
+    Refusal, Then, client_proof, core_proof, nonce, proof_matches, token_key,
+};
 pub use request::{
     CatalogRequest, GitRequest, MAX_PICTURE_UPLOAD, MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE,
     MAX_TERMINALS, PluginRequest, ProjectRequest, ProviderTarget, Request, SettingsRequest, Switch,

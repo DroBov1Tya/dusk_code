@@ -54,8 +54,9 @@ Regenerate with `scripts/structure-map.sh` in the commit that changes the tree.
 ```
 agent/  (2)
 catalog/  (5)
-client/  (19)
+client/  (21)
   command/  (2)
+  hello/  (3)
   request/  (10)
 config/  (12)
 model/  (7)

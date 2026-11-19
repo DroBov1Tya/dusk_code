@@ -10,7 +10,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use dusk_core::app::Paths;
 use dusk_protocol::{
-    client::{Event, Hello, PROTOCOL_VERSION},
+    client::{Event, Hello},
     config::ApprovalPolicy,
     model::ModelEvent,
     thread::{ThreadEvent, TurnStatus},
@@ -72,10 +72,7 @@ pub async fn run(options: Headless) -> Result<()> {
         .with_context(|| format!("no such folder: {}", project.display()))?;
     let paths = Paths::from_home()?;
     let _guard = dusk_core::app::RestoreGuard::startup(&paths, None)?;
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: SOURCE.to_owned(),
-    };
+    let hello = Hello::new(SOURCE);
     let mut client = dusk_core::app::start(paths, None, hello).await?;
     // The core looks for a model in the background when the config names none.
     while client.status.borrow_and_update().discovering_model {

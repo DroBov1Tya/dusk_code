@@ -17,7 +17,7 @@ mod ui;
 use anyhow::Result;
 use cli::args::{self, Args};
 use dusk_core::app::Paths;
-use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
+use dusk_protocol::client::Hello;
 use std::sync::Arc;
 use tracing::{error, info};
 
@@ -69,10 +69,7 @@ async fn main() -> Result<()> {
     info!("duskcode {} starts", env!("CARGO_PKG_VERSION"));
     cli::resources::ensure().await;
     // Started before the screen is taken, so a first-start message stays readable.
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: session::THREAD_SOURCE.to_owned(),
-    };
+    let hello = Hello::new(session::THREAD_SOURCE);
     let hub = dusk_core::app::start_hub(paths, state_db).await?;
     let mut client = hub.attach(hello, dusk_core::client::Scope::full())?;
     let web = match web {
