@@ -37,10 +37,10 @@ fn late(ws: &Workspace, cx: &App) -> Option<f32> {
         let first = chat
             .agents
             .values()
-            .filter(|agent| agent.working)
-            .map(|agent| agent.started)
+            .filter(|agent| agent.working())
+            .map(|agent| agent.started_at)
             .min()?;
-        first.elapsed().as_secs_f32()
+        dusk_protocol::system::now_ms().saturating_sub(first).max(0) as f32 / 1000.
     };
     // Past sunset it goes on into the night, as long again.
     Some((seconds / DUSK_TO_SUNSET).min(2.))

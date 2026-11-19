@@ -332,6 +332,21 @@ impl<L> ChatLog<L> {
         self.items.len() - 1
     }
 
+    /// Adds items at the end, all at `at`, as a client's demo or test chat does.
+    pub fn extend(&mut self, items: impl IntoIterator<Item = Item<L>>, at: i64) {
+        for item in items {
+            self.push(item, at);
+        }
+    }
+
+    /// Names the stored message the item at `index` shows.
+    pub fn set_message_id(&mut self, index: usize, message_id: String) {
+        if let Some(meta) = self.meta.get_mut(index) {
+            meta.message_id = Some(message_id);
+            self.touch(index);
+        }
+    }
+
     /// A line of the client's own, such as what a command it ran said.
     pub fn notice(&mut self, text: impl Into<String>, now: i64) -> usize {
         self.push(Item::Notice(text.into()), now)

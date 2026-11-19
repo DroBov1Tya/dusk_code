@@ -206,7 +206,7 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
             .context
             .as_ref()
             .map(|report| format!("{}%", report.total * 100 / report.limit.max(1))),
-        Right::Screenshots => chat.map(|chat| chat.screenshots.len().to_string()),
+        Right::Screenshots => chat.map(|chat| chat.screenshots().count().to_string()),
         Right::Git => ws.git.as_ref().map(|git| {
             let branch = git.branch.as_deref().unwrap_or("detached");
             match git.changes.len() {
@@ -300,7 +300,7 @@ impl Workspace {
                     || chat.is_some_and(|chat| !chat.exchanges.is_empty())
             }
             Right::Overview => chat.is_some(),
-            Right::Screenshots => chat.is_some_and(|chat| !chat.screenshots.is_empty()),
+            Right::Screenshots => chat.is_some_and(|chat| chat.screenshots().next().is_some()),
             Right::Git => self
                 .git
                 .as_ref()

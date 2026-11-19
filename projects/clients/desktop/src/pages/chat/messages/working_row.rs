@@ -83,7 +83,8 @@ pub fn render(shown: &str, chat: &Transcript, cx: &App) -> AnyElement {
         .meta()
         .text_color(theme.muted_foreground);
     if let Some((retry, arrived)) = &chat.retry {
-        let waited = u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let waited =
+            u64::try_from(dusk_protocol::system::now_ms().saturating_sub(*arrived)).unwrap_or(0);
         return row
             .child(working::figure(
                 id,

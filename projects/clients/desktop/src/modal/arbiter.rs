@@ -76,7 +76,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
     for agent in chat.agents.values() {
         let dot = div().size(px(6.)).flex_none().rounded_full();
         // The one at work breathes; the others rest.
-        let dot = if agent.working {
+        let dot = if agent.working() {
             dot.bg(accent)
                 .with_animation(
                     SharedString::from(format!("arbiter-agent-{}", agent.name)),

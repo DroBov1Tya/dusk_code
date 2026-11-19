@@ -62,13 +62,13 @@ pub fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 pub fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat().filter(|chat| !chat.agents.is_empty())?;
     let thread_id = ws.shown.clone()?;
-    let working = chat.agents.values().filter(|agent| agent.working).count();
+    let working = chat.agents.values().filter(|agent| agent.working()).count();
     let lead = chat
         .agents
         .iter()
-        .filter(|(_, agent)| agent.working)
-        .min_by_key(|(_, agent)| agent.started)
-        .or_else(|| chat.agents.iter().max_by_key(|(_, agent)| agent.started))?;
+        .filter(|(_, agent)| agent.working())
+        .min_by_key(|(_, agent)| agent.started_at)
+        .or_else(|| chat.agents.iter().max_by_key(|(_, agent)| agent.started_at))?;
     let theme = cx.theme();
     let (signal, muted, border, surface) = (
         theme.warning,

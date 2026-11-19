@@ -333,7 +333,7 @@ pub fn button(
     cx: &mut Context<Workspace>,
 ) -> Option<Button> {
     let chat = ws.chats.get(shown)?;
-    let message_id = chat.message_ids.get(&at)?.clone();
+    let message_id = chat.message_id(at)?.to_owned();
     let pinned = chat.pinned(at);
     let thread_id = shown.to_owned();
     Some(
@@ -363,7 +363,7 @@ pub fn fork_button(
     at: usize,
     cx: &mut Context<Workspace>,
 ) -> Option<Button> {
-    let message_id = ws.chats.get(shown)?.message_ids.get(&at)?.clone();
+    let message_id = ws.chats.get(shown)?.message_id(at)?.to_owned();
     let thread_id = shown.to_owned();
     Some(
         Button::new(SharedString::from(format!("fork-{shown}-{at}")))
