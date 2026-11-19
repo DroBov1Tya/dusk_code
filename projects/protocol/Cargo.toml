@@ -7,13 +7,15 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-getrandom.workspace = true
 hmac.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom.workspace = true
 
 [features]
 # Derives `JsonSchema` on the wire types, for `docs/api/schema.json`.

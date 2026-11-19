@@ -36,18 +36,19 @@ fn a_token_key_is_the_sha256_of_its_secret() {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn nonces_are_fresh_lowercase_hex() {
     let (one, two) = (nonce(), nonce());
     assert_eq!(one.len(), 64);
     assert!(one.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')));
     assert_ne!(one, two);
+    assert!(nonce_is_valid(&one));
+    assert!(nonce_is_valid(&try_nonce().unwrap()));
 }
 
 #[test]
 fn only_fresh_shaped_nonces_are_valid() {
-    assert!(nonce_is_valid(&nonce()));
-    assert!(nonce_is_valid(&try_nonce().unwrap()));
     assert!(nonce_is_valid(&"0f".repeat(32)));
     for bad in [
         String::new(),

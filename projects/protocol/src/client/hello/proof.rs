@@ -9,6 +9,7 @@ const CORE_LABEL: &str = "duskcode-core\n";
 const CLIENT_LABEL: &str = "duskcode-client\n";
 
 /// A fresh nonce: 32 bytes from the OS random source, lowercase hex.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn try_nonce() -> Result<String, getrandom::Error> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes)?;
@@ -19,6 +20,7 @@ pub fn try_nonce() -> Result<String, getrandom::Error> {
 ///
 /// Panics when the OS gives no random bytes: a predictable nonce would let a recorded
 /// handshake be replayed.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn nonce() -> String {
     match try_nonce() {
         Ok(nonce) => nonce,

@@ -15,9 +15,10 @@ pub use event::Event;
 pub use frame::{RequestFrame, ServerFrame};
 pub use hello::{
     Busy, Claim, CoreInfo, Greeting, Hello, OLDEST_PROTOCOL, OwnerKind, PROTOCOL_VERSION, Proof,
-    Refusal, Then, client_proof, core_proof, nonce, nonce_is_valid, proof_matches, token_key,
-    try_nonce,
+    Refusal, Then, client_proof, core_proof, nonce_is_valid, proof_matches, token_key,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use hello::{nonce, try_nonce};
 pub use request::{
     CatalogRequest, GitRequest, MAX_PICTURE_UPLOAD, MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE,
     MAX_TERMINALS, PluginRequest, ProjectRequest, ProviderTarget, Request, SettingsRequest, Switch,

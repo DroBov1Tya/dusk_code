@@ -12,9 +12,9 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 
-pub use proof::{
-    client_proof, core_proof, nonce, nonce_is_valid, proof_matches, token_key, try_nonce,
-};
+pub use proof::{client_proof, core_proof, nonce_is_valid, proof_matches, token_key};
+#[cfg(not(target_arch = "wasm32"))]
+pub use proof::{nonce, try_nonce};
 
 /// Raised whenever a request, a response or an event changes shape.
 pub const PROTOCOL_VERSION: u32 = 36;
