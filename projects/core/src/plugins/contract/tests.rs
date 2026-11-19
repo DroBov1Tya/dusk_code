@@ -33,6 +33,9 @@ case "$2" in
   silent)
     sleep 600 & echo $! > "$data/pid"
     wait ;;
+  lingering)
+    sleep 600 & echo $! > "$data/pid"
+    exit 0 ;;
   busy)
     while [ ! -f "$data/go" ]; do sleep 0.05; done
     printf '%s\n' '{"type":"result","ok":{}}' ;;
@@ -181,6 +184,42 @@ async fn a_long_line_fails_and_kills() {
     assert!(gone(&setup.data.join("pid")));
 }
 
+/// A program that exits without a result while a child of it holds the pipe is `failed`
+/// after a short grace, not at the 45 s limit, and the child is killed.
+#[tokio::test]
+async fn an_exit_without_a_result_does_not_wait_for_a_grandchild() {
+    let Some(setup) = setup("lingering") else {
+        return;
+    };
+    let start = std::time::Instant::now();
+    let error = Contracts::default()
+        .call(&setup.served, "forge", "status", &setup.a, &[], args())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Failed, "{}", error.message);
+    assert!(start.elapsed() < Duration::from_secs(10));
+    assert!(gone(&setup.data.join("pid")));
+}
+
+/// A line that would inflate when parsed fails.
+#[tokio::test]
+async fn a_large_many_item_result_fails() {
+    let items = "{},".repeat(1_000_000);
+    let text = format!("{{\"type\":\"result\",\"ok\":{{\"checks\":[{items}{{}}]}}}}\n");
+    assert!(text.len() > 2_000_000 && text.len() < 4 * 1024 * 1024);
+    let error = read_answer(&mut text.as_bytes(), "p", &mut Vec::new())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Failed);
+    assert!(error.message.contains("too large"), "{}", error.message);
+    let small = "{\"type\":\"result\",\"ok\":{\"checks\":[{},{}]}}\n";
+    assert!(
+        read_answer(&mut small.as_bytes(), "p", &mut Vec::new())
+            .await
+            .is_ok()
+    );
+}
+
 /// No result in 45 s: `unavailable`, and the program's group is killed.
 #[tokio::test(start_paused = true)]
 async fn a_silent_program_is_unavailable_at_the_limit() {
@@ -286,7 +325,9 @@ async fn logs_are_capped_and_other_lines_fail() {
     }
     text.push_str("{\"type\":\"result\",\"ok\":{\"n\":1}}\n{\"type\":\"view\"}\n");
     let mut logs = Vec::new();
-    let answer = read_answer(&mut text.as_bytes(), &mut logs).await.unwrap();
+    let answer = read_answer(&mut text.as_bytes(), "p", &mut logs)
+        .await
+        .unwrap();
     assert_eq!(answer.ok, Some(json!({"n": 1})));
     assert_eq!(logs.len(), 20);
     assert!(
@@ -294,7 +335,7 @@ async fn logs_are_capped_and_other_lines_fail() {
             .all(|log| log.chars().count() <= 503 && !log.contains(['\u{202e}', '\n']))
     );
     let other = "{\"type\":\"view\"}\n{\"type\":\"result\",\"ok\":{}}\n";
-    let error = read_answer(&mut other.as_bytes(), &mut Vec::new())
+    let error = read_answer(&mut other.as_bytes(), "p", &mut Vec::new())
         .await
         .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Failed);
