@@ -311,19 +311,30 @@ pub fn ring(color: Hsla, dotted: bool) -> impl IntoElement {
     })
 }
 
+/// A point of a mark drawn at `scale` around the middle of the square.
+fn scaled(origin: Point<Pixels>, (x, y): (f32, f32), scale: f32) -> Point<Pixels> {
+    at(
+        origin,
+        MIDDLE + (x - MIDDLE) * scale,
+        MIDDLE + (y - MIDDLE) * scale,
+    )
+}
+
 /// A finished step.
-pub fn check(color: Hsla) -> impl IntoElement {
+pub fn check(color: Hsla, scale: f32) -> impl IntoElement {
     fixed(move |origin, window| {
         let points = [(4., 8.4), (6.8, 11.), (12., 5.4)];
-        stroke(points.map(|(x, y)| at(origin, x, y)), 1.4, color, window);
+        let points = points.map(|point| scaled(origin, point, scale));
+        stroke(points, 1.4, color, window);
     })
 }
 
 /// A failed step.
-pub fn cross(color: Hsla) -> impl IntoElement {
+pub fn cross(color: Hsla, scale: f32) -> impl IntoElement {
     fixed(move |origin, window| {
         for line in [[(4.5, 4.5), (11.5, 11.5)], [(11.5, 4.5), (4.5, 11.5)]] {
-            stroke(line.map(|(x, y)| at(origin, x, y)), 1.4, color, window);
+            let line = line.map(|point| scaled(origin, point, scale));
+            stroke(line, 1.4, color, window);
         }
     })
 }

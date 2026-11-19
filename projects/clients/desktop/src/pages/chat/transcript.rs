@@ -147,6 +147,9 @@ pub struct Transcript {
     /// When each later item was first drawn, so it fades in once and never again when
     /// the list scrolls back to it.
     pub arrived: BTreeMap<usize, Instant>,
+    /// When each step of the running turn finished, by call, so its check or cross
+    /// settles in once.
+    pub settled: BTreeMap<String, Instant>,
     next_run: u64,
 }
 
@@ -199,6 +202,11 @@ impl Transcript {
                 }
             }
             ThreadEvent::SkillChanged(change) => self.skill_settled(change.id),
+            ThreadEvent::ToolFinished { call_id, .. } => {
+                self.settled.insert(call_id.clone(), Instant::now());
+            }
+            // Only a step that finishes in sight settles in; the last turn's stand.
+            ThreadEvent::TurnStarted(_) => self.settled.clear(),
             _ => {}
         }
         self.log.apply(event, now_ms());

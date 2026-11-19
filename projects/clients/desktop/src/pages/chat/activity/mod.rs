@@ -101,17 +101,27 @@ pub fn plan_label(planning: bool, cx: &App) -> AnyElement {
     }
 }
 
+/// How long a finished step's check or cross takes to settle in.
+const SETTLE: Duration = Duration::from_millis(180);
+
 /// The state of a step at the end of its row: the live mark while it runs, a check once
-/// it is done, a cross when it failed. The finished marks stand still, and so does a
-/// step its turn left running: `turn_runs` says whether anything can still end it.
-pub fn step_mark(state: ToolState, turn_runs: bool, cx: &App) -> Div {
+/// it is done, a cross when it failed. One that finished at `settled` grows and fades in
+/// once and then stands still, as does a step its turn left running: `turn_runs` says
+/// whether anything can still end it.
+pub fn step_mark(state: ToolState, turn_runs: bool, settled: Option<Instant>, cx: &App) -> Div {
     let tones = tones(cx);
     let slot = div().flex_none().size(px(glyph::SIZE));
-    match state {
-        ToolState::Running if !turn_runs => slot,
-        ToolState::Running => slot.child(glyph::live(tones.accent)),
-        ToolState::Done => slot.child(glyph::check(tones.muted)),
-        ToolState::Failed => slot.child(glyph::cross(tones.danger)),
+    let settling = settled.and_then(|at| arriving(at, SETTLE, cx));
+    let t = settling.unwrap_or(1.);
+    let slot = match state {
+        ToolState::Running if !turn_runs => return slot,
+        ToolState::Running => return slot.child(glyph::live(tones.accent)),
+        ToolState::Done => slot.child(glyph::check(tones.muted.opacity(t), 0.6 + 0.4 * t)),
+        ToolState::Failed => slot.child(glyph::cross(tones.danger.opacity(t), 0.6 + 0.4 * t)),
+    };
+    match settling {
+        Some(_) => slot.child(next_frame()),
+        None => slot,
     }
 }
 

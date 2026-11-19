@@ -207,6 +207,9 @@ pub fn step(
     .child(crate::pages::chat::activity::step_mark(
         tool.state,
         ws.chats.get(shown).is_some_and(|chat| chat.working),
+        ws.chats
+            .get(shown)
+            .and_then(|chat| chat.settled.get(&tool.call_id).copied()),
         cx,
     ))
     .child(disclosure_icon(open, muted))
