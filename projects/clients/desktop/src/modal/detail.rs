@@ -171,6 +171,18 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                         ),
                 );
             }
+            for host in &plugin.choose {
+                let (name, chosen) = (plugin.name.clone(), host.clone());
+                page = page.child(
+                    gpui_kit::component::button::Button::new(SharedString::from(format!(
+                        "use-for-{host}"
+                    )))
+                    .label(format!("Use for {host}"))
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.use_for_host(&name, &chosen, cx);
+                    })),
+                );
+            }
             if !ws.secret_inputs.is_empty() {
                 page = page.child(div().meta().text_color(muted).child(
                     "Kept in memory on this machine until duskcode stops; never written to the config. Enter it again after a restart.",

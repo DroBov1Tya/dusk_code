@@ -93,6 +93,7 @@ named! {
     R::Settings(S::Voice(_)) => "settings.voice",
     R::Settings(S::PluginEnabled { enabled: true, .. }) => "settings.plugin_enabled.on",
     R::Settings(S::PluginEnabled { enabled: false, .. }) => "settings.plugin_enabled.off",
+    R::Settings(S::SetContractPlugin { .. }) => "settings.set_contract_plugin",
     R::Settings(S::PluginSecret { .. }) => "settings.plugin_secret",
     R::Catalog(C::Skill { .. }) => "catalog.skill",
     R::Catalog(C::SaveSkill { .. }) => "catalog.save_skill",

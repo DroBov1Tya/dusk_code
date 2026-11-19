@@ -19,11 +19,13 @@ use dusk_protocol::plugin::{Part, Permissions, ProjectAccess, Provides};
 
 use super::{
     broker::{self, Broker, Key, Origin, Policy},
+    contract::{Contracts, Served},
     hooks::{Hook, Hooks},
     install,
     isolation::Isolation,
     manifest::{MANIFEST_FILE, Manifest},
     platform::{PlatformSpec, Platforms},
+    store::Record,
     ui::{UiHost, UiSpec},
 };
 use crate::{
@@ -56,6 +58,8 @@ pub struct Plugins {
     hooks: Arc<Hooks>,
     platforms: Arc<Platforms>,
     ui: Arc<UiHost>,
+    /// The plugins that serve contracts, while `plugin_contracts` is on.
+    contracts: Arc<Contracts>,
     /// The broker of each plugin that is on and may connect; kept across scans, so its
     /// port and token stay while the plugin runs.
     brokers: Mutex<BTreeMap<String, Broker>>,
@@ -86,6 +90,7 @@ impl Plugins {
             hooks,
             platforms,
             ui: Arc::default(),
+            contracts: Arc::default(),
             brokers: Mutex::default(),
             found: RwLock::default(),
             secrets: Mutex::default(),
@@ -95,6 +100,11 @@ impl Plugins {
 
     pub fn ui(&self) -> &Arc<UiHost> {
         &self.ui
+    }
+
+    /// The plugins that serve contracts, and the way to call them.
+    pub fn contracts(&self) -> &Arc<Contracts> {
+        &self.contracts
     }
 
     /// What `plugin`'s manifest asks for now, to keep as allowed when it is switched on.
@@ -137,6 +147,14 @@ impl Plugins {
         let mut platforms = Vec::new();
         let mut interfaces = Vec::new();
         let mut connecting = Vec::new();
+        let mut served = Vec::new();
+        let record = match Record::load(&self.paths) {
+            Ok(record) => record,
+            Err(error) => {
+                warn!("cannot read the store's record: {error:#}");
+                Record::default()
+            }
+        };
         for folder in plugin_folders(&folder(&self.paths)) {
             let name = folder_name(&folder);
             let settings = config.plugin(&name);
@@ -223,6 +241,15 @@ impl Plugins {
                         isolation: isolation.clone(),
                     });
                 }
+                if let (true, Some(provides)) = (config.contracts_on(), &manifest.provides) {
+                    served.push(Served::new(
+                        name.clone(),
+                        record.tier(&self.paths, &name),
+                        provides.clone(),
+                        resolve(&provides.command, &folder),
+                        isolation.clone(),
+                    ));
+                }
                 if let Some(ui) = &manifest.ui {
                     interfaces.push(ui_spec(&manifest, ui, &folder, isolation));
                 }
@@ -241,7 +268,28 @@ impl Plugins {
         self.hooks.set(hooks);
         self.platforms.set(platforms);
         self.ui.set(interfaces);
+        self.contracts.set(served);
+        for info in &mut found {
+            info.choose = self.choices(&config, &info.name);
+        }
         *self.found.write() = found;
+    }
+
+    /// The hosts `plugin` serves where another plugin serves them too and the routing
+    /// sends them elsewhere: the user may choose this one for each.
+    fn choices(&self, config: &crate::config::Config, plugin: &str) -> Vec<String> {
+        let mut hosts = Vec::new();
+        let served = self.contracts.served_by(plugin);
+        for host in served {
+            let others = self.contracts.serving("forge", &host);
+            let routed = self
+                .contracts
+                .route("forge", &host, config.chosen("forge", &host));
+            if others.len() > 1 && routed.is_some_and(|routed| routed.plugin != plugin) {
+                hosts.push(host);
+            }
+        }
+        hosts
     }
 
     /// The confinement of a plugin's programs, with its broker when it may connect.
@@ -517,6 +565,7 @@ fn info(
             .collect(),
         platforms: manifest.platforms.clone(),
         clients: manifest.clients.clone(),
+        choose: Vec::new(),
     }
 }
 
@@ -550,6 +599,7 @@ fn broken(name: String, enabled: bool, error: &anyhow::Error) -> PluginInfo {
         permissions: Vec::new(),
         platforms: Vec::new(),
         clients: Vec::new(),
+        choose: Vec::new(),
         problem: Some(format!("{error:#}")),
     }
 }

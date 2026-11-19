@@ -120,6 +120,14 @@ impl Tracker {
         }
     }
 
+    /// The routing table changed: every tracked project is read at the next tick.
+    pub fn all_due(&self) {
+        let now = Instant::now();
+        for tracked in self.0.lock().projects.values_mut() {
+            tracked.due = now;
+        }
+    }
+
     /// Marks a read of `project_id` begun, so the tick does not start another.
     pub fn begin(&self, project_id: &str) {
         let now = Instant::now();
@@ -331,6 +339,20 @@ mod tests {
 
         tracker.changed("p");
         assert_eq!(tracker.due(), ["p"]);
+    }
+
+    #[test]
+    fn a_new_routing_table_makes_every_project_due() {
+        let tracker = Tracker::default();
+        for (client, id) in [(1, "a"), (2, "b")] {
+            tracker.watch(client, id);
+            tracker.finish(id, reading(vec![pull(1, 0, None)], 1, false));
+        }
+        assert!(tracker.due().is_empty(), "settled and not due");
+        tracker.all_due();
+        let mut due = tracker.due();
+        due.sort();
+        assert_eq!(due, ["a", "b"]);
     }
 
     #[test]
