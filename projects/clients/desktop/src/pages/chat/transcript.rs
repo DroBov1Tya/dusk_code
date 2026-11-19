@@ -317,7 +317,17 @@ impl Transcript {
     /// asked has its answer: a second question must not take the place of the first.
     pub fn answer(&mut self, chosen: &[usize], own: &str) -> Option<String> {
         let question = self.questions.pop_front()?;
-        self.answers.push(question.answer(chosen, own));
+        self.record(question.answer(chosen, own))
+    }
+
+    /// Skips the question shown: its answer is the skip reply, the next one shows.
+    pub fn skip(&mut self) -> Option<String> {
+        let question = self.questions.pop_front()?;
+        self.record(question.skipped())
+    }
+
+    fn record(&mut self, reply: String) -> Option<String> {
+        self.answers.push(reply);
         self.questions
             .is_empty()
             .then(|| std::mem::take(&mut self.answers).join("\n\n"))

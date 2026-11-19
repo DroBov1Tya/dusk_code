@@ -352,3 +352,23 @@ fn a_skill_change_replaces_its_row_by_id_and_hangs_on_its_step() {
     assert_eq!(rows.len(), 1);
     assert!(rows[0].undone && !rows[0].can_undo);
 }
+
+#[test]
+fn skipping_moves_on_and_the_last_skip_sends_every_answer() {
+    let ask = |text: &str| Question {
+        question: text.into(),
+        options: vec!["a".into(), "b".into()],
+        multiple: false,
+    };
+    let (first, second) = (ask("One?"), ask("Two?"));
+    let mut chat = ChatData {
+        question: Some(first.clone()),
+        questions_waiting: [second.clone()].into(),
+        ..ChatData::default()
+    };
+    assert_eq!(chat.record_answer(first.skipped()), None);
+    assert_eq!(chat.question, Some(second.clone()));
+    let sent = chat.record_answer(second.skipped()).unwrap();
+    assert_eq!(sent, [first.skipped(), second.skipped()].join("\n\n"));
+    assert!(chat.question.is_none() && chat.answers.is_empty());
+}

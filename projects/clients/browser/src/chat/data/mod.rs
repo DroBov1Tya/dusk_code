@@ -132,6 +132,16 @@ pub struct ChatData {
 }
 
 impl ChatData {
+    /// Keeps the answer to the question shown and shows the next one. The message for
+    /// the agent once every question asked has its answer.
+    pub fn record_answer(&mut self, reply: String) -> Option<String> {
+        self.answers.push(reply);
+        self.question = self.questions_waiting.pop_front();
+        self.question
+            .is_none()
+            .then(|| std::mem::take(&mut self.answers).join("\n\n"))
+    }
+
     pub fn from_history(history: &[Message]) -> Self {
         let mut chat = Self::default();
         for message in history {
