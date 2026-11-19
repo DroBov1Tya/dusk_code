@@ -288,24 +288,24 @@ fn shots_key(listing: &Listing) -> String {
 
 /// "Workshop  Discover | Installed" of a tab of Customize.
 #[component]
-pub fn ViewSwitch(discover: RwSignal<bool>) -> impl IntoView {
+pub fn ViewSwitch(discover: RwSignal<Option<bool>>, discovering: Signal<bool>) -> impl IntoView {
     view! {
         <div class="shelf-head" role="group" aria-label="Workshop">
             <h3>"Workshop"</h3>
-            <button class="tab" class:active=move || discover.get()
-                on:click=move |_| discover.set(true)>"Discover"</button>
-            <button class="tab" class:active=move || !discover.get()
-                on:click=move |_| discover.set(false)>"Installed"</button>
+            <button class="tab" class:active=move || discovering.get()
+                on:click=move |_| discover.set(Some(true))>"Discover"</button>
+            <button class="tab" class:active=move || !discovering.get()
+                on:click=move |_| discover.set(Some(false))>"Installed"</button>
         </div>
     }
 }
 
 /// An empty Installed list, with the way to the tab's Discover.
-pub fn nothing_installed(scope: Scope, discover: RwSignal<bool>) -> impl IntoView {
+pub fn nothing_installed(scope: Scope, discover: RwSignal<Option<bool>>) -> impl IntoView {
     view! {
         <div class="row-actions">
             <p class="muted">{format!("Nothing installed yet. Discover {} in the Workshop.", scope.noun())}</p>
-            <button class="ghost" on:click=move |_| discover.set(true)>"Discover"</button>
+            <button class="ghost" on:click=move |_| discover.set(Some(true))>"Discover"</button>
         </div>
     }
 }
