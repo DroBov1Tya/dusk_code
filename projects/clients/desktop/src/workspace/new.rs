@@ -141,6 +141,7 @@ impl Workspace {
             git: None,
             repository: None,
             pulls: HashMap::new(),
+            checks_open: HashMap::new(),
             touched: Vec::new(),
             review: crate::pages::review::Review::new(window, cx),
             focus: cx.focus_handle(),

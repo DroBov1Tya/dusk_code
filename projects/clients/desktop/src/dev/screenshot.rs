@@ -996,38 +996,46 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         started: Some(now - started),
         finished: finished.map(|ago| now - ago),
     };
-    let checks = |passed, running, failed, state| Checks {
-        total: passed + running + failed,
-        passed,
-        running,
-        failed,
-        state: Some(state),
-        list: vec![
-            check(
-                "check (x86_64-unknown-linux-gnu)",
-                CheckStage::Running,
-                192,
-                None,
-            ),
-            check(
-                "check (aarch64-apple-darwin)",
-                CheckStage::Running,
-                75,
-                None,
-            ),
-            check("web", CheckStage::Queued, 0, None),
-            check("fmt", CheckStage::Passed, 400, Some(380)),
-            check("deny", CheckStage::Passed, 400, Some(360)),
-            check("changes", CheckStage::Skipped, 400, Some(398)),
-        ],
+    // A list as the core gives it: failed, running, queued, passed, skipped.
+    let checks = |passed: u32, running: u32, failed: u32, queued: u32, skipped: u32, state| {
+        let mut list = Vec::new();
+        for n in 0..failed {
+            list.push(check(
+                &format!("test (shard {n})"),
+                CheckStage::Failed,
+                400,
+                Some(200),
+            ));
+        }
+        for n in 0..running {
+            let name = format!("check (target {n})");
+            list.push(check(&name, CheckStage::Running, 192 - 60 * n as i64, None));
+        }
+        for _ in 0..queued {
+            list.push(check("web", CheckStage::Queued, 0, None));
+        }
+        for name in ["fmt", "deny", "clippy"].iter().take(passed as usize) {
+            list.push(check(name, CheckStage::Passed, 400, Some(380)));
+        }
+        for _ in 0..skipped {
+            list.push(check("changes", CheckStage::Skipped, 400, Some(398)));
+        }
+        Checks {
+            total: passed + running + failed + queued + skipped,
+            passed,
+            running,
+            failed,
+            state: Some(state),
+            list,
+        }
     };
     let pulls = vec![
         pull(
             12,
             "Show pull requests and CI in Changes",
             PullState::Open,
-            // One of each, so the checks card shows all three of its rows.
-            checks(7, 2, 1, CheckState::Pending),
+            // One of each, so the checks window shows every group.
+            checks(4, 2, 1, 1, 1, CheckState::Pending),
         ),
         pull(
             11,
@@ -1039,13 +1047,13 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             9,
             "Split the forge",
             PullState::Merged,
-            checks(10, 0, 0, CheckState::Passing),
+            checks(10, 0, 0, 0, 0, CheckState::Passing),
         ),
         pull(
             7,
             "Bump parking_lot",
             PullState::Closed,
-            checks(8, 0, 2, CheckState::Failing),
+            checks(8, 0, 2, 0, 1, CheckState::Failing),
         ),
     ];
     ws.pulls.insert(
