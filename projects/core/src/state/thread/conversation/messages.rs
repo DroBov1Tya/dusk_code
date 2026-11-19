@@ -7,7 +7,10 @@ use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 use uuid::Uuid;
 
 use super::{State, timestamp_ms};
-use crate::{providers::ToolCall, state::artifacts::Card};
+use crate::{
+    providers::ToolCall,
+    state::{artifacts::Card, thread::threads::family},
+};
 
 pub use dusk_protocol::thread::{Message, MessageRole};
 
@@ -92,7 +95,6 @@ impl State {
         Ok(message)
     }
 
-    /// The whole thread, in order.
     /// How many threads and messages the records hold.
     pub async fn counts(&self) -> Result<(u64, u64)> {
         let (threads, messages): (i64, i64) = sqlx::query_as(
@@ -104,6 +106,7 @@ impl State {
         Ok((threads.max(0) as u64, messages.max(0) as u64))
     }
 
+    /// The whole thread, in order.
     pub async fn list_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         sqlx::query("SELECT * FROM messages WHERE thread_id = ? ORDER BY sequence")
             .bind(thread_id)
@@ -113,6 +116,35 @@ impl State {
             .into_iter()
             .map(decode_message)
             .collect()
+    }
+
+    /// The text of one message of the thread, `None` when it has no such message.
+    pub async fn message_content(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+    ) -> Result<Option<String>> {
+        sqlx::query_scalar("SELECT content FROM messages WHERE message_id = ? AND thread_id = ?")
+            .bind(message_id)
+            .bind(thread_id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("read a message")
+    }
+
+    /// Whether a message of the thread, or of an agent thread below it, carries the card
+    /// `card_id`. The id is compared whole, never matched as a pattern.
+    pub async fn carries_card(&self, thread_id: &str, card_id: &str) -> Result<bool> {
+        sqlx::query_scalar(family!(
+            "SELECT EXISTS (SELECT 1 FROM messages m, json_each(m.artifacts_json) card
+                WHERE m.thread_id IN (SELECT id FROM family)
+                AND json_extract(card.value, '$.id') = ?2)"
+        ))
+        .bind(thread_id)
+        .bind(card_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("look for the card")
     }
 
     /// Messages whose text or tool calls contain `text`, best matches first.
@@ -453,4 +485,65 @@ fn snippet(content: &str, text: &str) -> String {
         line.push('\u{2026}');
     }
     line
+}
+
+#[cfg(test)]
+mod card_tests {
+    use crate::{
+        providers::ToolCall,
+        state::{State, TurnAnswer, artifacts::Card},
+        testing::temp_state,
+    };
+
+    async fn show(state: &State, thread: &str, card: &str) {
+        let pending = state.add_pending(thread, "go").await.unwrap();
+        state.admit_pending(thread, &pending).await.unwrap();
+        let turn = state.start_turn(thread).await.unwrap().unwrap().turn_id;
+        let call = ToolCall {
+            id: "c".into(),
+            name: "display_image".into(),
+            arguments: serde_json::json!({}),
+        };
+        let answer = TurnAnswer {
+            content: String::new(),
+            reasoning: None,
+        };
+        state
+            .record_tool_calls(&turn, answer, vec![call])
+            .await
+            .unwrap();
+        let card = Card {
+            id: card.into(),
+            ..Card::default()
+        };
+        state
+            .record_tool_result_with_artifacts(&turn, "c", "shown".into(), vec![card])
+            .await
+            .unwrap();
+    }
+
+    // The check that lets a card be served: only a card the thread or an agent below it
+    // carries, by its whole id.
+    #[tokio::test]
+    async fn a_card_is_carried_only_by_its_own_tree_and_whole_id() {
+        let state = temp_state("carries_card").await;
+        for id in ["chat", "other"] {
+            state.create_thread(id, "test").await.unwrap();
+        }
+        state
+            .create_agent_thread("agent", "chat", "general", "agent")
+            .await
+            .unwrap();
+        show(&state, "chat", "aaaa-1111").await;
+        show(&state, "agent", "bbbb-2222").await;
+        show(&state, "other", "cccc-3333").await;
+
+        assert!(state.carries_card("chat", "aaaa-1111").await.unwrap());
+        assert!(state.carries_card("chat", "bbbb-2222").await.unwrap());
+        assert!(!state.carries_card("chat", "cccc-3333").await.unwrap());
+        assert!(!state.carries_card("agent", "aaaa-1111").await.unwrap());
+        for part in ["aaaa", "1111", "aaaa-111", "aaaa-1111 ", "%"] {
+            assert!(!state.carries_card("chat", part).await.unwrap(), "{part}");
+        }
+    }
 }

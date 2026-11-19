@@ -7,22 +7,26 @@ use anyhow::{Context, Result, ensure};
 use sqlx::Row;
 
 use super::State;
-use crate::state::MessageRole;
 
 pub use dusk_protocol::thread::UndoPoint;
 
 impl State {
     /// The user's own messages, oldest first; messages from agents are not points.
     pub async fn undo_points(&self, thread_id: &str) -> Result<Vec<UndoPoint>> {
-        let messages = self.list_messages(thread_id).await?;
-        Ok(messages
-            .into_iter()
-            .filter(|message| message.role == MessageRole::User && message.from_thread_id.is_none())
-            .map(|message| UndoPoint {
-                sequence: message.sequence,
-                text: message.content,
+        let rows: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT sequence, content FROM messages
+             WHERE thread_id = ? AND role = 'user' AND from_thread_id IS NULL ORDER BY sequence",
+        )
+        .bind(thread_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("list the undo points")?;
+        rows.into_iter()
+            .map(|(sequence, text)| {
+                let sequence = sequence.try_into().context("negative message sequence")?;
+                Ok(UndoPoint { sequence, text })
             })
-            .collect())
+            .collect()
     }
 
     /// Removes the user message at `sequence` and everything after it; returns its text.
