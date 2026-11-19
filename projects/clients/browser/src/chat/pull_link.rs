@@ -1,9 +1,9 @@
-//! A link in a chat to a pull request of the shown project's own GitHub repository is
+//! A link in a chat to a pull request of the shown project's own repository is
 //! drawn as a chip, `owner/repo#n · title`, with a card on hover saying who opened it,
 //! how much it changes and where its checks stand, as the desktop app has it. The core
 //! gives the data (`ProjectRequest::PullStatus`); nothing is fetched here. Until it
 //! answers, and for any other link, the link stays as drawn. Every word goes in as a
-//! text node: the title and the author are GitHub's text, not markup.
+//! text node: the title and the author are the forge's text, not markup.
 
 use crate::{api, state::state};
 use dusk_protocol::project::{PullState, PullStatus, pull_number};
@@ -25,29 +25,37 @@ pub fn claim(root: &Element) {
         repository
             .as_ref()
             .filter(|(of, _)| *of == project)
-            .map(|(_, status)| status.github.clone())
+            .map(|(_, status)| served(status))
     });
     let root = root.clone();
     leptos::task::spawn_local(async move {
         // The repository is read once for the chat when no page asked for it yet.
-        let github = match known {
-            Some(github) => github,
+        let served = match known {
+            Some(served) => served,
             None => match api::repository_status(&project).await {
                 Ok(status) => {
-                    let github = status.github.clone();
+                    let served = served(&status);
                     app.repository.set(Some((project.clone(), status)));
-                    github
+                    served
                 }
                 Err(_) => None,
             },
         };
-        if let Some(github) = github {
-            claim_links(&root, &project, &github);
+        if let Some((repository, prefix)) = served {
+            claim_links(&root, &project, &repository, &prefix);
         }
     });
 }
 
-fn claim_links(root: &Element, project: &str, github: &str) {
+/// The repository the forge serves and what its pull requests' pages start with;
+/// `None` when none does, or before the plugin first answered.
+fn served(status: &dusk_protocol::project::RepositoryStatus) -> Option<(String, String)> {
+    let served = status.forge.served()?;
+    (!served.pull_prefix.is_empty())
+        .then(|| (served.repository.clone(), served.pull_prefix.clone()))
+}
+
+fn claim_links(root: &Element, project: &str, repository: &str, prefix: &str) {
     let Ok(links) = root.query_selector_all("a[href]") else {
         return;
     };
@@ -56,20 +64,20 @@ fn claim_links(root: &Element, project: &str, github: &str) {
             continue;
         };
         let href = link.get_attribute("href").unwrap_or_default();
-        let Some(number) = pull_number(&href, github) else {
+        let Some(number) = pull_number(&href, prefix) else {
             continue;
         };
-        let (project, github) = (project.to_owned(), github.to_owned());
+        let (project, repository) = (project.to_owned(), repository.to_owned());
         leptos::task::spawn_local(async move {
             // A link the core cannot tell about stays a plain link.
             if let Ok(Some(pull)) = api::pull_status(&project, number).await {
-                chip(&link, &github, &pull);
+                chip(&link, &repository, &pull);
             }
         });
     }
 }
 
-fn chip(link: &Element, github: &str, pull: &PullStatus) {
+fn chip(link: &Element, repository: &str, pull: &PullStatus) {
     let Some(document) = link.owner_document() else {
         return;
     };
@@ -85,7 +93,7 @@ fn chip(link: &Element, github: &str, pull: &PullStatus) {
         link,
         "span",
         "",
-        &format!("{github}#{} \u{00B7} {title}", pull.number),
+        &format!("{repository}#{} \u{00B7} {title}", pull.number),
     );
     let card = append(&document, link, "span", "pr-card", "");
     append(&document, &card, "b", "", &pull.title);

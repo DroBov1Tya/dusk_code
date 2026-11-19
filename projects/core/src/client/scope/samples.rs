@@ -296,6 +296,12 @@ fn projects() -> Vec<P> {
             id: word(),
             number: 7,
         },
+        P::CreatePull {
+            id: word(),
+            title: word(),
+            body: word(),
+            base: None,
+        },
         P::PullSummaries,
         repository(G::CreateBranch {
             name: word(),
@@ -321,13 +327,6 @@ fn projects() -> Vec<P> {
         repository(G::Fetch),
         repository(G::Pull),
         repository(G::Push),
-        repository(G::PullRequests),
-        repository(G::PullRequest { number: 1 }),
-        repository(G::CreatePullRequest {
-            title: word(),
-            body: word(),
-            base: None,
-        }),
         P::Outputs,
         P::Env { id: word() },
         P::SetEnv {

@@ -217,6 +217,9 @@ impl Server {
                             Request::Project(ProjectRequest::PullStatus { id, number }) => {
                                 self.pull_status(id, number, reply)
                             }
+                            Request::Project(ProjectRequest::CreatePull { id, title, body, base }) => {
+                                self.create_pull(id, title, body, base, reply)
+                            }
                             Request::Thread(ThreadRequest::RunCommand { thread_id, command, run }) => {
                                 self.run_command(client, thread_id, command, run, reply)
                             }

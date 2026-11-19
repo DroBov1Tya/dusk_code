@@ -34,8 +34,8 @@ pub enum ProjectRequest {
         id: String,
         branch: String,
     },
-    /// Changes the repository or reads its pull requests. Answered beside the loop,
-    /// since a push or the GitHub CLI may take a while; a change is followed by
+    /// Changes the repository. Answered beside the loop, since a push may take a
+    /// while; a change is followed by
     /// `Event::GitChanged`.
     Repository {
         id: String,
@@ -48,12 +48,21 @@ pub enum ProjectRequest {
     RepositoryStatus {
         id: String,
     },
-    /// One pull request of the project's own GitHub repository, for a card where a chat
+    /// One pull request of the project's own forge repository, for a card where a chat
     /// links it; answered beside the loop from what the core knows or read lately, and
-    /// read from GitHub at most once at a time and every few minutes per pull request.
+    /// read from the forge at most once at a time and every few minutes per pull request.
     PullStatus {
         id: String,
         number: u64,
+    },
+    /// A pull request from the project's current branch (never a detached head), which
+    /// must be pushed first, into `base` or the repository's default branch; answered
+    /// beside the loop with `Response::PullStatus(Some(_))` as the forge now has it.
+    CreatePull {
+        id: String,
+        title: String,
+        body: String,
+        base: Option<String>,
     },
     /// The pull requests of each saved project's current branch, from what the core
     /// last read; a project not read yet is read in the background.

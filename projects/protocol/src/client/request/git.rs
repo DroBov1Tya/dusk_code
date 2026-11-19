@@ -1,4 +1,4 @@
-//! Changing a project's repository, and its pull requests on GitHub.
+//! Changing a project's repository.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -52,15 +52,4 @@ pub enum GitRequest {
     /// The current branch to its upstream, or to `origin` as its new upstream; never
     /// forced. A client asks the user first.
     Push,
-    /// Open pull requests, through the GitHub CLI.
-    PullRequests,
-    PullRequest {
-        number: u64,
-    },
-    /// A pull request from the current branch, which must be pushed first.
-    CreatePullRequest {
-        title: String,
-        body: String,
-        base: Option<String>,
-    },
 }

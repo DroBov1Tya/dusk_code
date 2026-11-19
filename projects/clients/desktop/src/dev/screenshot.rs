@@ -35,6 +35,8 @@
 //!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
 //! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
 //!   icon, and a chat that links two of them, drawn as chips;
+//! - `fake=forge-signin|forge-unserved`: the quiet line in Changes when the forge asks to sign in,
+//!   or no plugin serves the host;
 //! - `fake=approval|approval-long|question`: put a request for approval (a long heredoc
 //!   command for `approval-long`), or a question, in the shown chat;
 //! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
@@ -535,6 +537,9 @@ fn act(
             cx.notify();
         }
         "fake" if value == "pulls" => fake_pulls(ws, cx),
+        "fake" if value == "forge-signin" || value == "forge-unserved" => {
+            fake_forge(ws, value == "forge-signin", cx)
+        }
         "fake" if value == "plugins" => {
             ws.status.plugin_parts = std::sync::Arc::new(super::plugins::parts());
             cx.notify();
@@ -990,12 +995,34 @@ pub(super) fn demo_png() -> Vec<u8> {
     bytes.into_inner()
 }
 
+/// A repository whose forge asks to sign in, or has no plugin: the quiet line in Changes.
+fn fake_forge(ws: &mut Workspace, sign_in: bool, cx: &mut Context<Workspace>) {
+    use dusk_protocol::project::{Forge, ForgeSignIn, RepositoryStatus};
+    let host = "github.com".to_owned();
+    ws.repository = Some(RepositoryStatus {
+        repository: "dusk_code".to_owned(),
+        branch: Some("main".to_owned()),
+        forge: if sign_in {
+            Forge::SignIn(ForgeSignIn {
+                host,
+                plugin: "github".to_owned(),
+                hint: "gh auth login".to_owned(),
+            })
+        } else {
+            Forge::Unserved { host, offer: None }
+        },
+        ..Default::default()
+    });
+    cx.notify();
+}
+
 /// Pull requests in every state, for the Changes module and a chat row's icon.
 fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{
         Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
         RepositoryStatus,
     };
+    use dusk_protocol::project::{Forge, ForgeStatus};
     let Some(project) = ws.selected_project().cloned() else {
         return;
     };
@@ -1012,6 +1039,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         removed: 7 * number,
         files: Some(number),
         url: format!("https://github.com/example/repo/pull/{number}"),
+        checks_url: format!("https://github.com/example/repo/pull/{number}/checks"),
         checks,
     };
     let check = |name: &str, stage, started: i64, finished: Option<i64>| Check {
@@ -1092,15 +1120,21 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     );
     ws.repository = Some(RepositoryStatus {
         repository: "dusk_code".to_owned(),
-        github: Some("example/repo".to_owned()),
         branch: Some("pr-status".to_owned()),
         stat: DiffStat {
             files: 23,
             added: 1473,
             removed: 625,
         },
-        pulls,
         unavailable: None,
+        forge: Forge::Served(Box::new(ForgeStatus {
+            plugin: "github".to_owned(),
+            name: "GitHub".to_owned(),
+            repository: "example/repo".to_owned(),
+            pull_prefix: "https://github.com/example/repo/pull/".to_owned(),
+            pulls,
+            unavailable: None,
+        })),
     });
     if let Some(git) = ws.git.as_mut() {
         git.stat = DiffStat {

@@ -120,6 +120,27 @@ impl Projects<'_> {
         }
     }
 
+    /// A pull request from the project's current branch (pushed first), into `base` or
+    /// the default branch; answers with it as the forge now has it.
+    pub async fn create_pull(
+        &self,
+        id: &str,
+        title: &str,
+        body: &str,
+        base: Option<&str>,
+    ) -> Result<PullStatus> {
+        let request = ProjectRequest::CreatePull {
+            id: id.to_owned(),
+            title: title.to_owned(),
+            body: body.to_owned(),
+            base: base.map(str::to_owned),
+        };
+        match self.0.call(Request::Project(request)).await? {
+            Response::PullStatus(Some(pull)) => Ok(*pull),
+            other => Err(unexpected(other)),
+        }
+    }
+
     /// The pull requests of each project's current branch, as the core last read them.
     pub async fn pull_summaries(&self) -> Result<Vec<PullSummary>> {
         match self

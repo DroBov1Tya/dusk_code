@@ -10,7 +10,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use dusk_protocol::project::{CheckState, PullState, PullStatus, PullSummary, RepositoryStatus};
+use dusk_protocol::project::{
+    CheckState, Forge, PullState, PullStatus, PullSummary, RepositoryStatus,
+};
 use parking_lot::Mutex;
 
 use super::{
@@ -92,7 +94,8 @@ impl Tracker {
             .projects
             .get(project_id)
             .and_then(|tracked| tracked.status.as_ref())
-            .and_then(|status| status.pulls.iter().find(|pull| pull.number == number));
+            .and_then(|status| status.forge.served())
+            .and_then(|served| served.pulls.iter().find(|pull| pull.number == number));
         if let Some(pull) = listed {
             return Look::Known(Some(Box::new(pull.clone())));
         }
@@ -170,9 +173,14 @@ impl Tracker {
         if trouble {
             tracked.failures = tracked.failures.saturating_add(1);
             tracked.due = now + backoff(tracked.failures);
-            if let Some(old) = tracked.status.as_ref().filter(|old| !old.pulls.is_empty()) {
-                status.pulls = old.pulls.clone();
-                status.unavailable = None;
+            let known = tracked
+                .status
+                .as_ref()
+                .and_then(|old| old.forge.served())
+                .filter(|old| !old.pulls.is_empty());
+            if let (Some(old), Forge::Served(served)) = (known, &mut status.forge) {
+                served.pulls = old.pulls.clone();
+                served.unavailable = None;
                 mine = tracked.mine;
             }
         } else {
@@ -211,7 +219,10 @@ impl Tracker {
             let Some(status) = &tracked.status else {
                 continue;
             };
-            let pulls: Vec<_> = status.pulls.iter().take(tracked.mine).cloned().collect();
+            let Some(served) = status.forge.served() else {
+                continue;
+            };
+            let pulls: Vec<_> = served.pulls.iter().take(tracked.mine).cloned().collect();
             if pulls.is_empty() {
                 continue;
             }
@@ -239,8 +250,10 @@ fn summary_wants(tracked: &Tracked, now: Instant) -> bool {
 
 /// Whether an open pull request has a check still running.
 fn running(status: &RepositoryStatus) -> bool {
-    status.pulls.iter().any(|pull| {
-        matches!(pull.state, PullState::Open | PullState::Draft) && pull.checks.running > 0
+    status.forge.served().is_some_and(|served| {
+        served.pulls.iter().any(|pull| {
+            matches!(pull.state, PullState::Open | PullState::Draft) && pull.checks.running > 0
+        })
     })
 }
 
@@ -253,7 +266,7 @@ fn backoff(failures: u32) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dusk_protocol::project::{Checks, PullStatus};
+    use dusk_protocol::project::{Checks, ForgeStatus, PullStatus};
 
     fn pull(number: u64, running: u32, state: Option<CheckState>) -> PullStatus {
         PullStatus {
@@ -268,6 +281,7 @@ mod tests {
             removed: 0,
             files: None,
             url: String::new(),
+            checks_url: String::new(),
             checks: Checks {
                 total: running,
                 running,
@@ -280,7 +294,14 @@ mod tests {
     fn reading(pulls: Vec<PullStatus>, mine: usize, trouble: bool) -> Reading {
         Reading {
             status: RepositoryStatus {
-                pulls,
+                forge: Forge::Served(Box::new(ForgeStatus {
+                    plugin: "github".to_owned(),
+                    name: "GitHub".to_owned(),
+                    repository: "o/r".to_owned(),
+                    pull_prefix: "https://github.com/o/r/pull/".to_owned(),
+                    pulls,
+                    unavailable: None,
+                })),
                 ..RepositoryStatus::default()
             },
             mine,
@@ -318,7 +339,7 @@ mod tests {
         tracker.watch(1, "p");
         tracker.finish("p", reading(vec![pull(7, 0, None)], 1, false));
         let (status, changed) = tracker.finish("p", reading(Vec::new(), 0, true));
-        assert_eq!(status.pulls[0].number, 7);
+        assert_eq!(status.forge.served().unwrap().pulls[0].number, 7);
         assert!(!changed);
         tracker.finish("p", reading(Vec::new(), 0, true));
         let due = tracker.0.lock().projects["p"].due;

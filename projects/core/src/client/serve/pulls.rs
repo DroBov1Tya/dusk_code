@@ -69,6 +69,35 @@ impl Server {
         }
     }
 
+    /// A pull request from the project's current branch, answered beside the loop since
+    /// the forge may take a while. The repository is told changed either way: a failed
+    /// call can still have made the pull request.
+    pub(super) fn create_pull(
+        &self,
+        id: String,
+        title: String,
+        body: String,
+        base: Option<String>,
+        reply: oneshot::Sender<Response>,
+    ) {
+        let runtime = Arc::clone(&self.runtime);
+        let subscribers = Arc::clone(&self.subscribers);
+        let tracker = self.pulls.clone();
+        tokio::spawn(async move {
+            let made = async {
+                let project = project::find(runtime.state(), &id).await?;
+                forge::create(&project, &title, &body, base.as_deref()).await
+            };
+            let response = match made.await {
+                Ok(pull) => Response::PullStatus(Some(Box::new(pull))),
+                Err(error) => Response::Error(format!("{error:#}")),
+            };
+            publish::git_changed(&subscribers, &id);
+            tracker.changed(&id);
+            let _ = reply.send(response);
+        });
+    }
+
     /// Starts a read of every project the tracker says is due.
     pub(super) fn track_repositories(&self) {
         for id in self.pulls.due() {

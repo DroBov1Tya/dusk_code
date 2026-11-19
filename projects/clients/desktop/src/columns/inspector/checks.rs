@@ -39,7 +39,8 @@ pub fn window(
     ws: WeakEntity<Workspace>,
     cx: &App,
 ) -> Div {
-    let page = format!("{}/checks", pull.url);
+    // The core gives the checks page, https only; none, no button.
+    let page = pull.checks_url.clone();
     let mut groups = div().flex().flex_col();
     for (stage, name) in GROUPS {
         let unfolded = folds
@@ -67,14 +68,16 @@ pub fn window(
                         .font_weight(FontWeight::MEDIUM)
                         .child("CI monitoring"),
                 )
-                .child(
-                    Button::new(("pull-checks-open", pull.number as usize))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::ExternalLink)
-                        .tooltip("Open the checks in the browser")
-                        .on_click(move |_, _, cx| open(&page, cx)),
-                ),
+                .when(!page.is_empty(), |header| {
+                    header.child(
+                        Button::new(("pull-checks-open", pull.number as usize))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::ExternalLink)
+                            .tooltip("Open the checks in the browser")
+                            .on_click(move |_, _, cx| open(&page, cx)),
+                    )
+                }),
         )
         .child(
             div()
@@ -164,7 +167,9 @@ fn group(
         }
         let more = count.saturating_sub(listed.len());
         if more > 0 {
-            let page = format!("{}/checks", pull.url);
+            // The row stays when the forge gave no checks page; `open` then ignores
+            // the click.
+            let page = pull.checks_url.clone();
             lines = lines.child(
                 div()
                     .id(SharedString::from(format!(
