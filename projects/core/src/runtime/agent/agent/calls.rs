@@ -7,14 +7,19 @@ use crate::plugins::{HookEvent, hooks::Outcome};
 use crate::runtime::agent::{Inbox, Stop, generation, repeats};
 use crate::runtime::{ThreadEvent, model_choice::Choice};
 use crate::{
+    catalog::{
+        history::{MAX_REASON_CHARS, counts, plain_line},
+        skills::{BUILTIN_PACK, SkillSave, SkillSaveAction, pack_of},
+    },
     config::{Config, Effort, Limits},
     providers::{
         ChatRequest, ModelOutput, ProviderError, ToolCall, is_unsupported_effort, provider_error,
     },
-    state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, Turn, TurnOutcome},
+    state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, NewSkillChange, Turn, TurnOutcome},
     tools::{Progress, ToolKind, ToolResult},
 };
 use anyhow::{Context, Result, anyhow};
+use dusk_protocol::catalog::SkillChange;
 use futures::{FutureExt, StreamExt, future::BoxFuture, stream};
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,11 +41,14 @@ struct Ran {
     outcome: &'static str,
     /// The tool's own result; `None` when the call did not run or was stopped.
     finished: Option<ToolResult>,
+    /// The skill changes the call made, told to clients after its result.
+    skills: Vec<SkillChange>,
 }
 
 impl Ran {
-    fn of(result: ToolResult) -> Self {
+    fn of(result: ToolResult, skills: Vec<SkillChange>) -> Self {
         Self {
+            skills,
             content: result.content.clone(),
             outcome: if result.is_error {
                 "failed"
@@ -56,6 +64,7 @@ impl Ran {
             content: content.to_owned(),
             outcome: "cancelled",
             finished: None,
+            skills: Vec::new(),
         }
     }
 
@@ -64,6 +73,7 @@ impl Ran {
             content,
             outcome: "failed",
             finished: None,
+            skills: Vec::new(),
         }
     }
 }
@@ -76,8 +86,11 @@ enum Slot {
     Idle,
     /// Cut off by a stop while it ran.
     Started,
-    Done(ToolResult),
+    Done(ToolResult, Vec<SkillChange>),
 }
+
+/// A call's result and the skill changes it made.
+type Watched = (ToolResult, Vec<SkillChange>);
 
 /// What a model call came to after its attempts.
 pub struct Called {
@@ -279,10 +292,12 @@ impl Agent {
                         // A call that ran keeps its result unless an earlier one of its
                         // group stopped the turn on repeated errors: as when run one by
                         // one, it would not have run.
-                        Slot::Done(result) if !self.repeats.lock().stopping(&turn.turn_id) => {
-                            Ran::of(result)
+                        Slot::Done(result, skills)
+                            if !self.repeats.lock().stopping(&turn.turn_id) =>
+                        {
+                            Ran::of(result, skills)
                         }
-                        Slot::Done(_) => Ran::cancelled(LADDER_STOPPED),
+                        Slot::Done(..) => Ran::cancelled(LADDER_STOPPED),
                         Slot::Started => Ran::cancelled("stopped: the user interrupted the turn"),
                         Slot::Idle => Ran::cancelled(USER_STOPPED),
                     },
@@ -359,7 +374,7 @@ impl Agent {
             let started = &started;
             let work = async move {
                 // Boxed, or the compiler cannot show the spawned turn is `Send`.
-                let calls: Vec<BoxFuture<'_, (usize, ToolResult)>> = running
+                let calls: Vec<BoxFuture<'_, (usize, Watched)>> = running
                     .iter()
                     .map(|&index| {
                         async move {
@@ -371,7 +386,7 @@ impl Agent {
                     .collect();
                 let mut calls = stream::iter(calls).buffer_unordered(TOGETHER);
                 while let Some((index, result)) = calls.next().await {
-                    slots[index] = Slot::Done(result);
+                    slots[index] = Slot::Done(result.0, result.1);
                 }
             };
             inbox.race(work).await.err()
@@ -384,13 +399,82 @@ impl Agent {
         (slots, stopped)
     }
 
-    async fn run_call(&self, call: &ToolCall, config: &Arc<Config>) -> ToolResult {
+    /// Runs one call. A call that may write is watched for skill changes, which are
+    /// recorded and named in its result.
+    async fn run_call(&self, call: &ToolCall, config: &Arc<Config>) -> Watched {
         self.emit(ThreadEvent::ToolStarted(call.clone()));
         let progress = Progress {
             call_id: call.id.clone(),
             events: self.events.clone(),
         };
-        self.tools.call(call, &self.scope, config, progress).await
+        let watched = !self.tools.read_only(&call.name, &call.arguments);
+        let before = if watched {
+            self.skill_watch.before().await
+        } else {
+            None
+        };
+        let mut result = self.tools.call(call, &self.scope, config, progress).await;
+        let Some(before) = before else {
+            return (result, Vec::new());
+        };
+        // The notice is the core's alone: a marker the tool printed is not believed.
+        if SkillSave::from_result(&result.content).is_some() {
+            result.content = match result.content.rsplit_once('\n') {
+                Some((rest, _)) => rest.to_owned(),
+                None => String::new(),
+            };
+        }
+        let changes = self.skill_watch.changed(before).await;
+        let mut told = Vec::new();
+        for change in changes {
+            let (added, removed) = counts(change.before.as_deref().unwrap_or(""), &change.after);
+            let line = format!("+{added} -{removed} lines");
+            let mut reason = match (call.name.as_str(), call.arguments["description"].as_str()) {
+                ("run_command", Some(text)) if !plain_line(text, MAX_REASON_CHARS).is_empty() => {
+                    plain_line(text, MAX_REASON_CHARS)
+                }
+                _ => line,
+            };
+            if pack_of(&change.skill).as_deref() == Some(BUILTIN_PACK) {
+                reason = plain_line(&format!("built-in skill: {reason}"), MAX_REASON_CHARS);
+            }
+            let notice = SkillSave {
+                name: change.skill.clone(),
+                action: if change.created {
+                    SkillSaveAction::Created
+                } else {
+                    SkillSaveAction::Updated
+                },
+            };
+            let recorded = self
+                .skill_state
+                .record_skill_change(NewSkillChange {
+                    skill: change.skill,
+                    thread_id: self.thread_id.clone(),
+                    call_id: call.id.clone(),
+                    created: change.created,
+                    reason,
+                    before: change.before,
+                    after: change.after,
+                })
+                .await;
+            let stored = match recorded {
+                Ok(id) => self.skill_state.skill_change(id).await,
+                Err(error) => Err(error),
+            };
+            match stored {
+                Ok(Some(row)) => {
+                    // The last line, where clients look for it.
+                    if told.is_empty() {
+                        result.content.push_str(&format!("\n{}", notice.stored()));
+                    }
+                    told.push(row.info());
+                }
+                Ok(None) => {}
+                Err(error) => warn!("cannot record the skill change: {error:#}"),
+            }
+        }
+        (result, told)
     }
 
     /// Everything after a call is known: hooks, counts, the note on a repeat, the stored
@@ -406,6 +490,7 @@ impl Agent {
             mut content,
             outcome,
             finished,
+            skills,
         } = ran;
         let shaped = finished
             .as_ref()
@@ -494,6 +579,9 @@ impl Agent {
                 call_id: call.id.clone(),
                 result,
             });
+            for change in skills {
+                self.emit(ThreadEvent::SkillChanged(change));
+            }
         }
         // A re-plan needs no pace of its own: its call failed, so the next step
         // already runs at the effort set (`Pace::Rethink`).

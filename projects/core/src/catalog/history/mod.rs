@@ -2,8 +2,8 @@
 
 mod diff;
 mod text;
+mod watch;
 
-pub use diff::diff;
-// Caller is the skill-evolve tool (Task 5).
-#[allow(unused_imports)]
+pub use diff::{counts, diff};
 pub use text::{MAX_REASON_CHARS, plain_line};
+pub use watch::Watch;

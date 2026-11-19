@@ -136,6 +136,10 @@ impl Runtime {
             threads: Arc::default(),
             hooks: Arc::clone(&hooks),
             health: Arc::default(),
+            skill_watch: Arc::new(crate::catalog::history::Watch::new(Some(
+                paths.skills_dir(),
+            ))),
+            skill_state: Arc::clone(&state),
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
             config: Arc::clone(&config),
