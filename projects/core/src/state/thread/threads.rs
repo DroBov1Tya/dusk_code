@@ -374,7 +374,9 @@ impl State {
 
 impl State {
     /// Erases a chat and the threads of every subagent under it, with all their records,
-    /// for good. Answers with their files folders, for the caller to remove.
+    /// for good. Answers with their files folders, for the caller to remove. Records with
+    /// no foreign key to a thread stay: the skill changes, kept for undo, and a schedule's
+    /// last thread.
     pub async fn delete_thread(&self, id: &str) -> Result<Vec<String>> {
         let mut transaction = self.pool.begin().await.context("begin the delete")?;
         // Every check waits for the commit, when no row may point at a deleted one.
@@ -397,45 +399,82 @@ impl State {
         .bind(id)
         .fetch_all(&mut *transaction)
         .await?;
-        sqlx::query(family!(
-            "DELETE FROM threads WHERE id IN (SELECT id FROM family)"
-        ))
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .context("delete the chat")?;
-        // Then every row left pointing at a deleted one, table by table, until none is.
-        let tables: Vec<String> = sqlx::query_scalar(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-             AND name NOT LIKE '_sqlx%' AND sql NOT LIKE 'CREATE VIRTUAL%'",
+        // The keys that name a row, read from the schema so a table added later is covered
+        // too. A key with its own ON DELETE action is left to it.
+        let keys: Vec<(String, String, String, String, bool)> = sqlx::query_as(
+            "SELECT m.name, f.\"from\", f.\"table\", f.\"to\", c.\"notnull\"
+             FROM sqlite_master m, pragma_foreign_key_list(m.name) f, pragma_table_info(m.name) c
+             WHERE m.type = 'table' AND m.name != 'threads' AND f.on_delete = 'NO ACTION'
+                AND c.name = f.\"from\"",
         )
         .fetch_all(&mut *transaction)
         .await?;
-        loop {
-            let mut removed = 0;
-            for table in &tables {
-                let keys: Vec<(String, String, String)> = sqlx::query_as(
-                    "SELECT \"from\", \"table\", \"to\" FROM pragma_foreign_key_list(?)",
-                )
-                .bind(table)
-                .fetch_all(&mut *transaction)
-                .await?;
-                for (column, parent, key) in keys {
-                    // Names come from the schema itself, never from a caller.
-                    let sql = format!(
-                        "DELETE FROM \"{table}\" WHERE \"{column}\" IS NOT NULL
-                         AND \"{column}\" NOT IN (SELECT \"{key}\" FROM \"{parent}\")"
-                    );
-                    removed += sqlx::query(sqlx::AssertSqlSafe(sql))
-                        .execute(&mut *transaction)
-                        .await?
-                        .rows_affected();
-                }
-            }
-            if removed == 0 {
-                break;
-            }
+        let family = serde_json::to_string(&ids).context("list the chat's threads")?;
+        // Names come from the schema itself, never from a caller. A row is the chat's when
+        // any of its thread columns names one of the chat's threads.
+        // As a search, each column found by its index; as a filter, never NULL.
+        let of_chat = |table: &str, filter: bool| {
+            let columns: Vec<String> = keys
+                .iter()
+                .filter(|(child, _, parent, _, _)| child == table && parent == "threads")
+                .map(|(_, column, ..)| {
+                    let named =
+                        format!("\"{table}\".\"{column}\" IN (SELECT value FROM json_each(?1))");
+                    if filter {
+                        format!("COALESCE({named}, 0)")
+                    } else {
+                        named
+                    }
+                })
+                .collect();
+            (!columns.is_empty()).then(|| format!("({})", columns.join(" OR ")))
+        };
+        // First the rows of other chats, and the rows of no thread, that point at a row of
+        // the chat by another key: a link that may be empty is cleared, so another chat
+        // keeps its record; any other such row goes. No chat is left undeletable by a row
+        // that points into it.
+        for (table, column, parent, key, required) in &keys {
+            let Some(doomed) = of_chat(parent, false) else {
+                continue;
+            };
+            let points = format!(
+                "\"{table}\".\"{column}\" IN (SELECT \"{key}\" FROM \"{parent}\" WHERE {doomed})"
+            );
+            let sql = match of_chat(table, true) {
+                // The chat's own rows go below.
+                Some(own) if !required => format!(
+                    "UPDATE \"{table}\" SET \"{column}\" = NULL WHERE {points} AND NOT {own}"
+                ),
+                Some(own) => format!("DELETE FROM \"{table}\" WHERE {points} AND NOT {own}"),
+                None => format!("DELETE FROM \"{table}\" WHERE {points}"),
+            };
+            sqlx::query(sqlx::AssertSqlSafe(sql))
+                .bind(&family)
+                .execute(&mut *transaction)
+                .await
+                .with_context(|| format!("unlink {table} from the chat"))?;
         }
+        // Then every row of the chat's threads, found by the column that names the thread.
+        for (table, column, parent, ..) in &keys {
+            if parent != "threads" {
+                continue;
+            }
+            let sql = format!(
+                "DELETE FROM \"{table}\" WHERE \"{column}\" IN (SELECT value FROM json_each(?1))"
+            );
+            sqlx::query(sqlx::AssertSqlSafe(sql))
+                .bind(&family)
+                .execute(&mut *transaction)
+                .await
+                .with_context(|| format!("delete the chat's rows of {table}"))?;
+        }
+        sqlx::query("DELETE FROM threads WHERE id IN (SELECT value FROM json_each(?))")
+            .bind(&family)
+            .execute(&mut *transaction)
+            .await
+            .context("delete the chat")?;
+        // Foreign keys are checked here, so a key the steps above missed fails the delete
+        // instead of leaving a row dangling.
         transaction.commit().await.context("commit the delete")?;
         Ok(folders)
     }
@@ -568,8 +607,51 @@ mod tests {
                 .await
                 .unwrap();
         }
+        // A turn with a tool call and its result, and a report the agent sent the chat.
+        let pending = state.add_pending("chat", "go").await.unwrap();
+        state.admit_pending("chat", &pending).await.unwrap();
+        let turn = state.start_turn("chat").await.unwrap().unwrap().turn_id;
+        let call = crate::providers::ToolCall {
+            id: "c".into(),
+            name: "echo".into(),
+            arguments: serde_json::json!({}),
+        };
+        let answer = crate::state::TurnAnswer {
+            content: String::new(),
+            reasoning: None,
+        };
+        state
+            .record_tool_calls(&turn, answer, vec![call])
+            .await
+            .unwrap();
+        state
+            .record_tool_result_with_artifacts(&turn, "c", "shown".into(), Vec::new())
+            .await
+            .unwrap();
+        let report = state.add_pending_from("chat", "done", Some("agent")).await;
+        state.admit_pending("chat", &report.unwrap()).await.unwrap();
+
         let folders = state.delete_thread("chat").await.unwrap();
         assert_eq!(folders, ["2026-11-05-chat"]);
+        // Nothing is left pointing at a deleted row, and the search index has no trace.
+        let dangling = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap();
+        assert!(dangling.is_empty());
+        sqlx::query("INSERT INTO messages_search (messages_search) VALUES ('integrity-check')")
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        let found = state.search_messages("other", "hello", 10).await.unwrap();
+        assert_eq!(found.len(), 1);
+        let found: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages_search WHERE messages_search MATCH 'shown'",
+        )
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        assert_eq!(found, 0);
         let left: Vec<String> = state
             .list_threads()
             .await
@@ -582,6 +664,58 @@ mod tests {
         assert_eq!(state.list_messages("other").await.unwrap().len(), 1);
         assert_eq!(state.thread_tasks("other").await.unwrap().len(), 1);
         assert!(state.delete_thread("chat").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_row_of_another_chat_that_points_into_a_chat_does_not_keep_it() {
+        let state = temp_state("thread-delete-cross").await;
+        state.create_thread("chat", "gui").await.unwrap();
+        state.create_thread("other", "gui").await.unwrap();
+        let pending = state.add_pending("chat", "go").await.unwrap();
+        state.admit_pending("chat", &pending).await.unwrap();
+        let turn = state.start_turn("chat").await.unwrap().unwrap().turn_id;
+        let task = state.add_task("chat", "work", &[]).await.unwrap().task_id;
+        let pending = state.add_pending("other", "go").await.unwrap();
+        state.admit_pending("other", &pending).await.unwrap();
+        let theirs = state.start_turn("other").await.unwrap().unwrap().turn_id;
+        // No code writes these today; a later feature could. Usage of the other chat
+        // charged to this chat's turn, and a turn of it that worked on this chat's task.
+        sqlx::query(
+            "INSERT INTO model_usage (thread_id, turn_id, purpose, model, through_sequence,
+                prompt_tokens, cached_prompt_tokens, completion_tokens, reasoning_tokens,
+                created_at) VALUES ('other', ?, 'answer', 'm', 1, 1, 0, 1, 0, 1)",
+        )
+        .bind(&turn)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE turns SET task_id = ? WHERE turn_id = ?")
+            .bind(&task)
+            .bind(&theirs)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+
+        state.delete_thread("chat").await.unwrap();
+        let dangling = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap();
+        assert!(dangling.is_empty());
+        // The other chat keeps its records, without the links.
+        let usage: Vec<Option<String>> =
+            sqlx::query_scalar("SELECT turn_id FROM model_usage WHERE thread_id = 'other'")
+                .fetch_all(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(usage, [None]);
+        let linked: Option<String> =
+            sqlx::query_scalar("SELECT task_id FROM turns WHERE turn_id = ?")
+                .bind(&theirs)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(linked, None);
     }
 
     #[tokio::test]
