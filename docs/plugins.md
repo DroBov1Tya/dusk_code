@@ -355,7 +355,14 @@ The core starts the program once per call, in the folder of the one project the 
 about, writes one line to its stdin, closes stdin, and reads its stdout. The program
 answers and exits. Nothing is kept between calls, so an answer must not depend on state
 the program kept. At most 4 calls run at once per plugin, and a call that has not
-answered 45 seconds after it started is killed and counts as `unavailable`.
+answered 45 seconds after it started is killed and counts as `unavailable`. A program
+that exits without a result is `failed`, once what it left running has been killed. A
+`result` line is at most 512 KiB; a larger one is `failed`.
+
+When the call ends, the core kills the program's whole process group. A program that
+leaves its group (with `setsid`, for one) is not killed then: it lives on, still
+confined with that call's grants (the one project's folder and the plugin's own
+permissions), until it exits.
 
 Everything is one JSON object per line, UTF-8, a line at most 4 MiB. Unknown fields are
 ignored, in both directions, within a version.
