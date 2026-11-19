@@ -33,6 +33,8 @@
 //!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
 //! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
 //!   icon, and a chat that links two of them, drawn as chips;
+//! - `fake=forge-signin|forge-unserved`: the quiet line in Changes when the forge asks to sign in,
+//!   or no plugin serves the host;
 //! - `fake=approval|approval-long|question`: put a request for approval (a long heredoc
 //!   command for `approval-long`), or a question, in the shown chat;
 //! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
@@ -515,6 +517,9 @@ fn act(
             cx.notify();
         }
         "fake" if value == "pulls" => fake_pulls(ws, cx),
+        "fake" if value == "forge-signin" || value == "forge-unserved" => {
+            fake_forge(ws, value == "forge-signin", cx)
+        }
         "fake" if value == "plugins" => {
             ws.status.plugin_parts = std::sync::Arc::new(super::plugins::parts());
             cx.notify();
@@ -965,6 +970,27 @@ pub(super) fn demo_png() -> Vec<u8> {
 }
 
 /// Pull requests in every state, for the Changes module and a chat row's icon.
+/// A repository whose forge asks to sign in, or has no plugin: the quiet line in Changes.
+fn fake_forge(ws: &mut Workspace, sign_in: bool, cx: &mut Context<Workspace>) {
+    use dusk_protocol::project::{Forge, ForgeSignIn, RepositoryStatus};
+    let host = "github.com".to_owned();
+    ws.repository = Some(RepositoryStatus {
+        repository: "dusk_code".to_owned(),
+        branch: Some("main".to_owned()),
+        forge: if sign_in {
+            Forge::SignIn(ForgeSignIn {
+                host,
+                plugin: "github".to_owned(),
+                hint: "gh auth login".to_owned(),
+            })
+        } else {
+            Forge::Unserved { host, offer: None }
+        },
+        ..Default::default()
+    });
+    cx.notify();
+}
+
 fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{
         Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,

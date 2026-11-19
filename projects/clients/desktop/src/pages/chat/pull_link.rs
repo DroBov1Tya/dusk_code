@@ -1,4 +1,4 @@
-//! A link in a chat to a pull request of the shown project's own GitHub repository is
+//! A link in a chat to a pull request of the shown project's own repository is
 //! drawn as a chip, its state icon with `owner/repo#n · title`, and under the pointer
 //! a card says who opened it, when, how much it changes and where it stands. The core
 //! gives the data: the pull requests it watches, else one it reads for the asking;
@@ -35,8 +35,10 @@ const CHIP_TITLE_CHARS: usize = 48;
 #[derive(Default)]
 pub struct PullLinks {
     project: Option<String>,
-    /// `owner/repo` on github.com of the shown project.
-    github: Option<String>,
+    /// The shown project's repository, as its forge names it, for the chip's label.
+    repository: String,
+    /// What every pull request's page starts with; none while no forge serves it.
+    prefix: Option<String>,
     listed: Vec<PullStatus>,
     /// Read for a link: `None` while asked, or when the core had none to give.
     looked: HashMap<u64, Option<PullStatus>>,
@@ -70,19 +72,23 @@ pub fn extensions(marked: bool) -> MarkdownExtensions {
 /// The shown project's repository status changed: the chips follow it.
 pub fn show(ws: &Workspace, cx: &mut App) {
     let links = cx.default_global::<PullLinks>();
-    if links.project != ws.project {
+    let served = ws
+        .repository
+        .as_ref()
+        .and_then(|status: &RepositoryStatus| status.forge.served());
+    // A link read under another prefix may be another repository's.
+    let prefix = served
+        .map(|served| served.pull_prefix.clone())
+        .filter(|prefix| !prefix.is_empty());
+    if links.project != ws.project || links.prefix != prefix {
         links.looked.clear();
     }
     links.project = ws.project.clone();
-    links.github = ws
-        .repository
-        .as_ref()
-        .and_then(|status| status.forge.served())
-        .map(|served| served.repository.clone());
-    links.listed = ws
-        .repository
-        .as_ref()
-        .and_then(|status: &RepositoryStatus| status.forge.served())
+    links.repository = served
+        .map(|served| served.repository.clone())
+        .unwrap_or_default();
+    links.prefix = prefix;
+    links.listed = served
         .map(|served| served.pulls.clone())
         .unwrap_or_default();
     cx.refresh_windows();
@@ -106,8 +112,15 @@ impl MarkdownPlugin for PullLink {
             return None;
         };
         let url = text.value.trim();
-        (url.starts_with("https://github.com/") && url.contains("/pull/") && url.len() <= 300)
-            .then(|| MarkdownNode::new(NODE, url.to_owned()).text(text.value.clone()))
+        // Any https address that ends in a number; the core's prefix decides in
+        // `render_inline` which of them are pull requests.
+        let path = url.split(['#', '?']).next().unwrap_or_default();
+        let last = path.rsplit('/').next().unwrap_or_default();
+        (url.starts_with("https://")
+            && url.len() <= 300
+            && !last.is_empty()
+            && last.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| MarkdownNode::new(NODE, url.to_owned()).text(text.value.clone()))
     }
 
     fn render_inline(
@@ -119,11 +132,10 @@ impl MarkdownPlugin for PullLink {
     ) -> Option<InlineElement> {
         let url = node.data::<String>()?;
         let links = cx.try_global::<PullLinks>()?;
-        let github = links.github.clone()?;
-        let prefix = format!("https://github.com/{github}/pull/");
+        let prefix = links.prefix.clone()?;
         let number = pull_number(url, &prefix)?;
         if let Some(pull) = links.pull(number) {
-            return Some(InlineElement::new(chip(&github, pull, cx)));
+            return Some(InlineElement::new(chip(&links.repository, pull, cx)));
         }
         if !links.looked.contains_key(&number) {
             cx.default_global::<PullLinks>().looked.insert(number, None);

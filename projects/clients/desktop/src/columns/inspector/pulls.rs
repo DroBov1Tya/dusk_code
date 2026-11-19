@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use dusk_protocol::project::{CheckState, Checks, PullState, PullStatus, RepositoryStatus};
+use dusk_protocol::project::{CheckState, Checks, Forge, PullState, PullStatus, RepositoryStatus};
 use gpui_kit::{
     component::{ActiveTheme, Icon, Selectable, popover::Popover, tooltip::Tooltip},
     prelude::FluentBuilder,
@@ -17,30 +17,75 @@ use crate::{
     workspace::Workspace,
 };
 
-/// One row per pull request, and the quiet reason when GitHub could not be asked.
+/// One row per pull request, and the quiet line when the forge could not be asked:
+/// how to sign in, or that a plugin serves the host.
 pub fn rows(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(status) = &ws.repository else {
         return div();
     };
     let mut column = div().flex().flex_col();
-    let served = status.forge.served();
-    for pull in served.iter().flat_map(|served| &served.pulls) {
-        column = column.child(row(status, pull, &ws.checks_open, cx));
-    }
-    let reason = served
-        .and_then(|served| served.unavailable.as_ref())
-        .or(status.unavailable.as_ref());
-    if let Some(reason) = reason {
-        column = column.child(
-            div()
-                .px_4()
-                .py_1()
-                .meta()
-                .text_color(cx.theme().muted_foreground.opacity(0.8))
-                .child(reason.clone()),
-        );
+    let muted = cx.theme().muted_foreground.opacity(0.8);
+    let note = |text: String| div().px_4().py_1().meta().text_color(muted).child(text);
+    match &status.forge {
+        Forge::Served(served) => {
+            for pull in &served.pulls {
+                column = column.child(row(status, pull, &ws.checks_open, cx));
+            }
+            if let Some(reason) = served.unavailable.as_ref().or(status.unavailable.as_ref()) {
+                column = column.child(note(reason.clone()));
+            }
+        }
+        Forge::SignIn(sign_in) => {
+            column = column.child(sign_in_line(&sign_in.host, &sign_in.hint, cx));
+        }
+        // Phase 3 adds the offer's button; until then the line is all there is.
+        Forge::Unserved { host, .. } => {
+            column = column.child(note(format!("Pull requests on {host} come from a plugin.")));
+        }
+        Forge::None => {
+            if let Some(reason) = &status.unavailable {
+                column = column.child(note(reason.clone()));
+            }
+        }
     }
     column
+}
+
+/// `host: ` and the plugin's hint as a command to copy; it is never run from here.
+fn sign_in_line(host: &str, hint: &str, cx: &App) -> Div {
+    let theme = cx.theme();
+    let mono = crate::ui::theme::prefs(cx)
+        .mono_font
+        .clone()
+        .unwrap_or_else(|| "Menlo".to_owned());
+    let group = SharedString::from("forge-sign-in");
+    div()
+        .group(group.clone())
+        .px_4()
+        .py_1()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_1p5()
+        .meta()
+        .text_color(theme.muted_foreground.opacity(0.8))
+        .child(format!("{host}: "))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .px_1p5()
+                .rounded_md()
+                .bg(theme.muted)
+                .font_family(mono)
+                .child(hint.to_owned()),
+        )
+        .child(widgets::copy(
+            SharedString::from("forge-sign-in-copy"),
+            &group,
+            hint,
+            cx,
+        ))
 }
 
 fn row(
