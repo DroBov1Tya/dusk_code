@@ -30,6 +30,10 @@ pub struct Record {
     /// The same for each mirror, by the address of its list.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mirrors: BTreeMap<String, u64>,
+    /// The names the official list offered when it was last accepted, so they stay
+    /// taken for an Unverified source while that list cannot be read.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub official_names: std::collections::BTreeSet<String>,
     pub installed: BTreeMap<String, Installed>,
 }
 

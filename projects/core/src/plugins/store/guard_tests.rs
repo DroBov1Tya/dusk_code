@@ -478,3 +478,25 @@ fn a_review_s_hash_covers_kind_and_the_written_pack_yml() {
     assert_ne!(digest(&pack), digest(&said));
     assert_eq!(digest(&pack), digest(&pack.clone()));
 }
+
+/// The official list's names stay taken while that list cannot be read: the last one
+/// accepted is kept in the record.
+#[test]
+fn the_official_names_stay_taken_when_its_list_fails() {
+    let paths = crate::testing::temp_paths("guard-official-names");
+    std::fs::create_dir_all(paths.config_root()).unwrap();
+    let (key, _) = signed("x");
+    let official = Fetched {
+        name: "official".into(),
+        url: "https://o.example.com/index.json".into(),
+        key,
+        tier: Tier::Official,
+        index: unsigned(&list(1, &[pinned("release-notes", "skill")])),
+    };
+    source::accept(&paths, &official).unwrap();
+    let record = Record::load(&paths).unwrap();
+    // This time the official list could not be read: only the Unverified one is here.
+    let loose = read_keyless(&[pinned("release-notes", "skill")]);
+    let taken = listing::taken(&paths, &record, &[loose], "loose");
+    assert!(guard::shadow("release-notes", taken.iter().map(String::as_str)).is_some());
+}

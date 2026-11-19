@@ -162,6 +162,8 @@ pub fn taken(
             .filter(|(_, item)| item.source != source)
             .map(|(name, _)| name.clone()),
     );
+    // The official list's names as last read stay taken while it cannot be read now.
+    names.extend(record.official_names.iter().cloned());
     names.insert(crate::catalog::skills::BUILTIN_PACK.to_owned());
     names.extend(crate::catalog::agents::builtin_names());
     let builtin = crate::catalog::skills::builtin_dir();
