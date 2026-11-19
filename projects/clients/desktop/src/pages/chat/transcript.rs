@@ -193,7 +193,7 @@ impl Agent {
                 self.running.push((call.id.clone(), call.name.clone()));
                 AgentState::Tool(call.name.clone())
             }
-            // One of several tools ended: the fox goes on with the newest still running.
+            // One of several tools ended: the mascot goes on with the newest still running.
             ThreadEvent::ToolFinished { call_id, .. } => {
                 self.running.retain(|(id, _)| id != call_id);
                 match self.running.last() {

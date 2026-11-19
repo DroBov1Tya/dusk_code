@@ -10,9 +10,11 @@
 //!   `artifacts`: open the page as a click would, with its data;
 //! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all|lower`: open a window; unfold the right column, or only its lower modules;
 //! - `detail=mcp|skill`: open the window of the first of those;
+//! - with `DUSK_MASCOT=MS` in the environment every subagent's mascot is held that many
+//!   milliseconds into its activity, so done and failed can be seen mid-motion;
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
-//! - `fake=agents`: six subagents of different roles at different points of their work;
+//! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
 //! - `fake=limits`: API rate limits; `fake=plan-limits|plan-unavailable`: ChatGPT plan usage;
 //! - `fake=plugins`: about 200 made-up plugin parts of 60 plugins in the status (see
@@ -57,6 +59,7 @@
 //! - `size=WxH`: resize the window, as a drag of its edge would;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
 //!   for that many minutes, for the header's sky;
+//! - `wheel=X,Y,DY`: scroll DY pixels at a point (negative goes down);
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
 
 use std::{path::PathBuf, time::Duration};
@@ -150,6 +153,23 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                         }
                         None => eprintln!("hover=X,Y: {value}"),
                     }
+                }
+                // A turn of the wheel at a point, for what is below a scrolled window's fold.
+                "wheel" => {
+                    let parts: Vec<f32> = value.split(',').filter_map(|v| v.parse().ok()).collect();
+                    let [x, y, dy] = parts[..] else {
+                        eprintln!("wheel=X,Y,DY: {value}");
+                        continue;
+                    };
+                    let event = PlatformInput::Scroll(ScrollEvent {
+                        position: point(px(x), px(y)),
+                        delta: ScrollDelta::Pixels(point(px(0.), px(dy))),
+                        ..Default::default()
+                    });
+                    let _ = cx.update_window(window, |_, window, cx| {
+                        window.draw(cx).clear(cx);
+                        window.dispatch_event(event, cx);
+                    });
                 }
                 // The left button pressed, moved with it held, or let go at a point.
                 "down" | "press" | "move" | "up" => {
@@ -723,6 +743,7 @@ fn act(
                 ("sre-engineer", "Measure memory growth"),
                 ("docs", "Read the old notes"),
                 ("general", "Summarize the findings"),
+                ("architect", "Plan the cache layout"),
             ];
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
                 for (index, (role, task)) in roles.iter().enumerate() {
@@ -754,6 +775,11 @@ fn act(
                             arguments: serde_json::json!({"path": "notes.md"}),
                         })),
                         6 => Some(ThreadEvent::Failed("the provider is unavailable".into())),
+                        7 => Some(ThreadEvent::ToolStarted(ToolCall {
+                            id: "t7".into(),
+                            name: "update_plan".into(),
+                            arguments: serde_json::json!({}),
+                        })),
                         _ => None,
                     };
                     if let Some(event) = inner {

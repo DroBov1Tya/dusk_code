@@ -30,6 +30,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `fake=mcp` | five connectors, one of each state, in the place of the config's |
 | `open=pins\|plan\|panel\|done`, `scroll=N`, `right=lower` | the pins drawer, the plan's rows, the composer's panel, the Todo's finished tasks; the transcript from its Nth row; the right column with its tall upper modules folded |
 | `hover=X,Y` | moves the pointer to a point of the window, for what shows only under it (the composer's tab, a module header's grip) |
+| `wheel=X,Y,DY` | scrolls DY pixels at a point of the window (negative goes down), for what is below a window's fold |
 | `down=X,Y`, `move=X,Y`, `up=X,Y` | presses the left button, moves with it held, lets it go: a click is `down` then `up`, a drag (a module's grip to another place) is `down`, a few `move`, `up`; a `shot` between shows the drop line |
 | `press=X,Y` | `down` with no `up`: the pressed look of what is under the pointer |
 | `select=ROW:FROM-TO` | selects cells of a row of the shown terminal |
@@ -44,3 +45,6 @@ makes a chat to look at.
 
 The window draws no frames of its own, so an animation or a picture decoded after the first
 draw shows only on a second `shot`: take one, `wait`, and take the one to keep.
+
+The subagents' mascots move faster than a shot is taken: `DUSK_MASCOT=MS` in the environment holds
+each that many milliseconds into its activity (`fake=agents;modal=agents` shows one of each).

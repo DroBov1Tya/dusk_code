@@ -190,8 +190,59 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .tab.active { background: var(--raised); color: var(--fg); }
 .tab-body { flex: 1; overflow: auto; padding: 4px 12px 16px; }
 .agent { display: flex; gap: 10px; width: 100%; text-align: left; background: var(--surface); border: 0; border-radius: 12px; padding: 10px; margin-bottom: 8px; }
-.fox { width: 22px; height: 22px; flex: none; color: var(--muted); }
-.fox.working { color: var(--accent); }
+/* Sundown, the subagents' mascot, as Desktop draws it (columns/inspector/mascot.rs). An em is
+   the box and 0.01em one unit of the prototype's 100-unit box, so its numbers carry over. The
+   still styles are where done and failed settle, which is all a reduced-motion user sees. */
+.sun { position: relative; flex: none; width: 1em; height: 1em; font-size: 32px; color: var(--warn); }
+.sun[data-doing="done"] { color: var(--good); }
+.sun[data-doing="failed"] { color: color-mix(in srgb, var(--bad) 15%, #7a7f8a); animation: sun-grey 1s; }
+.sun-sky { position: absolute; left: 0; top: 0; width: 1em; height: .74em; overflow: hidden; }
+.sun-rise { position: absolute; left: 0; top: 0; width: 1em; height: 1em; }
+.sun-disc { position: absolute; left: .26em; top: .3em; width: .48em; height: .48em; border-radius: 50%; background: currentColor;
+  box-shadow: 0 0 .108em .009em color-mix(in srgb, currentColor 30%, transparent); }
+.sun-eyes { position: absolute; inset: 0; }
+.sun-eye { position: absolute; top: .155em; width: .07em; height: .11em; border-radius: .035em; background: #14161c; animation: sun-blink 4.3s var(--d, 0s) infinite; }
+.sun-eye:first-child { left: .12em; } .sun-eye + .sun-eye { left: .29em; }
+.sun-eye::before, .sun-eye::after { content: ""; position: absolute; background: currentColor; display: none; }
+.sun-line { position: absolute; left: .08em; top: .73em; width: .84em; height: .024em; border-radius: .012em; background: currentColor; opacity: .45; }
+.sun-glint { position: absolute; left: .37em; top: .79em; width: .26em; height: .022em; border-radius: .011em; background: currentColor; opacity: .19; }
+.sun-glint:last-child { left: .43em; top: .85em; width: .14em; opacity: .11; }
+@keyframes sun-blink { 0%, 93% { transform: none; } 95% { transform: scaleY(.1); } 97%, 100% { transform: none; } }
+[data-doing="thinking"] .sun-rise { animation: sun-breathe 3.2s ease-in-out var(--d, 0s) infinite; }
+[data-doing="thinking"] .sun-eyes { top: -.04em; animation: sun-glance 4.6s var(--d, 0s) infinite; }
+@keyframes sun-breathe { 0%, 100% { transform: translateY(-.01em); } 50% { transform: translateY(.01em); } }
+@keyframes sun-glance { 0%, 45% { transform: translateX(-.03em); } 50%, 95% { transform: translateX(.03em); } }
+[data-doing="writing"] .sun-rise { animation: sun-bob .42s ease-in-out infinite; }
+[data-doing="writing"] .sun-eyes { top: .03em; animation: sun-trace 1.5s var(--d, 0s) infinite; }
+@keyframes sun-bob { 0%, 100% { transform: none; } 50% { transform: translateY(-.018em); } }
+@keyframes sun-trace { 0% { transform: translateX(-.04em); } 85% { transform: translateX(.04em); } 100% { transform: translateX(-.04em); } }
+[data-doing="searching"] .sun-eyes { animation: sun-dart 1.5s var(--d, 0s) infinite; }
+[data-doing="searching"] .sun-rise { animation: sun-follow 1.5s calc(var(--d, 0s) + 90ms) infinite; }
+@keyframes sun-dart { 0% { transform: translateX(.05em); } 9%, 50% { transform: translateX(-.05em); } 59%, 100% { transform: translateX(.05em); } }
+@keyframes sun-follow { 0% { transform: translateX(.0175em); } 9%, 50% { transform: translateX(-.0175em); } 59%, 100% { transform: translateX(.0175em); } }
+[data-doing="reading"] .sun-eyes { top: .025em; animation: sun-read 2.1s var(--d, 0s) infinite; }
+@keyframes sun-read { 0% { transform: translateX(-.045em); } 82% { transform: translateX(.045em); } 100% { transform: translateX(-.045em); } }
+[data-doing="planning"] .sun-rise { animation: sun-deep 4.6s ease-in-out var(--d, 0s) infinite; }
+[data-doing="planning"] .sun-eye { animation: none; transform: scaleY(.14); }
+@keyframes sun-deep { 0%, 100% { transform: translateY(-.004em); } 50% { transform: translateY(.024em); } }
+[data-doing="running"] .sun-rise { transform: translateY(-.04em); }
+[data-doing="running"] .sun-disc { animation: sun-pulse .9s ease-in-out infinite; }
+@keyframes sun-pulse { 50% { box-shadow: 0 0 .144em .012em color-mix(in srgb, currentColor 45%, transparent); } }
+[data-doing="done"] .sun-rise { transform: translateY(-.01em); animation: sun-hop .9s; }
+[data-doing="done"] .sun-eyes { top: -.01em; }
+[data-doing="done"] .sun-eye { animation: none; width: .08em; }
+[data-doing="done"] .sun-eye::after { display: block; left: -.015em; top: .032em; width: .11em; height: .11em; border-radius: 50%; animation: sun-happy .28s; }
+@keyframes sun-hop { 0% { transform: none; } 13% { transform: translateY(.025em); } 42% { transform: translateY(-.16em); animation-timing-function: ease-in; }
+  69% { transform: translateY(.005em); } 82% { transform: translateY(-.025em); } 100% { transform: translateY(-.01em); } }
+@keyframes sun-happy { 0%, 28% { top: .11em; } }
+[data-doing="failed"] .sun-rise { transform: translateY(.12em); animation: sun-set 1s; }
+[data-doing="failed"] .sun-disc { box-shadow: 0 0 .022em 0 color-mix(in srgb, currentColor 6%, transparent); }
+[data-doing="failed"] .sun-eyes { top: .047em; }
+[data-doing="failed"] .sun-eye { animation: none; height: .066em; }
+[data-doing="failed"] .sun-eye::before { display: block; left: -.01em; top: -.06em; width: .09em; height: .093em; border-radius: .01em; }
+@keyframes sun-set { 0% { transform: none; } 7% { transform: translateX(.02em); } 14% { transform: translateX(-.016em); } 21% { transform: translateX(.012em); }
+  28% { transform: translateX(-.006em); } 30% { transform: none; } 100% { transform: translateY(.12em); } }
+@keyframes sun-grey { 0%, 15% { color: var(--bad); } }
 .agent-state { font-size: 12px; color: var(--muted); } .agent-state.live { color: var(--accent); } .agent-state.bad { color: var(--bad); }
 .task { margin-bottom: 10px; } .task.done .task-name, li.done { text-decoration: line-through; color: var(--muted); }
 .pulls { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
