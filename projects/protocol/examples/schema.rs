@@ -8,9 +8,12 @@
 //!
 //! While the file's `x-oldest` equals `OLDEST_PROTOCOL`, a removed property or variant, or a
 //! property that became required, is reported as `not additive: <def>.<name>` and fails: an
-//! older client still speaks to this core. Raising `OLDEST_PROTOCOL` starts a new baseline.
+//! older client still speaks to this core. A property whose `type` or `$ref` changed fails
+//! too. Not caught: internally tagged variants that share field names (their fields merge
+//! under one path), and enum values inside a referenced type, which are checked only through
+//! that type's own entry. Raising `OLDEST_PROTOCOL` starts a new baseline.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -25,7 +28,13 @@ const ROOTS: [&str; 5] = ["Hello", "Proof", "Greeting", "RequestFrame", "ServerF
 
 fn main() -> ExitCode {
     let path = schema_path();
-    let generated = generate();
+    let generated = match generate() {
+        Ok(text) => text,
+        Err(e) => {
+            eprintln!("cannot render the schema: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     if std::env::args().any(|a| a == "--check") {
         return check(&path, &generated);
     }
@@ -52,7 +61,7 @@ fn schema_path() -> PathBuf {
 }
 
 /// The schema as text: handshake types first, then every other type by name.
-fn generate() -> String {
+fn generate() -> serde_json::Result<String> {
     let mut generator = SchemaGenerator::default();
     generator.subschema_for::<Hello>();
     generator.subschema_for::<Proof>();
@@ -63,7 +72,7 @@ fn generate() -> String {
     render(&defs)
 }
 
-fn render(defs: &Map<String, Value>) -> String {
+fn render(defs: &Map<String, Value>) -> serde_json::Result<String> {
     let mut names: Vec<&String> = defs.keys().collect();
     names.sort_by_key(|n| (ROOTS.iter().position(|r| r == n).unwrap_or(ROOTS.len()), *n));
     let mut text = String::from("{\n");
@@ -71,17 +80,17 @@ fn render(defs: &Map<String, Value>) -> String {
     text.push_str("  \"title\": \"duskcode protocol\",\n");
     text.push_str(&format!("  \"x-protocol\": {PROTOCOL_VERSION},\n"));
     text.push_str(&format!("  \"x-oldest\": {OLDEST_PROTOCOL},\n"));
-    let roots = serde_json::to_string(&ROOTS).unwrap_or_default();
+    let roots = serde_json::to_string(&ROOTS)?;
     text.push_str(&format!("  \"x-roots\": {roots},\n"));
     text.push_str("  \"$defs\": {\n");
     for (i, name) in names.iter().enumerate() {
-        let body = serde_json::to_string_pretty(&defs[*name]).unwrap_or_default();
-        let key = serde_json::to_string(name).unwrap_or_default();
+        let body = serde_json::to_string_pretty(&defs[*name])?;
+        let key = serde_json::to_string(name)?;
         text.push_str(&format!("    {key}: {}", body.replace('\n', "\n    ")));
         text.push_str(if i + 1 < names.len() { ",\n" } else { "\n" });
     }
     text.push_str("  }\n}\n");
-    text
+    Ok(text)
 }
 
 fn check(path: &PathBuf, generated: &str) -> ExitCode {
@@ -126,7 +135,21 @@ fn not_additive(old: &Value, new: &Value) -> Vec<String> {
         };
         let (before, after) = (Shape::of(name, old_def), Shape::of(name, new_def));
         problems.extend(before.names.difference(&after.names).cloned());
-        problems.extend(after.required.difference(&before.required).cloned());
+        // A new variant's own required fields are fine; a field that became required on
+        // something that already existed is not.
+        for at in after.required.difference(&before.required) {
+            let parent = at.rsplit_once('.').map_or("", |(parent, _)| parent);
+            let existed =
+                before.names.contains(at) || !parent.contains('.') || before.names.contains(parent);
+            if existed {
+                problems.push(at.clone());
+            }
+        }
+        for (at, was) in &before.kinds {
+            if after.kinds.get(at).is_some_and(|now| now != was) {
+                problems.push(format!("{at} changed type"));
+            }
+        }
     }
     problems
 }
@@ -137,6 +160,8 @@ struct Shape {
     /// Properties and variants.
     names: BTreeSet<String>,
     required: BTreeSet<String>,
+    /// The `type` or `$ref` of each property, where it has one.
+    kinds: BTreeMap<String, String>,
 }
 
 impl Shape {
@@ -175,6 +200,9 @@ impl Shape {
             for (name, value) in properties {
                 let at = format!("{path}.{name}");
                 self.names.insert(at.clone());
+                if let Some(kind) = value.get("$ref").or_else(|| value.get("type")) {
+                    self.kinds.insert(at.clone(), kind.to_string());
+                }
                 if !wrapper && required.contains(&name.as_str()) {
                     self.required.insert(at.clone());
                 }
@@ -250,5 +278,25 @@ mod tests {
         ]}));
         new["$defs"]["Other"] = json!({ "type": "string" });
         assert!(not_additive(&old, &new).is_empty());
+    }
+
+    #[test]
+    fn a_new_variant_may_carry_required_fields() {
+        let old = schema(json!({ "oneOf": [{ "type": "string", "enum": ["Alpha"] }] }));
+        let new = schema(json!({ "oneOf": [
+            { "type": "string", "enum": ["Alpha"] },
+            { "type": "object", "properties": { "Gamma": {
+                "type": "object", "properties": { "x": { "type": "integer" } },
+                "required": ["x"] } },
+              "required": ["Gamma"], "additionalProperties": false }
+        ]}));
+        assert!(not_additive(&old, &new).is_empty());
+    }
+
+    #[test]
+    fn changing_a_property_type_is_not_additive() {
+        let old = schema(json!({ "properties": { "a": { "type": "string" } } }));
+        let new = schema(json!({ "properties": { "a": { "type": "integer" } } }));
+        assert_eq!(not_additive(&old, &new), ["Thing.a changed type"]);
     }
 }

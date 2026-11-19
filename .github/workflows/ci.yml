@@ -91,7 +91,9 @@ jobs:
       # The published schema is current and only grew.
       - name: API schema
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: cargo run -p dusk_protocol --features schema --example schema --locked -- --check
+        run: |
+          cargo test -p dusk_protocol --features schema --example schema --locked
+          cargo run -p dusk_protocol --features schema --example schema --locked -- --check
 
   # The web client is built for wasm exactly as releases build it, so a change that breaks
   # it fails here and not on a release tag.
