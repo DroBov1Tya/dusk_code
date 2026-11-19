@@ -422,6 +422,16 @@ fn origin(listing: &Listing, cx: &App) -> Div {
                 .child(tier::about(listing.tier)),
         )
         .child(fact("Source", source.to_owned(), cx))
+        .children(listing.upstream.as_ref().map(|upstream| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(size::GAP_XS))
+                .child(fact("From", upstream.clone(), cx))
+                .child(div().small().text_color(muted).child(
+                    "Fetched from the author's repository; not copied or changed by duskcode.",
+                ))
+        }))
 }
 
 /// The version, the dates in words, the license, and the addresses of its page and its

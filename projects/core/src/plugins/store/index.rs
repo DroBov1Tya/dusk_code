@@ -25,6 +25,8 @@ pub const PUBLIC_KEY: &str = "ajB547F8pPEYYXGxEYBRZgpgw+iU57ydMrr6VtaLwBQ=";
 const FORMATS: [u32; 3] = [1, 2, 3];
 pub const MAX_INDEX_BYTES: u64 = 4 * 1024 * 1024;
 pub const MAX_SIGNATURE_BYTES: u64 = 1024;
+/// More than a list is ever expected to hold; a list past it is refused whole.
+pub const MAX_ENTRIES: usize = 2000;
 /// The largest package the store may name.
 pub const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 /// The largest cover: a picture for a card, not a gallery.
@@ -69,6 +71,8 @@ pub struct Index {
     /// Grows with every list signed; a list older than one seen is refused, so an old
     /// signed list cannot bring back an old package or hide an update.
     pub serial: u64,
+    /// RFC 3339, in the future.
+    pub expires: String,
     pub plugins: Vec<Entry>,
     /// Mirrors this list vouches for. Only the official list's are believed.
     pub verified: Vec<Mirror>,
@@ -95,6 +99,8 @@ pub struct Entry {
     /// there itself, outside the plugin's sandbox, so the user is told.
     #[serde(default)]
     pub providers: Vec<String>,
+    /// Empty only when `upstream` names the files instead.
+    #[serde(default)]
     pub downloads: Vec<Download>,
     #[serde(default)]
     pub category: String,
@@ -134,6 +140,9 @@ pub struct Entry {
     /// hooks), sorted.
     #[serde(default)]
     pub programs: Vec<String>,
+    /// Format 3, a skill or pack: its files at a pinned commit of the author's
+    /// repository, instead of `downloads`.
+    pub upstream: Option<super::upstream::Upstream>,
     /// The list's format, which says what its manifest is checked against.
     #[serde(skip)]
     pub format: u32,
@@ -246,6 +255,11 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
         raw.expires
     );
     ensure!(
+        raw.plugins.len() <= MAX_ENTRIES,
+        "the list names {} entries; at most {MAX_ENTRIES} are read",
+        raw.plugins.len()
+    );
+    ensure!(
         raw.format >= 2 || raw.verified.is_empty(),
         "a format 1 list names verified mirrors"
     );
@@ -269,6 +283,7 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
     }
     Ok(Index {
         serial: raw.serial,
+        expires: raw.expires,
         plugins,
         verified: raw.verified,
     })
@@ -316,6 +331,16 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
             entry.is_format_2(),
             "fields of format 3 in a format {format} list"
         );
+    }
+    match &entry.upstream {
+        Some(upstream) => {
+            ensure!(
+                matches!(entry.kind, Kind::Skill | Kind::Pack) && entry.downloads.is_empty(),
+                "only a skill or a pack comes from upstream, and then without packages"
+            );
+            upstream.check()?;
+        }
+        None => ensure!(!entry.downloads.is_empty(), "no package"),
     }
     if let Some(page) = &entry.homepage {
         ensure!(page.starts_with("https://"), "the homepage is not https");
@@ -628,6 +653,7 @@ impl Entry {
     /// Nothing format 3 added is set.
     fn is_format_2(&self) -> bool {
         self.mcp.is_empty()
+            && self.upstream.is_none()
             && self.programs.is_empty()
             && (self.kind != Kind::Plugin || self.skills.is_empty())
             && self.author.is_none()

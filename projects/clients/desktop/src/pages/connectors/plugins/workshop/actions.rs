@@ -39,6 +39,9 @@ pub fn slot(
     let failed = ws.workshop.failed.contains_key(&listing.name);
     let button = match (&listing.installed, &listing.update) {
         (None, _) if failed => install(listing, "Retry".into(), false, cx),
+        (None, _) if listing.upstream.is_some() => {
+            install(listing, "Install from source".into(), false, cx)
+        }
         (None, _) => install(listing, "Install".into(), false, cx),
         (Some(_), Some(version)) => {
             let label = if compact {

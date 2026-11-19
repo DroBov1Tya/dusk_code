@@ -53,6 +53,13 @@ pub struct Installed {
     /// `skills/review`; empty for a plugin, whose folder is in the plugins folder.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub folder: String,
+    /// Who made it, its license and where it came from, as the list said at install.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub author: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub license: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub origin: String,
 }
 
 fn is_plugin(kind: &Kind) -> bool {
@@ -89,6 +96,9 @@ impl Installed {
             key: fingerprint(&source.key),
             kind: Kind::Plugin,
             folder: String::new(),
+            author: String::new(),
+            license: String::new(),
+            origin: String::new(),
         }
     }
 

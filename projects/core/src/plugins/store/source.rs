@@ -10,7 +10,9 @@ use std::{collections::BTreeMap, sync::LazyLock};
 
 use anyhow::{Context, Result, anyhow, ensure};
 use chrono::Utc;
-use dusk_protocol::plugin::{OFFICIAL_SOURCE, SourceFailure, Tier};
+use dusk_protocol::plugin::{
+    Kind, LOCAL_SOURCE, OFFICIAL_SOURCE, Probe, SourceFailure, SourceRow, Tier,
+};
 use parking_lot::Mutex;
 
 use super::{
@@ -180,6 +182,132 @@ async fn read_official() -> Result<(String, Index)> {
         }
     }
     Err(last)
+}
+
+/// What the list at `url` holds, checked with `key` exactly as a mirror's is, without
+/// saving anything. A GitHub repository's address is read as its Pages site's list.
+pub async fn probe(url: &str, key: &str) -> Result<(Mirror, Index)> {
+    let mirror = Mirror {
+        name: "probe".to_owned(),
+        url: list_address(url)?,
+        key: key.trim().to_owned(),
+    };
+    mirror.check()?;
+    let index = read_mirror(&mirror).await?;
+    Ok((mirror, index))
+}
+
+/// What a probe tells the user before they add a repository.
+pub fn probed(url: &str, index: &Index) -> Probe {
+    let count = |kind: Option<Kind>| {
+        let entries = index.plugins.iter();
+        let n = entries.filter(|entry| kind.is_none_or(|kind| entry.kind == kind));
+        u32::try_from(n.count()).unwrap_or(u32::MAX)
+    };
+    Probe {
+        url: url.to_owned(),
+        entries: count(None),
+        plugins: count(Some(Kind::Plugin)),
+        serial: index.serial,
+        expires: index.expires.clone(),
+    }
+}
+
+/// `https://github.com/<owner>/<repo>` becomes the list on that repository's Pages site,
+/// where a Workshop repository publishes it; any other address is taken as the list's.
+pub fn list_address(url: &str) -> Result<String> {
+    let url = url.trim().trim_end_matches('/');
+    let Some(path) = url.strip_prefix("https://github.com/") else {
+        return Ok(url.to_owned());
+    };
+    let parts: Vec<&str> = path.split('/').collect();
+    let plain = |part: &str| {
+        !part.is_empty()
+            && part.len() <= 100
+            && !part.starts_with('.')
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+    };
+    ensure!(
+        parts.len() == 2 && parts.iter().all(|part| plain(part)),
+        "a GitHub address is https://github.com/<owner>/<repository>"
+    );
+    Ok(format!(
+        "https://{}.github.io/{}/index.json",
+        parts[0].to_ascii_lowercase(),
+        parts[1]
+    ))
+}
+
+/// A name for a new repository from its list's address: the folder the list is in, or
+/// the host, as a word no other source has.
+pub fn name_for(url: &str, taken: &[Mirror]) -> String {
+    let parsed = reqwest::Url::parse(url).ok();
+    let folder = parsed
+        .as_ref()
+        .and_then(|url| url.path_segments())
+        .and_then(|segments| segments.rev().nth(1).map(str::to_owned))
+        .filter(|folder| !folder.is_empty());
+    let host = parsed.as_ref().and_then(|url| {
+        url.host_str()
+            .map(|host| host.split('.').next().unwrap_or("").to_owned())
+    });
+    let raw = folder.or(host).unwrap_or_default().to_ascii_lowercase();
+    let word: String = raw
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let base = word.trim_matches('-').chars().take(24).collect::<String>();
+    let base = if base.is_empty() {
+        "repository".to_owned()
+    } else {
+        base
+    };
+    let free = |name: &str| {
+        name != OFFICIAL_SOURCE
+            && name != LOCAL_SOURCE
+            && !taken.iter().any(|mirror| mirror.name == name)
+    };
+    (1..)
+        .map(|n| match n {
+            1 => base.clone(),
+            n => format!("{base}-{n}"),
+        })
+        .find(|name| free(name))
+        .unwrap_or(base)
+}
+
+/// Each repository the user added, with how its list read this time.
+pub fn rows(mirrors: &[Mirror], fetched: &[Fetched], failed: &[SourceFailure]) -> Vec<SourceRow> {
+    mirrors
+        .iter()
+        .map(|mirror| {
+            let read = fetched.iter().find(|item| item.name == mirror.name);
+            let error = failed
+                .iter()
+                .find(|item| item.source == mirror.name)
+                .map(|item| item.error.clone());
+            SourceRow {
+                name: mirror.name.clone(),
+                url: mirror.url.clone(),
+                fingerprint: fingerprint(&mirror.key),
+                tier: read.map_or(Tier::Community, |item| item.tier),
+                entries: read.map_or(0, |item| {
+                    u32::try_from(item.index.plugins.len()).unwrap_or(u32::MAX)
+                }),
+                error,
+            }
+        })
+        .collect()
+}
+
+/// The first 16 hex digits of the SHA-256 of a key, to tell keys apart at a glance.
+fn fingerprint(key: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hex = super::fetch::hex(&Sha256::digest(key.as_bytes()));
+    hex.truncate(16);
+    hex
 }
 
 async fn read_mirror(mirror: &Mirror) -> Result<Index> {

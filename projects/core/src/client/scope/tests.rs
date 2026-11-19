@@ -28,6 +28,9 @@ fn bridge_refused(request: &Request) -> bool {
                 StoreRequest::Install { .. }
                     | StoreRequest::Remove { .. }
                     | StoreRequest::UpdateAll
+                    | StoreRequest::Probe { .. }
+                    | StoreRequest::AddSource { .. }
+                    | StoreRequest::RemoveSource { .. }
             )
             | Request::Settings(SettingsRequest::PluginEnabled { enabled: true, .. })
             | Request::Project(ProjectRequest::WriteFile { .. })
@@ -249,8 +252,11 @@ fn a_browser_is_refused_this_list_and_no_more() {
         "project.write_file",
         "settings.plugin_enabled.on",
         "shutdown",
+        "store.add_source",
         "store.install",
+        "store.probe",
         "store.remove",
+        "store.remove_source",
         "store.update_all",
         "terminal.close",
         "terminal.input",

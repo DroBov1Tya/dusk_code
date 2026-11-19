@@ -5,7 +5,8 @@ use anyhow::{Result, bail};
 use dusk_protocol::{
     client::{PluginRequest, Request, Response},
     plugin::{
-        Contents, FilePreview, Kind, Listing, Order, StoreList, StoreRequest, UiEvent, UpdateReport,
+        Contents, FilePreview, Kind, Listing, Order, Probe, SourceRow, StoreList, StoreRequest,
+        UiEvent, UpdateReport,
     },
 };
 
@@ -142,6 +143,44 @@ impl Plugins<'_> {
             Response::Error(error) => bail!(error),
             other => bail!("unexpected answer: {other:?}"),
         }
+    }
+
+    /// What the signed list at `url` holds with `key`; nothing is saved.
+    pub async fn probe_source(&self, url: &str, key: &str) -> Result<Probe> {
+        let request = StoreRequest::Probe {
+            url: url.to_owned(),
+            key: key.to_owned(),
+        };
+        match self.0.call(Request::Store(request)).await? {
+            Response::StoreProbe(probe) => Ok(probe),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
+    }
+
+    /// The repositories the user added, each read now.
+    pub async fn sources(&self) -> Result<Vec<SourceRow>> {
+        match self.0.call(Request::Store(StoreRequest::Sources)).await? {
+            Response::StoreSources(rows) => Ok(rows),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
+    }
+
+    /// Adds a repository once the core read its list with `key`.
+    pub async fn add_source(&self, url: &str, key: &str) -> Result<()> {
+        let request = StoreRequest::AddSource {
+            url: url.to_owned(),
+            key: key.to_owned(),
+        };
+        self.0.done(Request::Store(request)).await
+    }
+
+    pub async fn remove_source(&self, name: &str) -> Result<()> {
+        let request = StoreRequest::RemoveSource {
+            name: name.to_owned(),
+        };
+        self.0.done(Request::Store(request)).await
     }
 
     async fn media(&self, request: StoreRequest) -> Result<(String, String)> {

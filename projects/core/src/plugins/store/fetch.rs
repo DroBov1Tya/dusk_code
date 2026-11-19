@@ -21,6 +21,8 @@ use sha2::{Digest, Sha256};
 use crate::{plugins::broker::is_public, release::update::VERSION};
 
 const TIMEOUT: Duration = Duration::from_secs(120);
+/// A list or a picture is small; a source that takes longer is reported, not waited on.
+const DIRECT_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_REDIRECTS: usize = 3;
 /// Where GitHub keeps release assets; a package link to a release is redirected there.
 const PACKAGE_HOSTS: [&str; 3] = [
@@ -48,8 +50,13 @@ pub async fn fetch(url: &str, max: u64, via: Via) -> Result<Vec<u8>> {
         Via::Package => &*PACKAGE,
     };
     let client = client.as_ref().map_err(|error| anyhow!("{error}"))?;
+    let timeout = match via {
+        Via::Direct => DIRECT_TIMEOUT,
+        Via::Package => TIMEOUT,
+    };
     let mut response = client
         .get(url)
+        .timeout(timeout)
         .send()
         .await
         .with_context(|| format!("cannot reach {url}"))?

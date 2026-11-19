@@ -106,6 +106,7 @@ pub fn listing(
         author: entry.author.clone().unwrap_or_default(),
         license: entry.license.clone().unwrap_or_default(),
         origin: entry.source.clone(),
+        upstream: entry.upstream.as_ref().map(super::upstream::Upstream::line),
         categories: entry.categories.clone(),
         clash: false,
     }

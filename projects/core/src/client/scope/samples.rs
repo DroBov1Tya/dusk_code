@@ -454,6 +454,16 @@ fn rest() -> Vec<R> {
             name: word(),
             path: word(),
         }),
+        R::Store(St::Probe {
+            url: word(),
+            key: word(),
+        }),
+        R::Store(St::Sources),
+        R::Store(St::AddSource {
+            url: word(),
+            key: word(),
+        }),
+        R::Store(St::RemoveSource { name: word() }),
         R::InstallUpdate { tag: word() },
         R::Shutdown,
     ]

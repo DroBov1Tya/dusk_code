@@ -236,6 +236,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
         | SettingsPage::Updates
         | SettingsPage::Usage
         | SettingsPage::Secrets
+        | SettingsPage::Workshop
         | SettingsPage::Plugins => body,
     }
 }

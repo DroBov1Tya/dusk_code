@@ -39,7 +39,23 @@ pub struct Files {
 /// Unpacks the checked package of `entry` and writes its files. `owned` is the folder the
 /// store put this name in before, if it did; any other folder already there is the
 /// user's and refuses the install. Returns the folder it filled.
+#[cfg(test)]
 pub fn place(paths: &Paths, entry: &Entry, package: &[u8], owned: Option<&str>) -> Result<String> {
+    place_package(
+        paths,
+        entry,
+        &super::Package::Archive(package.to_vec()),
+        owned,
+    )
+}
+
+/// As `place`, for a package or for files fetched from upstream and checked.
+pub fn place_package(
+    paths: &Paths,
+    entry: &Entry,
+    package: &super::Package,
+    owned: Option<&str>,
+) -> Result<String> {
     ensure!(
         entry.consent().is_empty(),
         "a skill, pack or agent asks for no permissions; the list says it does"
@@ -52,7 +68,10 @@ pub fn place(paths: &Paths, entry: &Entry, package: &[u8], owned: Option<&str>) 
     crate::init::create_private_dir(&staging)?;
     let unpacked = staging.join(&entry.name);
     let result = (|| {
-        unpack::unpack(package, &unpacked)?;
+        match package {
+            super::Package::Archive(bytes) => unpack::unpack(bytes, &unpacked)?,
+            super::Package::Files(files) => write_files(entry, files, &unpacked)?,
+        }
         let files = read(entry, &unpacked)?;
         let target = paths.rules_root().join(&files.folder);
         if let Ok(metadata) = fs::symlink_metadata(&target) {
@@ -67,6 +86,44 @@ pub fn place(paths: &Paths, entry: &Entry, package: &[u8], owned: Option<&str>) 
     })();
     let _ = fs::remove_dir_all(&staging);
     result
+}
+
+/// Files fetched from upstream, laid out as a package would hold them; a pack gets the
+/// `pack.yml` its entry describes, since its author's repository has none.
+fn write_files(entry: &Entry, files: &BTreeMap<String, Vec<u8>>, folder: &Path) -> Result<()> {
+    crate::init::create_private_dir(folder)?;
+    let mut all = files.clone();
+    if entry.kind == Kind::Pack {
+        let text = |value: &str| serde_json::Value::from(value).to_string();
+        let items: Vec<serde_json::Value> = entry
+            .skills
+            .iter()
+            .map(|item| item.as_str().into())
+            .collect();
+        let yaml = format!(
+            "name: {}\ntitle: {}\ndescription: {}\nvendor: {}\nkind: skills\nitems: {}\nlicense: {}\n",
+            text(&entry.name),
+            text(&entry.name),
+            text(&entry.description),
+            text(entry.author.as_deref().unwrap_or("")),
+            serde_json::Value::from(items),
+            text(entry.license.as_deref().unwrap_or("")),
+        );
+        ensure!(
+            all.insert(pack::FILE.to_owned(), yaml.into_bytes())
+                .is_none(),
+            "an upstream pack names its own pack.yml"
+        );
+    }
+    for (to, bytes) in &all {
+        // `to` was checked to be plain and relative, so it stays under `folder`.
+        let path = folder.join(to);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, bytes).with_context(|| format!("cannot write {to}"))?;
+    }
+    Ok(())
 }
 
 /// Removes what the store wrote for `name`; files the user edited stay.

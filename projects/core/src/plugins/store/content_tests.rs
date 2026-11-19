@@ -213,6 +213,9 @@ fn a_single_skill_installs_beside_the_others_and_never_onto_a_pack() {
                 key: String::new(),
                 kind: dusk_protocol::plugin::Kind::Skill,
                 folder,
+                author: String::new(),
+                license: String::new(),
+                origin: String::new(),
             },
         );
         Ok(())

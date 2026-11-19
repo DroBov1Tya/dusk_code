@@ -361,8 +361,14 @@ shows the same. Nothing is sorted or picked by stars: a mirror writes its own co
 
 ### Mirrors
 
-A mirror is added in `config.yml`; its key is required and pinned, so a mirror signed
-by another key is refused, not asked about:
+A mirror is added in Settings, Workshop, or in `config.yml`; its key is required and
+pinned, so a mirror signed by another key is refused, not asked about. In Settings you
+type the list's https address, or a GitHub repository's (`https://github.com/owner/name`,
+read as `https://owner.github.io/name/index.json`), and its key; Check reads the list
+without saving it (`StoreRequest::Probe`), Add reads it again in the core and saves it
+under a name taken from the address (`AddSource`), and each row shows whether its list
+was read or why it was refused (`Sources`). A browser may list them but not probe, add
+or remove one. Everything a repository offers is Community, whatever its list says:
 
 ```yaml
 workshop:
@@ -372,7 +378,8 @@ workshop:
       key: BASE64-OF-ITS-ED25519-PUBLIC-KEY
 ```
 
-At most 16 mirrors. All sources are read at once; one that fails is reported beside the
+At most 16 mirrors and 2000 entries per list; a list or a picture that takes over 20 s
+is given up on (a package 120 s). All sources are read at once; one that fails is reported beside the
 others, which are listed all the same.
 
 The store fetches over https, and only from public addresses: a name that resolves to
@@ -514,6 +521,26 @@ skill_packs:
 skills:
   duskcode-engineering/spike: false
 ```
+
+### From upstream
+
+A format 3 entry of kind `skill` or `pack` may name, instead of `downloads`, the files
+of a commit of its author's GitHub repository:
+
+```json
+"upstream": {
+  "repo": "owner/name", "commit": "<40 hex>",
+  "files": [{"path": "skills/x/SKILL.md", "to": "x/SKILL.md", "sha256": "...", "size": 1234}]
+}
+```
+
+"Install from source" fetches each file from
+`https://raw.githubusercontent.com/<repo>/<commit>/<path>`, without redirects, and checks
+all of them before writing any: a file of another size or hash, a file not named, a
+missing one or one that is not UTF-8 text refuses the install. At most 200 files of 4 MiB
+each; `path` and `to` are plain relative paths. A pack's `pack.yml` is written by the core
+from the entry. The record keeps the item's author, license and the commit's address.
+Contents does not show such an item before it is installed (there is no package).
 
 ## Plugins in any language
 
