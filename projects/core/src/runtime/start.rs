@@ -191,6 +191,10 @@ impl Runtime {
             hooks,
             Arc::clone(&platforms),
         );
+        // The probe starts a program: asked here off the runtime's threads, so the scan
+        // below and later ones find it answered.
+        #[cfg(target_os = "linux")]
+        let _ = tokio::task::spawn_blocking(crate::platform::netns::available).await;
         plugins.scan();
         let plugins_check = tokio::spawn(Arc::clone(&plugins).watch(CONFIG_CHECK_PERIOD));
         let model_discovery = if !config.current().all_providers().is_empty() {

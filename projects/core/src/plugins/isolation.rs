@@ -10,6 +10,9 @@
 //!   project (read-only) with home and every other saved project hidden: see
 //!   [`Isolation::for_call`];
 //! - it reaches no network but its broker, and that only when it may connect anywhere;
+//!   on Linux only a program that serves a contract may, in a network namespace of its
+//!   own whose only socket is the broker's (Landlock cannot keep a program to one
+//!   address); where this Linux cannot make one, the plugin does not start;
 //! - it starts only the system's programs, its own and the ones it names; `xcrun` brings
 //!   the developer tools of Xcode it starts;
 //! - it connects to the Unix sockets only in the folders it names.
@@ -27,6 +30,8 @@ use dusk_protocol::plugin::{Permissions, ProjectAccess};
 use tokio::process::Command;
 
 use super::broker::Broker;
+#[cfg(target_os = "linux")]
+use super::broker::Gate;
 use crate::{
     init::paths::{Paths, expand_home},
     platform::{self, Confinement, Network},
@@ -48,6 +53,9 @@ pub struct Isolation {
     /// Its variables, its settings among them: never logged.
     env: Vec<(String, String)>,
     confinement: Confinement,
+    /// The broker as served in each program's own network namespace.
+    #[cfg(target_os = "linux")]
+    gate: Option<Gate>,
 }
 
 impl fmt::Debug for Isolation {
@@ -70,8 +78,34 @@ impl Isolation {
         folder: &Path,
         data: &Path,
         permissions: &Permissions,
+        env: Vec<(String, String)>,
+        broker: Option<&Broker>,
+    ) -> Result<Self> {
+        Self::build(paths, folder, data, permissions, env, broker, false)
+    }
+
+    /// The same for a plugin that serves a contract. On Linux its programs reach the
+    /// broker from a network namespace of their own; where this Linux cannot make one,
+    /// it fails, and the plugin does not start.
+    pub fn for_contract(
+        paths: &Paths,
+        folder: &Path,
+        data: &Path,
+        permissions: &Permissions,
+        env: Vec<(String, String)>,
+        broker: Option<&Broker>,
+    ) -> Result<Self> {
+        Self::build(paths, folder, data, permissions, env, broker, true)
+    }
+
+    fn build(
+        paths: &Paths,
+        folder: &Path,
+        data: &Path,
+        permissions: &Permissions,
         mut env: Vec<(String, String)>,
         broker: Option<&Broker>,
+        contract: bool,
     ) -> Result<Self> {
         ensure!(
             platform::sandbox_available(),
@@ -115,12 +149,28 @@ impl Isolation {
             (false, Some(broker)) => Network::Broker(broker.port()),
             (false, None) => anyhow::bail!("the plugin may connect, but has no broker"),
         };
+        // Landlock cannot keep a program to one address: only a namespace can, and only
+        // a contract's programs get one.
         #[cfg(target_os = "linux")]
-        ensure!(
-            network == Network::Closed,
-            "Linux cannot keep a program to the core's broker, so a plugin that connects \
-             does not start here"
-        );
+        let (network, gate) = match (network, broker) {
+            (Network::Closed, _) => (Network::Closed, None),
+            (_, Some(broker)) if contract => {
+                if let Some(missing) = platform::netns::missing() {
+                    anyhow::bail!(
+                        "this Linux does not let a program have a network of its own ({}), \
+                         so a plugin that serves a contract cannot start here",
+                        missing.reason()
+                    );
+                }
+                (Network::Namespace, Some(broker.gate()))
+            }
+            _ => anyhow::bail!(
+                "Linux cannot keep a program to the core's broker, so a plugin that connects \
+                 does not start here"
+            ),
+        };
+        #[cfg(not(target_os = "linux"))]
+        let _ = contract;
         let mut programs = vec![folder.clone()];
         for name in &permissions.exec {
             programs.extend(locate(name));
@@ -131,7 +181,11 @@ impl Isolation {
         let mut writable = vec![data.clone()];
         writable.extend(platform::temp_folders());
         if let Some(broker) = broker {
-            env.extend(broker.env());
+            match network {
+                #[cfg(target_os = "linux")]
+                Network::Namespace => env.extend(broker.env_at(platform::netns::PROXY_PORT)),
+                _ => env.extend(broker.env()),
+            }
         }
         Ok(Self {
             folder,
@@ -153,11 +207,19 @@ impl Isolation {
                 stat: Vec::new(),
                 listed: Vec::new(),
             },
+            #[cfg(target_os = "linux")]
+            gate,
         })
     }
 
     /// `line`, its program first, confined in the plugin's folder with a bare
     /// environment. Its own program may always start.
+    ///
+    /// On Linux a contract plugin's program gets its broker only if it is spawned
+    /// within five seconds: build the command once the call holds its slot, spawn it at
+    /// once and drop it, which closes the core's copy of the program's end of the pair,
+    /// so a program that dies before it hands its socket over is seen at once
+    /// (`contract::call` does so).
     pub fn command(&self, line: &[String]) -> Result<Command> {
         let (program, arguments) = line.split_first().context("no command")?;
         let found = locate(program);
@@ -166,6 +228,17 @@ impl Isolation {
             programs.extend(found.iter().cloned());
         }
         let program = found.first().cloned().unwrap_or_else(|| program.into());
+        #[cfg(target_os = "linux")]
+        let mut command = match &self.gate {
+            Some(gate) if confinement.network == Network::Namespace => {
+                let (command, receiver) =
+                    platform::namespaced_program(&program, arguments, &confinement)?;
+                serve_inside(gate.clone(), receiver)?;
+                command
+            }
+            _ => platform::confined_program(&program, arguments, &confinement)?,
+        };
+        #[cfg(not(target_os = "linux"))]
         let mut command = platform::confined_program(&program, arguments, &confinement)?;
         command.env_clear();
         for (key, value) in bare_env() {
@@ -194,7 +267,8 @@ impl Isolation {
     /// - the project is a sub-folder of a repository whose `.git` folder is a real
     ///   folder, whose top is not home nor holds home or the config folder, and holds
     ///   no other saved project or temporary chat (its objects show every file of the
-    ///   repository); the names in the top folder are listed too, as git needs them;
+    ///   repository); the names in the top folder are listed too, as git needs them
+    ///   (macOS), and with them the names of entries git does not track or ignores;
     /// - the project is a submodule whose git dir's `core.worktree` names it;
     /// - the project is a worktree whose link checks out both ways. Its repository's
     ///   common dir is then reopened even inside another saved project B. That shows
@@ -357,6 +431,41 @@ impl Isolation {
     pub fn fingerprint(&self) -> String {
         format!("{:?} {:?}", self.confinement, self.env)
     }
+}
+
+/// Serves the broker on the socket the program about to start makes in its namespace,
+/// until its process ends. A program never spawned leaves nothing behind: its socket
+/// pair closes with the command.
+#[cfg(target_os = "linux")]
+fn serve_inside(gate: Gate, receiver: platform::netns::Receiver) -> Result<()> {
+    let runtime = tokio::runtime::Handle::try_current()
+        .context("a program in a network of its own starts inside the runtime")?;
+    runtime.spawn(async move {
+        let inside = match tokio::task::spawn_blocking(move || receiver.listener()).await {
+            Ok(Ok(inside)) => inside,
+            Ok(Err(error)) => {
+                tracing::debug!("plugin program in a namespace: {error:#}");
+                return;
+            }
+            Err(_) => return,
+        };
+        let serving = match gate.serve(inside.listener) {
+            Ok(serving) => serving,
+            Err(error) => {
+                tracing::debug!("cannot serve a plugin program's broker: {error:#}");
+                return;
+            }
+        };
+        // A pidfd turns readable when its process has ended.
+        use tokio::io::{Interest, unix::AsyncFd};
+        // SAFETY: an OwnedFd keeps its one descriptor open until dropped.
+        match unsafe { AsyncFd::register_with_interest(inside.process, Interest::READABLE) } {
+            Ok(ended) => drop(ended.readable().await),
+            Err(error) => tracing::debug!("cannot watch a plugin program: {error}"),
+        }
+        serving.abort();
+    });
+    Ok(())
 }
 
 /// Where git keeps the repository a project is in, resolved.
@@ -653,7 +762,8 @@ mod tests {
             ..permissions
         };
         let isolation =
-            Isolation::new(&paths, &folder, &data, &permissions, Vec::new(), broker).unwrap();
+            Isolation::for_contract(&paths, &folder, &data, &permissions, Vec::new(), broker)
+                .unwrap();
         Some(Call {
             root,
             paths,
@@ -868,6 +978,142 @@ mod tests {
         assert!(reach("127.0.0.1", &broker.port().to_string()).await);
     }
 
+    /// Spec 8, test 3 on Linux: a call runs in a network of its own, where only its
+    /// broker answers; where this Linux cannot make one, the plugin does not start.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_linux_call_reaches_only_its_broker() {
+        use super::super::broker::{Origin, Policy, new_token};
+        // Listed, but on the machine's loopback: not the namespace's.
+        let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = server.local_addr().unwrap().port();
+        tokio::spawn(async move { while server.accept().await.is_ok() {} });
+        let origin = format!("https://127.0.0.1:{port}");
+        let mut policy = Policy::new(
+            new_token().unwrap(),
+            vec![Origin::parse(&origin).unwrap()],
+            Vec::new(),
+        );
+        policy.public_only = false;
+        let broker = Broker::start(policy).unwrap();
+        let permissions = Permissions {
+            network: vec![origin],
+            ..reads_project()
+        };
+        if !platform::netns::available() {
+            let paths = crate::testing::temp_paths("isolation-no-netns");
+            let folder = paths.rules_root().join("plugins/p");
+            let data = paths.config_root().join("plugin-data/p");
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::create_dir_all(&data).unwrap();
+            let refused = Isolation::for_contract(
+                &paths,
+                &folder,
+                &data,
+                &permissions,
+                Vec::new(),
+                Some(&broker),
+            )
+            .unwrap_err();
+            assert!(
+                format!("{refused:#}")
+                    .starts_with("this Linux does not let a program have a network of its own ("),
+                "{refused:#}"
+            );
+            eprintln!("no user namespaces here; refused: {refused:#}");
+            return;
+        }
+        let Some(setup) = call_setup("call-netns", permissions, Some(&broker)) else {
+            return;
+        };
+        let call = setup
+            .isolation
+            .for_call(&setup.home, &setup.a, &[])
+            .unwrap();
+        let bash = async |script: String| {
+            let output = run(&call, &["bash", "-c", &script]).await;
+            let printed = String::from_utf8_lossy(&output.stdout).into_owned();
+            (output.status.success(), printed)
+        };
+        assert!(!bash("exec 3<>/dev/tcp/1.1.1.1/443".into()).await.0);
+        assert!(!bash(format!("exec 3<>/dev/tcp/127.0.0.1/{port}")).await.0);
+        let connect = |target: &str| {
+            format!(
+                "case $HTTPS_PROXY in *@127.0.0.1:3128) ;; *) exit 9;; esac; \
+                 auth=$(printf 'dusk:%s' \"$DUSKCODE_PLUGIN_PROXY_TOKEN\" | base64 -w0) && \
+                 exec 3<>/dev/tcp/127.0.0.1/3128 && \
+                 printf 'CONNECT {target} HTTP/1.1\\r\\nProxy-Authorization: Basic %s\\r\\n\\r\\n' \
+                 \"$auth\" >&3 && read -r line <&3 && echo \"$line\""
+            )
+        };
+        let (ok, answer) = bash(connect(&format!("127.0.0.1:{port}"))).await;
+        assert!(ok && answer.starts_with("HTTP/1.1 200"), "{answer}");
+        let (_, answer) = bash(connect("other.example:443")).await;
+        assert!(answer.starts_with("HTTP/1.1 403"), "{answer}");
+        // No Unix socket on disk (the session bus, an agent), no pair, no vsock, though
+        // the core's own listener is reachable unconfined.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let socket = PathBuf::from(format!("/tmp/dusk-call-{}-{id}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&socket);
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let unix = "socket(my $s, AF_UNIX, SOCK_STREAM, 0) or exit 3; \
+                    connect($s, pack_sockaddr_un($ARGV[0])) or exit 4";
+        let perl = |script: &str| {
+            [
+                "perl",
+                "-MSocket",
+                "-e",
+                script,
+                socket.display().to_string().as_str(),
+            ]
+            .map(str::to_owned)
+            .to_vec()
+        };
+        let line = perl(unix);
+        let unconfined = std::process::Command::new(&line[0])
+            .args(&line[1..])
+            .status()
+            .unwrap();
+        assert!(unconfined.success(), "{unconfined}");
+        let confined = async |line: Vec<String>| {
+            let line: Vec<&str> = line.iter().map(String::as_str).collect();
+            run(&call, &line).await.status.code()
+        };
+        assert_eq!(confined(perl(unix)).await, Some(3));
+        let pair = "socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, 0) or exit 3";
+        assert_eq!(confined(perl(pair)).await, Some(3));
+        // vsock proves something only where the kernel has it.
+        let vsock = "socket(my $s, 40, SOCK_STREAM, 0) or exit 3";
+        let line = perl(vsock);
+        let unconfined = std::process::Command::new(&line[0])
+            .args(&line[1..])
+            .status()
+            .unwrap();
+        if unconfined.success() {
+            assert_eq!(confined(perl(vsock)).await, Some(3));
+        } else {
+            eprintln!("no vsock in this kernel; its refusal not checked");
+        }
+        drop(listener);
+        let _ = std::fs::remove_file(&socket);
+        // A socket the core holds without close-on-exec does not reach the program.
+        let (inherited, other) = std::os::unix::net::UnixStream::pair().unwrap();
+        let fd = std::os::fd::AsRawFd::as_raw_fd(&inherited);
+        // SAFETY: clears the flag of a descriptor this test owns.
+        unsafe { nix::libc::fcntl(fd, nix::libc::F_SETFD, 0) };
+        let write = format!("echo leaked >&{fd}");
+        let unconfined = std::process::Command::new("bash")
+            .args(["-c", &write])
+            .status()
+            .unwrap();
+        assert!(unconfined.success(), "{unconfined}");
+        assert!(!run(&call, &["bash", "-c", &write]).await.status.success());
+        let mut seen = [0u8; 16];
+        let read = std::io::Read::read(&mut &other, &mut seen).unwrap();
+        assert_eq!(&seen[..read], b"leaked\n");
+    }
+
     /// A temporary chat's folder sits in the temporary folders every plugin may use; a
     /// call still cannot read it. Linux grants the temporary folders whole, so only
     /// macOS can close it.
@@ -1079,6 +1325,7 @@ mod tests {
             .for_call(home, &a, std::slice::from_ref(&b))
             .unwrap();
         assert!(!format!("{call:?}").contains(&mono_git), "{call:?}");
+        assert!(call.confinement.listed.is_empty(), "{call:?}");
         assert!(!succeeds(&call, in_a(&["show", "HEAD:b/x"])).await);
         assert!(!succeeds(&call, in_a(&["rev-parse", "HEAD"])).await);
         assert!(!run(&call, &["/bin/cat", &mono_head]).await.status.success());
@@ -1088,6 +1335,13 @@ mod tests {
         assert!(succeeds(&call, in_a(&["show", "HEAD:a/x"])).await);
         let b_file = b.join("x").display().to_string();
         assert!(!run(&call, &["/bin/cat", &b_file]).await.status.success());
+        // The top's names are listed, not the folders under it (Landlock lists none).
+        let (mono_list, b_list) = (mono.display().to_string(), b.display().to_string());
+        #[cfg(target_os = "macos")]
+        assert!(run(&call, &["/bin/ls", &mono_list]).await.status.success());
+        #[cfg(not(target_os = "macos"))]
+        let _ = mono_list;
+        assert!(!run(&call, &["/bin/ls", &b_list]).await.status.success());
         // A planted `.git` file naming that repository is no link: closed.
         let planted = home.join("planted");
         std::fs::create_dir_all(&planted).unwrap();
@@ -1095,6 +1349,7 @@ mod tests {
         std::fs::write(planted.join(".git"), named).unwrap();
         let call = setup.isolation.for_call(home, &planted, &[]).unwrap();
         assert!(!format!("{call:?}").contains(&mono_git), "{call:?}");
+        assert!(call.confinement.listed.is_empty(), "{call:?}");
         assert!(!run(&call, &["/bin/cat", &mono_head]).await.status.success());
         // A submodule whose git dir names it as its work tree gets that git dir only.
         let library = setup.root.join("library");
@@ -1123,6 +1378,7 @@ mod tests {
         let call = setup.isolation.for_call(home, &lone, &[]).unwrap();
         let home_git = format!("{:?}", home.join(".git"));
         assert!(!format!("{call:?}").contains(&home_git), "{call:?}");
+        assert!(call.confinement.listed.is_empty(), "{call:?}");
         let home_head = home.join(".git/HEAD").display().to_string();
         assert!(!run(&call, &["/bin/cat", &home_head]).await.status.success());
     }

@@ -221,6 +221,16 @@ single port: a plugin that asks for network does not start there, and the keycha
 network at all; on an older kernel plugin programs do not start. Where a rule cannot be
 enforced the program does not start.
 
+A plugin that serves a contract (`provides:`) and asks for network is the exception on
+Linux: each call runs in a user and network namespace of its own, whose only interface
+is its own loopback, where the core's broker listens on port 3128. A seccomp filter lets
+it open only IPv4, IPv6 and netlink sockets, so no Unix socket (the D-Bus session bus,
+the Secret Service, docker, ssh or gpg agents, X11) and no vsock is reachable. So `gh`
+must keep its token in `~/.config/gh/hosts.yml` (`gh auth login --insecure-storage`),
+as the plugin's sign-in hint says. Where unprivileged user namespaces are off, or
+restricted as Ubuntu's AppArmor does, such a plugin does not start and Settings, Plugins
+says why on its row; there is no weaker fallback.
+
 You see the permissions as plain lines before you switch the plugin on, and a plugin
 update that asks for more stays off until you switch it on again.
 
