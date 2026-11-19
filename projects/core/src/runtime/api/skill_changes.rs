@@ -38,7 +38,8 @@ impl Runtime {
             change.undone_at_ms.is_none(),
             "the change was undone already"
         );
-        // Agents never edit built-in skills, so none is recorded; refuse one all the same.
+        // Agents are not meant to edit built-in skills; a change recorded anyway is shown
+        // but cannot be undone.
         ensure!(
             pack_of(&change.skill).as_deref() != Some(BUILTIN_PACK),
             "built-in skills are not changed by agents"

@@ -8,7 +8,7 @@ use crate::runtime::agent::{Inbox, Stop, generation, repeats};
 use crate::runtime::{ThreadEvent, model_choice::Choice};
 use crate::{
     catalog::{
-        history::{MAX_REASON_CHARS, counts, plain_line},
+        history::{Baseline, MAX_REASON_CHARS, counts, plain_line},
         skills::{BUILTIN_PACK, SkillSave, SkillSaveAction, pack_of},
     },
     config::{Config, Effort, Limits},
@@ -19,8 +19,9 @@ use crate::{
     tools::{Progress, ToolKind, ToolResult},
 };
 use anyhow::{Context, Result, anyhow};
-use dusk_protocol::catalog::SkillChange;
+use dusk_protocol::catalog::{SAVE_MARKER, SkillChange};
 use futures::{FutureExt, StreamExt, future::BoxFuture, stream};
+use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{sync::Arc, time::Instant};
@@ -85,7 +86,7 @@ enum Slot {
     #[default]
     Idle,
     /// Cut off by a stop while it ran.
-    Started,
+    Started(Vec<SkillChange>),
     Done(ToolResult, Vec<SkillChange>),
 }
 
@@ -298,7 +299,10 @@ impl Agent {
                             Ran::of(result, skills)
                         }
                         Slot::Done(..) => Ran::cancelled(LADDER_STOPPED),
-                        Slot::Started => Ran::cancelled("stopped: the user interrupted the turn"),
+                        Slot::Started(skills) => Ran {
+                            skills,
+                            ..Ran::cancelled("stopped: the user interrupted the turn")
+                        },
                         Slot::Idle => Ran::cancelled(USER_STOPPED),
                     },
                 };
@@ -369,9 +373,12 @@ impl Agent {
     ) -> (Vec<Slot>, Option<Stop>) {
         let mut slots: Vec<Slot> = group.iter().map(|_| Slot::Idle).collect();
         let started: Vec<AtomicBool> = group.iter().map(|_| AtomicBool::new(false)).collect();
+        let baselines: Vec<Mutex<Option<Baseline>>> =
+            group.iter().map(|_| Mutex::new(None)).collect();
         let stopped = {
             let slots = &mut slots;
             let started = &started;
+            let baselines = &baselines;
             let work = async move {
                 // Boxed, or the compiler cannot show the spawned turn is `Send`.
                 let calls: Vec<BoxFuture<'_, (usize, Watched)>> = running
@@ -379,7 +386,11 @@ impl Agent {
                     .map(|&index| {
                         async move {
                             started[index].store(true, Ordering::Relaxed);
-                            (index, self.run_call(&group[index], config).await)
+                            (
+                                index,
+                                self.run_call(&group[index], config, &baselines[index])
+                                    .await,
+                            )
                         }
                         .boxed()
                     })
@@ -391,42 +402,74 @@ impl Agent {
             };
             inbox.race(work).await.err()
         };
-        for (slot, started) in slots.iter_mut().zip(&started) {
-            if matches!(slot, Slot::Idle) && started.load(Ordering::Relaxed) {
-                *slot = Slot::Started;
+        for (index, slot) in slots.iter_mut().enumerate() {
+            if matches!(slot, Slot::Idle) && started[index].load(Ordering::Relaxed) {
+                // A call cut off may have changed a skill before it was dropped.
+                let before = baselines[index].lock().take();
+                let mut told = Vec::new();
+                if let Some(before) = before {
+                    for (info, _) in self.record_skills(&group[index], before).await {
+                        told.push(info);
+                    }
+                }
+                *slot = Slot::Started(told);
             }
         }
         (slots, stopped)
     }
 
     /// Runs one call. A call that may write is watched for skill changes, which are
-    /// recorded and named in its result.
-    async fn run_call(&self, call: &ToolCall, config: &Arc<Config>) -> Watched {
+    /// recorded and named in its result. Its baseline waits in `baseline`, outside this
+    /// future, so a stop that drops the call still finds it.
+    async fn run_call(
+        &self,
+        call: &ToolCall,
+        config: &Arc<Config>,
+        baseline: &Mutex<Option<Baseline>>,
+    ) -> Watched {
         self.emit(ThreadEvent::ToolStarted(call.clone()));
         let progress = Progress {
             call_id: call.id.clone(),
             events: self.events.clone(),
         };
         let watched = !self.tools.read_only(&call.name, &call.arguments);
-        let before = if watched {
-            self.skill_watch.before().await
-        } else {
-            None
-        };
+        if watched {
+            let start = self.skill_watch.before().await;
+            *baseline.lock() = start;
+        }
         let mut result = self.tools.call(call, &self.scope, config, progress).await;
-        let Some(before) = before else {
+        let Some(before) = baseline.lock().take() else {
             return (result, Vec::new());
         };
         // The notice is the core's alone: a marker the tool printed is not believed.
-        if SkillSave::from_result(&result.content).is_some() {
-            result.content = match result.content.rsplit_once('\n') {
-                Some((rest, _)) => rest.to_owned(),
-                None => String::new(),
-            };
+        if result
+            .content
+            .lines()
+            .any(|line| line.starts_with(SAVE_MARKER))
+        {
+            let kept: Vec<_> = result
+                .content
+                .lines()
+                .filter(|line| !line.starts_with(SAVE_MARKER))
+                .collect();
+            result.content = kept.join("\n");
         }
-        let changes = self.skill_watch.changed(before).await;
         let mut told = Vec::new();
-        for change in changes {
+        for (info, notice) in self.record_skills(call, before).await {
+            // The last line, where clients look for it.
+            if told.is_empty() {
+                result.content.push_str(&format!("\n{notice}"));
+            }
+            told.push(info);
+        }
+        (result, told)
+    }
+
+    /// Records what the call changed in skills, in the main state, and gives each row as
+    /// clients see it with the notice line for the result.
+    async fn record_skills(&self, call: &ToolCall, before: Baseline) -> Vec<(SkillChange, String)> {
+        let mut told = Vec::new();
+        for change in self.skill_watch.changed(before).await {
             let (added, removed) = counts(change.before.as_deref().unwrap_or(""), &change.after);
             let line = format!("+{added} -{removed} lines");
             let mut reason = match (call.name.as_str(), call.arguments["description"].as_str()) {
@@ -463,18 +506,12 @@ impl Agent {
                 Err(error) => Err(error),
             };
             match stored {
-                Ok(Some(row)) => {
-                    // The last line, where clients look for it.
-                    if told.is_empty() {
-                        result.content.push_str(&format!("\n{}", notice.stored()));
-                    }
-                    told.push(row.info());
-                }
+                Ok(Some(row)) => told.push((row.info(), notice.stored())),
                 Ok(None) => {}
                 Err(error) => warn!("cannot record the skill change: {error:#}"),
             }
         }
-        (result, told)
+        told
     }
 
     /// Everything after a call is known: hooks, counts, the note on a repeat, the stored
@@ -579,9 +616,9 @@ impl Agent {
                 call_id: call.id.clone(),
                 result,
             });
-            for change in skills {
-                self.emit(ThreadEvent::SkillChanged(change));
-            }
+        }
+        for change in skills {
+            self.emit(ThreadEvent::SkillChanged(change));
         }
         // A re-plan needs no pace of its own: its call failed, so the next step
         // already runs at the effort set (`Pace::Rethink`).

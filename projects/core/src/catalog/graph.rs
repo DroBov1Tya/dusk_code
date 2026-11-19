@@ -221,7 +221,7 @@ fn subfolders(folder: &Path) -> impl Iterator<Item = String> {
     names.into_iter()
 }
 
-fn is_node_folder_name(name: &str) -> bool {
+pub(crate) fn is_node_folder_name(name: &str) -> bool {
     is_plain_folder_name(name) && !SKIPPED.contains(&name)
 }
 
