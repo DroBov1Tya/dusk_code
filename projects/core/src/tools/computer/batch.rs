@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use super::{Click, PressKeys, Screenshot, Scroll, TypeText, screen::Screen, step::Step};
+use super::{Click, PressKeys, Screenshot, TypeText, screen::Screen, step::Step};
 use crate::{
     BoxFuture,
     platform::Needs,
@@ -49,7 +49,6 @@ enum StepTool {
     Click,
     TypeText,
     PressKeys,
-    Scroll,
     Screenshot,
 }
 
@@ -59,7 +58,6 @@ impl StepTool {
             Self::Click => "click",
             Self::TypeText => "type_text",
             Self::PressKeys => "press_keys",
-            Self::Scroll => "scroll",
             Self::Screenshot => "screenshot",
         }
     }
@@ -99,7 +97,6 @@ impl ComputerActions {
                     StepTool::Click => Click::step(screen, arguments),
                     StepTool::TypeText => TypeText::step(screen, arguments),
                     StepTool::PressKeys => PressKeys::step(screen, arguments),
-                    StepTool::Scroll => Scroll::step(screen, arguments),
                     StepTool::Screenshot => Screenshot::step(screen, arguments),
                 };
                 let checked = checked.with_context(|| {
@@ -155,7 +152,7 @@ impl Tool for ComputerActions {
 
     fn description(&self, _: &ToolContext) -> String {
         format!(
-            "Run up to {MAX_STEPS} of click, type_text, press_keys, scroll and screenshot in \
+            "Run up to {MAX_STEPS} of click, type_text, press_keys and screenshot in \
              order in one call, each with the arguments it takes alone. Use it when you know \
              the coordinates and need not look between the actions, such as click a field, \
              type, press enter, then a screenshot to check. Every x, y is in the screenshot \

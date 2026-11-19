@@ -254,9 +254,13 @@ pub fn check(code: i32, action: bool) -> Result<()> {
             "the application did not complete the accessibility request; it may be busy or unavailable"
         ),
         -25206 | -25208 => bail!(
-            "this element does not support independent activation (AXPress); no mouse event was sent"
+            "this element cannot be pressed through Accessibility (no AXPress); nothing was \
+             sent. Try a keyboard shortcut, or physical_input if it is offered"
         ),
-        -25211 => bail!("Accessibility permission is unavailable; no mouse event was sent"),
+        -25211 => bail!(
+            "duskcode needs Accessibility permission: System Settings > Privacy & Security > \
+             Accessibility, switch on the app duskcode runs in; nothing was pressed"
+        ),
         -25212 => bail!("there is no accessible control at this point"),
         _ => bail!("macOS Accessibility failed with error {code}; no mouse event was sent"),
     }
@@ -307,7 +311,7 @@ mod tests {
             check(-25206, true)
                 .unwrap_err()
                 .to_string()
-                .contains("does not support")
+                .contains("cannot be pressed")
         );
         assert!(
             check(-25211, false)

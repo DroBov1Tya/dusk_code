@@ -25,7 +25,9 @@ pub use computer::WindowSession;
 #[cfg(target_os = "macos")]
 pub use computer::run_overlay_if_asked;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-pub use computer::{Click, ComputerActions, PressKeys, Screen, Screenshot, Scroll, TypeText};
+pub use computer::{
+    Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
+};
 pub use console::{Jobs, RunCommand, Shaped};
 pub use harness::{
     AskUser, DisplayAudio, DisplayImage, GatesYes, GoalTool, PlanEdit, Question, ReadHistory,

@@ -9,10 +9,9 @@ use crate::{
     tools::ToolKind,
 };
 
-/// Tools that landed before the clients draw what they make, or before the evals show
-/// they help. Each is off in every mode until `tools:` in the config switches it on by
-/// name; take a name out when it is ready.
-const OFF_UNTIL_SWITCHED_ON: [&str; 0] = [];
+/// Tools off in every mode until `tools:` in the config switches them on by name:
+/// `physical_input` moves the user's real mouse, which only they may allow.
+const OFF_UNTIL_SWITCHED_ON: [&str; 1] = ["physical_input"];
 
 impl Config {
     /// Whether the file switches the tool on, whatever the mode; the tests read it back.
@@ -56,7 +55,8 @@ impl Config {
     }
 
     pub fn set_mode_tool_enabled(&mut self, mode: &str, name: &str, enabled: bool) {
-        if mode == modes::MAIN {
+        // One switch for every mode: the user allows it, not a mode.
+        if mode == modes::MAIN || OFF_UNTIL_SWITCHED_ON.contains(&name) {
             return self.set_tool_enabled(name, enabled);
         }
         let tools = self.modes.entry(mode.to_owned()).or_default();

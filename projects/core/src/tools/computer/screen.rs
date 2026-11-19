@@ -318,7 +318,7 @@ impl Screen {
         let tools = if expected_scope.is_some() {
             "click and screenshot regions"
         } else {
-            "click, scroll and screenshot regions"
+            "click, physical_input and screenshot regions"
         };
         let text = format!(
             "Screenshot {} of {what}, {width}x{height}. {tools} take x and y in this picture, \
