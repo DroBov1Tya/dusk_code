@@ -41,7 +41,10 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                         )
                         .children(
                             matches!(ws.picker, Some(crate::workspace::Picker::Mode)).then(|| {
-                                widgets::on_top(crate::pages::chat::mode_menu::render(ws, true, cx))
+                                widgets::on_top(widgets::appear(
+                                    "settings-mode-open",
+                                    crate::pages::chat::mode_menu::render(ws, true, cx),
+                                ))
                             }),
                         ),
                 ),

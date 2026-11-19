@@ -243,5 +243,5 @@ fn menu(
                 })),
         );
     }
-    widgets::on_top(menu)
+    widgets::on_top(widgets::appear("plugin-list-open", menu))
 }

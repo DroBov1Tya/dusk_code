@@ -140,7 +140,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             ));
         }
         let section = section.children(order::indicator(ws, module, cx));
-        column = column.child(order::target(section, module, cx));
+        let section = order::target(section, module, cx);
+        column = column.child(order::settle(ws, module, section, window, cx));
     }
     div()
         .w(px(WIDTH))

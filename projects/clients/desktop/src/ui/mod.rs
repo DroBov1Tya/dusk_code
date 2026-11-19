@@ -8,7 +8,8 @@
 //! - Surfaces step up in lightness: panel, page, surface, raised. Structure is told by
 //!   those steps and by space; a hairline appears only where two areas of one surface meet.
 //! - One accent (selection, focus, the primary action) and one signal (work going on).
-//! - Motion answers a person's action: a menu opens in 140 ms, a row leaves in 220 ms.
+//! - Motion answers a person's action or what arrived, eased out in 120-250 ms and played
+//!   once (see `motion`): a menu opens in 160 ms, a page fades in over 150 ms.
 
 pub mod avatar;
 pub mod clipboard;
@@ -16,6 +17,7 @@ pub mod controls;
 pub mod elevation;
 pub mod icons;
 pub mod layout;
+pub mod motion;
 pub mod phone;
 pub mod press;
 pub mod theme;

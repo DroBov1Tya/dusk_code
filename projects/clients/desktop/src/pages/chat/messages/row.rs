@@ -23,7 +23,7 @@ use super::{
 
 use crate::{
     pages::chat::transcript::Item,
-    ui::{Type, clipboard},
+    ui::{Type, clipboard, motion},
     workspace::Workspace,
 };
 
@@ -38,6 +38,7 @@ impl Workspace {
             let text = text.clone();
             self.load_sent_pictures(&shown, &text, cx);
         }
+        let arriving = self.arriving(&shown, ix);
         let (Some(row), Some(chat)) = (self.rows.get(ix).copied(), self.chats.get(&shown)) else {
             return div().into_any_element();
         };
@@ -274,12 +275,35 @@ impl Workspace {
         };
         // A message gone to from the pinned bar is tinted for a moment, then plain.
         let flashed = matches!(row, Row::Item(at) if self.flashed(&shown, at));
-        div()
+        let row = div()
             .pt(px(top))
             .pb(px(bottom))
             .when(flashed, |row| row.bg(accent.opacity(0.12)))
-            .child(lane(content))
-            .into_any_element()
+            .child(lane(content));
+        match arriving {
+            Some((at, since)) => {
+                let id = SharedString::from(format!("arrive-{shown}-{at}"));
+                motion::arrive(id, row, since).into_any_element()
+            }
+            None => row.into_any_element(),
+        }
+    }
+
+    /// The item of row `ix` and when it was first drawn, when it came after the chat was
+    /// opened; the ones stored before stand still.
+    fn arriving(&mut self, shown: &str, ix: usize) -> Option<(usize, std::time::Instant)> {
+        let Some(Row::Item(at)) = self.rows.get(ix).copied() else {
+            return None;
+        };
+        let chat = self.chats.get_mut(shown)?;
+        if at < chat.loaded {
+            return None;
+        }
+        let since = *chat
+            .arrived
+            .entry(at)
+            .or_insert_with(std::time::Instant::now);
+        Some((at, since))
     }
 }
 
