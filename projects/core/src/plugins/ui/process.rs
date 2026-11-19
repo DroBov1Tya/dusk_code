@@ -16,7 +16,7 @@ use dusk_protocol::{
 };
 use parking_lot::Mutex;
 use tokio::{
-    io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufRead, AsyncWriteExt, BufReader},
     sync::mpsc,
     task::JoinHandle,
 };
@@ -220,40 +220,6 @@ fn decode_frame(base64: &str) -> Result<Vec<u8>, String> {
         return Err("it is not a JPEG".into());
     }
     Ok(jpeg)
-}
-
-/// Reads up to the end of a line into `line`, which keeps what came across a cancel.
-/// False at the end of the stream; the reason when a line grows past `MAX_LINE`, to
-/// follow "its interface" or the like.
-pub(in crate::plugins) async fn read_line(
-    reader: &mut (impl AsyncBufRead + Unpin),
-    line: &mut Vec<u8>,
-) -> Result<bool, String> {
-    loop {
-        let buffer = reader
-            .fill_buf()
-            .await
-            .map_err(|error| format!("could not be read: {error}"))?;
-        if buffer.is_empty() {
-            return Ok(false);
-        }
-        let (used, done) = match buffer.iter().position(|byte| *byte == b'\n') {
-            Some(end) => (end + 1, true),
-            None => (buffer.len(), false),
-        };
-        let content = if done { used - 1 } else { used };
-        if line.len() + content > MAX_LINE {
-            return Err(format!(
-                "sent a line over {} MiB and was stopped",
-                MAX_LINE / (1024 * 1024)
-            ));
-        }
-        line.extend_from_slice(&buffer[..content]);
-        reader.consume(used);
-        if done {
-            return Ok(true);
-        }
-    }
 }
 
 /// Sends what `event` makes of the part's name to each client that opened it.

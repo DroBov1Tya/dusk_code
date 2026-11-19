@@ -16,7 +16,10 @@ use tokio::{
 use tracing::debug;
 
 use super::{Served, failed, untrusted};
-use crate::{plugins::ui::process::read_line, tools::console::process::ProcessGroup};
+use crate::{
+    plugins::lines::{Line, Lines},
+    tools::console::process::ProcessGroup,
+};
 
 /// From the start of the program to its result; then it is killed.
 pub(super) const LIMIT: Duration = Duration::from_secs(45);
@@ -179,17 +182,15 @@ pub(super) async fn read_answer(
     plugin: &str,
     logs: &mut Vec<String>,
 ) -> Result<Answer, ContractError> {
-    let mut line = Vec::new();
+    // Cancel-safe: `talk` races this read against the program's exit.
+    let mut lines = Lines::new(MAX_RESULT);
     loop {
-        match read_line(reader, &mut line).await {
-            Ok(true) => {}
-            Ok(false) => return Err(failed("it ended without a result".into())),
-            Err(why) => return Err(failed(format!("its output {why}"))),
-        }
-        let taken = std::mem::take(&mut line);
-        if taken.len() > MAX_RESULT {
-            return Err(failed("its line is too large".into()));
-        }
+        let taken = match lines.next(reader).await {
+            Ok(Line::Full(line)) => line,
+            Ok(Line::End) => return Err(failed("it ended without a result".into())),
+            Ok(Line::TooLong) => return Err(failed("its line is too large".into())),
+            Err(error) => return Err(failed(format!("its output could not be read: {error}"))),
+        };
         match serde_json::from_slice::<FromProgram>(&taken) {
             Ok(FromProgram::Result(answer)) => return Ok(answer),
             Ok(FromProgram::Log { text }) => {
