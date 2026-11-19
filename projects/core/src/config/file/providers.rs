@@ -66,11 +66,16 @@ impl Config {
     pub fn set_plugin_enabled(
         &mut self,
         name: &str,
-        allowed: Option<dusk_protocol::plugin::Permissions>,
+        allowed: Option<(
+            dusk_protocol::plugin::Permissions,
+            Option<dusk_protocol::plugin::Provides>,
+        )>,
     ) {
         let plugin = self.plugins.entry(name.to_owned()).or_default();
         plugin.enabled = allowed.is_some();
-        plugin.allowed = allowed;
+        let (permissions, provides) = allowed.unzip();
+        plugin.allowed = permissions;
+        plugin.allowed_provides = provides.flatten();
     }
 
     pub fn set_plugged(&mut self, plugged: Plugged) {

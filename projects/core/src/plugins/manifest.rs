@@ -7,7 +7,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use dusk_protocol::plugin::{Client, Opens, Os, Permissions, Place, allows, runs_here};
+use dusk_protocol::plugin::{
+    Client, Opens, Os, Permissions, Place, ProjectAccess, Provides, allows, runs_here,
+};
 use serde::Deserialize;
 
 use super::{broker::Origin, ui::icon};
@@ -54,6 +56,8 @@ pub struct Manifest {
     pub platform: Option<Command>,
     /// A program that draws parts of the window with the host's widgets.
     pub ui: Option<Ui>,
+    /// The contracts its program serves, such as pull requests and CI for some hosts.
+    pub provides: Option<Provides>,
 }
 
 /// The interface process and the parts it draws.
@@ -143,6 +147,7 @@ impl Manifest {
             "invalid plugin name {}",
             manifest.name
         );
+        check_provides(&manifest)?;
         check_permissions(&manifest.permissions, &manifest.settings)?;
         for hook in &manifest.hooks {
             ensure!(!hook.command.is_empty(), "a hook has no command");
@@ -178,6 +183,7 @@ impl Manifest {
             .iter()
             .map(|platform| &platform.command)
             .chain(self.ui.iter().map(|ui| &ui.command))
+            .chain(self.provides.iter().map(|provides| &provides.command))
             .chain(self.hooks.iter().map(|hook| &hook.command))
             .map(|command| command.join(" "));
         lines.collect::<BTreeSet<_>>().into_iter().collect()
@@ -189,7 +195,68 @@ impl Manifest {
             || !self.hooks.is_empty()
             || self.platform.is_some()
             || self.ui.is_some()
+            || self.provides.is_some()
     }
+}
+
+const MAX_HOSTS: usize = 16;
+const MAX_VERSIONS: usize = 4;
+
+fn check_provides(manifest: &Manifest) -> Result<()> {
+    let Some(provides) = &manifest.provides else {
+        ensure!(
+            manifest.permissions.project == ProjectAccess::None && !manifest.permissions.keychain,
+            "permissions project and keychain are only for a plugin that provides a contract"
+        );
+        return Ok(());
+    };
+    ensure!(
+        manifest.mcp.is_empty()
+            && manifest.hooks.is_empty()
+            && manifest.platform.is_none()
+            && manifest.ui.is_none(),
+        "a plugin that provides a contract cannot also have mcp, hooks, a platform or ui (yet)"
+    );
+    if let Some(name) = provides.unknown.keys().next() {
+        anyhow::bail!("this duskcode does not know the contract `{name}`; update duskcode");
+    }
+    ensure!(
+        !provides.command.is_empty() && provides.command.iter().all(|part| !part.is_empty()),
+        "provides needs a command"
+    );
+    if let Some(forge) = &provides.forge {
+        ensure!(
+            (1..=MAX_VERSIONS).contains(&forge.versions.len()) && !forge.versions.contains(&0),
+            "forge versions are 1 to {MAX_VERSIONS} positive numbers"
+        );
+        ensure!(
+            (1..=MAX_HOSTS).contains(&forge.hosts.len()),
+            "forge hosts are 1 to {MAX_HOSTS} names"
+        );
+        let mut seen = BTreeSet::new();
+        for host in &forge.hosts {
+            ensure!(
+                is_forge_host(host),
+                "not a host name for forge hosts: {host}"
+            );
+            ensure!(seen.insert(host), "the forge host {host} is named twice");
+        }
+    }
+    Ok(())
+}
+
+/// A lowercase DNS name with a dot: no wildcard, IP literal, port or `localhost`.
+fn is_forge_host(host: &str) -> bool {
+    host.len() <= 253
+        && host.contains('.')
+        && host != "localhost"
+        && !host.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-')
+        && host
+            .split('.')
+            .all(|label| !label.is_empty() && !label.starts_with('-') && !label.ends_with('-'))
 }
 
 fn check_permissions(permissions: &Permissions, settings: &[String]) -> Result<()> {
@@ -343,6 +410,70 @@ mod tests {
         ] {
             let files = [("icon.svg", ICON), ("bad.svg", "<svg><script/></svg>")];
             assert!(load(&yaml, &files).is_err(), "{why}");
+        }
+    }
+
+    #[test]
+    fn a_plugin_that_provides_cannot_widen() {
+        // `load` already writes `name: p`.
+        let base = "version: 1.0.0\ndescription: d\n";
+        let forge =
+            "provides:\n  command: [./bin/p]\n  forge: {versions: [1], hosts: [github.com]}\n";
+        assert!(
+            load(&format!("{base}{forge}"), &[])
+                .unwrap()
+                .programs()
+                .contains(&"./bin/p".to_owned())
+        );
+        for (extra, error) in [
+            ("mcp:\n  x: {command: ./x}\n", "cannot also have mcp"),
+            (
+                "hooks:\n  - {event: turn_end, command: [./h]}\n",
+                "cannot also have mcp",
+            ),
+            ("platform: {command: [./b]}\n", "cannot also have mcp"),
+            (
+                "ui:\n  command: [./u]\n  parts: []\n",
+                "cannot also have mcp",
+            ),
+        ] {
+            let e = load(&format!("{base}{forge}{extra}"), &[])
+                .err()
+                .expect("refused");
+            assert!(format!("{e:#}").contains(error), "{e:#}");
+        }
+        for (yaml, error) in [
+            ("permissions: {project: read}\n", "provides"),
+            ("permissions: {keychain: true}\n", "provides"),
+            (
+                "provides:\n  command: [./p]\n  speech: {}\n",
+                "does not know the contract `speech`; update duskcode",
+            ),
+            (
+                "provides:\n  forge: {versions: [1], hosts: [github.com]}\n",
+                "command",
+            ),
+            (
+                "provides:\n  command: [./p]\n  forge: {versions: [], hosts: [github.com]}\n",
+                "versions",
+            ),
+        ] {
+            let e = load(&format!("{base}{yaml}"), &[]).err().expect("refused");
+            assert!(format!("{e:#}").contains(error), "{yaml}: {e:#}");
+        }
+        for host in [
+            "*.github.com",
+            "GitHub.com",
+            "localhost",
+            "10.0.0.1",
+            "github.com:443",
+            "github",
+            "[::1]",
+        ] {
+            let yaml = format!(
+                "{base}provides:\n  command: [./p]\n  forge: {{versions: [1], hosts: ['{host}']}}\n"
+            );
+            assert!(load(&yaml, &[]).is_err(), "{host}");
         }
     }
 
