@@ -157,7 +157,11 @@ the keychain are out of their reach, and a plugin gets nothing it does not ask f
   keychain.
 - **Network.** A program cannot connect anywhere itself. Its requests go through the
   core, at `DUSKCODE_PLUGIN_PROXY` (also set as `HTTPS_PROXY`), which lets them out only
-  to the origins the manifest lists, and never to private or local addresses.
+  to the origins the manifest lists, and never to private or local addresses. The list
+  limits where a program connects, not what it sends there: anything it can read (its
+  own folder, a project it is asked about, a token file its tool keeps) it can send to
+  those origins, under any account it can use there. Switching a plugin on is trusting
+  it with what it reads.
 - **Keys.** A plugin that needs a key for its own service names it and where it may go.
   The core keeps the key and puts it into requests to those origins only: the plugin
   writes `{{key:token}}` in a URL or a header and never sees the value. A key that must
@@ -180,15 +184,14 @@ permissions:
       handed: false                      # true: the plugin reads the key itself
   project: read                      # only with provides: the folder of the project a
                                      # call is about, for that call (none | read)
-  keychain: true                     # only with provides, macOS: the login keychain
 ```
 
-Two permissions exist only for a plugin that provides a contract (see Contracts):
-`project: read` lets its program read the one project folder a call is about, while it
-answers, and never another project's; `keychain: true` opens the login keychain services
-for that program on macOS, for an item the user's own tool keeps there. You see them as
-"read the folder of the project it is asked about, while it answers" and "read items of
-your login keychain that macOS lets it read (gh keeps its token there)".
+`project: read` exists only for a plugin that provides a contract (see Contracts): it
+lets its program read the one project folder a call is about, while it answers, and
+never another project's. You see it as "read the folder of the project it is asked
+about, while it answers". A plugin that may connect and read is also shown "send what it
+reads to those addresses, under any account it can use there". No plugin reads the
+keychain: a manifest that asks for `keychain` is refused.
 
 A picture an MCP tool returns (PNG or JPEG) reaches the model as an image, checked like
 any other: at most 4 per result and 4 megapixels each. Each tool call carries the chat's
@@ -331,9 +334,8 @@ its own widgets. This section is the normative text for a program in any languag
 ```yaml
 permissions:
   exec: [gh, git]
-  read: [~/.config/gh]
-  network: [https://api.github.com, https://github.com]
-  keychain: true                 # macOS: read items of the login keychain macOS lets it read
+  read: [~/.config/gh]           # gh's own sign-in, token included
+  network: [https://api.github.com]
   project: read                  # the folder of the project a call is about, for that call
 provides:
   command: [./bin/github]        # the contract program; ./ is the plugin's folder
@@ -351,8 +353,8 @@ Checked when the plugin loads; an error shows in `/plugins`:
 - `versions` is a non-empty list of positive integers, at most 4.
 - Forge `hosts`: 1 to 16 lowercase DNS names, each with a dot, at most 253 bytes, no
   wildcard, no IP literal, no port, not `localhost`, no duplicates.
-- `permissions.project` (`none` or `read`) and `permissions.keychain` (`true` or
-  `false`) are refused in a plugin without `provides:`.
+- `permissions.project` (`none` or `read`) is refused in a plugin without `provides:`.
+  `permissions.keychain` is refused in every plugin.
 - A plugin with `provides:` may not also have `mcp`, `hooks`, `platform` or `ui`: "a
   plugin that provides a contract cannot also have mcp, hooks, a platform or ui (yet)".
 - Before you switch the plugin on, `provides` is shown as a line: "serves pull requests
@@ -419,6 +421,14 @@ Error kinds:
 | `unsupported` | The operation is not known to this program. | As `failed`; the core does not ask again for this operation during the run. |
 | `failed` | Anything else, and an unknown kind. | "{name} could not be read"; `message` goes to the debug log only. |
 
+For `create_pull` the core never says "could not be read": the request may have gone
+through before the failure. Any kind but `signed_out` with a `message` shows that
+message (plain, at most 200 characters), so a program says what happened in its tool's
+words and that the pull request may have been made. Without one, `unavailable` reads
+"{name} did not answer in time; it may still have made the pull request, check {name}"
+and anything else "{name} did not confirm the pull request; it may have been made,
+check {name}"; so does a call that times out or an answer that is not a pull.
+
 ### What a call may reach
 
 The program runs confined for this one call. It cannot widen this by any message.
@@ -426,14 +436,19 @@ The program runs confined for this one call. It cannot widen this by any message
 | What | Granted |
 | --- | --- |
 | Programs | its own, and the ones in `permissions.exec`, found on `PATH` |
-| Reads | its own folder, its data folder (`DUSKCODE_PLUGIN_DATA`), the temporary folders, `permissions.read`, git's own configuration (`~/.gitconfig`, `~/.config/git`), system files, and this call's project folder when `permissions.project` is `read`. Never another project's folder, `~/.config/duskcode`, or other plugins. |
+| Reads | everything outside your home folder but the other saved projects and the folders of temporary chats: so `/tmp`, `/opt`, mounted volumes and system files too. In home only: its own folder, its data folder (`DUSKCODE_PLUGIN_DATA`), `permissions.read`, git's own configuration (`~/.gitconfig`, `~/.config/git`), and this call's project folder when `permissions.project` is `read`. Never `~/.config/duskcode` or other plugins. |
 | Writes | its data folder and the temporary folders only; never the project |
 | Network | only through the core's broker (`HTTPS_PROXY`), to the origins in `permissions.network`, never to private addresses |
-| Keychain | macOS only, and only with `permissions.keychain: true` |
+| Keychain | never on macOS: its files go with home and its services are closed. On Linux its files go with home; a call that may connect opens no Unix socket, so it cannot reach the Secret Service, but one that may not connect could, over D-Bus (Landlock does not reach Unix sockets). |
 | Environment | the bare environment of every plugin program (see above). `GH_TOKEN`, `GITHUB_TOKEN` and every other variable of the core's environment never reach the program; a program sets what it needs (`GH_PROMPT_DISABLED=1`, `GH_PAGER=cat`, `NO_COLOR=1`, `GH_NO_UPDATE_NOTIFIER=1`) itself. |
 
 On Linux a call runs in its own user and network namespace; where unprivileged user
 namespaces are off, the plugin does not start and its row in Settings, Plugins says why.
+Its Landlock rules handle every file right the kernel knows, truncation among them, so
+nothing it may not write can be emptied either; where Landlock is older than Linux 6.2 a
+plugin that serves a contract does not start, and its row says "this Linux cannot stop a
+program from emptying files". A call refuses when `HOME` is `/`, empty or not a folder,
+since home could not be hidden then.
 
 ### Versions
 

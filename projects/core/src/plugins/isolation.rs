@@ -49,7 +49,6 @@ pub struct Isolation {
     /// The project of the call this confinement is for; the program runs in it.
     cwd: Option<PathBuf>,
     project: ProjectAccess,
-    keychain: bool,
     /// Its variables, its settings among them: never logged.
     env: Vec<(String, String)>,
     confinement: Confinement,
@@ -149,6 +148,14 @@ impl Isolation {
             (false, Some(broker)) => Network::Broker(broker.port()),
             (false, None) => anyhow::bail!("the plugin may connect, but has no broker"),
         };
+        // A call promises a read-only project and a hidden home: a Landlock that cannot
+        // close truncation cannot keep that.
+        #[cfg(target_os = "linux")]
+        if contract {
+            platform::every_file_right().map_err(|error| {
+                anyhow::anyhow!("{error}, so a plugin that serves a contract cannot start here")
+            })?;
+        }
         // Landlock cannot keep a program to one address: only a namespace can, and only
         // a contract's programs get one.
         #[cfg(target_os = "linux")]
@@ -193,7 +200,6 @@ impl Isolation {
             data: data.clone(),
             cwd: None,
             project: permissions.project,
-            keychain: permissions.keychain,
             env,
             confinement: Confinement {
                 writable,
@@ -206,6 +212,7 @@ impl Isolation {
                 hand_off: true,
                 stat: Vec::new(),
                 listed: Vec::new(),
+                every_file_right: false,
             },
             #[cfg(target_os = "linux")]
             gate,
@@ -253,7 +260,7 @@ impl Isolation {
     /// The confinement of one call of a contract plugin about the project in `project`:
     /// home and every folder of `others` (the other saved projects) hidden, `project`
     /// reopened read-only and the program run in it, git's own config readable, and the
-    /// login keychain open when the plugin asked for it. Hiding home alone would leave
+    /// keychain closed. Hiding home alone would leave
     /// projects outside it open, so each other project is hidden by name.
     ///
     /// Build it anew for every call: the folders of temporary chats, taken when it is
@@ -408,18 +415,13 @@ impl Isolation {
                 reopened.push(path);
             }
         }
-        // Seatbelt closes the keychain files with home; the services follow `keychain`.
-        #[cfg(target_os = "macos")]
-        if self.keychain
-            && let Ok(path) = home.join("Library/Keychains").canonicalize()
-            && safe(&path)
-        {
-            reopened.push(path);
-        }
+        // The keychain files go with home, and the services stay closed: a call never
+        // signs in through the keychain.
         confinement.hidden.extend(hidden);
         confinement.reopened.extend(reopened);
-        confinement.keychain = self.keychain;
+        confinement.keychain = false;
         confinement.hand_off = false;
+        confinement.every_file_right = true;
         call.cwd = Some(project);
         Ok(call)
     }
@@ -921,38 +923,27 @@ mod tests {
         assert!(call.for_call(home, b, &[]).is_err());
     }
 
-    /// Seatbelt closes `~/Library/Keychains` with home: a plugin that asked for the
-    /// keychain gets it back, one that did not stays without.
+    /// A call never opens the keychain, whatever its permissions say: Seatbelt closes
+    /// `~/Library/Keychains` with home and the keychain services stay closed.
     #[tokio::test]
-    async fn a_keychain_plugin_reopens_the_keychain_files() {
-        for keychain in [true, false] {
-            let permissions = Permissions {
-                keychain,
-                ..reads_project()
-            };
-            let Some(setup) = call_setup("call-keychain", permissions, None) else {
-                return;
-            };
-            let call = setup
-                .isolation
-                .for_call(&setup.home, &setup.a, &[])
-                .unwrap();
-            let keychains = setup.home.join("Library/Keychains");
-            let shown = format!("{call:?}");
-            assert!(shown.contains(&format!("keychain: {keychain}")), "{shown}");
-            let listed = run(&call, &["/bin/ls", &keychains.display().to_string()]).await;
-            #[cfg(target_os = "macos")]
-            {
-                assert_eq!(
-                    shown.contains(&format!("{keychains:?}")),
-                    keychain,
-                    "{shown}"
-                );
-                assert_eq!(listed.status.success(), keychain);
-            }
-            #[cfg(not(target_os = "macos"))]
-            assert!(!listed.status.success());
-        }
+    async fn a_call_never_opens_the_keychain() {
+        let permissions = Permissions {
+            keychain: true,
+            ..reads_project()
+        };
+        let Some(setup) = call_setup("call-keychain", permissions, None) else {
+            return;
+        };
+        let call = setup
+            .isolation
+            .for_call(&setup.home, &setup.a, &[])
+            .unwrap();
+        let keychains = setup.home.join("Library/Keychains");
+        let shown = format!("{call:?}");
+        assert!(shown.contains("keychain: false"), "{shown}");
+        assert!(!shown.contains(&format!("{keychains:?}")), "{shown}");
+        let listed = run(&call, &["/bin/ls", &keychains.display().to_string()]).await;
+        assert!(!listed.status.success());
     }
 
     /// Spec 8, test 4.
