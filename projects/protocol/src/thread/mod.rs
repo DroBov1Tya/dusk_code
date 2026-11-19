@@ -9,6 +9,7 @@ mod event;
 mod goal;
 mod job;
 mod link;
+mod live;
 mod message;
 mod name;
 mod overview;
@@ -31,6 +32,7 @@ pub use event::{EpisodeKind, RepeatRung, ThreadEvent};
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use job::{JobInfo, JobResult, job_message};
 pub use link::{THREAD_LINK_PREFIX, links_in, thread_link, thread_of_link};
+pub use live::{LiveTurn, STALLED_AFTER_MS, Work, WorkKind, activity};
 pub use message::{
     Compaction, LocalUnsent, Message, MessageRole, Part, Source, UndoPoint, has_pasted, plain,
     sound_tag, source_tag, split, wrap,

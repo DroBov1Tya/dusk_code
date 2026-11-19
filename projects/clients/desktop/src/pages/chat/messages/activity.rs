@@ -79,6 +79,14 @@ pub fn turn_activity(
             .text_color(cx.theme().foreground)
             .child(title),
     )
+    // A step of it runs: the heading carries the step's live mark.
+    .children(
+        (ws.chats.get(shown).is_some_and(|chat| chat.working)
+            && items
+                .iter()
+                .any(|item| matches!(item, Item::Tool(tool) if tool.state == ToolState::Running)))
+        .then(|| crate::pages::chat::activity::live_mark(cx)),
+    )
     // What the turn spent, on the same line: one row closes a turn, not two.
     .children(spend.map(|(text, dear)| {
         let theme = cx.theme();

@@ -2,6 +2,7 @@
 //! that wait for the user, the composer and the bar under it.
 
 mod access_menu;
+pub mod activity;
 mod approval;
 pub mod audio;
 pub mod code;
@@ -34,11 +35,6 @@ use gpui_kit::{
 };
 
 use crate::{ui::Type, workspace::Workspace};
-
-/// The mark of work under way, for a window that shows a chat of its own.
-pub fn working_mark(accent: Hsla, light: Hsla) -> impl IntoElement {
-    working::render(accent, light)
-}
 
 pub fn render(
     ws: &mut Workspace,

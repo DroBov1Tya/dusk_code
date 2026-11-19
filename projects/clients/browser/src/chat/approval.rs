@@ -145,6 +145,7 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
                 c.answers.push(reply);
                 c.questions_waiting.clear();
                 c.question = None;
+                c.live.answered();
                 all = std::mem::take(&mut c.answers).join("\n\n");
             });
             app.send(id_decline.clone(), all, false, Vec::new());

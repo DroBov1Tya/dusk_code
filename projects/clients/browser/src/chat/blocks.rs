@@ -267,7 +267,8 @@ pub fn Transcript(
             <For each=pending key=|(at, text)| (*at, text.clone()) let:pair>
                 <div class="msg user queued"><div class="bubble">{pair.1}</div><div class="muted">"queued"</div></div>
             </For>
-            <Show when=move || source.with(|c| c.working)>
+            // Agents below the chat may work on after its own turn: the row stays for them.
+            <Show when=move || source.with(|c| c.work(super::data::now_ms()).is_some())>
                 <Working chat />
             </Show>
         </div>
@@ -494,8 +495,15 @@ fn assistant_view(
         rev.track();
         fork_button(id, source, thread.get_value())
     };
+    // The answer being written has a soft caret at its growing end.
+    let writing = move || {
+        source.with(|c| {
+            c.writing(super::data::now_ms())
+                .is_some_and(|at| c.id(at) == id)
+        })
+    };
     view! {
-        <div class="msg assistant">
+        <div class="msg assistant" class:writing=writing>
             <Show when=move || thinking.get() && !reasoning.with(String::is_empty)>
                 <details class="reasoning">
                     <summary>"Thinking"</summary>
@@ -567,7 +575,11 @@ fn heading(chat: &ChatLog, steps: &[(u64, Part)], took: Option<i64>) -> Heading 
             .unwrap_or_else(|| "Thinking".to_owned()),
     };
     Heading {
-        running: took.is_none(),
+        // A step that runs marks the turn's line; what else the turn does, the row
+        // below says.
+        running: took.is_none()
+            && chat.working
+            && tools.iter().any(|tool| tool.state == ToolState::Running),
         title,
         names: summary_line(&tools),
         failed: tools
@@ -611,7 +623,7 @@ fn TurnView(block: Memo<Option<Block>>, source: Source) -> impl IntoView {
     view! {
         <details class="steps">
             <summary>
-                {move || head.with(|h| h.running).then(|| view! { <span class="spinner"></span> })}
+                {move || head.with(|h| h.running).then(|| view! { <span class="act-slot" aria-hidden="true"><span class="act-live"></span></span> })}
                 <span>{move || head.with(|h| h.title.clone())}</span>
                 <span class="muted">{move || head.with(|h| h.names.clone())}</span>
                 {move || {
@@ -740,11 +752,36 @@ fn ToolStep(tool: Memo<Option<Tool>>) -> impl IntoView {
     };
     let phrase = field(|t| dusk_protocol::tools::phrase(&t.name, &t.call_id).to_owned());
     let output = field(|t| t.output.clone());
+    // The state at the end of the line: a live mark while it runs, then a check or a
+    // cross. One that finishes while it is on the page settles in once; one that was
+    // finished when it was drawn simply stands.
+    let state = Memo::new(move |_| tool.with(|t| t.as_ref().map(|t| t.state)));
+    let ran = StoredValue::new(false);
+    let mark = move || {
+        let settles = ran.get_value();
+        let class = if settles { "glyph-settle" } else { "" };
+        match state.get() {
+            Some(ToolState::Running) | None => {
+                ran.set_value(true);
+                view! { <span class="act-live"></span> }.into_any()
+            }
+            Some(ToolState::Done) => {
+                view! { <span class=class><Icon name=IconName::Check /></span> }.into_any()
+            }
+            Some(ToolState::Failed) => {
+                view! { <span class=class><Icon name=IconName::Close /></span> }.into_any()
+            }
+        }
+    };
     view! {
         <details class=state_class>
             <summary>
                 <span class=name_class>{phrase}</span>
                 <span class="muted">{field(|t| t.detail.clone())}</span>
+                <Show when=move || state.get() == Some(ToolState::Failed)>
+                    <span class="tool-failed">"Failed"</span>
+                </Show>
+                <span class="tool-mark" aria-hidden="true">{mark}</span>
             </summary>
             <div class="muted mono">{field(|t| t.name.clone())}</div>
             <pre class="tool-args">{field(|t| t.arguments.clone())}</pre>

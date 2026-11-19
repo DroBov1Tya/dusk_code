@@ -122,6 +122,7 @@ impl Workspace {
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.working = false;
+                    chat.live = Default::default();
                 }
             }
         }

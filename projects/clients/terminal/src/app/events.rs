@@ -19,6 +19,10 @@ impl App {
         ) {
             self.transcript.apply(event.clone());
         }
+        // The chat did not take the user's message in: it is told that no question waits.
+        if matches!(event, ThreadEvent::UserMessage(_)) {
+            self.transcript.answered();
+        }
         // The retry row is the footer's activity: one state, replaced in place. Events
         // that end it hand over to the arms below, which name the next activity.
         match retry_row(&event) {

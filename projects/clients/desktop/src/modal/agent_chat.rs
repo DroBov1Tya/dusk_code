@@ -24,12 +24,7 @@ use crate::{
 
 pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (muted, surface, accent, danger) = (
-        theme.muted_foreground,
-        theme.muted,
-        theme.primary,
-        theme.danger,
-    );
+    let (muted, surface, danger) = (theme.muted_foreground, theme.muted, theme.danger);
     let mut column = div().flex().flex_col().gap_3().p_5();
     column = column.children(head(ws, agent, cx));
     let Some(chat) = ws.shown_chat().and_then(|chat| chat.agent_chats.get(agent)) else {
@@ -148,20 +143,19 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .into_any_element(),
         });
     }
-    if chat.working {
+    if let Some(work) = chat.work(dusk_protocol::system::now_ms()) {
+        use crate::pages::chat::activity;
         column = column.child(
             div()
+                .h(px(28.))
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap_3()
+                .gap_2()
                 .meta()
                 .text_color(muted)
-                .child(crate::pages::chat::working_mark(
-                    accent,
-                    cx.theme().foreground,
-                ))
-                .child("Working"),
+                .child(activity::mark(&work, cx))
+                .child(activity::words(&work, cx)),
         );
     }
     column

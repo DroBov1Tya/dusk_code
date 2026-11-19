@@ -453,6 +453,7 @@ impl App {
         self.activity = Activity::Idle;
         self.turn_running = false;
         self.compacting = false;
+        self.transcript.stopped();
         self.turn_started_at = None;
         self.turn_spend = None;
         self.transcript.stop_running_tools();

@@ -225,6 +225,7 @@ impl AppState {
                     chat.update(|data| {
                         data.ended = true;
                         data.working = false;
+                        data.live = Default::default();
                     });
                 }
             }

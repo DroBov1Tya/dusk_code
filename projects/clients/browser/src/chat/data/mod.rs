@@ -75,6 +75,9 @@ impl ChatData {
     pub fn record_answer(&mut self, reply: String) -> Option<String> {
         self.answers.push(reply);
         self.question = self.questions_waiting.pop_front();
+        if self.question.is_none() {
+            self.live.answered();
+        }
         self.question
             .is_none()
             .then(|| std::mem::take(&mut self.answers).join("\n\n"))
@@ -136,13 +139,6 @@ impl ChatData {
         if subagents {
             self.subagents.track();
         }
-    }
-
-    /// The retry row's words at `now` in Unix milliseconds; none when no call is tried
-    /// again.
-    pub fn retry_line(&self, now: i64) -> Option<String> {
-        let (retry, arrived) = self.retry.as_ref()?;
-        Some(retry.line(u64::try_from(now.saturating_sub(*arrived)).unwrap_or(0)))
     }
 }
 

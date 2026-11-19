@@ -589,7 +589,7 @@ fn act(
             if matches!(
                 value,
                 "retry" | "unreachable" | "busy-threads" | "limits-high" | "agent-tree"
-            ) =>
+            ) || value.starts_with("activity-") =>
         {
             super::polish::state(ws, value, cx)
         }

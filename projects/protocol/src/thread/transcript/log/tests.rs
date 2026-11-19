@@ -351,9 +351,9 @@ fn a_shown_block_takes_its_steps_place_live_and_restored() {
     }
 }
 
-/// A retry is one row of its own, never a notice; the call's answer clears it.
+/// A retry is what the indicator says, never a notice; the call's answer clears it.
 #[test]
-fn a_retry_is_a_row_not_a_notice() {
+fn a_retry_is_the_indicator_not_a_notice() {
     let mut chat = Chat::default();
     chat.apply(
         ThreadEvent::Retrying {
@@ -366,9 +366,11 @@ fn a_retry_is_a_row_not_a_notice() {
         5,
     );
     assert!(chat.items.is_empty());
-    assert!(matches!(chat.retry, Some((_, 5))));
+    let held = chat.work(5).expect("the retry shows");
+    assert_eq!(held.kind, crate::thread::WorkKind::Held);
+    assert!(held.label.ends_with("next in 1 s"), "{}", held.label);
     chat.apply(text("back"), 6);
-    assert!(chat.retry.is_none());
+    assert_eq!(chat.work(6), None, "no turn runs and the call answered");
 }
 
 /// One whole conversation, read from the history the core stores and followed live as
