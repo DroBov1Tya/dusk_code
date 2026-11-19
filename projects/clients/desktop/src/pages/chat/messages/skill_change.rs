@@ -29,7 +29,10 @@ pub struct SkillRow {
     pub loading: bool,
     /// The undo request runs.
     pub busy: bool,
+    /// The undo request's failure.
     pub error: Option<String>,
+    /// The diff request's failure, apart so an undo does not clear it.
+    pub diff_error: Option<String>,
 }
 
 impl SkillRow {
@@ -40,6 +43,7 @@ impl SkillRow {
             loading: false,
             busy: false,
             error: None,
+            diff_error: None,
         }
     }
 }
@@ -59,8 +63,7 @@ pub fn plain(text: &str, tabs: bool) -> String {
 pub fn label(change: &SkillChange) -> String {
     let verb = match change.action {
         SkillSaveAction::Created => "created",
-        SkillSaveAction::Updated => "improved",
-        SkillSaveAction::Unchanged => "saved without changes",
+        SkillSaveAction::Updated | SkillSaveAction::Unchanged => "improved",
     };
     let skill = plain(&change.skill, false);
     let reason = plain(change.reason.lines().next().unwrap_or_default(), false);
@@ -105,7 +108,7 @@ fn skill_row(ws: &Workspace, shown: &str, row: &SkillRow, cx: &mut Context<Works
                 .child(text),
         )
         .when(change.undone, |header| {
-            header.child(div().flex_none().meta().text_color(muted).child("Undone"))
+            header.child(div().flex_none().meta().text_color(muted).child("undone"))
         })
         .child(disclosure_icon(open, muted))
         .on_click(cx.listener(move |ws, _, _, cx| ws.open_skill_change(&thread, id, cx)));
@@ -143,21 +146,19 @@ fn skill_row(ws: &Workspace, shown: &str, row: &SkillRow, cx: &mut Context<Works
 
 fn diff_view(row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (success, danger, muted, surface) = (
-        theme.success,
-        theme.danger,
+    let (accent, muted, text, surface) = (
+        theme.primary,
         theme.muted_foreground,
+        theme.foreground,
         theme.muted,
     );
     let Some(diff) = &row.diff else {
-        return div().child(widgets::muted(
-            if row.loading {
-                "Loading..."
-            } else {
-                "No diff to show"
-            },
-            cx,
-        ));
+        let words = match (&row.diff_error, row.loading) {
+            (Some(error), _) => plain(error, false),
+            (None, true) => "Loading...".to_owned(),
+            (None, false) => "No diff to show".to_owned(),
+        };
+        return div().child(widgets::muted(words, cx));
     };
     let prefs = crate::ui::theme::prefs(cx);
     let mono = prefs
@@ -166,27 +167,46 @@ fn diff_view(row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
         .unwrap_or_else(|| "Menlo".to_owned());
     let size = prefs.mono_size;
     let mut lines = div()
+        .id("skill-diff-lines")
         .flex()
         .flex_col()
+        .max_h(px(320.))
+        .overflow_y_scroll()
         .rounded_md()
         .bg(surface)
-        .py_1()
-        .overflow_hidden();
+        .py_1();
     for line in &diff.lines {
-        let (tint, sign, color) = match line.kind {
-            DiffKind::Added => (Some(success), "+", success),
-            DiffKind::Removed => (Some(danger), "\u{2212}", danger),
-            DiffKind::Same => (None, " ", muted),
+        // One accent: what was added carries it, what was removed fades and is struck.
+        let (sign, color) = match line.kind {
+            DiffKind::Added => ("+", text),
+            DiffKind::Removed => ("\u{2212}", muted),
+            DiffKind::Same => (" ", muted),
         };
+        let mut body = div().flex_1().min_w_0().text_color(color);
+        if line.kind == DiffKind::Removed {
+            body = body.line_through();
+        }
         lines = lines.child(
             div()
                 .flex()
                 .px_2()
                 .text_size(px(size))
                 .font_family(mono.clone())
-                .when_some(tint, |row, tint| row.bg(tint.opacity(0.12)))
-                .child(div().w(px(14.)).flex_none().text_color(color).child(sign))
-                .child(div().flex_1().min_w_0().child(plain(&line.text, true))),
+                .when(line.kind == DiffKind::Added, |row| {
+                    row.bg(accent.opacity(0.15))
+                })
+                .child(
+                    div()
+                        .w(px(14.))
+                        .flex_none()
+                        .text_color(if line.kind == DiffKind::Added {
+                            accent
+                        } else {
+                            muted
+                        })
+                        .child(sign),
+                )
+                .child(body.child(plain(&line.text, true))),
         );
     }
     let mut block = div().flex().flex_col().gap_1().child(lines);
@@ -211,6 +231,7 @@ impl Workspace {
             return;
         }
         row.loading = true;
+        row.diff_error = None;
         let thread = thread.to_owned();
         self.core.call(
             cx,
@@ -223,9 +244,12 @@ impl Workspace {
                 {
                     row.loading = false;
                     match result {
-                        Ok(diff) => row.diff = Some(diff),
+                        Ok(diff) => {
+                            row.diff = Some(diff);
+                            row.diff_error = None;
+                        }
                         // A viewer of a shared chat gets the row, not the diff.
-                        Err(error) => row.error = Some(error.to_string()),
+                        Err(error) => row.diff_error = Some(error.to_string()),
                     }
                 }
                 ws.measure_again = true;
