@@ -66,6 +66,10 @@ pub fn run(
     for (offset, tool) in tools.iter().enumerate().skip(first) {
         block = block.child(step(ws, shown, start + offset, tool, cx));
     }
+    // A step folded into "earlier" still shows the skill it changed.
+    for tool in &tools[..first] {
+        block = block.children(super::skill_change::rows(ws, shown, &tool.call_id, cx));
+    }
     if open && tools.len() > 4 {
         let id = shown.to_owned();
         block = block.child(
@@ -207,6 +211,7 @@ pub fn step(
         row = row.child(background_button(shown, index, tool, cx));
     }
     let mut line = div().flex().flex_col().child(row);
+    line = line.children(super::skill_change::rows(ws, shown, &tool.call_id, cx));
     if open {
         // The look of the plain monospace cells: `meta` size in the mono font.
         let mono_meta = gpui::TextStyleRefinement {

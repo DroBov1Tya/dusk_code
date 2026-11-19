@@ -91,6 +91,9 @@ pub fn mcp(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 }
 
 pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
+    if value == "chat-skill" {
+        return skill(ws, cx);
+    }
     let tool = |id: &str, name: &str, detail: &str, state: ToolState| {
         Item::Tool(Tool {
             call_id: id.into(),
@@ -178,6 +181,91 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
             done: 3,
             failed: 0,
         },
+    ));
+    ws.chats.insert(thread_id.clone(), chat);
+    ws.shown = Some(thread_id);
+    ws.center = Center::Chat;
+    cx.notify();
+}
+
+/// `fake=chat-skill`: one turn whose step changed a skill, the row open on its diff, and a
+/// second change already undone.
+fn skill(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    use crate::pages::chat::messages::{ACTIVITY, SkillRow};
+    use dusk_protocol::catalog::{DiffKind, DiffLine, SkillChange, SkillDiff, SkillSaveAction};
+    let step = |id: &str| {
+        Item::Tool(Tool {
+            call_id: id.into(),
+            name: "skill_evolve".into(),
+            detail: "release".into(),
+            arguments: "{}".into(),
+            output: String::new(),
+            state: ToolState::Done,
+        })
+    };
+    let mut chat = Transcript::default();
+    chat.items = vec![
+        Item::User {
+            text: "Cut the release.".into(),
+            sequence: Some(1),
+        },
+        step("s1"),
+        step("s2"),
+        Item::Assistant {
+            text: "Released 1.4.0.".into(),
+            reasoning: String::new(),
+        },
+    ];
+    chat.activity_boundaries = vec![0, 4];
+    chat.boundary_times = vec![now_ms() - 90_000, now_ms()];
+    chat.boundary_spend = vec![None, None];
+    let change = |id: i64, call: &str, action, reason: &str, undone: bool| SkillChange {
+        id,
+        skill: "release".into(),
+        call_id: call.into(),
+        action,
+        reason: reason.into(),
+        changed_at_ms: now_ms(),
+        undone,
+        can_undo: !undone,
+    };
+    let line = |kind, text: &str| DiffLine {
+        kind,
+        text: text.into(),
+    };
+    let mut first = SkillRow::new(change(
+        1,
+        "s1",
+        SkillSaveAction::Updated,
+        "tag after the changelog is committed, not before",
+        false,
+    ));
+    first.diff = Some(SkillDiff {
+        change: first.change.clone(),
+        lines: vec![
+            line(DiffKind::Same, "## Release"),
+            line(DiffKind::Same, ""),
+            line(DiffKind::Removed, "1. Tag the commit."),
+            line(DiffKind::Removed, "2. Update CHANGELOG.md."),
+            line(DiffKind::Added, "1. Update CHANGELOG.md and commit it."),
+            line(DiffKind::Added, "2. Tag that commit."),
+            line(DiffKind::Same, "3. Push the tag."),
+        ],
+        cut: false,
+    });
+    let second = SkillRow::new(change(
+        2,
+        "s2",
+        SkillSaveAction::Updated,
+        "run the dry run first",
+        true,
+    ));
+    chat.skills = vec![first, second];
+    let thread_id = ws.shown.clone().unwrap_or_else(|| "shot".to_owned());
+    ws.unfolded.insert((thread_id.clone(), 1 | ACTIVITY));
+    ws.unfolded.insert((
+        thread_id.clone(),
+        (1usize & ((1 << 43) - 1)) | crate::pages::chat::messages::SKILL,
     ));
     ws.chats.insert(thread_id.clone(), chat);
     ws.shown = Some(thread_id);

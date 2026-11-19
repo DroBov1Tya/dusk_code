@@ -308,14 +308,19 @@ impl Workspace {
                             let tasks = threads.tasks(&thread_id).await?;
                             let access = threads.approvals(&thread_id).await?;
                             let pins = threads.pins(&thread_id).await?;
-                            anyhow::Ok((thread_id, tasks, access, pins))
+                            // The rows of skill changes are an extra: a core that cannot
+                            // list them must not keep the chat from opening.
+                            let skills =
+                                threads.skill_changes(&thread_id).await.unwrap_or_default();
+                            anyhow::Ok((thread_id, tasks, access, pins, skills))
                         },
                         move |ws, result, cx| match result {
-                            Ok((thread_id, tasks, access, pins)) => {
+                            Ok((thread_id, tasks, access, pins, skills)) => {
                                 if let Some(chat) = ws.chats.get_mut(&thread_id) {
                                     chat.tasks = tasks;
                                     chat.access = access;
                                     chat.pins = pins;
+                                    chat.skills_loaded(skills);
                                 }
                                 ws.show(thread_id, cx);
                             }
