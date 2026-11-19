@@ -549,7 +549,9 @@ and at most 500 bytes, else it becomes empty (never repaired).
   Every service has one: `/owner/repo/pull/`, `/group/proj/-/merge_requests/`,
   `/owner/repo/pulls/`, `/ws/repo/pull-requests/`.
 - A pull's `url` must equal `pull_prefix` plus its `number` (case-insensitive), or the
-  pull is dropped. Its `number` must be above 0.
+  pull is dropped. Its `number` must be above 0. The pull `create_pull` answers is held to
+  its shape only: a `number` above 0 and a safe `url`, such as the page `gh pr create`
+  printed; other fields may be left out.
 - `checks_url` must start with `https://{host}/`, else it becomes empty. A check's `url`
   is any safe https link, else empty.
 - Title at most 300 characters, author 100, branch 250.
