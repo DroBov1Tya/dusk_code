@@ -32,6 +32,11 @@ pub struct Confinement {
     /// `launchctl`, LaunchServices' `open`, Apple events). Only macOS can close it.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub hand_off: bool,
+    /// Folders whose own entry, not what is in them, may be looked at inside a hidden
+    /// one: the way down to a reopened folder that a program resolves step by step, as
+    /// git does its git dir. Landlock never closes that, so only macOS needs it.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub stat: Vec<PathBuf>,
 }
 
 /// What a confined program may reach over the network.
@@ -71,6 +76,7 @@ impl Default for Confinement {
             programs: Some(Vec::new()),
             sockets: Vec::new(),
             hand_off: false,
+            stat: Vec::new(),
         }
     }
 }
@@ -91,6 +97,7 @@ impl Confinement {
             programs: None,
             sockets: Vec::new(),
             hand_off: true,
+            stat: Vec::new(),
         }
     }
 }

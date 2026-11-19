@@ -39,6 +39,8 @@ const KEPT_ENV: [&str; 3] = ["HOME", "LANG", "TMPDIR"];
 pub struct Isolation {
     folder: PathBuf,
     config_root: PathBuf,
+    /// Its data folder, which a call keeps open as its own.
+    data: PathBuf,
     /// The project of the call this confinement is for; the program runs in it.
     cwd: Option<PathBuf>,
     project: ProjectAccess,
@@ -126,7 +128,7 @@ impl Isolation {
                 programs.extend(platform::developer_tools());
             }
         }
-        let mut writable = vec![data];
+        let mut writable = vec![data.clone()];
         writable.extend(platform::temp_folders());
         if let Some(broker) = broker {
             env.extend(broker.env());
@@ -134,6 +136,7 @@ impl Isolation {
         Ok(Self {
             folder,
             config_root: config_root.clone(),
+            data: data.clone(),
             cwd: None,
             project: permissions.project,
             keychain: permissions.keychain,
@@ -147,6 +150,7 @@ impl Isolation {
                 programs: Some(programs),
                 sockets,
                 hand_off: true,
+                stat: Vec::new(),
             },
         })
     }
@@ -178,7 +182,8 @@ impl Isolation {
     /// login keychain open when the plugin asked for it. Hiding home alone would leave
     /// projects outside it open, so each other project is hidden by name.
     ///
-    /// The folders of temporary chats are hidden too, and the program cannot hand work
+    /// Build it anew for every call: the folders of temporary chats, taken when it is
+    /// built, are hidden too, and the program cannot hand work
     /// to launchd, LaunchServices or Apple events (macOS), which run it unconfined.
     ///
     /// Left open, by nature or design: a project under the temporary folders stays
@@ -230,7 +235,7 @@ impl Isolation {
                 .any(|other| path.starts_with(other) || other.starts_with(path))
         };
         for granted in &confinement.reopened {
-            let own = *granted == self.folder || confinement.writable.contains(granted);
+            let own = *granted == self.folder || *granted == self.data;
             ensure!(
                 own || !overlaps(granted),
                 "this plugin's read permission reaches another project's folder: {}",
@@ -246,6 +251,21 @@ impl Isolation {
                 && !overlaps(path)
         };
         let mut reopened = vec![project.clone()];
+        // A worktree's or a sub-folder's git dir lies outside the project; one that
+        // fails the project's own checks is left closed, and git fails.
+        for git in git_dirs(&project) {
+            if !git.starts_with(&project)
+                && !project.starts_with(&git)
+                && safe(&git)
+                && !reopened.contains(&git)
+            {
+                // Git resolves the path one folder at a time.
+                confinement
+                    .stat
+                    .extend(git.ancestors().skip(1).map(Path::to_path_buf));
+                reopened.push(git);
+            }
+        }
         for git in [".gitconfig", ".config/git"] {
             if let Ok(path) = home.join(git).canonicalize()
                 && safe(&path)
@@ -274,6 +294,66 @@ impl Isolation {
     pub fn fingerprint(&self) -> String {
         format!("{:?} {:?}", self.confinement, self.env)
     }
+}
+
+/// The git dir and common git dir of the repository `project` is in, resolved, read by
+/// the core outside any sandbox: no shell, no prompt, within git's usual time for a
+/// read. Empty when it is no repository or git fails.
+fn git_dirs(project: &Path) -> Vec<PathBuf> {
+    use std::{io::Read, process::Stdio, time::Instant};
+    const LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+    let mut command = std::process::Command::new("git");
+    if let Some(path) = platform::login_path::get() {
+        command.env("PATH", path);
+    }
+    for key in [
+        "GIT_DIR",
+        "GIT_COMMON_DIR",
+        "GIT_WORK_TREE",
+        "GIT_CEILING_DIRECTORIES",
+    ] {
+        command.env_remove(key);
+    }
+    command
+        .arg("-C")
+        .arg(project)
+        .args(["rev-parse", "--absolute-git-dir", "--git-common-dir"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let Ok(mut child) = command.spawn() else {
+        return Vec::new();
+    };
+    let deadline = Instant::now() + LIMIT;
+    let finished = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break false;
+            }
+        }
+    };
+    let mut printed = String::new();
+    let read = child
+        .stdout
+        .take()
+        .map(|stdout| stdout.take(64 * 1024).read_to_string(&mut printed));
+    if !finished || !matches!(read, Some(Ok(_))) {
+        return Vec::new();
+    }
+    // The common dir may be printed relative to the project.
+    printed
+        .lines()
+        .filter_map(|line| project.join(line).canonicalize().ok())
+        .collect()
 }
 
 /// The variables a program needs to run, and nothing that could be a key.
@@ -678,8 +758,26 @@ mod tests {
             &["/bin/cat", &chat.join("note").display().to_string()],
         )
         .await;
+        // A read grant of the temporary folder would reopen it: refused.
+        let reads_temp = Permissions {
+            read: vec![std::env::temp_dir().display().to_string()],
+            ..reads_project()
+        };
+        let folder = setup.paths.rules_root().join("plugins/p");
+        let data = setup.paths.config_root().join("plugin-data/p");
+        let wide = Isolation::new(&setup.paths, &folder, &data, &reads_temp, Vec::new(), None);
+        let refused = wide.unwrap().for_call(&setup.home, &setup.a, &[]).is_err();
         let _ = std::fs::remove_dir_all(&chat);
         assert!(!read.status.success(), "a temporary chat was readable");
+        assert!(refused, "a read grant reopened the temporary chats");
+    }
+
+    /// `sandbox-exec` could not start the program: the sandbox refused it.
+    #[cfg(target_os = "macos")]
+    fn refused_at_exec(output: std::process::Output, line: &[&str]) {
+        let said = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(71), "{line:?}: {said}");
+        assert!(said.contains("Operation not permitted"), "{line:?}: {said}");
     }
 
     /// launchd, LaunchServices and Apple events run what they are handed outside the
@@ -704,12 +802,11 @@ mod tests {
             "/usr/bin/true",
         ];
         for line in [&submit[..], &["/usr/bin/open", "-g", "-n", "/usr/bin/true"]] {
-            let output = run(&call, line).await;
-            assert!(!output.status.success(), "{line:?} ran");
+            refused_at_exec(run(&call, line).await, line);
         }
         let script = "tell application \"Finder\" to get name";
-        let output = run(&call, &["/usr/bin/osascript", "-e", script]).await;
-        assert!(!output.status.success(), "osascript ran");
+        let line = ["/usr/bin/osascript", "-e", script];
+        refused_at_exec(run(&call, &line).await, &line);
         // A gh stand-in in the plugin's folder that runs git in the project.
         let folder = setup.paths.rules_root().join("plugins/p");
         let gh = folder.join("gh");
@@ -719,5 +816,50 @@ mod tests {
         let printed = String::from_utf8_lossy(&output.stdout);
         assert!(output.status.success(), "{output:?}");
         assert!(printed.starts_with("git version"), "{printed}");
+    }
+
+    /// A worktree's git dir lies in its main repository: a call reads it, and nothing
+    /// else of that repository.
+    #[tokio::test]
+    async fn a_call_reads_its_worktrees_git_dir() {
+        let Some(setup) = call_setup("call-worktree", reads_project(), None) else {
+            return;
+        };
+        let main = setup.home.join("main");
+        let worktree = setup.home.join("wt");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::write(main.join("secret"), "main").unwrap();
+        let git = |dir: &Path, args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?}");
+        };
+        git(&main, &["init", "-q"]);
+        git(&main, &["commit", "-q", "--allow-empty", "-m", "x"]);
+        let target = worktree.display().to_string();
+        git(&main, &["worktree", "add", "-q", "--detach", &target]);
+        let worktree = worktree.canonicalize().unwrap();
+        let call = setup
+            .isolation
+            .for_call(&setup.home, &worktree, &[])
+            .unwrap();
+        let head = ["/usr/bin/git", "-C", &target, "rev-parse", "HEAD"];
+        let output = run(&call, &head).await;
+        assert!(output.status.success(), "{output:?}");
+        let secret = main.join("secret").display().to_string();
+        assert!(!run(&call, &["/bin/cat", &secret]).await.status.success());
+        // Saved as a project of its own, the main repository stays closed: git fails.
+        let call = setup
+            .isolation
+            .for_call(&setup.home, &worktree, std::slice::from_ref(&main))
+            .unwrap();
+        assert!(!run(&call, &head).await.status.success());
     }
 }
