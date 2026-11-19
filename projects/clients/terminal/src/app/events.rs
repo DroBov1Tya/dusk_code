@@ -11,6 +11,7 @@ use super::{Activity, App, Entry, Focus, Poll, Tone, compact_number};
 
 impl App {
     pub fn apply(&mut self, event: ThreadEvent) {
+        self.live.apply(&event, dusk_protocol::system::now_ms());
         // The retry row is the footer's activity: one state, replaced in place. Events
         // that end it hand over to the arms below, which name the next activity.
         match retry_row(&event) {

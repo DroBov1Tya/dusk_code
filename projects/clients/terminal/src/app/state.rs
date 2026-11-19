@@ -173,6 +173,8 @@ pub struct App {
     pub status: Status,
     pub turn_running: bool,
     pub compacting: bool,
+    /// The live signals the footer's kind of work is chosen from, as in every client.
+    pub live: dusk_protocol::thread::LiveTurn,
     pub sent: Vec<String>,
     pub sent_ids: HashSet<String>,
     pub recall: Option<usize>,
@@ -307,6 +309,7 @@ impl App {
             status,
             turn_running: false,
             compacting: false,
+            live: Default::default(),
             sent: Vec::new(),
             sent_ids: HashSet::new(),
             recall: None,
@@ -382,6 +385,7 @@ impl App {
         self.output_samples.clear();
         self.turn_running = false;
         self.compacting = false;
+        self.live = Default::default();
     }
 
     pub fn is_busy(&self) -> bool {
@@ -453,6 +457,7 @@ impl App {
         self.activity = Activity::Idle;
         self.turn_running = false;
         self.compacting = false;
+        self.live = Default::default();
         self.turn_started_at = None;
         self.turn_spend = None;
         self.transcript.stop_running_tools();

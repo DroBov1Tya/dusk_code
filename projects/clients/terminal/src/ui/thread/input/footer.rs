@@ -3,7 +3,7 @@
 use super::InputView;
 use crate::app::{Activity, App, Focus};
 use crate::ui::thread::{
-    theme::{ACCENT, DEEP, DUSK, NEGATIVE, TEXT_MUTED, TEXT_SOFT, bold, dim, fg},
+    theme::{ACCENT, DEEP, DUSK, NEGATIVE, TEXT_MUTED, TEXT_SOFT, WARNING, bold, dim, fg},
     transcript::spinner,
 };
 use dusk_protocol::config::ApprovalPolicy;
@@ -56,6 +56,50 @@ pub(super) fn git_line(summary: &GitSummary) -> Line<'static> {
     Line::from(spans)
 }
 
+/// The star of a thinking turn, shape after shape and back.
+const STAR: [&str; 10] = [
+    "\u{00B7}", "\u{2722}", "\u{2733}", "\u{2736}", "\u{273B}", "\u{273D}", "\u{273B}", "\u{2736}",
+    "\u{2733}", "\u{2722}",
+];
+
+/// The mark, colour and words of what the agent does now. The protocol chooses the kind
+/// of work, as for every client; here each kind has its mark: a star that changes shape
+/// while the turn thinks, the spinner for work that runs, and a mark that stands still
+/// while the text itself arrives, the turn waits for the user or the provider holds it.
+fn doing(app: &App, activity: &Activity) -> (&'static str, ratatui::style::Color, String) {
+    use dusk_protocol::thread::WorkKind;
+    // What the thread itself never says: a fork being described.
+    if *activity == Activity::Forking {
+        let what = "describing the thread for a fork".to_owned();
+        return (spinner(app), DUSK, what);
+    }
+    let now = dusk_protocol::system::now_ms();
+    let Some(work) = dusk_protocol::thread::activity(&app.live, now) else {
+        // The message is sent and the turn's first event is on its way.
+        return (
+            STAR[(app.frame / 3) % STAR.len()],
+            ACCENT,
+            app.thinking_label().to_owned(),
+        );
+    };
+    let words = work.label.to_lowercase();
+    match work.kind {
+        WorkKind::Thinking => (
+            STAR[(app.frame / 3) % STAR.len()],
+            if work.stalled { WARNING } else { ACCENT },
+            format!("{}{}", app.thinking_label(), app.rate_note()),
+        ),
+        WorkKind::Writing => ("\u{00B7}", ACCENT, format!("{words}{}", app.rate_note())),
+        WorkKind::Planning | WorkKind::Steps | WorkKind::Agents { .. } => {
+            (spinner(app), TEXT_SOFT, words)
+        }
+        WorkKind::WaitingForUser => ("\u{25CB}", WARNING, words),
+        WorkKind::Compacting => (spinner(app), DUSK, words),
+        // A wait's and a retry's words are the protocol's, as written.
+        WorkKind::Held => ("\u{25CC}", NEGATIVE, work.label),
+    }
+}
+
 /// The rule: what the agent is doing and how far the transcript is scrolled.
 /// What goes on the card's top edge, and the note for its right end.
 pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
@@ -80,21 +124,7 @@ pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
             )]
         }
         (activity, _) => {
-            let (color, what) = match activity {
-                Activity::Thinking => (
-                    ACCENT,
-                    format!("{}{}", app.thinking_label(), app.rate_note()),
-                ),
-                Activity::Writing => (ACCENT, format!("writing{}", app.rate_note())),
-                Activity::Tool(name) => (TEXT_SOFT, format!("running {name}")),
-                Activity::Compacting => (DUSK, "compacting the context".to_owned()),
-                Activity::Forking => (DUSK, "describing the thread for a fork".to_owned()),
-                Activity::Retrying(retry, arrived) => (
-                    NEGATIVE,
-                    retry.line(u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX)),
-                ),
-                Activity::Idle => (TEXT_MUTED, String::new()),
-            };
+            let (mark, color, what) = doing(app, activity);
             // How long the turn has run and what it used, beside what it does now.
             let mut took = app
                 .turn_started_at
@@ -110,7 +140,7 @@ pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
                 took.push_str(&format!(" \u{00B7} {}", spend.step()));
             }
             vec![
-                Span::styled(format!("{} ", spinner(app)), fg(color)),
+                Span::styled(format!("{mark} "), fg(color)),
                 Span::styled(what, fg(color)),
                 Span::styled(took, fg(TEXT_MUTED)),
             ]

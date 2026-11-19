@@ -108,6 +108,7 @@ per_thread! {
     turn_spend: Option<dusk_protocol::thread::TurnSpend>,
     turn_running: bool,
     compacting: bool,
+    live: dusk_protocol::thread::LiveTurn,
     sent: Vec<String>,
     sent_ids: HashSet<String>,
     recall: Option<usize>,
