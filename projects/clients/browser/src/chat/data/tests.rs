@@ -324,3 +324,29 @@ fn hostile_block_content_stays_plain_text() {
         }
     }
 }
+
+fn change(id: i64, call_id: &str, undone: bool) -> dusk_protocol::catalog::SkillChange {
+    dusk_protocol::catalog::SkillChange {
+        id,
+        skill: "git-release".into(),
+        call_id: call_id.into(),
+        action: dusk_protocol::catalog::SkillSaveAction::Updated,
+        reason: "fix".into(),
+        changed_at_ms: 0,
+        undone,
+        can_undo: !undone,
+    }
+}
+
+#[test]
+fn a_skill_change_replaces_its_row_by_id_and_hangs_on_its_step() {
+    let mut chat = ChatData::default();
+    chat.apply(ThreadEvent::ToolStarted(call("1")));
+    chat.apply(ThreadEvent::SkillChanged(change(7, "1", false)));
+    chat.apply(ThreadEvent::SkillChanged(change(8, "other", false)));
+    chat.apply(ThreadEvent::SkillChanged(change(7, "1", true)));
+    assert_eq!(chat.skill_changes.len(), 2);
+    let rows = chat.skill_changes_of("1");
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].undone && !rows[0].can_undo);
+}
