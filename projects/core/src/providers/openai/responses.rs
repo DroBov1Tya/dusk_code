@@ -148,20 +148,10 @@ impl ChatGpt {
             {
                 continue;
             }
-            ensure!(
-                !model.slug.trim().is_empty() && !model.slug.chars().any(char::is_control),
-                "provider returned an empty or invalid model ID"
-            );
-            models.insert(model.slug, model.context_window);
+            http::check_model_id(&model.slug)?;
+            models.insert(model.slug, (model.context_window, None));
         }
-        Ok(models
-            .into_iter()
-            .map(|(id, context_window)| Model {
-                id,
-                context_window,
-                max_output: None,
-            })
-            .collect())
+        Ok(http::models(models))
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<ResponseStream> {

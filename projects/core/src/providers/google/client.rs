@@ -30,7 +30,6 @@ use super::{
     stream::{self, GenerateStream},
 };
 
-const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_CATALOGUE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CATALOGUE_PAGES: usize = 10;
 const CATALOGUE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -67,14 +66,7 @@ struct ModelEntry {
 impl Google {
     pub fn new(config: &ProviderConfig) -> Result<Self> {
         let base_url = http::base_url(&config.base_url, config.allow_http)?;
-        let api_key = if config.api_key.0.is_empty() {
-            None
-        } else {
-            let mut value = HeaderValue::from_str(&config.api_key.0)
-                .map_err(|_| anyhow!("invalid provider API key"))?;
-            value.set_sensitive(true);
-            Some(value)
-        };
+        let api_key = http::sensitive_header(&config.api_key.0, "")?;
         // Fails here, not at the first request, when the base URL cannot take a path.
         http::endpoint(&base_url, &["models"])?;
         Ok(Self {
@@ -101,10 +93,7 @@ impl Google {
                 .map_err(|_| anyhow!("invalid provider model catalogue JSON"))?;
             for model in page.models {
                 let id = model.name.strip_prefix("models/").unwrap_or(&model.name);
-                ensure!(
-                    !id.trim().is_empty() && !id.chars().any(char::is_control),
-                    "provider returned an empty or invalid model ID"
-                );
+                http::check_model_id(id)?;
                 let generates = model
                     .supported_generation_methods
                     .is_none_or(|methods| methods.iter().any(|method| method == "generateContent"));
@@ -125,14 +114,7 @@ impl Google {
             }
         }
         *self.plain.write() = plain;
-        Ok(models
-            .into_iter()
-            .map(|(id, (context_window, max_output))| Model {
-                id,
-                context_window,
-                max_output,
-            })
-            .collect())
+        Ok(http::models(models))
     }
 
     async fn catalogue_page(&self, url: Url) -> Result<Vec<u8>> {
@@ -172,17 +154,7 @@ impl Google {
             .map_err(http::unsent)?;
         let status = response.status();
         if !status.is_success() {
-            // Read before the body, which takes the response.
-            let mut failure = http::status_failure(&response, String::new());
-            let reason = tokio::time::timeout(ERROR_BODY_TIMEOUT, http::error_message(response))
-                .await
-                .ok()
-                .flatten();
-            let refused = http::refused("completion", status);
-            failure.message = match &reason {
-                Some(reason) => format!("{refused}: {reason}"),
-                None => refused,
-            };
+            let (failure, reason) = http::refused_with_reason(response, "completion").await;
             if failure.kind.is_retryable() {
                 bail!(failure);
             }

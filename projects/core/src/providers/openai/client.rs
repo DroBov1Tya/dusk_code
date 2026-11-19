@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, time::Duration};
 
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use reqwest::{
     Client, RequestBuilder, Response, Url,
     header::{ACCEPT, AUTHORIZATION, HeaderValue},
@@ -65,14 +65,7 @@ fn positive_output_limit<'de, D: Deserializer<'de>>(value: D) -> Result<Option<u
 impl OpenAiCompatible {
     pub fn new(config: &ProviderConfig) -> Result<Self> {
         let base_url = http::base_url(&config.base_url, config.allow_http)?;
-        let authorization = if config.api_key.0.is_empty() {
-            None
-        } else {
-            let mut value = HeaderValue::from_str(&format!("Bearer {}", config.api_key.0))
-                .map_err(|_| anyhow!("invalid provider API key"))?;
-            value.set_sensitive(true);
-            Some(value)
-        };
+        let authorization = http::sensitive_header(&config.api_key.0, "Bearer ")?;
         let client = http::client()?;
         Ok(Self {
             client,
@@ -111,20 +104,10 @@ impl OpenAiCompatible {
         })?;
         let mut models = BTreeMap::new();
         for model in catalogue.data {
-            ensure!(
-                !model.id.trim().is_empty() && !model.id.chars().any(char::is_control),
-                "provider returned an empty or invalid model ID"
-            );
+            http::check_model_id(&model.id)?;
             models.insert(model.id, (model.max_input_tokens, model.max_output_tokens));
         }
-        Ok(models
-            .into_iter()
-            .map(|(id, (context_window, max_output))| Model {
-                id,
-                context_window,
-                max_output,
-            })
-            .collect())
+        Ok(http::models(models))
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
