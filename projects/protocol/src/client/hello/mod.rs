@@ -12,7 +12,9 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 
-pub use proof::{client_proof, core_proof, nonce, proof_matches, token_key};
+pub use proof::{
+    client_proof, core_proof, nonce, nonce_is_valid, proof_matches, token_key, try_nonce,
+};
 
 /// Raised whenever a request, a response or an event changes shape.
 pub const PROTOCOL_VERSION: u32 = 36;
@@ -25,6 +27,11 @@ pub const OLDEST_PROTOCOL: u32 = 36;
 const MAX_CLIENT_NAME: usize = 40;
 
 /// The first line a client sends.
+///
+/// A listener reads `protocol` leniently first, through a struct with only that field, so a
+/// newer client that sends a claim it does not know still gets `Refused { Version }`. A
+/// client never acts on a `Refused` that came before the core's proof beyond showing it:
+/// anyone on the socket can send one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
     pub protocol: u32,
@@ -89,6 +96,9 @@ pub enum Then {
     Stop,
     /// Ask the owner's user to restart the core for a newer app; only with the key.
     Handover,
+    /// A wish this core does not know, from a newer client; the core refuses it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Every line the core sends during the handshake.
@@ -127,6 +137,9 @@ pub enum OwnerKind {
     Gui,
     Tui,
     Serve,
+    /// An owner a newer core knows and this client does not.
+    #[serde(other)]
+    Unknown,
 }
 
 /// How much the core is doing, so a client can tell whether a restart would hurt.
@@ -146,6 +159,9 @@ pub enum Refusal {
     Full,
     Stopping,
     Declined,
+    /// A reason a newer core knows and this client does not.
+    #[serde(other)]
+    Unknown,
 }
 
 impl std::fmt::Display for Refusal {
@@ -158,6 +174,7 @@ impl std::fmt::Display for Refusal {
             Refusal::Full => "the core has too many clients",
             Refusal::Stopping => "the core is stopping",
             Refusal::Declined => "the owner declined",
+            Refusal::Unknown => "the core refused",
         })
     }
 }

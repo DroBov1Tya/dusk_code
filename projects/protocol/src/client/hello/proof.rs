@@ -9,15 +9,30 @@ const CORE_LABEL: &str = "duskcode-core\n";
 const CLIENT_LABEL: &str = "duskcode-client\n";
 
 /// A fresh nonce: 32 bytes from the OS random source, lowercase hex.
+pub fn try_nonce() -> Result<String, getrandom::Error> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes)?;
+    Ok(hex(&bytes))
+}
+
+/// `try_nonce` for callers that cannot go on without one.
 ///
 /// Panics when the OS gives no random bytes: a predictable nonce would let a recorded
-/// handshake be replayed, and there is no safe way to go on without one.
+/// handshake be replayed.
 pub fn nonce() -> String {
-    let mut bytes = [0u8; 32];
-    if let Err(error) = getrandom::fill(&mut bytes) {
-        panic!("the system gave no random bytes: {error}");
+    match try_nonce() {
+        Ok(nonce) => nonce,
+        Err(error) => panic!("the system gave no random bytes: {error}"),
     }
-    hex(&bytes)
+}
+
+/// Whether `s` has the shape of a nonce: exactly 64 lowercase hex characters.
+///
+/// Handshake code checks both nonces with this before computing a proof: the proofs
+/// concatenate id and nonces without separators, which is only unambiguous when the
+/// nonces have a fixed length.
+pub fn nonce_is_valid(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// The core's proof that it holds `k`, sent first.

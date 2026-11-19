@@ -45,6 +45,40 @@ fn nonces_are_fresh_lowercase_hex() {
 }
 
 #[test]
+fn only_fresh_shaped_nonces_are_valid() {
+    assert!(nonce_is_valid(&nonce()));
+    assert!(nonce_is_valid(&try_nonce().unwrap()));
+    assert!(nonce_is_valid(&"0f".repeat(32)));
+    for bad in [
+        String::new(),
+        "0f".repeat(31),
+        "0f".repeat(33),
+        "0F".repeat(32),
+        "0g".repeat(32),
+    ] {
+        assert!(!nonce_is_valid(&bad), "{bad:?}");
+    }
+}
+
+/// An older side must still parse a frame that carries a variant only a newer side knows,
+/// above all the version refusal meant for it.
+#[test]
+fn unknown_variants_parse_as_unknown() {
+    let refused: Greeting = serde_json::from_str(
+        r#"{"Refused":{"code":"Overheated","reason":"later","core":{"protocol":40,"oldest":38,"version":"1.0.0","owner":"Daemon","busy":{"clients":0,"running":0}}}}"#,
+    )
+    .unwrap();
+    let Greeting::Refused { code, core, .. } = refused else {
+        panic!("not a refusal: {refused:?}");
+    };
+    assert_eq!(code, Refusal::Unknown);
+    assert_eq!(code.to_string(), "the core refused");
+    assert_eq!(core.owner, OwnerKind::Unknown);
+    let proof: Proof = serde_json::from_str(r#"{"proof":"dd","then":"Upgrade"}"#).unwrap();
+    assert_eq!(proof.then, Then::Unknown);
+}
+
+#[test]
 fn a_version_outside_the_range_is_refused() {
     let mut hello = Hello::new("bot");
     for (protocol, expected) in [
