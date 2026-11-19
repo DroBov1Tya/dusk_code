@@ -84,7 +84,7 @@ impl OpenAiCompatible {
     pub async fn list_models(&self) -> Result<Vec<Model>> {
         // Do not retain reqwest errors or response bodies in error chains: either
         // can contain endpoint input or values echoed by an upstream server.
-        let mut response = self
+        let response = self
             .with_authorization(self.client.get(self.models_url.clone()))
             .header(ACCEPT, "application/json")
             .timeout(CATALOGUE_TIMEOUT)
@@ -97,24 +97,9 @@ impl OpenAiCompatible {
         if !response.status().is_success() {
             return Err(http::catalogue_refused(response.status()));
         }
-        ensure!(
-            response
-                .content_length()
-                .is_none_or(|length| length <= MAX_CATALOGUE_BYTES as u64),
-            "provider model catalogue is too large"
-        );
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
+        let bytes = crate::net::read_limited(response, MAX_CATALOGUE_BYTES)
             .await
-            .map_err(|_| anyhow!("cannot read provider model catalogue"))?
-        {
-            ensure!(
-                chunk.len() <= MAX_CATALOGUE_BYTES - bytes.len(),
-                "provider model catalogue is too large"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
+            .map_err(|error| error.about("provider model catalogue"))?;
         let catalogue: ModelCatalogue = serde_json::from_slice(&bytes).map_err(|_| {
             http::check_failed(
                 CheckFailure::NotCompatible,
@@ -189,23 +174,10 @@ impl OpenAiCompatible {
     }
 }
 
-async fn rejects_effort_off(mut response: Response) -> bool {
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_ERROR_BYTES as u64)
-    {
+async fn rejects_effort_off(response: Response) -> bool {
+    let Ok(bytes) = crate::net::read_limited(response, MAX_ERROR_BYTES).await else {
         return false;
-    }
-    let mut bytes = Vec::new();
-    loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) if chunk.len() <= MAX_ERROR_BYTES - bytes.len() => {
-                bytes.extend_from_slice(&chunk);
-            }
-            Ok(None) => break,
-            _ => return false,
-        }
-    }
+    };
     serde_json::from_slice::<Value>(&bytes)
         .ok()
         .and_then(|body| body.get("error").cloned())

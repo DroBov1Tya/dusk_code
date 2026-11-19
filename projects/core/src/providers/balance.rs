@@ -64,11 +64,10 @@ async fn read(settings: &ProviderConfig, api: BalanceApi) -> Result<Balance> {
         "the key may not read the balance"
     );
     ensure!(status.is_success(), "the provider answered {status}");
-    let body = response
-        .bytes()
+    // Read with a cap while it arrives: the timeout bounds time, not memory.
+    let body = crate::net::read_limited(response, MAX_BODY_BYTES)
         .await
-        .map_err(|_| anyhow!("cannot read the provider's answer"))?;
-    ensure!(body.len() <= MAX_BODY_BYTES, "the answer is too large");
+        .map_err(|error| error.about("the provider's answer"))?;
     let value: Value =
         serde_json::from_slice(&body).map_err(|_| anyhow!("the answer is not JSON"))?;
     parse(api, &value, base.host_str().unwrap_or_default())

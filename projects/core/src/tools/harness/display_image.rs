@@ -24,7 +24,7 @@ use crate::{
     BoxFuture,
     state::artifacts::{ArtifactStore, Card, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES, THUMBNAIL_EDGE},
 };
-use crate::{init::files::read_regular, tools::tool::printable};
+use crate::{init::files::read_regular, net::BodyError, tools::tool::printable};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_REDIRECTS: usize = 3;
@@ -253,7 +253,7 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
             .resolve_to_addrs(host, &addresses)
             .build()
             .map_err(|_| anyhow::anyhow!("cannot initialize image client"))?;
-        let mut response = client
+        let response = client
             .get(url.clone())
             .header(ACCEPT, "image/png, image/jpeg")
             .header(ACCEPT_ENCODING, "identity")
@@ -278,24 +278,12 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
             "image server returned HTTP {}",
             response.status().as_u16()
         );
-        ensure!(
-            response
-                .content_length()
-                .is_none_or(|size| size <= MAX_IMAGE_BYTES as u64),
-            "image exceeds 8 MiB"
-        );
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
+        let bytes = crate::net::read_limited(response, MAX_IMAGE_BYTES)
             .await
-            .map_err(|_| anyhow::anyhow!("image download failed"))?
-        {
-            ensure!(
-                chunk.len() <= MAX_IMAGE_BYTES - bytes.len(),
-                "image exceeds 8 MiB"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
+            .map_err(|error| match error {
+                BodyError::TooLarge => anyhow::anyhow!("image exceeds 8 MiB"),
+                BodyError::Broken => anyhow::anyhow!("image download failed"),
+            })?;
         ensure!(!bytes.is_empty(), "image is empty");
         return Ok(bytes);
     }

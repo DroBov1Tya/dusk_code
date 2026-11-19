@@ -218,20 +218,10 @@ impl ChatGpt {
     }
 }
 
-async fn body(mut response: Response) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
+async fn body(response: Response) -> Result<Vec<u8>> {
+    crate::net::read_limited(response, MAX_BODY_BYTES)
         .await
-        .map_err(|_| anyhow!("cannot read the provider's answer"))?
-    {
-        ensure!(
-            chunk.len() <= MAX_BODY_BYTES - bytes.len(),
-            "the provider's answer is too large"
-        );
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(bytes)
+        .map_err(|error| error.about("the provider's answer"))
 }
 
 /// Why a request was refused, from the error's code alone: its message can echo input.

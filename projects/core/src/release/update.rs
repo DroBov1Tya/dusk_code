@@ -385,7 +385,7 @@ async fn download(
     url: &str,
     progress: &watch::Sender<InstallProgress>,
 ) -> Result<Vec<u8>> {
-    let mut response = client
+    let response = client
         .get(url)
         .send()
         .await
@@ -398,16 +398,11 @@ async fn download(
         downloaded: 0,
         total: response.content_length().filter(|total| *total > 0),
     });
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.context("the download broke off")? {
-        bytes.extend_from_slice(&chunk);
-        ensure!(
-            bytes.len() <= MAX_ARCHIVE_BYTES,
-            "the download is too large"
-        );
-        progress.send_modify(|value| value.downloaded = bytes.len() as u64);
-    }
-    Ok(bytes)
+    crate::net::read_limited_reporting(response, MAX_ARCHIVE_BYTES, |read| {
+        progress.send_modify(|value| value.downloaded = read as u64);
+    })
+    .await
+    .map_err(|error| error.about("the download"))
 }
 
 /// Why GitHub said no, in words: a missing release, a used-up rate limit with the time

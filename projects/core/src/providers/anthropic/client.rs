@@ -4,11 +4,10 @@ use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::{Result, anyhow, bail, ensure};
 use reqwest::{
-    Client, RequestBuilder, Response, StatusCode, Url,
+    Client, RequestBuilder, StatusCode, Url,
     header::{ACCEPT, HeaderName, HeaderValue},
 };
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::{
     config::{Effort, ProviderConfig},
@@ -24,10 +23,7 @@ use crate::{
 use super::{request::MessagesRequest, stream::MessageStream};
 
 const API_VERSION: &str = "2023-06-01";
-const MAX_ERROR_BYTES: usize = 64 * 1024;
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
-/// Error messages reach the transcript; a long one is cut.
-const MAX_ERROR_CHARS: usize = 300;
 const MAX_CATALOGUE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CATALOGUE_PAGES: usize = 10;
 const CATALOGUE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -110,7 +106,7 @@ impl Anthropic {
     }
 
     async fn catalogue_page(&self, url: Url) -> Result<Vec<u8>> {
-        let mut response = self
+        let response = self
             .with_headers(self.client.get(url))
             .header(ACCEPT, "application/json")
             .timeout(CATALOGUE_TIMEOUT)
@@ -122,19 +118,9 @@ impl Anthropic {
             response.status().is_success(),
             http::refused("model", response.status())
         );
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
+        crate::net::read_limited(response, MAX_CATALOGUE_BYTES)
             .await
-            .map_err(|_| anyhow!("cannot read provider model catalogue"))?
-        {
-            ensure!(
-                chunk.len() <= MAX_CATALOGUE_BYTES - bytes.len(),
-                "provider model catalogue is too large"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
-        Ok(bytes)
+            .map_err(|error| error.about("provider model catalogue"))
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<MessageStream> {
@@ -156,7 +142,7 @@ impl Anthropic {
         if !status.is_success() {
             // Read before the body, which takes the response.
             let mut failure = http::status_failure(&response, String::new());
-            let reason = tokio::time::timeout(ERROR_BODY_TIMEOUT, error_message(response))
+            let reason = tokio::time::timeout(ERROR_BODY_TIMEOUT, http::error_message(response))
                 .await
                 .ok()
                 .flatten();
@@ -191,18 +177,4 @@ impl Anthropic {
             None => request,
         }
     }
-}
-
-/// The API's own words about a failed request, bounded.
-async fn error_message(mut response: Response) -> Option<String> {
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.ok()? {
-        if chunk.len() > MAX_ERROR_BYTES - bytes.len() {
-            return None;
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let body: Value = serde_json::from_slice(&bytes).ok()?;
-    let message = body.pointer("/error/message")?.as_str()?;
-    Some(message.chars().take(MAX_ERROR_CHARS).collect())
 }

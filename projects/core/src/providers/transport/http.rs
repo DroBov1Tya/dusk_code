@@ -14,6 +14,22 @@ use crate::providers::errors::{ProviderError, ProviderErrorKind};
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 pub const EVENT_STREAM: &str = "text/event-stream";
 
+/// The most of a failed request's body read for its message.
+const MAX_ERROR_BYTES: usize = 64 * 1024;
+/// Error messages reach the transcript; a long one is cut.
+const MAX_ERROR_CHARS: usize = 300;
+
+/// The API's own words about a failed request, at `/error/message` of its JSON body,
+/// read with a cap and cut short; none when the body is too large or says nothing.
+pub async fn error_message(response: Response) -> Option<String> {
+    let bytes = crate::net::read_limited(response, MAX_ERROR_BYTES)
+        .await
+        .ok()?;
+    let body: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let message = body.pointer("/error/message")?.as_str()?;
+    Some(message.chars().take(MAX_ERROR_CHARS).collect())
+}
+
 /// Plain HTTP is allowed only to a server on this machine, such as a local model, named
 /// by its address: a name could be made to resolve elsewhere.
 pub fn is_loopback(url: &Url) -> bool {
