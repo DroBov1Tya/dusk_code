@@ -92,7 +92,7 @@ pub fn facts(listing: &Listing) -> AnyView {
 pub fn art(kind: Kind, name: &str, picture: Picture) -> AnyView {
     match picture {
         Picture::Shown(url) => view! { <img src=url alt=format!("{name} cover") /> }.into_any(),
-        other => placeholder(kind, &other),
+        other => placeholder(kind, name, &other),
     }
 }
 
