@@ -2,7 +2,7 @@
 
 use crate::{
     api,
-    pages::{connectors::Tab, project::ProjectDialog, settings::Page},
+    pages::{customize::Tab, project::ProjectDialog, settings::Page},
     state::{AppState, View, state},
     ui::{Icon, IconName, confirm, run},
 };

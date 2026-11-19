@@ -6,7 +6,7 @@ use crate::{
     columns::Workspace,
     pages::{
         artifacts::Artifacts,
-        connectors::Connectors,
+        customize::Connectors,
         project::ProjectPage,
         settings::SettingsPage,
         welcome::{self, ChatOrWelcome, Step},

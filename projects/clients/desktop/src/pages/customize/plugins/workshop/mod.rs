@@ -384,7 +384,7 @@ impl Workspace {
 
     /// The page whose Workshop is in view, if one is.
     pub fn discovering(&self) -> Option<Scope> {
-        use crate::pages::connectors::Shelf;
+        use crate::pages::customize::Shelf;
         let scope = match self.shelf {
             Shelf::Plugins => Scope::Plugins,
             Shelf::Skills => Scope::Skills,

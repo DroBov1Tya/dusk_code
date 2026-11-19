@@ -20,7 +20,7 @@ use gpui_kit::*;
 
 use crate::{
     modal::Modal,
-    pages::connectors::{
+    pages::customize::{
         Shelf,
         plugins::{
             Confirm, Scope, View,

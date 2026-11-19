@@ -3,7 +3,7 @@
 
 pub mod artifacts;
 pub mod chat;
-pub mod connectors;
+pub mod customize;
 pub mod file;
 pub mod review;
 pub mod schedules;

@@ -4,7 +4,7 @@ use super::{Sidebar, sidebar::chat_title};
 use crate::{
     chat::inspector::Inspector,
     link::Conn,
-    pages::{connectors::Tab, settings::Page},
+    pages::{customize::Tab, settings::Page},
     state::{View, state},
     ui::{Icon, IconName},
 };

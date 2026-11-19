@@ -5,7 +5,7 @@ use crate::{
     api,
     chat::data::ChatData,
     link::{self, Conn, Handlers},
-    pages::{connectors::Tab, settings::Page},
+    pages::{customize::Tab, settings::Page},
     ui::theme,
 };
 use dusk_protocol::{

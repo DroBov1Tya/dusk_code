@@ -70,7 +70,7 @@ use gpui_kit::{component::input::InputState, *};
 
 use crate::{
     modal::Modal,
-    pages::{connectors::Shelf, settings::SettingsPage},
+    pages::{customize::Shelf, settings::SettingsPage},
     workspace::{Center, Picker, Workspace},
 };
 

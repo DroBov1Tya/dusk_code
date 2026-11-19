@@ -19,7 +19,7 @@ use gpui_kit::{
 
 use super::{Grid, capsule, filters, grid, tier};
 use crate::{
-    pages::connectors::matches,
+    pages::customize::matches,
     ui::{Type, size},
     workspace::Workspace,
 };

@@ -33,7 +33,7 @@ use crate::{
     columns::topbar,
     core::Core,
     modal::Modal,
-    pages::{chat, chat::transcript::Transcript, connectors::Shelf, settings::SettingsPage},
+    pages::{chat, chat::transcript::Transcript, customize::Shelf, settings::SettingsPage},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -253,7 +253,7 @@ pub struct Workspace {
     pub web_global: bool,
     pub voice_form: crate::pages::settings::ai::voice::VoiceForm,
     /// The plugin store on the plugins shelf.
-    pub workshop: crate::pages::connectors::plugins::Workshop,
+    pub workshop: crate::pages::customize::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,
     /// Settings, Workshop: the repositories added and the Add form.
     pub repositories: crate::pages::settings::Repositories,
