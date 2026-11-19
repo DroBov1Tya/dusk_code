@@ -16,7 +16,8 @@
 //! - `content`, `pack` — skills, packs and agents, which are plain files;
 //! - `contents` — the files of a listing, for a client to look through;
 //! - `guard` — what a source without a key may bring, and what names it may not take;
-//! - `review` — what an install would write and change, asked before an Unverified one.
+//! - `review` — what an install would write and change, asked before an Unverified one;
+//! - `origin` — which skills and agents here came from an Unverified source.
 
 pub mod add;
 #[cfg(test)]
@@ -35,6 +36,7 @@ mod guard;
 mod guard_tests;
 pub mod index;
 mod listing;
+pub mod origin;
 mod pack;
 mod picture;
 #[cfg(test)]
@@ -274,38 +276,6 @@ async fn update_from(
         }
     }
     Ok(report)
-}
-
-/// The folders under `skills/` an Unverified source installed, by their name there (`x`
-/// for `skills/x`), with the source's name.
-pub fn unverified_skills(paths: &Paths) -> std::collections::BTreeMap<String, String> {
-    let record = Record::load(paths).unwrap_or_default();
-    record
-        .installed
-        .iter()
-        .filter(|(name, item)| item.unverified() && record.present(paths, name).is_some())
-        .filter_map(|(_, item)| {
-            let folder = item.folder.strip_prefix("skills/")?;
-            Some((folder.to_owned(), item.source.clone()))
-        })
-        .collect()
-}
-
-/// The folder (in `unverified_skills`' terms) and the Unverified source `skill`, a name
-/// in the skill graph, came from, when one did.
-pub fn unverified_source<'a>(
-    unverified: &'a std::collections::BTreeMap<String, String>,
-    skill: &str,
-) -> Option<(&'a str, &'a str)> {
-    unverified
-        .iter()
-        .find(|(folder, _)| {
-            skill == folder.as_str()
-                || skill
-                    .strip_prefix(folder.as_str())
-                    .is_some_and(|rest| rest.starts_with('/'))
-        })
-        .map(|(folder, source)| (folder.as_str(), source.as_str()))
 }
 
 /// The single skills the store installed, by name: their folders are under `skills/` like

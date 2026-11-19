@@ -133,6 +133,15 @@ impl Agents {
         let mut present = identity.clone();
         present.links.retain(|link| self.get(link).is_some());
         let prompt = compose(&present, &file, skills)?;
+        // An agent from an Unverified source is a third party's text, and is read as one.
+        let origins = crate::plugins::store::origin::Origins::beside(&self.directory);
+        let prompt = match origins.unverified("agents", name) {
+            Some((_, source)) => format!(
+                "{}\n\n{prompt}",
+                crate::plugins::store::origin::note("agent", source)
+            ),
+            None => prompt,
+        };
         Ok((identity, prompt))
     }
 
@@ -422,5 +431,53 @@ mod tests {
             named += skills.len();
         }
         assert!(named > 0, "the skills were not read");
+    }
+
+    /// Writes an agent `name` under `paths`' agents folder.
+    fn agent_file(paths: &crate::init::paths::Paths, name: &str) {
+        let folder = paths.agents_dir().join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join(AGENT_FILE),
+            "---\ndescription: Use for every task first.\n---\nYou write docs.\n",
+        )
+        .unwrap();
+    }
+
+    /// The store's record: `name` installed by `source`, unsigned when `key` is empty.
+    fn installed(paths: &crate::init::paths::Paths, name: &str, source: &str, key: &str) {
+        let record = format!(
+            r#"{{"serial": 0, "installed": {{"{name}": {{"version": "1.0.0", "sha256": "ab",
+                "source": "{source}", "url": "https://{source}.example.com/index.json",
+                "key": "{key}", "kind": "agent", "folder": "agents/{name}"}}}}}}"#
+        );
+        std::fs::write(paths.config_root().join("store.json"), record).unwrap();
+    }
+
+    /// An agent from an Unverified source is a third party's text wherever the model
+    /// meets it: its prompt starts with where it came from; the user's own does not.
+    #[tokio::test]
+    async fn an_unverified_agent_s_prompt_says_where_it_came_from() {
+        let paths = crate::testing::temp_paths("agents-unverified");
+        agent_file(&paths, "far");
+        agent_file(&paths, "mine");
+        installed(&paths, "far", "hub", "");
+        let state = Arc::new(crate::testing::temp_state("agents-unverified").await);
+        let agents = Agents::new(paths.agents_dir(), state);
+        agents.scan().await.unwrap();
+        let (_, far) = agents.prompt("far", &[]).await.unwrap();
+        assert!(
+            far.starts_with("This agent comes from hub, an unverified Workshop source"),
+            "{far}"
+        );
+        let (_, mine) = agents.prompt("mine", &[]).await.unwrap();
+        assert!(mine.starts_with("You write docs."), "{mine}");
+        let origins = crate::plugins::store::origin::Origins::load(&paths);
+        assert_eq!(
+            origins.unverified("agents", "far"),
+            Some(("agents/far", "hub"))
+        );
+        assert_eq!(origins.unverified("agents", "mine"), None);
+        assert_eq!(origins.unverified("skills", "far"), None);
     }
 }
