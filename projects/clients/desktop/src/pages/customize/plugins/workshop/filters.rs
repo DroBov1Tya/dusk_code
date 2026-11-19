@@ -172,11 +172,10 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
             })),
         );
     }
-    // The Skills page lists one kind, so there it has none to choose.
-    let kinds = match shop.scope {
-        super::Scope::Plugins => shop.scope.kinds(),
-        super::Scope::Skills => Vec::new(),
-    };
+    // A shelf of one kind has none to choose.
+    let kinds = Some(shop.scope.kinds())
+        .filter(|kinds| kinds.len() > 1)
+        .unwrap_or_default();
     if !kinds.is_empty() {
         list = list.child(section("Kind", cx));
     }

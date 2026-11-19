@@ -21,6 +21,7 @@ use crate::{
     ui::{Type, widgets},
     workspace::Workspace,
 };
+use plugins::Scope;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Shelf {
@@ -29,6 +30,29 @@ pub enum Shelf {
     Plugins,
     Tools,
     Agents,
+}
+
+impl Shelf {
+    /// The Workshop the shelf has; Tools has none, since the store lists no tools.
+    pub fn scope(self) -> Option<Scope> {
+        match self {
+            Self::Connectors => Some(Scope::Connectors),
+            Self::Skills => Some(Scope::Skills),
+            Self::Plugins => Some(Scope::Plugins),
+            Self::Agents => Some(Scope::Agents),
+            Self::Tools => None,
+        }
+    }
+
+    /// The shelf whose Workshop `scope` is.
+    pub fn of(scope: Scope) -> Self {
+        match scope {
+            Scope::Connectors => Self::Connectors,
+            Scope::Skills => Self::Skills,
+            Scope::Plugins => Self::Plugins,
+            Scope::Agents => Self::Agents,
+        }
+    }
 }
 
 pub fn render(
@@ -93,13 +117,26 @@ pub fn render(
         );
     }
     let query = ws.shelf_search.read(cx).value().trim().to_lowercase();
-    let body = match ws.shelf {
-        Shelf::Connectors => mcp::render(&settings, &ws.mcp_restarting, &query, cx),
-        Shelf::Skills => skills::render(ws, &settings, &query, window, cx),
-        Shelf::Plugins => plugins::render(ws, &query, window, cx),
-        Shelf::Tools => tools::render(&settings, &query, cx),
-        Shelf::Agents => graph::render(ws, &settings.agents, cx),
+    let scope = ws.shelf.scope();
+    let mut body = match ws.discovering() {
+        Some(_) => plugins::workshop::render(ws, &query, window, cx),
+        None => match ws.shelf {
+            Shelf::Connectors => mcp::render(&settings, &ws.mcp_restarting, &query, cx),
+            Shelf::Skills => skills::installed(&settings, &query, cx),
+            Shelf::Plugins => plugins::installed(ws, &query, cx),
+            Shelf::Tools => tools::render(&settings, &query, cx),
+            Shelf::Agents => graph::render(ws, &settings.agents, cx),
+        },
     };
+    // Every shelf with a Workshop has its switch over what it shows.
+    if let Some(scope) = scope {
+        body = div()
+            .flex()
+            .flex_col()
+            .gap_4()
+            .child(plugins::workshop::switch(ws, scope, cx))
+            .child(body);
+    }
     div()
         .id("customize")
         .size_full()
@@ -126,9 +163,11 @@ pub fn render(
                         .pb_4()
                         .child(tabs)
                         .child(div().flex_1())
-                        .when(ws.shelf != Shelf::Agents, |row| {
-                            row.child(div().w(px(280.)).child(Input::new(&ws.shelf_search)))
-                        })
+                        // The agents' graph has nothing to search; their Workshop has.
+                        .when(
+                            ws.shelf != Shelf::Agents || ws.discovering().is_some(),
+                            |row| row.child(div().w(px(280.)).child(Input::new(&ws.shelf_search))),
+                        )
                         // The Workshop's filters sit beside the search they narrow with.
                         .when(ws.discovering().is_some(), |row| {
                             row.child(plugins::workshop::filters::button(ws, cx))
@@ -145,16 +184,6 @@ fn clear_search(id: &'static str, cx: &mut Context<Workspace>) -> Button {
             .update(cx, |search, cx| search.set_value("", window, cx));
         cx.notify();
     }))
-}
-
-impl Workspace {
-    /// Shows the Workshop's Discover page, where plugins, skills and connectors are found.
-    pub fn discover_plugins(&mut self, cx: &mut Context<Self>) {
-        self.shelf = Shelf::Plugins;
-        self.workshop.plugins_view = Some(plugins::workshop::View::Discover);
-        self.ensure_store(cx);
-        cx.notify();
-    }
 }
 
 /// One card of rows, as wide as the Workshop's grid at most.

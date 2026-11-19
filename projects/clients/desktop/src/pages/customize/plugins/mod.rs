@@ -1,12 +1,11 @@
 //! The plugins shelf: the installed plugins as cards, with what each brings and whether it
-//! waits for settings, or the Workshop, where the store's plugins, skills, packs and
-//! agents are installed.
+//! waits for settings; and the Workshop, which every shelf with a Discover shows.
 
 mod confirm;
 pub mod workshop;
 
 pub use confirm::{Confirm, render as confirm};
-pub use workshop::{Scope, View, Workshop};
+pub use workshop::{Scope, Workshop};
 
 use gpui_kit::{
     component::{ActiveTheme, Sizable, switch::Switch},
@@ -16,20 +15,7 @@ use gpui_kit::{
 use super::{card, grid, matches};
 use crate::workspace::Workspace;
 
-pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
-    let body = match ws.view(Scope::Plugins) {
-        View::Discover => workshop::render(ws, query, window, cx),
-        View::Installed => installed(ws, query, cx),
-    };
-    div()
-        .flex()
-        .flex_col()
-        .gap_4()
-        .child(workshop::switch(ws, Scope::Plugins, cx))
-        .child(body)
-}
-
-fn installed(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
+pub fn installed(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
     let warning = cx.theme().warning;
     let plugins: Vec<_> = ws
         .status
@@ -39,21 +25,16 @@ fn installed(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
         .cloned()
         .collect();
     if plugins.is_empty() {
-        return div().child(crate::ui::empty(
-            gpui_kit::component::IconName::Network,
-            if query.is_empty() {
-                "No plugins installed. A plugin brings skills, agents and tools."
-            } else {
-                "No installed plugin matches that word."
-            },
-            Some(if query.is_empty() {
-                crate::ui::action("plugins-empty-workshop", "Discover in Workshop")
-                    .on_click(cx.listener(|ws, _, _, cx| ws.discover_plugins(cx)))
-            } else {
-                super::clear_search("plugins-empty-clear", cx)
-            }),
-            cx,
-        ));
+        return div().child(if query.is_empty() {
+            workshop::nothing_installed(Scope::Plugins, cx)
+        } else {
+            crate::ui::empty(
+                gpui_kit::component::IconName::Network,
+                "No installed plugin matches that word.",
+                Some(super::clear_search("plugins-empty-clear", cx)),
+                cx,
+            )
+        });
     }
     let mut cards = grid(cx);
     for plugin in plugins {

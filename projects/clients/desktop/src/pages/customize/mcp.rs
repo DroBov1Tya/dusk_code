@@ -15,7 +15,11 @@ use gpui_kit::{
     *,
 };
 
-use super::{card, grid, matches, toggle};
+use super::{
+    card, grid, matches,
+    plugins::{Scope, workshop},
+    toggle,
+};
 use crate::{modal::detail::Detail, ui::widgets, workspace::Workspace};
 
 const SHOWN: Duration = Duration::from_millis(800);
@@ -44,22 +48,16 @@ pub fn render(
         .filter(|server| matches(query, &[&server.name, &server.target]))
         .collect();
     if servers.is_empty() {
-        return div().child(crate::ui::empty(
-            IconName::Network,
-            if query.is_empty() {
-                "No connectors yet. A plugin can bring one, or add a server to the mcp section of the config."
-            } else {
-                "No connector has that name or address."
-            },
-            Some(if query.is_empty() {
-                crate::ui::action("connectors-empty-workshop", "Discover in Workshop").on_click(
-                    cx.listener(|ws, _, _, cx| ws.discover_plugins(cx)),
-                )
-            } else {
-                super::clear_search("connectors-empty-clear", cx)
-            }),
-            cx,
-        ));
+        return div().child(if query.is_empty() {
+            workshop::nothing_installed(Scope::Connectors, cx)
+        } else {
+            crate::ui::empty(
+                IconName::Network,
+                "No connector has that name or address.",
+                Some(super::clear_search("connectors-empty-clear", cx)),
+                cx,
+            )
+        });
     }
     let mut cards = grid(cx);
     for server in servers {

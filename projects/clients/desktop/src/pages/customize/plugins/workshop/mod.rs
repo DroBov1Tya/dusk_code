@@ -3,7 +3,8 @@
 //! newest, the latest updated, the local packs); a capsule opens the
 //! listing's window, a pack also has a page of its skills and their switches. The core
 //! checks, sorts, filters by category and picks the shelves; this page only shows what
-//! it read, narrows by tier and kind, and asks before anything changes.
+//! it read for the shelf in view (its `Scope`), narrows by tier and kind, and asks before
+//! anything changes.
 
 mod actions;
 mod byline;
@@ -44,26 +45,9 @@ use crate::{
 };
 
 pub use capsule::clip;
+pub use dusk_protocol::plugin::Scope;
 pub use grid::Grid;
 pub use shelves::Shelf;
-
-/// The page the Workshop is shown on. Each asks the core for its own kinds: single
-/// skills on the Skills page, everything that may hold more under Plugins.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Scope {
-    #[default]
-    Plugins,
-    Skills,
-}
-
-impl Scope {
-    pub fn kinds(self) -> Vec<Kind> {
-        match self {
-            Self::Plugins => vec![Kind::Plugin, Kind::Pack, Kind::Agent],
-            Self::Skills => vec![Kind::Skill],
-        }
-    }
-}
 
 /// "Discover | Installed" of a page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,10 +58,9 @@ pub enum View {
 
 #[derive(Default)]
 pub struct Workshop {
-    /// What the Plugins and Skills pages show, once the user chose; until then Discover
-    /// when nothing is installed, Installed otherwise.
-    pub plugins_view: Option<View>,
-    pub skills_view: Option<View>,
+    /// What each shelf shows, once the user chose; until then Discover when nothing is
+    /// installed there, Installed otherwise.
+    pub views: HashMap<Scope, View>,
     /// The page the listings were read for.
     pub scope: Scope,
     /// The store's listings, once read; kept while it is read again.
@@ -189,10 +172,12 @@ fn browsing(shop: &Workshop, query: &str) -> bool {
         && shop.order == Order::Trust
 }
 
-/// The listings left after the search, the tiers and the kinds chosen, in the core's order.
+/// The listings of the shelf left after the search, the tiers and the kinds chosen, in the
+/// core's order.
 fn visible<'a>(shop: &Workshop, listings: &'a [Listing], query: &str) -> Vec<&'a Listing> {
     listings
         .iter()
+        .filter(|listing| shop.scope.holds(listing))
         .filter(|listing| shop.tiers.is_empty() || shop.tiers.contains(&listing.tier))
         .filter(|listing| shop.kinds.is_empty() || shop.kinds.contains(&listing.kind))
         .filter(|listing| {
@@ -309,26 +294,15 @@ fn unreachable_store(error: &str, cx: &mut Context<Workspace>) -> Div {
     )
 }
 
-/// "Workshop  Discover | Installed" of a page, and while the listings are shown "Update
+/// "Workshop  Discover | Installed" of a shelf, and while the listings are shown "Update
 /// all" and a refresh. There is no auto-update switch: the core has no such setting, and
 /// a client keeps no timers of its own.
 pub fn switch(ws: &Workspace, scope: Scope, cx: &mut Context<Workspace>) -> Div {
     let open = ws.view(scope) == View::Discover;
     let view = |id: &'static str, label: &'static str, this: View| {
-        controls::text_choice(id, label, ws.view(scope) == this, cx).on_click(cx.listener(
-            move |ws, _, _, cx| {
-                match scope {
-                    Scope::Plugins => ws.workshop.plugins_view = Some(this),
-                    Scope::Skills => ws.workshop.skills_view = Some(this),
-                }
-                ws.ensure_store(cx);
-                cx.notify();
-            },
-        ))
-    };
-    let ids: [&'static str; 2] = match scope {
-        Scope::Plugins => ["plugins-workshop", "plugins-installed"],
-        Scope::Skills => ["skills-workshop", "skills-installed"],
+        let id = SharedString::from(format!("{}-{id}", scope.noun()));
+        controls::text_choice(id, label, ws.view(scope) == this, cx)
+            .on_click(cx.listener(move |ws, _, _, cx| ws.show_view(scope, this, cx)))
     };
     let mut row = div()
         .flex()
@@ -336,9 +310,9 @@ pub fn switch(ws: &Workspace, scope: Scope, cx: &mut Context<Workspace>) -> Div 
         .items_center()
         .gap_2()
         .child(div().title().pr_2().child("Workshop"))
-        .child(view(ids[0], "Discover", View::Discover))
+        .child(view("workshop", "Discover", View::Discover))
         .child(controls::pipe(cx))
-        .child(view(ids[1], "Installed", View::Installed));
+        .child(view("installed", "Installed", View::Installed));
     if open {
         row = row
             .child(div().flex_1())
@@ -363,34 +337,45 @@ pub fn switch(ws: &Workspace, scope: Scope, cx: &mut Context<Workspace>) -> Div 
 }
 
 impl Workspace {
-    /// What `scope`'s page shows: the user's choice, or Discover while nothing is
-    /// installed there.
+    /// What `scope`'s shelf shows: the user's choice, or Discover while nothing is
+    /// installed there. The agents' graph always holds the built-in ones.
     pub fn view(&self, scope: Scope) -> View {
-        let (chosen, empty) = match scope {
-            Scope::Plugins => (self.workshop.plugins_view, self.status.plugins.is_empty()),
-            Scope::Skills => (
-                self.workshop.skills_view,
-                self.settings
-                    .as_ref()
-                    .is_some_and(|settings| settings.skills.is_empty()),
-            ),
+        let settings = self.settings.as_ref();
+        let empty = match scope {
+            Scope::Connectors => settings.is_some_and(|settings| settings.mcp.is_empty()),
+            Scope::Skills => settings.is_some_and(|settings| settings.skills.is_empty()),
+            Scope::Plugins => self.status.plugins.is_empty(),
+            Scope::Agents => false,
         };
-        chosen.unwrap_or(if empty {
-            View::Discover
-        } else {
-            View::Installed
-        })
+        self.workshop
+            .views
+            .get(&scope)
+            .copied()
+            .unwrap_or(if empty {
+                View::Discover
+            } else {
+                View::Installed
+            })
     }
 
-    /// The page whose Workshop is in view, if one is.
+    /// Shows `scope`'s shelf on `view`, reading the store when it is Discover.
+    pub fn show_view(&mut self, scope: Scope, view: View, cx: &mut Context<Self>) {
+        self.workshop.views.insert(scope, view);
+        self.ensure_store(cx);
+        cx.notify();
+    }
+
+    /// Opens `scope`'s shelf on its Discover.
+    pub fn discover(&mut self, scope: Scope, cx: &mut Context<Self>) {
+        self.shelf = crate::pages::customize::Shelf::of(scope);
+        self.show_view(scope, View::Discover, cx);
+    }
+
+    /// The shelf whose Workshop is in view, if one is.
     pub fn discovering(&self) -> Option<Scope> {
-        use crate::pages::customize::Shelf;
-        let scope = match self.shelf {
-            Shelf::Plugins => Scope::Plugins,
-            Shelf::Skills => Scope::Skills,
-            _ => return None,
-        };
-        (self.view(scope) == View::Discover).then_some(scope)
+        self.shelf
+            .scope()
+            .filter(|scope| self.view(*scope) == View::Discover)
     }
 
     /// Reads the store for the Workshop in view when it has not been read for that page;
@@ -417,7 +402,7 @@ impl Workspace {
         }
     }
 
-    /// Reads the store in the chosen order and category for the page in view, and the
+    /// Reads the store in the chosen order and category for the shelf in view, and the
     /// skill packs here.
     pub fn load_store(&mut self, cx: &mut Context<Self>) {
         if self.workshop.loading {
@@ -433,7 +418,7 @@ impl Workspace {
             move |ws, result, cx| {
                 let shop = &mut ws.workshop;
                 shop.loading = false;
-                // Another page was opened meanwhile; it reads its own.
+                // Another shelf was opened meanwhile; it reads its own.
                 if shop.scope != scope {
                     cx.notify();
                     return;
@@ -617,4 +602,21 @@ pub fn kind_word(kind: Kind) -> &'static str {
         Kind::Pack => "Pack",
         Kind::Agent => "Agent",
     }
+}
+
+/// An empty Installed list of a shelf, with the way to its Discover.
+pub fn nothing_installed(scope: Scope, cx: &mut Context<Workspace>) -> Div {
+    let id = SharedString::from(format!("{}-empty-discover", scope.noun()));
+    crate::ui::empty(
+        IconName::Inbox,
+        &format!(
+            "Nothing installed yet. Discover {} in the Workshop.",
+            scope.noun()
+        ),
+        Some(
+            crate::ui::action(id, "Discover")
+                .on_click(cx.listener(move |ws, _, _, cx| ws.discover(scope, cx))),
+        ),
+        cx,
+    )
 }
