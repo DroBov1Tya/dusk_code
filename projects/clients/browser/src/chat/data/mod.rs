@@ -2,6 +2,7 @@
 //! with no browser in it, so the drawing code only reads it and the rules can be tested.
 
 use dusk_protocol::{
+    catalog::SkillChange,
     config::ApprovalPolicy,
     model::{ModelEvent, ToolCall},
     thread::{
@@ -101,6 +102,9 @@ pub struct ChatData {
     pub tasks: Vec<Task>,
     /// The pinned messages, as the core cut their excerpts.
     pub pins: Vec<Pin>,
+    /// What agents changed in skills, as the core recorded it; a row hangs under the step
+    /// whose `call_id` it names.
+    pub skill_changes: Vec<SkillChange>,
     pub agents: Vec<Agent>,
     pub approvals: Vec<ApprovalRequest>,
     pub question: Option<Question>,
@@ -339,6 +343,7 @@ impl ChatData {
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
             ThreadEvent::Pins(pins) => self.pins = pins,
+            ThreadEvent::SkillChanged(change) => self.put_skill_change(change),
             ThreadEvent::TaskChanged(task) => {
                 match self.tasks.iter_mut().find(|t| t.task_id == task.task_id) {
                     Some(known) => *known = task,
@@ -375,6 +380,23 @@ impl ChatData {
             // The rest left a note above or is not shown.
             _ => {}
         }
+    }
+
+    /// Keeps `change` in place of the row with its `id`, or as a new one.
+    pub fn put_skill_change(&mut self, change: SkillChange) {
+        match self.skill_changes.iter_mut().find(|c| c.id == change.id) {
+            Some(known) => *known = change,
+            None => self.skill_changes.push(change),
+        }
+    }
+
+    /// The skill changes made by the step `call_id`, oldest first.
+    pub fn skill_changes_of(&self, call_id: &str) -> Vec<SkillChange> {
+        self.skill_changes
+            .iter()
+            .filter(|c| c.call_id == call_id)
+            .cloned()
+            .collect()
     }
 
     fn agent_name(&self, thread_id: &str) -> String {

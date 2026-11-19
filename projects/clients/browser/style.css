@@ -936,3 +936,12 @@ a.pr-chip:hover { background: color-mix(in srgb, var(--accent) 12%, var(--raised
 .pr-chip.open .pr-dot { background: var(--good); } .pr-chip.merged .pr-dot { background: var(--accent); } .pr-chip.closed .pr-dot { background: var(--bad); }
 .pr-card { display: none; position: absolute; left: 0; top: calc(100% + 6px); width: 300px; padding: var(--s3); flex-direction: column; gap: var(--s1); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px color-mix(in srgb, var(--bg) 60%, transparent); font-size: 13px; line-height: 1.4; z-index: 5; white-space: normal; }
 a.pr-chip:hover .pr-card, a.pr-chip:focus-visible .pr-card { display: flex; animation: rise var(--t-open) var(--ease); }
+
+/* A skill an agent changed: one row under its step, with the diff and Undo. */
+.skill-change { padding: 4px 12px 6px 20px; border-top: 1px solid var(--line); font-size: 13px; }
+.skill-change-head { display: flex; gap: 10px; align-items: center; }
+.skill-change-head button { padding: 2px 6px; font-size: 12px; }
+.skill-diff { margin: 6px 0 0; padding: 6px 0; max-height: 320px; overflow: auto; background: var(--panel); border-radius: 6px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+.skill-diff > div { padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.skill-diff .added { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.skill-diff .removed { background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--muted); text-decoration: line-through; }
