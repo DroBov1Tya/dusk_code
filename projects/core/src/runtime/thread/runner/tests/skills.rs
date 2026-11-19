@@ -6,7 +6,8 @@ use crate::catalog::skills::{SkillSave, SkillSaveAction};
 const V1: &str = "---\ndescription: Mine.\n---\nv1\n";
 const V2: &str = "---\ndescription: Mine.\n---\nv2\n";
 
-/// Writes `text` to the file `path`, and prints `say`; read-only when asked to.
+/// Writes `text` to the file `path` (and `also`), removes `remove`, and prints `say`;
+/// read-only when asked to.
 struct Scribe;
 
 impl Tool for Scribe {
@@ -32,6 +33,13 @@ impl Tool for Scribe {
                 (arguments["path"].as_str(), arguments["text"].as_str())
             {
                 std::fs::write(path, text)?;
+                if let Some(also) = arguments["also"].as_str() {
+                    std::fs::create_dir_all(std::path::Path::new(also).parent().unwrap())?;
+                    std::fs::write(also, text)?;
+                }
+            }
+            if let Some(path) = arguments["remove"].as_str() {
+                std::fs::remove_file(path)?;
             }
             Ok(arguments["say"].as_str().unwrap_or("ok").to_owned())
         })
@@ -116,7 +124,7 @@ async fn a_skill_written_by_any_tool_is_recorded() {
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
     assert_eq!(row.skill, "mine");
-    assert!(!row.created);
+    assert_eq!(row.action, SkillSaveAction::Updated);
     assert_eq!(row.before.as_deref(), Some(V1));
     assert_eq!(row.after, V2);
     assert_eq!(row.reason, "+1 -1 lines");
@@ -187,7 +195,7 @@ async fn a_new_skill_is_a_created_row() {
     let rows = state.skill_changes("thread").await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].skill, "new");
-    assert!(rows[0].created && rows[0].before.is_none());
+    assert!(rows[0].action == SkillSaveAction::Created && rows[0].before.is_none());
     let results = transcript(&state).await;
     let result = results
         .iter()
@@ -225,4 +233,51 @@ async fn a_command_reason_is_its_description() {
     .await;
     let rows = state.skill_changes("thread").await.unwrap();
     assert_eq!(rows[0].reason, "Fix the");
+    // The row names the skill already; a description that names it again is cut.
+    let (state, _, _) = scribed_by(
+        "run_command",
+        Box::new(Shell),
+        "skill_reason_named",
+        |file| json!({ "path": file, "text": V2, "description": "Skill  MINE :  fix the steps" }),
+    )
+    .await;
+    let rows = state.skill_changes("thread").await.unwrap();
+    assert_eq!(rows[0].reason, "fix the steps");
+}
+
+#[tokio::test]
+async fn a_removed_skill_is_a_deleted_row() {
+    let (state, _, file) = scribed("skill_removed", |file| json!({ "remove": file })).await;
+    assert!(!file.exists());
+    let rows = state.skill_changes("thread").await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].action, SkillSaveAction::Deleted);
+    assert_eq!(rows[0].before.as_deref(), Some(V1));
+    assert!(rows[0].info().can_undo);
+}
+
+#[tokio::test]
+async fn every_skill_a_call_changed_has_its_notice_line() {
+    let (state, _, _) = scribed("skill_two", |file| {
+        let other = file
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("other/SKILL.md");
+        json!({ "path": file, "text": V2, "also": other })
+    })
+    .await;
+    assert_eq!(state.skill_changes("thread").await.unwrap().len(), 2);
+    let results = transcript(&state).await;
+    let result = results
+        .iter()
+        .find(|(role, _)| *role == MessageRole::Tool)
+        .unwrap();
+    let notices = result
+        .1
+        .lines()
+        .filter(|line| line.starts_with(dusk_protocol::catalog::SAVE_MARKER))
+        .count();
+    assert_eq!(notices, 2);
 }

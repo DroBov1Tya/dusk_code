@@ -21,7 +21,10 @@ pub fn plain_diff_line(line: &str) -> String {
 fn plain_char(c: char, keep_tab: bool) -> bool {
     (keep_tab && c == '\t')
         || !(c.is_control()
-            || matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}'))
+            || matches!(
+                c,
+                '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+            ))
 }
 
 #[cfg(test)]
@@ -30,9 +33,17 @@ mod tests {
 
     #[test]
     fn plain_line_strips_and_caps() {
-        let reason = format!("\u{1b}[31mfix\u{202e}ed\nsecond line{}", "y".repeat(10_000));
+        let reason = format!(
+            "\u{1b}[31mfix\u{202e}e\u{061c}d\nsecond line{}",
+            "y".repeat(10_000)
+        );
         let line = plain_line(&reason, MAX_REASON_CHARS);
-        assert!(!line.contains('\u{1b}') && !line.contains('\u{202e}') && !line.contains('\n'));
+        assert!(
+            !line.contains('\u{1b}')
+                && !line.contains('\u{202e}')
+                && !line.contains('\u{061c}')
+                && !line.contains('\n')
+        );
         assert!(line.starts_with("[31mfixed"));
         assert!(!line.contains("second"));
         assert!(line.chars().count() <= 200);

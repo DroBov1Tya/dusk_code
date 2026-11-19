@@ -71,7 +71,8 @@ pub struct SkillSave {
 pub enum SkillSaveAction {
     Created,
     Updated,
-    Unchanged,
+    /// The file is gone; its text is the change's `before`.
+    Deleted,
 }
 
 impl SkillSave {
@@ -82,20 +83,6 @@ impl SkillSave {
     /// Only file-tool results are eligible; callers also check the tool's success.
     pub fn from_result(content: &str) -> Option<Self> {
         serde_json::from_str(content.lines().last()?.strip_prefix(SAVE_MARKER)?).ok()
-    }
-
-    pub fn notice(&self) -> String {
-        let action = match self.action {
-            SkillSaveAction::Created => "created",
-            SkillSaveAction::Updated => "updated",
-            SkillSaveAction::Unchanged => "saved without changes",
-        };
-        let name: String = self
-            .name
-            .chars()
-            .map(|c| if c.is_control() { '?' } else { c })
-            .collect();
-        format!("Skill {action}: {name}")
     }
 }
 

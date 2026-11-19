@@ -671,7 +671,13 @@ impl Transcript {
             .find(|row| row.change.id == change.id)
         {
             Some(row) => {
+                // An undo is final: a stale list must not offer Undo again.
+                let undone = row.change.undone || change.undone;
                 row.change = change;
+                if undone {
+                    row.change.undone = true;
+                    row.change.can_undo = false;
+                }
                 row.busy = false;
                 row.error = None;
             }

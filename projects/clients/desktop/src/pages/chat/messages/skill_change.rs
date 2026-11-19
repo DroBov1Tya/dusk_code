@@ -63,7 +63,8 @@ pub fn plain(text: &str, tabs: bool) -> String {
 pub fn label(change: &SkillChange) -> String {
     let verb = match change.action {
         SkillSaveAction::Created => "created",
-        SkillSaveAction::Updated | SkillSaveAction::Unchanged => "improved",
+        SkillSaveAction::Updated => "improved",
+        SkillSaveAction::Deleted => "deleted",
     };
     let skill = plain(&change.skill, false);
     let reason = plain(change.reason.lines().next().unwrap_or_default(), false);
@@ -109,6 +110,15 @@ fn skill_row(ws: &Workspace, shown: &str, row: &SkillRow, cx: &mut Context<Works
         )
         .when(change.undone, |header| {
             header.child(div().flex_none().meta().text_color(muted).child("undone"))
+        })
+        .when(!change.undone && !change.can_undo, |header| {
+            header.child(
+                div()
+                    .flex_none()
+                    .meta()
+                    .text_color(muted)
+                    .child("previous text not kept"),
+            )
         })
         .child(disclosure_icon(open, muted))
         .on_click(cx.listener(move |ws, _, _, cx| ws.open_skill_change(&thread, id, cx)));
@@ -346,7 +356,9 @@ mod tests {
         undone.undone = true;
         undone.can_undo = false;
         chat.apply(ThreadEvent::SkillChanged(undone));
+        // A stale history list read before the undo does not bring Undo back.
+        chat.skills_loaded(vec![change("one")]);
         assert_eq!(chat.skills.len(), 1);
-        assert!(chat.skills[0].change.undone);
+        assert!(chat.skills[0].change.undone && !chat.skills[0].change.can_undo);
     }
 }

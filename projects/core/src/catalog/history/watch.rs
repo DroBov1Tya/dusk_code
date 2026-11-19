@@ -1,6 +1,7 @@
-//! Notices skill files that a tool call created or changed. The files are listed before
-//! and after the call by size and change time; only a file whose text really differs
-//! from the call's own baseline, and that still reads as a skill, counts as a change.
+//! Notices skill files that a tool call created, changed or deleted. The files are listed
+//! before and after the call by size and change time; only a file whose text really
+//! differs from the call's own baseline, and that still reads as a skill, counts as a
+//! change. A file gone after the call is a deletion, with the text it had.
 
 use std::{
     collections::HashMap,
@@ -13,7 +14,10 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::{
-    catalog::graph::{Node, SKILL_FILE, is_node_folder_name, node_name},
+    catalog::{
+        graph::{Node, SKILL_FILE, is_node_folder_name, node_name},
+        skills::SkillSaveAction,
+    },
     init::files::read_regular,
 };
 
@@ -38,14 +42,21 @@ pub struct Baseline {
     texts: HashMap<PathBuf, Arc<str>>,
 }
 
-/// One skill a call created or changed. `before` is `None` for a new skill, or when the
-/// old text was not in the baseline.
+/// One skill a call created, changed or deleted. `before` is `None` for a new skill, or
+/// when the old text was not in the baseline; `after` is empty for a deleted one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Changed {
     pub skill: String,
-    pub created: bool,
+    pub action: SkillSaveAction,
     pub before: Option<String>,
     pub after: String,
+}
+
+/// The last change reported for a file: what it left (`None` when it deleted the file)
+/// and its number.
+struct Recorded {
+    left: Option<(Stamp, Arc<str>)>,
+    seq: u64,
 }
 
 #[derive(Default)]
@@ -54,9 +65,10 @@ struct Cache {
     /// Files not cached (too big, not text, over budget), by the stamp they were seen at,
     /// so they are not read again at every call.
     skipped: HashMap<PathBuf, Stamp>,
-    /// The last change reported for a file: its stamp, its text and its number, so
-    /// overlapping calls record it once and the next one starts from this text.
-    recorded: HashMap<PathBuf, (Stamp, Arc<str>, u64)>,
+    /// The last change reported for a file, so overlapping calls record it once and the
+    /// next one starts from what it left. Kept when the file goes, so a call still running
+    /// reports the deletion from the last text and only once.
+    recorded: HashMap<PathBuf, Recorded>,
     /// Changes recorded so far.
     seq: u64,
     bytes: usize,
@@ -116,13 +128,11 @@ impl Watch {
                     .texts
                     .keys()
                     .chain(cache.skipped.keys())
-                    .chain(cache.recorded.keys())
                     .filter(|path| !stamps.contains_key(*path))
                     .cloned()
                     .collect();
                 for path in gone {
                     cache.forget(&path);
-                    cache.recorded.remove(&path);
                 }
                 stamps
                     .iter()
@@ -162,9 +172,9 @@ impl Watch {
         .ok()
     }
 
-    /// The skills created or changed since `before`, by name. A change another call
-    /// reported already is not reported again, and one made after another call's report
-    /// of the same file starts from the text that report left.
+    /// The skills created, changed or deleted since `before`, by name. A change another
+    /// call reported already is not reported again, and one made after another call's
+    /// report of the same file starts from what that report left.
     pub async fn changed(&self, before: Baseline) -> Vec<Changed> {
         let Some(folder) = self.skills.clone() else {
             return Vec::new();
@@ -195,15 +205,19 @@ impl Watch {
                     cache.skipped.insert(path, stamp);
                     continue;
                 };
-                let created = !before.stamps.contains_key(&path);
-                let old = match cache.recorded.get(&path) {
-                    Some((_, recorded, seq)) if *seq > before.seq => Some(Arc::clone(recorded)),
-                    _ => before.texts.get(&path).cloned(),
+                // Another call's later report, if any, is where this change starts.
+                let since = cache.recorded.get(&path).filter(|r| r.seq > before.seq);
+                let created = !before.stamps.contains_key(&path)
+                    || since.is_some_and(|recorded| recorded.left.is_none());
+                let old = match since {
+                    Some(recorded) => recorded.left.as_ref().map(|(_, text)| Arc::clone(text)),
+                    None => before.texts.get(&path).cloned(),
                 };
                 let again = cache
                     .recorded
                     .get(&path)
-                    .is_some_and(|(seen, ..)| *seen == stamp);
+                    .and_then(|recorded| recorded.left.as_ref())
+                    .is_some_and(|(seen, _)| *seen == stamp);
                 cache.put(path.clone(), stamp, Arc::clone(&text));
                 let Some(skill) = node_name(&folder, SKILL_FILE, &path) else {
                     continue;
@@ -214,12 +228,48 @@ impl Watch {
                 }
                 cache.seq += 1;
                 let seq = cache.seq;
-                cache.recorded.insert(path, (stamp, Arc::clone(&text), seq));
+                let left = Some((stamp, Arc::clone(&text)));
+                cache.recorded.insert(path, Recorded { left, seq });
                 found.push(Changed {
                     skill,
-                    created: created && old.is_none(),
+                    action: if created && old.is_none() {
+                        SkillSaveAction::Created
+                    } else {
+                        SkillSaveAction::Updated
+                    },
                     before: old.map(|text| text.to_string()),
                     after: text.to_string(),
+                });
+            }
+            let mut gone: Vec<_> = before
+                .stamps
+                .keys()
+                .filter(|path| !after.contains_key(*path))
+                .cloned()
+                .collect();
+            gone.sort();
+            for path in gone {
+                let Some(skill) = node_name(&folder, SKILL_FILE, &path) else {
+                    continue;
+                };
+                let old = match cache.recorded.get(&path).filter(|r| r.seq > before.seq) {
+                    // Another call reported the deletion already.
+                    Some(Recorded { left: None, .. }) => continue,
+                    Some(Recorded {
+                        left: Some((_, text)),
+                        ..
+                    }) => Some(Arc::clone(text)),
+                    None => before.texts.get(&path).cloned(),
+                };
+                cache.forget(&path);
+                cache.seq += 1;
+                let seq = cache.seq;
+                cache.recorded.insert(path, Recorded { left: None, seq });
+                found.push(Changed {
+                    skill,
+                    action: SkillSaveAction::Deleted,
+                    before: old.map(|text| text.to_string()),
+                    after: String::new(),
                 });
             }
             found
@@ -306,6 +356,50 @@ mod tests {
         let later = watch.changed(a).await;
         assert_eq!(later.len(), 1);
         assert_eq!(later[0].before.as_deref(), Some(skill("two!").as_str()));
+    }
+
+    /// A removed skill is one deletion with the text it had, reported once even when
+    /// calls overlap.
+    #[tokio::test]
+    async fn a_removed_skill_is_a_deletion() {
+        let root = temp_dir("watch_deleted");
+        let file = root.join("demo/SKILL.md");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, skill("one")).unwrap();
+        let watch = Watch::new(Some(root));
+        let a = watch.before().await.unwrap();
+        let b = watch.before().await.unwrap();
+        fs::remove_file(&file).unwrap();
+        let changes = watch.changed(a).await;
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].action, SkillSaveAction::Deleted);
+        assert_eq!(changes[0].before.as_deref(), Some(skill("one").as_str()));
+        assert!(changes[0].after.is_empty());
+        assert!(watch.changed(b).await.is_empty());
+    }
+
+    /// A moved skill is the old name deleted and the new one created.
+    #[tokio::test]
+    async fn a_moved_skill_is_a_deletion_and_a_creation() {
+        let root = temp_dir("watch_moved");
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(root.join("a/SKILL.md"), skill("one")).unwrap();
+        let watch = Watch::new(Some(root.clone()));
+        let before = watch.before().await.unwrap();
+        fs::rename(root.join("a"), root.join("b")).unwrap();
+        let changes = watch.changed(before).await;
+        let found: Vec<_> = changes
+            .iter()
+            .map(|change| (change.skill.as_str(), change.action))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("b", SkillSaveAction::Created),
+                ("a", SkillSaveAction::Deleted)
+            ]
+        );
+        assert_eq!(changes[1].before.as_deref(), Some(skill("one").as_str()));
     }
 
     #[tokio::test]

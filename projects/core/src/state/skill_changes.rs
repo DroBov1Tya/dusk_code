@@ -13,26 +13,27 @@ pub const MAX_KEPT_PER_SKILL: usize = 20;
 /// Largest text stored, the same as the node limit.
 pub const MAX_TEXT_BYTES: usize = 256 * 1024;
 
-/// A change to record. `before` is `None` when the skill was created.
+/// A change to record. `before` is `None` when the skill was created; `after` is empty
+/// when it was deleted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewSkillChange {
     pub skill: String,
     pub thread_id: String,
     pub call_id: String,
-    pub created: bool,
+    pub action: SkillSaveAction,
     pub reason: String,
     pub before: Option<String>,
     pub after: String,
 }
 
-/// A recorded change. `before` is `None` for a creation or when it was too large to keep.
+/// A recorded change. `before` is `None` for a creation or when it was not kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredSkillChange {
     pub id: i64,
     pub skill: String,
     pub thread_id: String,
     pub call_id: String,
-    pub created: bool,
+    pub action: SkillSaveAction,
     pub reason: String,
     pub before: Option<String>,
     pub after: String,
@@ -47,18 +48,12 @@ impl StoredSkillChange {
             id: self.id,
             skill: self.skill.clone(),
             call_id: self.call_id.clone(),
-            action: if self.created {
-                SkillSaveAction::Created
-            } else {
-                SkillSaveAction::Updated
-            },
+            action: self.action,
             reason: self.reason.clone(),
             changed_at_ms: self.changed_at_ms,
             undone: self.undone_at_ms.is_some(),
             can_undo: self.undone_at_ms.is_none()
-                && (self.created || self.before.is_some())
-                && crate::catalog::skills::pack_of(&self.skill).as_deref()
-                    != Some(crate::catalog::skills::BUILTIN_PACK),
+                && (self.action == SkillSaveAction::Created || self.before.is_some()),
         }
     }
 }
@@ -69,7 +64,11 @@ fn stored(row: &SqliteRow) -> Result<StoredSkillChange> {
         skill: row.try_get("skill")?,
         thread_id: row.try_get("thread_id")?,
         call_id: row.try_get("call_id")?,
-        created: row.try_get::<String, _>("action")? == "created",
+        action: match row.try_get::<String, _>("action")?.as_str() {
+            "created" => SkillSaveAction::Created,
+            "deleted" => SkillSaveAction::Deleted,
+            _ => SkillSaveAction::Updated,
+        },
         reason: row.try_get("reason")?,
         before: row.try_get("before")?,
         after: row.try_get("after")?,
@@ -87,7 +86,11 @@ impl State {
             "skill text is over {MAX_TEXT_BYTES} bytes"
         );
         let before = change.before.filter(|text| text.len() <= MAX_TEXT_BYTES);
-        let action = if change.created { "created" } else { "updated" };
+        let action = match change.action {
+            SkillSaveAction::Created => "created",
+            SkillSaveAction::Updated => "updated",
+            SkillSaveAction::Deleted => "deleted",
+        };
         let changed_at_ms = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin skill change")?;
         let id = sqlx::query(
@@ -171,7 +174,7 @@ mod tests {
             skill: skill.into(),
             thread_id: "t".into(),
             call_id: format!("c{n}"),
-            created: false,
+            action: SkillSaveAction::Updated,
             reason: "r".into(),
             before: Some(format!("before {n}")),
             after: format!("after {n}"),

@@ -9,7 +9,7 @@ use crate::runtime::{ThreadEvent, model_choice::Choice};
 use crate::{
     catalog::{
         history::{Baseline, MAX_REASON_CHARS, counts, plain_line},
-        skills::{BUILTIN_PACK, SkillSave, SkillSaveAction, pack_of},
+        skills::{BUILTIN_PACK, SkillSave, pack_of},
     },
     config::{Config, Effort, Limits},
     providers::{
@@ -406,17 +406,17 @@ impl Agent {
         for (index, slot) in slots.iter_mut().enumerate() {
             let before = baselines[index].lock().take();
             let mut told = Vec::new();
-            let mut notice = None;
+            let mut notices = Vec::new();
             if let Some(before) = before {
                 for (info, line) in self.record_skills(&group[index], before).await {
-                    notice.get_or_insert(line);
+                    notices.push(line);
                     told.push(info);
                 }
             }
             match slot {
                 Slot::Done(result, skills) => {
-                    // The last line, where clients look for it.
-                    if let Some(line) = notice {
+                    // One line for each skill changed, at the end of the result.
+                    for line in notices {
                         result.content.push_str(&format!("\n{line}"));
                     }
                     *skills = told;
@@ -444,7 +444,10 @@ impl Agent {
             call_id: call.id.clone(),
             events: self.events.clone(),
         };
-        if !self.tools.read_only(&call.name, &call.arguments) {
+        // An MCP tool's read-only claim comes from its server, so it is watched anyway.
+        if !self.tools.read_only(&call.name, &call.arguments)
+            || self.tools.kind_of(&call.name) == Some(ToolKind::Mcp)
+        {
             let start = self.skill_watch.before().await;
             *baseline.lock() = start;
         }
@@ -472,22 +475,23 @@ impl Agent {
         for change in self.skill_watch.changed(before).await {
             let (added, removed) = counts(change.before.as_deref().unwrap_or(""), &change.after);
             let line = format!("+{added} -{removed} lines");
-            let mut reason = match (call.name.as_str(), call.arguments["description"].as_str()) {
-                ("run_command", Some(text)) if !plain_line(text, MAX_REASON_CHARS).is_empty() => {
-                    plain_line(text, MAX_REASON_CHARS)
+            let described = match (call.name.as_str(), call.arguments["description"].as_str()) {
+                ("run_command", Some(text)) => {
+                    plain_line(without_skill_name(text, &change.skill), MAX_REASON_CHARS)
                 }
-                _ => line,
+                _ => String::new(),
+            };
+            let mut reason = if described.is_empty() {
+                line
+            } else {
+                described
             };
             if pack_of(&change.skill).as_deref() == Some(BUILTIN_PACK) {
                 reason = plain_line(&format!("built-in skill: {reason}"), MAX_REASON_CHARS);
             }
             let notice = SkillSave {
                 name: change.skill.clone(),
-                action: if change.created {
-                    SkillSaveAction::Created
-                } else {
-                    SkillSaveAction::Updated
-                },
+                action: change.action,
             };
             let recorded = self
                 .skill_state
@@ -495,7 +499,7 @@ impl Agent {
                     skill: change.skill,
                     thread_id: self.thread_id.clone(),
                     call_id: call.id.clone(),
-                    created: change.created,
+                    action: change.action,
                     reason,
                     before: change.before,
                     after: change.after,
@@ -655,4 +659,20 @@ impl Agent {
         }
         Ok(())
     }
+}
+
+/// The description without a leading `skill <name>:`, which the row says already.
+fn without_skill_name<'a>(text: &'a str, skill: &str) -> &'a str {
+    let start = text.trim_start();
+    let named = start
+        .get(..5)
+        .filter(|word| word.eq_ignore_ascii_case("skill"))
+        .map(|_| start[5..].trim_start())
+        .and_then(|rest| {
+            rest.get(..skill.len())
+                .filter(|name| name.eq_ignore_ascii_case(skill))
+                .map(|_| rest[skill.len()..].trim_start())
+        })
+        .and_then(|rest| rest.strip_prefix(':'));
+    named.map_or(text, str::trim_start)
 }

@@ -24,8 +24,8 @@ pub fn load(thread_id: String, chat: Chat) {
 pub fn label(change: &SkillChange) -> String {
     let what = match change.action {
         SkillSaveAction::Created => "created",
-        // The core records no unchanged saves; they read as an improvement if one came.
-        SkillSaveAction::Updated | SkillSaveAction::Unchanged => "improved",
+        SkillSaveAction::Updated => "improved",
+        SkillSaveAction::Deleted => "deleted",
     };
     format!("Skill {} {what}: {}", change.skill, change.reason)
 }
@@ -86,6 +86,7 @@ fn Row(id: i64, chat: Chat) -> impl IntoView {
                     </button>
                     <span class="grow">{label(&change)}</span>
                     {undone.then(|| view! { <span class="muted">"undone"</span> })}
+                    {(!undone && !can_undo).then(|| view! { <span class="muted">"previous text not kept"</span> })}
                     {can_undo.then(|| view! {
                         <button class="ghost" prop:disabled=move || busy.get() on:click=undo>"Undo"</button>
                     })}

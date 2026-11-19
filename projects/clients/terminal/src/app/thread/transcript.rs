@@ -645,7 +645,8 @@ impl Transcript {
 pub fn skill_line(change: &SkillChange) -> String {
     let action = match change.action {
         SkillSaveAction::Created => "created",
-        SkillSaveAction::Updated | SkillSaveAction::Unchanged => "improved",
+        SkillSaveAction::Updated => "improved",
+        SkillSaveAction::Deleted => "deleted",
     };
     let skill: String = change
         .skill
@@ -662,8 +663,15 @@ pub fn skill_line(change: &SkillChange) -> String {
             _ => None,
         })
         .collect();
-    let undone = if change.undone { " (undone)" } else { "" };
-    format!("Skill {skill} {action}: {reason}{undone}")
+    // The terminal has no Undo; it says where to find one.
+    let state = if change.undone {
+        "undone"
+    } else if change.can_undo {
+        "undo in the app"
+    } else {
+        "previous text not kept"
+    };
+    format!("Skill {skill} {action}: {reason} ({state})")
 }
 
 fn skill_entry(change: &SkillChange) -> Entry {
@@ -896,8 +904,18 @@ mod tests {
         shown.skill = "a\x1b[2J\u{202e}b".into();
         shown.reason = "first\nsecond\u{2067}".into();
         shown.undone = false;
+        shown.can_undo = true;
         shown.action = SkillSaveAction::Updated;
-        assert_eq!(skill_line(&shown), "Skill a?[2J?b improved: first second");
+        assert_eq!(
+            skill_line(&shown),
+            "Skill a?[2J?b improved: first second (undo in the app)"
+        );
+        shown.action = SkillSaveAction::Deleted;
+        shown.can_undo = false;
+        assert_eq!(
+            skill_line(&shown),
+            "Skill a?[2J?b deleted: first second (previous text not kept)"
+        );
     }
 
     #[test]
