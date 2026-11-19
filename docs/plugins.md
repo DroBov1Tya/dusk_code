@@ -384,7 +384,10 @@ The program writes any number of `log` lines, then exactly one `result`, then ex
 | `{"type":"result","error":{"kind":"signed_out","message":"...","hint":"gh auth login"}}` | A failure, by kind. `message` and `hint` may be left out. |
 | `{"type":"log","text":"..."}` | A line for the debug log. Plain text; the core keeps at most 500 characters of it and at most 20 lines per call. |
 
-Anything else before the result is a wire error and the call is `failed`. A result that
+Anything else before the result is a wire error and the call is `failed`. A `result`
+with neither `ok` nor `error` is `failed`. The core stops reading at the first `result`:
+lines after it are ignored, and a non-zero exit after it does not change it (the result
+stands). A program that exits without a `result` is `failed`. A result that
 does not parse into the shape of its operation is `failed`; the raw line is never shown.
 What the program writes to stderr goes to the debug log, capped.
 
@@ -488,7 +491,10 @@ A pull request from a branch the user already pushed.
 `base: null` means the repository's default branch. Answer
 `{"type":"result","ok":{"pull":PULL}}`. When the service refuses (no commits between the
 branches, one exists already, the branch is not pushed), answer `refused` with the
-service's message.
+service's message. The core has already checked the arguments: `head` and `base` are
+valid branch names, `title` is a valid one-line message, and `body` is at most 20000
+characters; the program need not check them again. `not_found` is not an answer of this
+operation: the core reads it as `failed` (only `refused` carries a message to the user).
 
 ### A `PULL`
 
@@ -503,8 +509,10 @@ service's message.
             "started":1763467700,"finished":null}]}
 ```
 
-- `state`: `open`, `draft`, `merged` or `closed`.
-- `stage` of a check: `queued`, `running`, `passed`, `skipped` or `failed`. A check that
+- `state`: exactly `open`, `draft`, `merged` or `closed`; left out it reads as `open`.
+  Any other word makes the whole answer `failed`, so map the service's states yourself.
+- `stage` of a check: exactly `queued`, `running`, `passed`, `skipped` or `failed`; left
+  out it reads as `queued`; any other word makes the whole answer `failed`. A check that
   was cancelled, timed out or needs action is `failed`; one the service skipped or found
   neutral is `skipped`.
 - `branch` is the head branch; `from_fork` is true when the head lives in a fork.
