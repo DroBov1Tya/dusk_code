@@ -1,14 +1,25 @@
 //! A project's pull requests: listing the open ones, one with its body and checks, and
-//! a new one from the current branch.
+//! a new one from the current branch, made by the plugin that serves the remote's host
+//! or by `gh` for github.com.
 
 use anyhow::{Context, Result, bail};
-use dusk_protocol::project::{
-    Check, CheckStage, CheckState, Project, PullRequest, PullRequestDetail,
+use dusk_protocol::{
+    plugin::contract::{
+        ContractError, ErrorKind,
+        forge::{self as contract, CreatePullArgs, Limits, Stage, StatusArgs},
+    },
+    project::{
+        Check, CheckStage, CheckState, Project, PullRequest, PullRequestDetail, PullState,
+        PullStatus,
+    },
 };
 use serde::Deserialize;
 
-use super::gh::{PROGRAM, gh, link, plain, time};
-use crate::project::git;
+use super::{
+    Forges, Remote, checked,
+    gh::{PROGRAM, gh, link, plain, time},
+};
+use crate::{plugins::contract::Served, project::git};
 
 const MAX_TITLE_CHARS: usize = 300;
 const MAX_BODY_CHARS: usize = 20_000;
@@ -38,25 +49,146 @@ pub async fn view(project: &Project, number: u64) -> Result<PullRequestDetail> {
 }
 
 /// A pull request from the current branch into `base`, or the repository's default
-/// branch; answers with it as GitHub now has it.
+/// branch; answers with it as the forge now has it, when it is one of the remote's own.
 pub async fn create(
     project: &Project,
     title: &str,
     body: &str,
     base: Option<&str>,
+    forges: &Forges,
 ) -> Result<PullRequestDetail> {
-    let title = format!("--title={}", git::check_message(title)?);
-    let body = format!("--body={}", body.trim());
+    let title = git::check_message(title)?;
+    let body = body.trim();
     if body.chars().count() > MAX_BODY_CHARS {
         bail!("the description is at most {MAX_BODY_CHARS} characters");
     }
-    let base = base
-        .map(|base| git::check_branch(base).map(|base| format!("--base={base}")))
-        .transpose()?;
+    let base = base.map(git::check_branch).transpose()?;
+    let Some(remote) = Remote::of(&project.dir).await else {
+        bail!("the repository has no remote on a forge");
+    };
+    if let Some(served) = forges.route(&remote.host) {
+        let made = ask(project, &served, forges, &remote, title, body, base).await?;
+        return Ok(detail(made, base, body));
+    }
+    if remote.host != "github.com" || remote.path.split('/').count() != 2 {
+        bail!("no plugin that is on serves {}", remote.host);
+    }
+    let title = format!("--title={title}");
+    let body = format!("--body={body}");
+    let base = base.map(|base| format!("--base={base}"));
     let mut args = vec!["pr", "create", &title, &body];
     args.extend(base.as_deref());
     gh(PROGRAM, &project.dir, &args).await?;
-    view_of(project, None).await
+    let made = view_of(project, None).await?;
+    // `gh` may make it in the repository a fork came from: only the remote's own counts.
+    let page = format!(
+        "https://github.com/{}/pull/{}",
+        remote.path, made.pull.number
+    );
+    if !made.pull.url.eq_ignore_ascii_case(&page) {
+        bail!("the pull request made is not one of {}", remote.path);
+    }
+    Ok(made)
+}
+
+/// `create_pull` of the plugin that serves the remote, checked against the prefix its
+/// status names.
+async fn ask(
+    project: &Project,
+    served: &Served,
+    forges: &Forges,
+    remote: &Remote,
+    title: &str,
+    body: &str,
+    base: Option<&str>,
+) -> Result<PullStatus> {
+    let plugin = &served.plugin;
+    let head = git::git(&project.dir, &["branch", "--show-current"]).await?;
+    let head = head.trim();
+    if head.is_empty() {
+        bail!("a detached head has no branch to propose");
+    }
+    let dir = &project.dir;
+    let status = StatusArgs {
+        host: remote.host.clone(),
+        repository: remote.path.clone(),
+        branch: Some(head.to_owned()),
+        limits: Limits {
+            branch_pulls: 1,
+            open_pulls: 1,
+            checks: 1,
+        },
+    };
+    let ok = forges
+        .call(served, "status", dir, &status)
+        .await
+        .map_err(|error| refusal(&error, plugin, false))?;
+    let Some((status, _)) = checked::status(ok, remote, Some(head), plugin) else {
+        bail!("{plugin} could not be read");
+    };
+    let name = &status.name;
+    let args = CreatePullArgs {
+        host: remote.host.clone(),
+        repository: remote.path.clone(),
+        head: head.to_owned(),
+        base: base.map(str::to_owned),
+        title: title.to_owned(),
+        body: body.to_owned(),
+    };
+    let ok = forges
+        .call(served, "create_pull", dir, &args)
+        .await
+        .map_err(|error| refusal(&error, name, true))?;
+    match checked::pull(ok, &status.pull_prefix, &remote.host, None) {
+        Ok(Some(pull)) => Ok(pull),
+        Ok(None) => bail!(
+            "{name} did not answer with a pull request of {}",
+            remote.path
+        ),
+        Err(error) => Err(refusal(&error, name, true)),
+    }
+}
+
+/// What the user reads when the forge `name` did not make it: a refusal of `create_pull`
+/// says why in the forge's words; anything else as the status would say it.
+fn refusal(error: &ContractError, name: &str, create: bool) -> anyhow::Error {
+    match error.kind {
+        ErrorKind::Refused if create && !error.message.is_empty() => {
+            anyhow::anyhow!("{}", error.message)
+        }
+        ErrorKind::Refused if create => anyhow::anyhow!("{name} refused it"),
+        ErrorKind::SignedOut if !error.hint.is_empty() => {
+            anyhow::anyhow!("{name} is not signed in: {}", error.hint)
+        }
+        ErrorKind::SignedOut => anyhow::anyhow!("{name} is not signed in"),
+        _ => anyhow::anyhow!("{}", checked::note(error, name).0),
+    }
+}
+
+/// A pull a plugin made, in the shape the request answers with.
+fn detail(pull: PullStatus, base: Option<&str>, body: &str) -> PullRequestDetail {
+    let state = match pull.state {
+        PullState::Open | PullState::Draft => "OPEN",
+        PullState::Merged => "MERGED",
+        PullState::Closed => "CLOSED",
+    };
+    PullRequestDetail {
+        pull: PullRequest {
+            number: pull.number,
+            title: pull.title,
+            author: pull.author,
+            branch: pull.branch,
+            base: base.unwrap_or_default().to_owned(),
+            added: pull.added,
+            removed: pull.removed,
+            draft: pull.state == PullState::Draft,
+            checks: pull.checks.state,
+            url: pull.url,
+        },
+        state: state.to_owned(),
+        body: plain(body, MAX_BODY_CHARS),
+        checks: pull.checks.list,
+    }
 }
 
 /// One pull request with its body and checks; the current branch's when `number` is none.
@@ -155,11 +287,12 @@ impl RawCheck {
         }
     }
 
-    pub(super) fn state(&self) -> CheckState {
-        self.stage().state()
+    fn state(&self) -> CheckState {
+        CheckStage::from(self.stage()).state()
     }
 
-    pub(super) fn stage(&self) -> CheckStage {
+    /// GitHub's states mapped onto the contract's stages, as the GitHub plugin does.
+    fn stage(&self) -> Stage {
         let failed = [
             "FAILURE",
             "CANCELLED",
@@ -171,32 +304,45 @@ impl RawCheck {
         let waiting = ["QUEUED", "WAITING", "PENDING", "REQUESTED"];
         let (status, conclusion) = (self.status.as_str(), self.conclusion.as_str());
         if failed.contains(&conclusion) || failed.contains(&self.state.as_str()) {
-            CheckStage::Failed
+            Stage::Failed
         } else if conclusion == "SKIPPED" || conclusion == "NEUTRAL" {
-            CheckStage::Skipped
+            Stage::Skipped
         } else if self.state == "SUCCESS" || (status == "COMPLETED" && !conclusion.is_empty()) {
-            CheckStage::Passed
+            Stage::Passed
         } else if waiting.contains(&status) || self.state == "EXPECTED" {
-            CheckStage::Queued
+            Stage::Queued
         } else {
-            CheckStage::Running
+            Stage::Running
         }
     }
 
-    /// The check as shown: its text plain and on one line, its link https only.
-    pub(super) fn shown(&self) -> Check {
+    /// The check as a plugin would answer it: its text plain and on one line, its link
+    /// https only.
+    pub(super) fn neutral(&self) -> contract::Check {
         let url = if self.details_url.is_empty() {
             &self.target_url
         } else {
             &self.details_url
         };
-        Check {
+        contract::Check {
             name: plain(self.name(), MAX_TITLE_CHARS).replace('\n', " "),
             workflow: plain(&self.workflow_name, 200).replace('\n', " "),
             stage: self.stage(),
             url: link(url),
             started: time(&self.started_at),
             finished: time(&self.completed_at),
+        }
+    }
+
+    fn shown(&self) -> Check {
+        let check = self.neutral();
+        Check {
+            name: check.name,
+            workflow: check.workflow,
+            stage: check.stage.into(),
+            url: check.url,
+            started: check.started,
+            finished: check.finished,
         }
     }
 }

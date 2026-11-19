@@ -1,17 +1,21 @@
 //! Single pull requests a chat links, read for a card. Each answer is kept a few
 //! minutes, a pull request is read once at a time with the askers in between waiting
 //! for that read, few are kept, and few reads run at once, so a chat full of links
-//! cannot make the core run `gh` without end.
+//! cannot make the core ask a forge without end.
 
 use std::{
     collections::HashMap,
     time::{Duration, Instant},
 };
 
-use dusk_protocol::project::{Project, PullStatus};
+use dusk_protocol::{
+    plugin::contract::forge::PullArgs,
+    project::{Project, PullStatus},
+};
 use tokio::sync::{Semaphore, oneshot};
+use tracing::debug;
 
-use super::status;
+use super::{Forges, Remote, checked, status};
 
 /// How long an answer, a missing pull request too, is given again without a read.
 const FRESH: Duration = Duration::from_secs(180);
@@ -100,10 +104,32 @@ impl Lookups {
     }
 }
 
-/// Reads pull request `number` of the project's own repository, waiting its turn.
-pub async fn read(project: &Project, number: u64) -> Option<PullStatus> {
+/// Reads pull request `number` of the project's own repository, waiting its turn; only
+/// a pull whose page is `prefix`, the one its last status named, and its number.
+pub async fn read(
+    project: &Project,
+    number: u64,
+    forges: &Forges,
+    prefix: &str,
+) -> Option<PullStatus> {
     let _turn = READS.acquire().await.ok()?;
-    status::read_one(project, number).await
+    let remote = Remote::of(&project.dir).await?;
+    let Some(served) = forges.route(&remote.host) else {
+        return status::read_one(project, number, prefix).await;
+    };
+    let args = PullArgs {
+        host: remote.host.clone(),
+        repository: remote.path.clone(),
+        number,
+    };
+    let answer = forges.call(&served, "pull", &project.dir, &args).await;
+    match answer.and_then(|ok| checked::pull(ok, prefix, &remote.host, Some(number))) {
+        Ok(pull) => pull,
+        Err(error) => {
+            debug!("pull request {number} not read: {}", error.message);
+            None
+        }
+    }
 }
 
 #[cfg(test)]

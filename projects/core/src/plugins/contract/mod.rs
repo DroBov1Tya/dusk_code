@@ -6,11 +6,7 @@
 //! - `forge`: a forge answer checked against the remote it is about;
 //! - `untrusted`: text from a program made plain and capped.
 
-// Until the forge reads through the call and checks its answers (task 7 of the plan);
-// routing is in use already.
-#[allow(dead_code, reason = "the forge calls it next")]
 mod call;
-#[allow(dead_code, reason = "the forge maps its answers next")]
 pub mod forge;
 pub mod route;
 pub mod untrusted;
