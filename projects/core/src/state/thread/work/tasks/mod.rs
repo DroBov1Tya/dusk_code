@@ -265,34 +265,49 @@ impl State {
     /// A task or step of the thread by its ID or the end of it, when only one fits. The
     /// end, because a UUIDv7 starts with its time, which steps made together share.
     async fn find(&self, thread_id: &str, id: &str) -> Result<Found> {
-        let id = id.trim();
-        ensure!(id.len() >= 4, "give at least four characters of the ID");
-        let pattern = format!("%{}", id.replace(['%', '_'], ""));
-        let tasks: Vec<String> =
-            sqlx::query_scalar("SELECT task_id FROM tasks WHERE thread_id = ? AND task_id LIKE ?")
-                .bind(thread_id)
-                .bind(&pattern)
-                .fetch_all(&self.pool)
-                .await
-                .context("find task")?;
-        let items: Vec<(String, String)> = sqlx::query_as(
+        let given = id.trim().trim_start_matches('#');
+        ensure!(
+            given.chars().count() >= 4,
+            "give at least four characters of the ID"
+        );
+        let Some((id, length)) = graph::id_end(given) else {
+            bail!("no task or step {given} in this thread");
+        };
+        let tasks: Vec<String> = sqlx::query_scalar(concat!(
+            "SELECT task_id FROM tasks WHERE thread_id = ?1 AND ",
+            graph::fits_id!("task_id")
+        ))
+        .bind(thread_id)
+        .bind(&id)
+        .bind(length)
+        .fetch_all(&self.pool)
+        .await
+        .context("find task")?;
+        let items: Vec<(String, String)> = sqlx::query_as(concat!(
             "SELECT task_items.task_id, task_items.item_id
              FROM task_items JOIN tasks USING (task_id)
-             WHERE tasks.thread_id = ? AND task_items.item_id LIKE ?",
-        )
+             WHERE tasks.thread_id = ?1 AND ",
+            graph::fits_id!("task_items.item_id")
+        ))
         .bind(thread_id)
-        .bind(&pattern)
+        .bind(&id)
+        .bind(length)
         .fetch_all(&self.pool)
         .await
         .context("find task step")?;
-        match (tasks.as_slice(), items.as_slice()) {
-            ([task], []) => Ok(Found::Task(task.clone())),
-            ([], [(task_id, item_id)]) => Ok(Found::Item {
-                task_id: task_id.clone(),
-                item_id: item_id.clone(),
-            }),
-            ([], []) => bail!("no task or step {id} in this thread"),
-            _ => bail!("{id} fits more than one; give more of it"),
+        let found = tasks.into_iter().map(Found::Task).chain(
+            items
+                .into_iter()
+                .map(|(task_id, item_id)| Found::Item { task_id, item_id }),
+        );
+        let whole = |found: &Found| match found {
+            Found::Task(task_id) => *task_id == id,
+            Found::Item { item_id, .. } => *item_id == id,
+        };
+        match graph::only(found.collect(), whole) {
+            Ok(Some(found)) => Ok(found),
+            Ok(None) => bail!("no task or step {id} in this thread"),
+            Err(()) => bail!("{id} fits more than one; give more of it"),
         }
     }
 }
