@@ -45,8 +45,11 @@ pub async fn list(project: &Project) -> Result<Vec<PullRequest>> {
 }
 
 pub async fn view(project: &Project, number: u64) -> Result<PullRequestDetail> {
-    let number = number.to_string();
-    view_of(project, Some(&number), None).await
+    view_of(
+        project,
+        &["pr".to_owned(), "view".to_owned(), number.to_string()],
+    )
+    .await
 }
 
 /// A pull request from the current branch into `base`, or the repository's default
@@ -71,7 +74,13 @@ pub async fn create(
         let made = ask(project, &served, forges, &remote, title, body, base).await?;
         return Ok(detail(made, base, body));
     }
-    if remote.host != "github.com" || remote.path.split('/').count() != 2 {
+    if remote.host == "github.com" && remote.path.split('/').count() != 2 {
+        bail!(
+            "{} is not an owner/repo repository of github.com",
+            remote.path
+        );
+    }
+    if remote.host != "github.com" {
         let plugins = if forges.on {
             ", and no plugin that is on serves it"
         } else {
@@ -84,18 +93,52 @@ pub async fn create(
     }
     let head = head(project).await?;
     let args = create_args(&remote, &head, title, body, base);
-    gh(PROGRAM, &project.dir, &as_strs(&args)).await?;
-    let repo = repo_arg(&remote);
-    let made = view_of(project, Some(&head), Some(&repo)).await?;
+    let printed = gh(PROGRAM, &project.dir, &as_strs(&args)).await?;
+    // Read back by the number in the page `gh` printed, never by the branch: a branch of
+    // digits would read as another pull's number.
+    let Some(number) = made_number(&printed, &remote) else {
+        bail!(
+            "GitHub answered with no pull request of {}; it may have been made, check GitHub",
+            remote.path
+        );
+    };
+    let made = view_of(project, &view_args(number, &remote)).await?;
     // Named by `--repo`, so made on the remote's own; checked still, in case `gh` did not.
-    let page = format!(
-        "https://github.com/{}/pull/{}",
-        remote.path, made.pull.number
-    );
-    if !made.pull.url.eq_ignore_ascii_case(&page) {
+    let page = format!("https://github.com/{}/pull/{number}", remote.path);
+    if made.pull.number != number || !made.pull.url.eq_ignore_ascii_case(&page) {
         bail!("the pull request made is not one of {}", remote.path);
     }
     Ok(made)
+}
+
+/// The number of the pull request whose page `gh pr create` printed last, when it is one
+/// of the remote's own.
+fn made_number(printed: &str, remote: &Remote) -> Option<u64> {
+    let page = printed
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    let prefix = format!("https://github.com/{}/pull/", remote.path);
+    let number = page
+        .get(..prefix.len())
+        .filter(|head| head.eq_ignore_ascii_case(&prefix))
+        .and_then(|_| page.get(prefix.len()..))?;
+    let fine =
+        !number.is_empty() && number.len() <= 12 && number.bytes().all(|b| b.is_ascii_digit());
+    fine.then(|| number.parse().ok())
+        .flatten()
+        .filter(|n| *n > 0)
+}
+
+/// `gh pr view` of pull `number` of the remote's own repository.
+fn view_args(number: u64, remote: &Remote) -> Vec<String> {
+    vec![
+        "pr".to_owned(),
+        "view".to_owned(),
+        number.to_string(),
+        repo_arg(remote),
+    ]
 }
 
 /// `create_pull` of the plugin that serves the remote, checked against the prefix its
@@ -243,17 +286,11 @@ fn detail(pull: PullStatus, base: Option<&str>, body: &str) -> PullRequestDetail
     }
 }
 
-/// One pull request with its body and checks, by number or head branch, of `repo` when
-/// named.
-async fn view_of(
-    project: &Project,
-    which: Option<&str>,
-    repo: Option<&str>,
-) -> Result<PullRequestDetail> {
+/// One pull request with its body and checks, as `gh` is asked by `view` (`pr view`
+/// and what names it).
+async fn view_of(project: &Project, view: &[String]) -> Result<PullRequestDetail> {
     let fields = format!("--json={LIST_FIELDS},body,state");
-    let mut args = vec!["pr", "view"];
-    args.extend(which);
-    args.extend(repo);
+    let mut args = as_strs(view);
     args.push(&fields);
     let text = gh(PROGRAM, &project.dir, &args).await?;
     let raw: RawPull =
@@ -459,5 +496,27 @@ mod tests {
             ]
         );
         assert_eq!(create_args(&remote, "x", "Fix", "", None).len(), 6);
+
+        // A branch of digits is never read back as a pull's number: the page printed is.
+        let args = create_args(&remote, "123", "Fix", "", None);
+        assert_eq!(args[3], "--head=123");
+        let number = made_number("https://github.com/o/r/pull/57\n", &remote).unwrap();
+        assert_eq!(number, 57);
+        assert_eq!(
+            view_args(number, &remote),
+            ["pr", "view", "57", "--repo=github.com/o/r"]
+        );
+        assert_eq!(
+            made_number("Creating...\n\nhttps://github.com/O/R/pull/9\n", &remote),
+            Some(9)
+        );
+        for other in [
+            "https://github.com/parent/r/pull/57",
+            "https://github.com/o/r/pull/57/files",
+            "https://github.com/o/r/pull/",
+            "",
+        ] {
+            assert_eq!(made_number(other, &remote), None, "{other}");
+        }
     }
 }
