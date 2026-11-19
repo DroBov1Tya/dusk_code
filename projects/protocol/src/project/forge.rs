@@ -1,4 +1,4 @@
-//! A project's pull requests, as the GitHub CLI reports them.
+//! A project's pull requests and CI, from whichever forge serves its remote.
 
 use serde::{Deserialize, Serialize};
 
@@ -9,24 +9,6 @@ pub enum CheckState {
     Pending,
     Passing,
     Failing,
-}
-
-/// Text fields are plain and capped by the core.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PullRequest {
-    pub number: u64,
-    pub title: String,
-    pub author: String,
-    pub branch: String,
-    pub base: String,
-    pub added: u64,
-    pub removed: u64,
-    pub draft: bool,
-    /// All checks together; `None` when there are none.
-    pub checks: Option<CheckState>,
-    /// The page on GitHub, https only.
-    pub url: String,
 }
 
 /// Where one check stands, finer than `CheckState`.
@@ -55,27 +37,17 @@ impl CheckStage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     pub name: String,
-    /// The workflow it runs in; empty when GitHub names none.
+    /// The workflow it runs in; empty when the forge names none.
     pub workflow: String,
     pub stage: CheckStage,
-    /// Its page, https only; empty when GitHub gave none that is safe.
+    /// Its page, https only; empty when the forge gave none that is safe.
     pub url: String,
     /// Unix seconds; `None` when not known.
     pub started: Option<i64>,
     pub finished: Option<i64>,
 }
 
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PullRequestDetail {
-    pub pull: PullRequest,
-    /// `OPEN`, `CLOSED` or `MERGED`.
-    pub state: String,
-    pub body: String,
-    pub checks: Vec<Check>,
-}
-
-/// Where a pull request stands on GitHub.
+/// Where a pull request stands on the forge.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PullState {
@@ -109,7 +81,7 @@ pub struct PullStatus {
     pub state: PullState,
     /// The head branch.
     pub branch: String,
-    /// The author's login; empty when GitHub gave none.
+    /// The author's login; empty when the forge gave none.
     pub author: String,
     /// Unix seconds; `None` when not known.
     pub created: Option<i64>,
@@ -118,29 +90,93 @@ pub struct PullStatus {
     pub removed: u64,
     /// How many files it changes; `None` when not known.
     pub files: Option<u64>,
-    /// The page on GitHub, https only; empty when GitHub gave none that is safe.
+    /// The page on the forge, https only; empty when the forge gave none that is safe.
     pub url: String,
+    /// The page of all its checks, https only; empty when the forge gave none that is safe.
+    pub checks_url: String,
     pub checks: Checks,
 }
 
-/// A project's repository at a glance: the work tree's changes and the pull requests
-/// that matter to it. The core keeps it fresh while a client shows it and sends
-/// `Event::RepositoryStatus` when it changes.
+/// A project's repository at a glance. The core keeps it fresh while a client shows it
+/// and sends `Event::RepositoryStatus` when it changes.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryStatus {
     /// The name of the repository's top folder; empty outside a repository.
     pub repository: String,
-    /// `owner/repo` of `origin` when it is on github.com; `None` otherwise.
-    pub github: Option<String>,
     /// `None` on a detached head or outside a repository.
     pub branch: Option<String>,
     /// Lines added and removed in the work tree against the last commit.
     pub stat: crate::project::DiffStat,
+    /// Why there is no repository: "Not a git repository". `None` when read.
+    pub unavailable: Option<String>,
+    pub forge: Forge,
+}
+
+/// Where the repository's pull requests come from.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Forge {
+    /// No `origin`, or one whose address has no host the core can read.
+    #[default]
+    None,
+    /// No plugin that is on serves the remote's host.
+    Unserved {
+        host: String,
+        offer: Option<ForgeOffer>,
+    },
+    /// A plugin that is on serves the host, but the tool it uses is missing or not
+    /// signed in.
+    SignIn(ForgeSignIn),
+    Served(Box<ForgeStatus>),
+}
+
+impl Forge {
+    /// The answer of the plugin that serves the remote, when there is one.
+    pub fn served(&self) -> Option<&ForgeStatus> {
+        match self {
+            Forge::Served(status) => Some(status),
+            _ => None,
+        }
+    }
+}
+
+/// A plugin that would serve the host.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeOffer {
+    /// The plugin's name, as the Workshop lists it.
+    pub plugin: String,
+    /// Installed but off: "Switch on"; else "Get" opens its Workshop page.
+    pub installed: bool,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeSignIn {
+    pub host: String,
+    pub plugin: String,
+    /// What the user can type to fix it, plain, one line, at most 120 characters:
+    /// "gh auth login", or how to install gh. Drawn as text, never run.
+    pub hint: String,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeStatus {
+    /// The plugin that answered.
+    pub plugin: String,
+    /// What the plugin calls the forge, plain, one line, at most 40 characters.
+    pub name: String,
+    /// The repository as the remote names it, such as `owner/repo`.
+    pub repository: String,
+    /// Every pull request's page is this plus its number: a link in a chat that is
+    /// `pull_prefix` + digits is one of this repository's pull requests. Empty until the
+    /// plugin first answered.
+    pub pull_prefix: String,
     /// The current branch's pull requests first, then the other open ones; capped.
     pub pulls: Vec<PullStatus>,
-    /// Why there are no pull requests to show: GitHub CLI missing or signed out, not a
-    /// GitHub remote, or GitHub not answering. Plain, for a quiet note; `None` when read.
+    /// Why there are no pull requests to show, plain, for a quiet note; `None` when read.
     pub unavailable: Option<String>,
 }
 
@@ -154,20 +190,23 @@ pub struct PullSummary {
     pub checks: Option<CheckState>,
 }
 
-/// The number of the pull request `url` points to when it is one of `github`'s, the
-/// `owner/repo` of a project; `None` for any other page, host or repository.
-pub fn pull_number(url: &str, github: &str) -> Option<u64> {
-    let path = url.strip_prefix("https://github.com/")?;
-    let (repository, rest) = path.split_at_checked(github.len())?;
-    let rest = rest.strip_prefix("/pull/")?;
+/// The number of the pull request `url` points to when it starts with `prefix`, the
+/// pull link base the forge plugin gave (ends with `/`); `None` for any other link.
+pub fn pull_number(url: &str, prefix: &str) -> Option<u64> {
+    if !prefix.ends_with('/') {
+        return None;
+    }
+    let head = url.as_bytes().get(..prefix.len())?;
+    if !head.eq_ignore_ascii_case(prefix.as_bytes()) {
+        return None;
+    }
+    let rest = url.get(prefix.len()..)?;
     let end = rest.find(['/', '#', '?']).unwrap_or(rest.len());
-    let (digits, _) = rest.split_at(end);
-    let own = !github.is_empty() && repository.eq_ignore_ascii_case(github);
-    let number = (digits.len() <= 12 && digits.bytes().all(|b| b.is_ascii_digit()))
+    let digits = &rest[..end];
+    (digits.len() <= 12 && digits.bytes().all(|b| b.is_ascii_digit()))
         .then(|| digits.parse::<u64>().ok())
         .flatten()
-        .filter(|number| *number > 0);
-    number.filter(|_| own)
+        .filter(|number| *number > 0)
 }
 
 #[cfg(test)]
@@ -175,14 +214,15 @@ mod tests {
     use super::pull_number;
 
     #[test]
-    fn only_a_link_to_the_projects_own_pull_request_has_a_number() {
-        let own = "DroBov1Tya/dusk_code";
+    fn only_a_link_under_the_prefix_has_a_number() {
+        let prefix = "https://github.com/DroBov1Tya/dusk_code/pull/";
         let base = "https://github.com/DroBov1Tya/dusk_code/pull";
-        assert_eq!(pull_number(&format!("{base}/13"), own), Some(13));
-        assert_eq!(pull_number(&format!("{base}/13/files"), own), Some(13));
-        assert_eq!(pull_number(&format!("{base}/13#top"), own), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13"), prefix), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13/files"), prefix), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13#top"), prefix), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13?x=1"), prefix), Some(13));
         assert_eq!(
-            pull_number("https://github.com/drobov1tya/DUSK_CODE/pull/7", own),
+            pull_number("https://github.com/drobov1tya/DUSK_CODE/pull/7", prefix),
             Some(7)
         );
         for other in [
@@ -197,9 +237,11 @@ mod tests {
             format!("{base}/12a"),
             format!("{base}/99999999999999999999"),
             "https://github.com/DroBov1Tya/dusk_code/issues/13".to_owned(),
+            "é".to_owned(),
         ] {
-            assert_eq!(pull_number(&other, own), None, "{other}");
+            assert_eq!(pull_number(&other, prefix), None, "{other}");
         }
         assert_eq!(pull_number(&format!("{base}/13"), ""), None);
+        assert_eq!(pull_number(&format!("{base}/13"), base), None);
     }
 }

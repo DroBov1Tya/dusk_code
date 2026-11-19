@@ -1221,11 +1221,11 @@
           ]
         },
         "url": {
-          "description": "Its page, https only; empty when GitHub gave none that is safe.",
+          "description": "Its page, https only; empty when the forge gave none that is safe.",
           "type": "string"
         },
         "workflow": {
-          "description": "The workflow it runs in; empty when GitHub names none.",
+          "description": "The workflow it runs in; empty when the forge names none.",
           "type": "string"
         }
       },
@@ -2718,6 +2718,152 @@
         }
       ]
     },
+    "Forge": {
+      "description": "Where the repository's pull requests come from.",
+      "oneOf": [
+        {
+          "const": "None",
+          "description": "No `origin`, or one whose address has no host the core can read.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "No plugin that is on serves the remote's host.",
+          "properties": {
+            "Unserved": {
+              "properties": {
+                "host": {
+                  "type": "string"
+                },
+                "offer": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ForgeOffer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "host"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Unserved"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A plugin that is on serves the host, but the tool it uses is missing or not\nsigned in.",
+          "properties": {
+            "SignIn": {
+              "$ref": "#/$defs/ForgeSignIn"
+            }
+          },
+          "required": [
+            "SignIn"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "Served": {
+              "$ref": "#/$defs/ForgeStatus"
+            }
+          },
+          "required": [
+            "Served"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ForgeOffer": {
+      "description": "A plugin that would serve the host.",
+      "properties": {
+        "installed": {
+          "description": "Installed but off: \"Switch on\"; else \"Get\" opens its Workshop page.",
+          "type": "boolean"
+        },
+        "plugin": {
+          "description": "The plugin's name, as the Workshop lists it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin",
+        "installed"
+      ],
+      "type": "object"
+    },
+    "ForgeSignIn": {
+      "properties": {
+        "hint": {
+          "description": "What the user can type to fix it, plain, one line, at most 120 characters:\n\"gh auth login\", or how to install gh. Drawn as text, never run.",
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "plugin": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "plugin",
+        "hint"
+      ],
+      "type": "object"
+    },
+    "ForgeStatus": {
+      "properties": {
+        "name": {
+          "description": "What the plugin calls the forge, plain, one line, at most 40 characters.",
+          "type": "string"
+        },
+        "plugin": {
+          "description": "The plugin that answered.",
+          "type": "string"
+        },
+        "pull_prefix": {
+          "description": "Every pull request's page is this plus its number: a link in a chat that is\n`pull_prefix` + digits is one of this repository's pull requests. Empty until the\nplugin first answered.",
+          "type": "string"
+        },
+        "pulls": {
+          "description": "The current branch's pull requests first, then the other open ones; capped.",
+          "items": {
+            "$ref": "#/$defs/PullStatus"
+          },
+          "type": "array"
+        },
+        "repository": {
+          "description": "The repository as the remote names it, such as `owner/repo`.",
+          "type": "string"
+        },
+        "unavailable": {
+          "description": "Why there are no pull requests to show, plain, for a quiet note; `None` when read.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "plugin",
+        "name",
+        "repository",
+        "pull_prefix",
+        "pulls"
+      ],
+      "type": "object"
+    },
     "Found": {
       "description": "A message found by searching the text of every chat.",
       "properties": {
@@ -3052,64 +3198,6 @@
           "const": "Push",
           "description": "The current branch to its upstream, or to `origin` as its new upstream; never\nforced. A client asks the user first.",
           "type": "string"
-        },
-        {
-          "const": "PullRequests",
-          "description": "Open pull requests, through the GitHub CLI.",
-          "type": "string"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "PullRequest": {
-              "properties": {
-                "number": {
-                  "format": "uint64",
-                  "minimum": 0,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "number"
-              ],
-              "type": "object"
-            }
-          },
-          "required": [
-            "PullRequest"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "A pull request from the current branch, which must be pushed first.",
-          "properties": {
-            "CreatePullRequest": {
-              "properties": {
-                "base": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "body": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "title",
-                "body"
-              ],
-              "type": "object"
-            }
-          },
-          "required": [
-            "CreatePullRequest"
-          ],
-          "type": "object"
         }
       ]
     },
@@ -5041,7 +5129,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Changes the repository or reads its pull requests. Answered beside the loop,\nsince a push or the GitHub CLI may take a while; a change is followed by\n`Event::GitChanged`.",
+          "description": "Changes the repository. Answered beside the loop, since a push may take a\nwhile; a change is followed by\n`Event::GitChanged`.",
           "properties": {
             "Repository": {
               "properties": {
@@ -5087,7 +5175,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "One pull request of the project's own GitHub repository, for a card where a chat\nlinks it; answered beside the loop from what the core knows or read lately, and\nread from GitHub at most once at a time and every few minutes per pull request.",
+          "description": "One pull request of the project's own forge repository, for a card where a chat\nlinks it; answered beside the loop from what the core knows or read lately, and\nread from the forge at most once at a time and every few minutes per pull request.",
           "properties": {
             "PullStatus": {
               "properties": {
@@ -5109,6 +5197,41 @@
           },
           "required": [
             "PullStatus"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A pull request from the project's current branch (never a detached head), which\nmust be pushed first, into `base` or the repository's default branch; answered\nbeside the loop with `Response::PullStatus(Some(_))` as the forge now has it.",
+          "properties": {
+            "CreatePull": {
+              "properties": {
+                "base": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "body": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "body"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "CreatePull"
           ],
           "type": "object"
         },
@@ -5631,97 +5754,8 @@
       ],
       "type": "string"
     },
-    "PullRequest": {
-      "description": "Text fields are plain and capped by the core.",
-      "properties": {
-        "added": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "author": {
-          "type": "string"
-        },
-        "base": {
-          "type": "string"
-        },
-        "branch": {
-          "type": "string"
-        },
-        "checks": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CheckState"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "All checks together; `None` when there are none."
-        },
-        "draft": {
-          "type": "boolean"
-        },
-        "number": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "removed": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "title": {
-          "type": "string"
-        },
-        "url": {
-          "description": "The page on GitHub, https only.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "number",
-        "title",
-        "author",
-        "branch",
-        "base",
-        "added",
-        "removed",
-        "draft",
-        "url"
-      ],
-      "type": "object"
-    },
-    "PullRequestDetail": {
-      "properties": {
-        "body": {
-          "type": "string"
-        },
-        "checks": {
-          "items": {
-            "$ref": "#/$defs/Check"
-          },
-          "type": "array"
-        },
-        "pull": {
-          "$ref": "#/$defs/PullRequest"
-        },
-        "state": {
-          "description": "`OPEN`, `CLOSED` or `MERGED`.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "pull",
-        "state",
-        "body",
-        "checks"
-      ],
-      "type": "object"
-    },
     "PullState": {
-      "description": "Where a pull request stands on GitHub.",
+      "description": "Where a pull request stands on the forge.",
       "enum": [
         "Open",
         "Draft",
@@ -5739,7 +5773,7 @@
           "type": "integer"
         },
         "author": {
-          "description": "The author's login; empty when GitHub gave none.",
+          "description": "The author's login; empty when the forge gave none.",
           "type": "string"
         },
         "branch": {
@@ -5748,6 +5782,10 @@
         },
         "checks": {
           "$ref": "#/$defs/Checks"
+        },
+        "checks_url": {
+          "description": "The page of all its checks, https only; empty when the forge gave none that is safe.",
+          "type": "string"
         },
         "created": {
           "description": "Unix seconds; `None` when not known.",
@@ -5790,7 +5828,7 @@
           ]
         },
         "url": {
-          "description": "The page on GitHub, https only; empty when GitHub gave none that is safe.",
+          "description": "The page on the forge, https only; empty when the forge gave none that is safe.",
           "type": "string"
         }
       },
@@ -5803,6 +5841,7 @@
         "added",
         "removed",
         "url",
+        "checks_url",
         "checks"
       ],
       "type": "object"
@@ -6157,7 +6196,7 @@
       "type": "object"
     },
     "RepositoryStatus": {
-      "description": "A project's repository at a glance: the work tree's changes and the pull requests\nthat matter to it. The core keeps it fresh while a client shows it and sends\n`Event::RepositoryStatus` when it changes.",
+      "description": "A project's repository at a glance. The core keeps it fresh while a client shows it\nand sends `Event::RepositoryStatus` when it changes.",
       "properties": {
         "branch": {
           "description": "`None` on a detached head or outside a repository.",
@@ -6166,19 +6205,8 @@
             "null"
           ]
         },
-        "github": {
-          "description": "`owner/repo` of `origin` when it is on github.com; `None` otherwise.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "pulls": {
-          "description": "The current branch's pull requests first, then the other open ones; capped.",
-          "items": {
-            "$ref": "#/$defs/PullStatus"
-          },
-          "type": "array"
+        "forge": {
+          "$ref": "#/$defs/Forge"
         },
         "repository": {
           "description": "The name of the repository's top folder; empty outside a repository.",
@@ -6189,7 +6217,7 @@
           "description": "Lines added and removed in the work tree against the last commit."
         },
         "unavailable": {
-          "description": "Why there are no pull requests to show: GitHub CLI missing or signed out, not a\nGitHub remote, or GitHub not answering. Plain, for a quiet note; `None` when read.",
+          "description": "Why there is no repository: \"Not a git repository\". `None` when read.",
           "type": [
             "string",
             "null"
@@ -6199,7 +6227,7 @@
       "required": [
         "repository",
         "stat",
-        "pulls"
+        "forge"
       ],
       "type": "object"
     },
@@ -7043,33 +7071,6 @@
         {
           "additionalProperties": false,
           "properties": {
-            "PullRequests": {
-              "items": {
-                "$ref": "#/$defs/PullRequest"
-              },
-              "type": "array"
-            }
-          },
-          "required": [
-            "PullRequests"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "PullRequest": {
-              "$ref": "#/$defs/PullRequestDetail"
-            }
-          },
-          "required": [
-            "PullRequest"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
             "RepositoryStatus": {
               "$ref": "#/$defs/RepositoryStatus"
             }
@@ -7081,7 +7082,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "`None` when the repository has no such pull request or GitHub cannot be asked.",
+          "description": "`None` when the repository has no such pull request or the forge cannot be asked.",
           "properties": {
             "PullStatus": {
               "anyOf": [

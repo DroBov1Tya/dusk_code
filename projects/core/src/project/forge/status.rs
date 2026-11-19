@@ -1,20 +1,26 @@
 //! A project's repository at a glance: the work tree's diff stat, the current branch,
-//! and the pull requests that matter to it with their checks counted. GitHub's part is
-//! left out, with a reason, where `gh` cannot be used or the remote is not GitHub's.
+//! and the pull requests that matter to it with their checks counted. The forge's part
+//! says why it is missing where the forge cannot be asked (no plugin, `gh` unusable,
+//! another host).
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use dusk_protocol::project::{
-    CheckStage, CheckState, Checks, Project, PullState, PullStatus, RepositoryStatus,
+    CheckStage, CheckState, Checks, Forge, ForgeSignIn, ForgeStatus, Project, PullState,
+    PullStatus, RepositoryStatus,
 };
 use serde::Deserialize;
 
 use super::{
-    gh::{MISSING, PROGRAM, gh, link, output, plain, ready, time},
+    Remote,
+    gh::{PROGRAM, gh, link, output, plain, ready, time},
     pulls::RawCheck,
 };
 use crate::project::{diff, git};
+
+/// The plugin that answers for now: the built-in GitHub one.
+const PLUGIN: &str = "github";
 
 /// The current branch's pull requests, newest first, merged and closed ones too.
 const MAX_BRANCH_PULLS: usize = 5;
@@ -33,7 +39,7 @@ pub struct Reading {
     pub status: RepositoryStatus,
     /// The first `mine` pull requests are the current branch's.
     pub mine: usize,
-    /// GitHub was asked and did not answer usably: worth asking again later, and the
+    /// The forge was asked and did not answer usably: worth asking again later, and the
     /// pull requests known before are better than none.
     pub trouble: bool,
 }
@@ -64,50 +70,58 @@ async fn read_with(program: &str, dir: &Path) -> Reading {
         .map(|branch| branch.trim().to_owned())
         .filter(|branch| !branch.is_empty());
     status.stat = diff::stat(dir, &git::changes(dir).await).await;
-    status.github = github(dir).await;
-    if status.github.is_none() {
-        status.unavailable = Some("Not a GitHub repository".to_owned());
+    let Some(remote) = Remote::of(dir).await else {
+        return reading;
+    };
+    if !is_github(&remote) {
+        status.forge = Forge::Unserved {
+            host: remote.host,
+            offer: None,
+        };
         return reading;
     }
     if ready(program, dir).await.is_err() {
-        status.unavailable = Some(MISSING.to_owned());
+        status.forge = Forge::SignIn(ForgeSignIn {
+            host: remote.host,
+            plugin: PLUGIN.to_owned(),
+            hint: "gh auth login".to_owned(),
+        });
         return reading;
     }
+    let mut served = ForgeStatus {
+        plugin: PLUGIN.to_owned(),
+        name: "GitHub".to_owned(),
+        repository: remote.path.clone(),
+        pull_prefix: format!("https://github.com/{}/pull/", remote.path),
+        pulls: Vec::new(),
+        unavailable: None,
+    };
     match pulls(program, dir, status.branch.as_deref()).await {
         Ok((pulls, mine)) => {
-            status.pulls = pulls;
+            served.pulls = pulls;
             reading.mine = mine;
         }
         Err(error) => {
             tracing::debug!("pull requests not read: {error:#}");
-            status.unavailable = Some("GitHub did not answer".to_owned());
+            served.unavailable = Some("GitHub did not answer".to_owned());
             reading.trouble = true;
         }
     }
+    status.forge = Forge::Served(Box::new(served));
     reading
 }
 
-/// `owner/repo` of `origin` when it is on github.com; another host is not asked.
-async fn github(dir: &Path) -> Option<String> {
-    let remote = git::git(dir, &["remote", "get-url", "origin"]).await.ok()?;
-    let page = git::web_page(remote.trim())?;
-    let slug = page.strip_prefix("https://github.com/")?;
-    let (owner, repo) = slug.split_once('/')?;
-    let fine = |part: &str| {
-        !part.is_empty()
-            && part.len() <= 100
-            && !part.starts_with('.')
-            && part
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
-    };
-    (fine(owner) && fine(repo)).then(|| slug.to_owned())
+/// The one forge the core asks for now: github.com, `owner/repo`; another host or a
+/// deeper path is not asked.
+fn is_github(remote: &Remote) -> bool {
+    remote.host == "github.com" && remote.path.split('/').count() == 2
 }
 
 /// Pull request `number` of the project's own GitHub repository, asked of that
 /// repository by name; `None` when it has none such or GitHub cannot be asked.
 pub(super) async fn read_one(project: &Project, number: u64) -> Option<PullStatus> {
-    let slug = github(&project.dir).await?;
+    let remote = Remote::of(&project.dir).await.filter(is_github)?;
+    let slug = &remote.path;
     let number_arg = number.to_string();
     let repo = format!("--repo={slug}");
     let fields = format!("--json={FIELDS}");
@@ -119,14 +133,24 @@ pub(super) async fn read_one(project: &Project, number: u64) -> Option<PullStatu
             return None;
         }
     };
-    one(&text, &slug, number)
+    one(&text, &remote, number)
 }
 
-/// What `gh pr view --json` printed, when it is pull request `number` of `slug`.
-fn one(text: &str, slug: &str, number: u64) -> Option<PullStatus> {
+/// The pull request of the current branch, as the forge has it; the newest when the
+/// branch has several.
+pub(super) async fn read_current(project: &Project) -> Result<PullStatus> {
+    let fields = format!("--json={FIELDS}");
+    let text = gh(PROGRAM, &project.dir, &["pr", "view", &fields]).await?;
+    let raw: RawPull =
+        serde_json::from_str(&text).context("gh gave a pull request it cannot read")?;
+    Ok(raw.shown())
+}
+
+/// What `gh pr view --json` printed, when it is pull request `number` of `remote`.
+fn one(text: &str, remote: &Remote, number: u64) -> Option<PullStatus> {
     let raw: RawPull = serde_json::from_str(text).ok()?;
     let pull = raw.shown();
-    let page = format!("https://github.com/{slug}/pull/{number}");
+    let page = format!("https://github.com/{}/pull/{number}", remote.path);
     (pull.number == number && pull.url.eq_ignore_ascii_case(&page)).then_some(pull)
 }
 
@@ -259,6 +283,7 @@ impl RawPull {
             _ if self.is_draft => PullState::Draft,
             _ => PullState::Open,
         };
+        let url = link(&self.url);
         PullStatus {
             number: self.number,
             title: plain(&self.title, MAX_TITLE_CHARS).replace('\n', " "),
@@ -271,7 +296,12 @@ impl RawPull {
             added: self.additions,
             removed: self.deletions,
             files: self.changed_files,
-            url: link(&self.url),
+            // Without a query or fragment, and held to the same link rules.
+            checks_url: link(&format!(
+                "{}/checks",
+                url.split(['?', '#']).next().unwrap_or("")
+            )),
+            url,
             checks: roll_up(&self.status_check_rollup),
         }
     }
@@ -280,6 +310,13 @@ impl RawPull {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn remote(path: &str) -> Remote {
+        Remote {
+            host: "github.com".to_owned(),
+            path: path.to_owned(),
+        }
+    }
 
     fn check(json: &str) -> RawCheck {
         serde_json::from_str(json).unwrap()
@@ -388,7 +425,8 @@ mod tests {
              "startedAt":"0001-01-01T00:00:00Z","detailsUrl":"javascript:alert(1)"},
             {"__typename":"StatusContext","context":"deploy","state":"FAILURE",
              "targetUrl":"https://ci.example.com/7"}]}"#;
-        let pull = one(text, "o/r", 13).unwrap();
+        let (r, other) = (remote("o/r"), remote("o/other"));
+        let pull = one(text, &r, 13).unwrap();
         assert_eq!(pull.author, "evil", "control and bidi characters are cut");
         assert_eq!(pull.created, Some(1_795_003_641));
         assert_eq!(pull.updated, None);
@@ -415,12 +453,22 @@ mod tests {
             Some(13)
         );
         assert_eq!(pull.checks.state, Some(CheckState::Failing));
+        assert_eq!(pull.checks_url, "https://github.com/o/r/pull/13/checks");
+        let pull_at = |url: &str| {
+            let text = format!(r#"[{{"number":3,"url":"{url}"}}]"#);
+            parse(&text, 1).unwrap().remove(0).0
+        };
+        let queried = pull_at("https://github.com/o/r/pull/3?x=1#top");
+        assert_eq!(queried.checks_url, "https://github.com/o/r/pull/3/checks");
+        let long = format!("https://github.com/o/r/pull/3/{}", "a".repeat(465));
+        assert!(long.len() <= 500 && pull_at(&long).checks_url.is_empty());
+        assert!(pull_at("").checks_url.is_empty());
 
         // Another number, another repository, or a list in place of one: no card.
-        assert!(one(text, "o/r", 12).is_none());
-        assert!(one(text, "o/other", 13).is_none());
-        assert!(one("[]", "o/r", 13).is_none());
-        assert!(one("{", "o/r", 13).is_none());
+        assert!(one(text, &r, 12).is_none());
+        assert!(one(text, &other, 13).is_none());
+        assert!(one("[]", &r, 13).is_none());
+        assert!(one("{", &r, 13).is_none());
     }
 
     #[test]
@@ -456,5 +504,33 @@ mod tests {
             Some("Not a git repository")
         );
         assert!(!reading.trouble);
+        assert_eq!(reading.status.forge, Forge::None);
+    }
+
+    #[tokio::test]
+    async fn a_signed_out_gh_is_a_sign_in_hint() {
+        use std::{os::unix::fs::PermissionsExt, process::Command};
+        // A repository with a github.com origin and a `gh` that exits 1 for everything.
+        let dir = crate::testing::temp_dir("forge_sign_in");
+        std::fs::create_dir_all(&dir).unwrap();
+        for args in [
+            &["init", "-q"][..],
+            &["remote", "add", "origin", "git@github.com:o/r.git"][..],
+        ] {
+            let done = Command::new("git").args(args).current_dir(&dir).status();
+            assert!(done.unwrap().success());
+        }
+        let gh = dir.join("gh");
+        std::fs::write(&gh, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let reading = read_with(gh.to_str().unwrap(), &dir).await;
+        let Forge::SignIn(sign_in) = &reading.status.forge else {
+            panic!("{:?}", reading.status.forge)
+        };
+        assert_eq!(
+            (sign_in.host.as_str(), sign_in.hint.as_str()),
+            ("github.com", "gh auth login")
+        );
+        assert!(!reading.trouble, "signed out is an answer, not trouble");
     }
 }

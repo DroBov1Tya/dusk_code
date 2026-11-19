@@ -123,6 +123,7 @@ mod tests {
             removed: 0,
             files: None,
             url: String::new(),
+            checks_url: String::new(),
             checks: Default::default(),
         }
     }
