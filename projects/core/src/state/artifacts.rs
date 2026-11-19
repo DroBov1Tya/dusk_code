@@ -40,6 +40,21 @@ impl ArtifactStore {
         Ok(bytes)
     }
 
+    /// The bytes of a part of the card `id` as a client draws it: `image`, `audio` or its
+    /// small `thumb`nail. An ID is hex digits and dashes only, so it names no path outside
+    /// the folder; the file must be a regular one, never a link.
+    pub fn read_part(&self, id: &str, part: &str) -> Result<Vec<u8>> {
+        let valid = !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+        ensure!(valid, "no such card");
+        let file = match part {
+            "image" => "image",
+            "audio" => "audio",
+            "thumb" => "thumbnail.png",
+            _ => anyhow::bail!("no such card"),
+        };
+        read_regular(&self.root.join(id).join(file), MAX_AUDIO_BYTES as u64).context("no such card")
+    }
+
     /// The original of the image `id`, for a new card of it; the decoder checks it again.
     pub fn read_by_id(&self, id: &str) -> Result<Vec<u8>> {
         let parsed = Uuid::parse_str(id).context("invalid image ID")?;

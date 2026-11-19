@@ -36,6 +36,9 @@ pub use terminal::Terminal;
 pub use threads::Threads;
 pub use work::Work;
 
+/// How the web server reads a card by its id, by the core's own rule.
+pub use crate::state::artifacts::ArtifactStore;
+
 /// Starts the core's side of the protocol over `runtime` for the one client that said
 /// `hello`, with `scope`. The core stops when that client goes away.
 pub fn serve(runtime: Runtime, hello: Hello, scope: Scope) -> Result<Client> {

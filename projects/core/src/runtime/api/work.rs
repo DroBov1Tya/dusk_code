@@ -122,6 +122,40 @@ impl Runtime {
         .await
     }
 
+    /// A part of the card `card_id`, only when a message of the thread or of an agent
+    /// thread below it carries that card. The id is checked before any file is read, and
+    /// the path comes from the artifact folder, never from the caller.
+    pub async fn card(
+        &self,
+        thread_id: &str,
+        card_id: &str,
+        part: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        let valid =
+            !card_id.is_empty() && card_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+        if !valid {
+            return Ok(None);
+        }
+        let launcher = self.of(thread_id).await;
+        let mut threads = vec![thread_id.to_owned()];
+        threads.extend(launcher.state.descendant_threads(thread_id).await?);
+        let mut carried = false;
+        for thread in &threads {
+            let messages = launcher.state.list_messages(thread).await?;
+            carried = messages
+                .iter()
+                .any(|m| m.artifacts.iter().any(|card| card.id == card_id));
+            if carried {
+                break;
+            }
+        }
+        if !carried {
+            return Ok(None);
+        }
+        let store = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());
+        Ok(store.read_part(card_id, part).ok())
+    }
+
     pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
         let launcher = self.of(thread_id).await;
         launcher.state.pin_source(thread_id, id, pinned).await

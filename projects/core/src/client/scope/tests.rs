@@ -207,6 +207,7 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.send",
         "thread.stop_agent",
         "thread.tasks",
+        "work.card",
         "work.changed_files",
         "work.confirm_task",
         "work.events",

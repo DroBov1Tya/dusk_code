@@ -255,10 +255,7 @@ async fn card(
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let folder = shared.hub.status().artifacts_dir;
-    let Some(path) = cards::locate(&folder, &id, &part) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    let Some((bytes, kind)) = cards::read(&path).await else {
+    let Some((bytes, kind)) = cards::read(&folder, &id, &part) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let mut response = Response::new(Body::from(bytes));

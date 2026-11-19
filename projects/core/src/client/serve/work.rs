@@ -50,6 +50,14 @@ impl Server {
             WorkRequest::SourcePicture { thread_id, name } => {
                 Response::Picture(runtime.source_picture(&thread_id, &name).await?)
             }
+            WorkRequest::Card {
+                thread_id,
+                card_id,
+                part,
+            } => match runtime.card(&thread_id, &card_id, &part).await? {
+                Some(bytes) => Response::Picture(bytes),
+                None => Response::Error("no such card".to_owned()),
+            },
             WorkRequest::PlanTasks {
                 thread_id,
                 done_before,
