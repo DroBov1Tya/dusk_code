@@ -11,6 +11,21 @@ pub use dusk_protocol::thread::Thread;
 /// The `source` of a thread a team made for a task.
 pub const MEMBER_SOURCE: &str = "member";
 
+/// Threads with their folder and when they were last active, then `$rest`. The last
+/// message is found by `messages_thread_time`, without reading any message.
+macro_rules! select_threads {
+    ($rest:literal) => {
+        concat!(
+            "SELECT threads.*, thread_projects.dir AS project,
+                MAX(threads.created_at,
+                COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
+                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
+             FROM threads LEFT JOIN thread_projects ON thread_projects.thread_id = threads.id ",
+            $rest
+        )
+    };
+}
+
 impl State {
     pub async fn create_thread(&self, id: &str, source: &str) -> Result<Thread> {
         self.insert_thread(id, source, None, None, None).await
@@ -59,14 +74,18 @@ impl State {
     /// The chats started in `dir`, and those older than the record of where a chat
     /// started, which would otherwise be out of reach everywhere.
     pub async fn project_threads(&self, dir: &str) -> Result<Vec<Thread>> {
-        let mut threads = self.list_threads().await?;
-        threads.retain(|thread| {
-            thread
-                .project
-                .as_deref()
-                .is_none_or(|project| project == dir)
-        });
-        Ok(threads)
+        sqlx::query(select_threads!(
+            "WHERE parent_thread_id IS NULL AND source != 'arbiter'
+                AND (thread_projects.dir IS NULL OR thread_projects.dir = ?)
+             ORDER BY active_at DESC, id DESC"
+        ))
+        .bind(dir)
+        .fetch_all(&self.pool)
+        .await
+        .context("list the folder's threads")?
+        .into_iter()
+        .map(decode_thread)
+        .collect()
     }
 
     /// A thread for `agent` to work in under the thread that asked it, called `name`.
@@ -123,32 +142,22 @@ impl State {
     }
 
     pub async fn load_thread(&self, id: &str) -> Result<Option<Thread>> {
-        sqlx::query(
-            "SELECT threads.*, (SELECT dir FROM thread_projects WHERE thread_id = threads.id) AS project,
-                MAX(threads.created_at,
-                COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
-                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
-             FROM threads WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .context("load thread")?
-        .map(decode_thread)
-        .transpose()
+        sqlx::query(select_threads!("WHERE id = ?"))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("load thread")?
+            .map(decode_thread)
+            .transpose()
     }
 
     /// The threads people chat in, the most recently active first. Subagent threads are
     /// reached through `agent_threads`.
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {
-        sqlx::query(
-            "SELECT threads.*, (SELECT dir FROM thread_projects WHERE thread_id = threads.id) AS project,
-                MAX(threads.created_at,
-                COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
-                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
-             FROM threads WHERE parent_thread_id IS NULL AND source != 'arbiter'
-             ORDER BY active_at DESC, id DESC",
-        )
+        sqlx::query(select_threads!(
+            "WHERE parent_thread_id IS NULL AND source != 'arbiter'
+                 ORDER BY active_at DESC, id DESC"
+        ))
         .fetch_all(&self.pool)
         .await
         .context("list threads")?
@@ -202,13 +211,9 @@ impl State {
 
     /// The subagent threads a thread started, oldest first.
     pub async fn agent_threads(&self, parent: &str) -> Result<Vec<Thread>> {
-        sqlx::query(
-            "SELECT threads.*, (SELECT dir FROM thread_projects WHERE thread_id = threads.id) AS project,
-                MAX(threads.created_at,
-                COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
-                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
-             FROM threads WHERE parent_thread_id = ? ORDER BY created_at, id",
-        )
+        sqlx::query(select_threads!(
+            "WHERE parent_thread_id = ? ORDER BY created_at, id"
+        ))
         .bind(parent)
         .fetch_all(&self.pool)
         .await
@@ -372,14 +377,6 @@ impl State {
         .bind(id)
         .fetch_all(&mut *transaction)
         .await?;
-        // The search index has no trigger for deletes, so its rows go first.
-        sqlx::query(family!(
-            "DELETE FROM messages_search WHERE rowid IN
-             (SELECT rowid FROM messages WHERE thread_id IN (SELECT id FROM family))"
-        ))
-        .bind(id)
-        .execute(&mut *transaction)
-        .await?;
         sqlx::query(family!(
             "DELETE FROM threads WHERE id IN (SELECT id FROM family)"
         ))
@@ -474,6 +471,14 @@ mod tests {
         assert_eq!(below, ["one", "two"]);
         let depth = tokio::time::timeout(soon, state.thread_depth("two")).await;
         assert_eq!(depth.expect("the count never ends").unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn the_thread_list_finds_the_last_message_by_index() {
+        let state = temp_state("thread_list_plan").await;
+        let sql = concat!("EXPLAIN QUERY PLAN ", select_threads!("WHERE id = ?"));
+        let plan = crate::testing::query_plan(&state, sql).await;
+        assert!(plan.contains("messages_thread_time"), "{plan}");
     }
 
     #[tokio::test]

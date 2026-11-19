@@ -248,12 +248,10 @@ async fn items(
 }
 
 /// Steps (the calls that answer), tokens (every call) and files changed (each path
-/// once) over the turns that worked on each task. `turns_task` finds the turns.
-async fn used(
-    connection: &mut SqliteConnection,
-    ids: &str,
-) -> Result<HashMap<String, Used>, PlanError> {
-    let rows = sqlx::query(
+/// once) over the turns that worked on each task, for a JSON array of task ids.
+/// `turns_task` finds the turns, `model_usage_turn` and `changes_turn` their rows.
+macro_rules! used {
+    () => {
         "SELECT j.value AS task_id,
              (SELECT COUNT(*) FROM turns tr JOIN model_usage u ON u.turn_id = tr.turn_id
               WHERE tr.task_id = j.value AND u.purpose = 'answer') AS steps,
@@ -263,11 +261,15 @@ async fn used(
              (SELECT COUNT(DISTINCT c.project || char(0) || c.path)
               FROM turns tr JOIN changes c ON c.turn_id = tr.turn_id
               WHERE tr.task_id = j.value) AS changes
-         FROM json_each(?) j",
-    )
-    .bind(ids)
-    .fetch_all(connection)
-    .await?;
+         FROM json_each(?) j"
+    };
+}
+
+async fn used(
+    connection: &mut SqliteConnection,
+    ids: &str,
+) -> Result<HashMap<String, Used>, PlanError> {
+    let rows = sqlx::query(used!()).bind(ids).fetch_all(connection).await?;
     let mut by_task = HashMap::new();
     for row in &rows {
         let steps: i64 = row.try_get("steps")?;
@@ -298,4 +300,17 @@ async fn names(
     .fetch_all(connection)
     .await?;
     Ok(rows.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn the_plan_reads_what_tasks_used_by_index() {
+        let state = crate::testing::temp_state("task_used_plan").await;
+        let plan =
+            crate::testing::query_plan(&state, concat!("EXPLAIN QUERY PLAN ", used!())).await;
+        assert!(!plan.contains("SCAN u"), "{plan}");
+        assert!(!plan.contains("AUTOMATIC"), "{plan}");
+        assert!(plan.contains("model_usage_turn"), "{plan}");
+    }
 }

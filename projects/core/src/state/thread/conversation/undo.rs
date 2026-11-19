@@ -1,7 +1,7 @@
 //! Taking a thread back to before one of the user's messages: that message and all
 //! after it go, with the turns that answered them, the compactions that summed them up,
-//! and the usage of the model calls that read them. The search index is kept in step,
-//! since it reads its text from the messages.
+//! and the usage of the model calls that read them. The search index follows the
+//! messages by a trigger.
 
 use anyhow::{Context, Result, ensure};
 use sqlx::Row;
@@ -61,9 +61,6 @@ impl State {
                 OR response_message_id IN
                     (SELECT message_id FROM messages WHERE thread_id = ?1 AND sequence >= ?2))",
             "DELETE FROM compactions WHERE thread_id = ?1 AND through_sequence >= ?2",
-            "INSERT INTO messages_search (messages_search, rowid, content, tool_calls_json)
-             SELECT 'delete', rowid, content, tool_calls_json FROM messages
-             WHERE thread_id = ?1 AND sequence >= ?2",
             "DELETE FROM messages WHERE thread_id = ?1 AND sequence >= ?2",
         ];
         for step in steps {
@@ -184,6 +181,10 @@ mod tests {
         assert_eq!(left.len(), 2);
         let found = state.search_messages("thread", "second", 10).await.unwrap();
         assert!(found.is_empty(), "the index forgot them");
+        sqlx::query("INSERT INTO messages_search (messages_search) VALUES ('integrity-check')")
+            .execute(&state.pool)
+            .await
+            .expect("the index holds no deleted message");
         assert!(state.latest_compaction("thread").await.unwrap().is_none());
         // The thread goes on as before.
         exchange(&state, "third question", "third answer").await;
