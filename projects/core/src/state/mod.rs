@@ -9,6 +9,7 @@ mod agents;
 pub mod artifacts;
 mod db;
 mod project;
+mod skill_changes;
 mod thread;
 mod usage;
 
@@ -38,6 +39,9 @@ pub use thread::{
 pub use thread::{
     BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamCounts, TeamError, TeamRun,
 };
+// Callers are the skill-evolve tool and the undo request (Tasks 4 and 5).
+#[allow(unused_imports)]
+pub use skill_changes::{MAX_KEPT_PER_SKILL, MAX_TEXT_BYTES, NewSkillChange, StoredSkillChange};
 pub use usage::{ItemUsage, KIND_MCP_TOOL, KIND_SKILL};
 
 pub use db::timestamp_ms;
