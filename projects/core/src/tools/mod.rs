@@ -38,4 +38,6 @@ pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::{Place, ToolScope};
+#[cfg(test)]
+pub(crate) use tool::UNATTENDED;
 pub use tool::{Progress, Tool, ToolContext, ToolKind};
