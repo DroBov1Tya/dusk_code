@@ -7,8 +7,8 @@
 //! - `files`: the bundle embedded in the binary, and the pictures and sounds of chats;
 //! - `stream`: the frame pump the WebSocket and the local JSON lines share;
 //! - `bridge`: one WebSocket stream per attached browser;
-//! - `local`: the core shared by the apps of one user (its run folder, lock and key) and the
-//!   JSON lines transport of the local API;
+//! - `local`: the core shared by the apps of one user: its run folder, lock and key, the
+//!   JSON lines transport of the local API and the rules for a core of another version;
 //! - `server`: the routes, and starting and stopping.
 
 mod auth;
