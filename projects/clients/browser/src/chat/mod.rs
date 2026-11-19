@@ -9,6 +9,7 @@ mod panel;
 mod pictures;
 mod pins;
 mod plan;
+mod pull_link;
 mod shown;
 mod voice;
 mod working;

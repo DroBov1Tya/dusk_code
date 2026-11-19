@@ -867,3 +867,19 @@ button.link.quiet:hover { color: var(--fg); }
 .limits-bar { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .limits-bar span { display: block; height: 100%; border-radius: 999px; }
 .limits-bar .tone-accent { background: var(--accent); } .limits-bar .tone-warn { background: var(--warn); } .limits-bar .tone-bad { background: var(--bad); }
+
+/* A failure said quietly: a raised row, a thin danger edge, the words in the text color. */
+.error-row { position: relative; display: flex; align-items: center; gap: var(--s2); min-height: var(--control); margin: var(--s2) 0; padding: 6px var(--s2) 6px var(--s4); border-radius: 8px; background: var(--raised); overflow: hidden; font-size: 13px; }
+.error-row::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--bad); }
+.error-row > .glyph { color: var(--bad); }
+.error-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* Choice buttons stand square, as app buttons do. */
+.reply .pill { border-radius: 8px; }
+
+/* A link to the project's own pull request: a chip, its card on hover. */
+a.pr-chip { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 8px; background: var(--raised); color: var(--fg); text-decoration: none; font-size: .9em; line-height: 1.7; }
+a.pr-chip:hover { background: color-mix(in srgb, var(--accent) 12%, var(--raised)); }
+.pr-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.pr-chip.open .pr-dot { background: var(--good); } .pr-chip.merged .pr-dot { background: var(--accent); } .pr-chip.closed .pr-dot { background: var(--bad); }
+.pr-card { display: none; position: absolute; left: 0; top: calc(100% + 6px); width: 300px; padding: var(--s3); flex-direction: column; gap: var(--s1); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px color-mix(in srgb, var(--bg) 60%, transparent); font-size: 13px; line-height: 1.4; z-index: 5; white-space: normal; }
+a.pr-chip:hover .pr-card, a.pr-chip:focus-visible .pr-card { display: flex; animation: rise var(--t-open) var(--ease); }

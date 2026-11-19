@@ -108,3 +108,12 @@ pub async fn delete_schedule(id: String) -> Res<Vec<Schedule>> {
 pub async fn run_schedule(id: String) -> Res<String> {
     ask!(project(ProjectRequest::RunSchedule { id }), Response::Opened { thread_id } => thread_id)
 }
+
+/// One pull request of the project's own GitHub repository, as the core knows it.
+pub async fn pull_status(id: &str, number: u64) -> Res<Option<dusk_protocol::project::PullStatus>> {
+    let id = id.to_owned();
+    ask!(
+        project(ProjectRequest::PullStatus { id, number }),
+        Response::PullStatus(p) => p.map(|p| *p)
+    )
+}
