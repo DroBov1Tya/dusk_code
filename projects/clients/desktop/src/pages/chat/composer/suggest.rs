@@ -3,10 +3,23 @@
 //! shows it again. Tab takes it in with the caret at its end; Esc puts it away until the
 //! next one. Each chat keeps its own, as `Suggestion` follows the chat's events.
 
+use std::time::{Duration, Instant};
+
 use dusk_protocol::thread::Suggestion;
 use gpui_kit::{component::ActiveTheme, *};
 
-use crate::{ui::Type, workspace::Workspace};
+use crate::{
+    ui::{Type, motion},
+    workspace::Workspace,
+};
+
+/// How long the box's edge flares as Tab takes a suggestion in.
+const TAKEN: Duration = Duration::from_millis(600);
+/// The edge's accent while a suggestion is offered, and at the height of the flare.
+const OFFERED: f32 = 0.8;
+const FLARE: f32 = 1.;
+/// What the hint at the end of the suggestion's line says.
+pub const HINT: &str = "Tab fills in \u{00B7} Shift+Tab mode";
 
 /// What the empty box says when no suggestion is there.
 pub const PLACEHOLDER: &str = "Ask anything. Enter sends, Shift+Enter starts a new line.";
@@ -42,6 +55,7 @@ impl Workspace {
         self.composer.update(cx, |composer, cx| {
             composer.replace(text, window, cx);
         });
+        self.suggestion_taken = Some(Instant::now());
         cx.notify();
         true
     }
@@ -79,7 +93,8 @@ pub fn show_suggestion(ws: &mut Workspace, window: &mut Window, cx: &mut Context
     });
 }
 
-/// The key that takes the suggestion in, at the right end of its line.
+/// The keys at the right end of the suggestion's line, plain muted text: the box's own
+/// edge is what marks the suggestion.
 pub fn tab_hint(ws: &Workspace, cx: &App) -> Option<Div> {
     ws.suggestion_ghost(cx)?;
     Some(
@@ -87,21 +102,29 @@ pub fn tab_hint(ws: &Workspace, cx: &App) -> Option<Div> {
             .absolute()
             .top(px(6.))
             .right(px(10.))
-            .px_1()
-            .rounded_sm()
-            .border_1()
-            .border_color(cx.theme().border)
             .meta()
             .text_color(cx.theme().muted_foreground)
-            .child("Tab"),
+            .child(HINT),
     )
+}
+
+/// How strongly the box's edge takes the accent: steady while a suggestion is offered,
+/// from the flare's height back to the writing edge just after Tab took one in, `None`
+/// otherwise. With less motion asked for there is no flare, only the steady edge.
+pub fn edge_light(ws: &Workspace, window: &Window, cx: &App) -> Option<f32> {
+    if ws.suggestion_ghost(cx).is_some() {
+        return Some(OFFERED);
+    }
+    let since = ws.suggestion_taken?;
+    let t = motion::progress(since, TAKEN, window, cx)?;
+    Some(FLARE - (FLARE - 0.5) * t)
 }
 
 #[cfg(test)]
 mod tests {
     use dusk_protocol::thread::ThreadEvent;
 
-    use super::{PLACEHOLDER, Suggestion, placeholder};
+    use super::{HINT, PLACEHOLDER, Suggestion, placeholder};
 
     #[test]
     fn the_box_shows_the_suggestion_until_it_is_stale_or_put_away() {
@@ -124,5 +147,6 @@ mod tests {
             message_id: "m".into(),
         });
         assert_eq!(placeholder(Some(&suggestion)), PLACEHOLDER);
+        assert!(HINT.starts_with("Tab") && HINT.contains("Shift+Tab"));
     }
 }

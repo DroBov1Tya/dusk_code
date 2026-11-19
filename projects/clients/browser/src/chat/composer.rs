@@ -138,6 +138,9 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
     });
     // The user's likely next message, greyed where the placeholder sits.
     let ghost = move || chat.with(|c| c.suggestion.ghost("").map(str::to_owned));
+    // The box's edge flares once as Tab takes the suggestion in; the class goes when the
+    // animation ends, so the next one plays again.
+    let taken = RwSignal::new(false);
     let on_key = move |ev: leptos::ev::KeyboardEvent| {
         if ev.key() == "Enter" && !ev.shift_key() && !ev.is_composing() {
             ev.prevent_default();
@@ -148,15 +151,16 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
             // Over the empty box Tab takes the suggestion in; otherwise it moves focus.
             "Tab" if !modified => {
                 let typed = text.get_untracked();
-                if let Some(taken) = chat.with_untracked(|c| c.suggestion.accept(&typed)) {
+                if let Some(taken_text) = chat.with_untracked(|c| c.suggestion.accept(&typed)) {
                     ev.prevent_default();
                     // The caret goes to the end of what was taken in.
                     if let Some(area) = area.get_untracked() {
-                        area.set_value(&taken);
-                        let end = taken.encode_utf16().count() as u32;
+                        area.set_value(&taken_text);
+                        let end = taken_text.encode_utf16().count() as u32;
                         let _ = area.set_selection_range(end, end);
                     }
-                    text.set(taken);
+                    text.set(taken_text);
+                    taken.set(true);
                 }
             }
             "Escape"
@@ -255,7 +259,10 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
     view! {
         <div class="composer-wrap">
             {panel_open.then(|| view! { <super::panel::Panel /> })}
-            <div class="composer" class:suggesting=move || ghost().is_some() && text.with(String::is_empty)>
+            <div class="composer"
+                class:suggesting=move || ghost().is_some() && text.with(String::is_empty)
+                class:taken=move || taken.get()
+                on:animationend=move |_| taken.set(false)>
                 <Show when=move || !suggestions().is_empty()>
                     <ul class="suggest">
                         <For each=suggestions key=|(name, _)| *name let:entry>
@@ -287,7 +294,7 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                     }
                 ></textarea>
                 <Show when=move || ghost().is_some() && text.with(String::is_empty)>
-                    <kbd class="tab-hint" title="Tab fills it in">"Tab"</kbd>
+                    <span class="tab-hint">"Tab fills in"</span>
                 </Show>
                 <div class="composer-actions">
                     <input type="file" accept="image/png,image/jpeg" multiple hidden node_ref=picker

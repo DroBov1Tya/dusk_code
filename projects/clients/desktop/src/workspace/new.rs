@@ -140,6 +140,7 @@ impl Workspace {
             rates: HashMap::new(),
             suggestions: HashMap::new(),
             placeholder_shown: crate::pages::chat::composer::PLACEHOLDER.to_owned(),
+            suggestion_taken: None,
             git: None,
             repository: None,
             pulls: HashMap::new(),

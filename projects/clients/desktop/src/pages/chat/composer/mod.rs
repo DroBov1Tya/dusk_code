@@ -125,10 +125,13 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     let mentions = mention_menu(ws, cx).or_else(|| super::commands::menu(ws, cx));
     let chips = strip(ws, cx);
     let hint = suggest::tab_hint(ws, cx);
-    let edge = if writing {
-        accent.opacity(0.5)
-    } else {
-        cx.theme().border
+    // The box itself marks a suggestion: its edge takes the accent while one is offered,
+    // and flares once as Tab takes it in.
+    let light = suggest::edge_light(ws, window, cx);
+    let edge = match light {
+        Some(strength) => accent.opacity(strength),
+        None if writing => accent.opacity(0.5),
+        None => cx.theme().border,
     };
     let band = panel::panel(ws, edge, cx);
     let tab = panel::tab(ws, edge, window, cx);
@@ -140,10 +143,13 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     if band.is_some() {
         lift.retain(|shadow| !shadow.inset);
     }
-    // The box lights up a little while it is written in.
-    if writing {
+    // The box lights up a little while it is written in, more while it flares.
+    if writing || light.is_some() {
+        let glow = light.map_or(0.14, |strength| {
+            0.14 + 0.16 * (strength - 0.5).max(0.) / 0.5
+        });
         lift.push(BoxShadow {
-            color: accent.opacity(0.14),
+            color: accent.opacity(glow),
             offset: point(px(0.), px(0.)),
             blur_radius: px(18.),
             spread_radius: px(0.),
@@ -168,7 +174,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .px_2()
                 .pt_1()
                 // The suggestion's line stops short of the Tab hint at its end.
-                .when(hint.is_some(), |row| row.pr(px(44.)))
+                .when(hint.is_some(), |row| row.pr(px(200.)))
                 .child(Textarea::new(&ws.composer).appearance(false))
                 .children(hint),
         )
@@ -286,7 +292,15 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
         // Tab switches the mode, before the text box takes it as an indent.
         .capture_key_down(cx.listener(|ws, event: &KeyDownEvent, window, cx| {
             let keys = &event.keystroke;
-            if keys.key == "tab" && !keys.modifiers.shift && !keys.modifiers.control {
+            // Shift+Tab over the empty box switches the mode, whatever is suggested.
+            if keys.key == "tab"
+                && keys.modifiers.shift
+                && !keys.modifiers.control
+                && ws.composer.read(cx).value().is_empty()
+            {
+                cx.stop_propagation();
+                ws.next_mode(cx);
+            } else if keys.key == "tab" && !keys.modifiers.shift && !keys.modifiers.control {
                 cx.stop_propagation();
                 // Over a mention or a command, Tab completes it, as in the TUI; over the
                 // empty box it takes in the suggestion shown there.

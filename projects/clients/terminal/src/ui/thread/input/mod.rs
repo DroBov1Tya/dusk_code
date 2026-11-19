@@ -20,6 +20,10 @@ use queue::queue_rows;
 
 use super::theme::{ACCENT, HAIRLINE, SELECTED, SURFACE, TEXT_SOFT, bold, fg, thought};
 use crate::app::{App, ChipHit, InputRow};
+
+/// After a suggestion in the empty box: the key that fills it in, and the way to the
+/// mode Tab switches otherwise (Shift+Tab browses the transcript here).
+const SUGGESTION_KEYS: &str = "  Tab fills in \u{00B7} Esc, then Tab: mode";
 use ratatui::{
     Frame,
     layout::Rect,
@@ -188,7 +192,7 @@ impl InputView<'_> {
             };
             let mut line = Line::from(vec![prompt, Span::styled(hint, thought())]);
             if self.app.provider_available && self.app.suggestion_ghost().is_some() {
-                line.push_span(Span::styled("  Tab", fg(TEXT_SOFT)));
+                line.push_span(Span::styled(SUGGESTION_KEYS, fg(TEXT_SOFT)));
             }
             frame.render_widget(Paragraph::new(line), text_area);
             show_cursor(frame, self.app, text_area, (0, 0));
