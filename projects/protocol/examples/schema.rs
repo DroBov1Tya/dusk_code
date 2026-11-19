@@ -11,7 +11,13 @@
 //! older client still speaks to this core. A property whose `type` or `$ref` changed fails
 //! too. Not caught: internally tagged variants that share field names (their fields merge
 //! under one path), and enum values inside a referenced type, which are checked only through
-//! that type's own entry. Raising `OLDEST_PROTOCOL` starts a new baseline.
+//! that type's own entry. A branch of a union is a variant named by its constant tag
+//! property (`Widget.Badge.label`) or by its single wrapper property.
+//!
+//! Nullability: `T` to `Option<T>` is not additive, since an old reader with a plain field
+//! rejects `null`. Both shapes, `type: [t, "null"]` and `anyOf [{$ref}, {type: null}]`, are
+//! read as `nullable <t>`, and a change between `t` and `nullable t` is `changed type`.
+//! Raising `OLDEST_PROTOCOL` starts a new baseline.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -154,6 +160,35 @@ fn not_additive(old: &Value, new: &Value) -> Vec<String> {
     problems
 }
 
+/// What a property is, for the type guard: its `$ref` or `type`, with `nullable ` in front
+/// when it may be null, whether written `type: [t, "null"]` or `anyOf [{$ref}, {null}]`.
+fn kind_of(value: &Value) -> Option<String> {
+    if let Some(r) = value.get("$ref") {
+        return Some(r.to_string());
+    }
+    match value.get("type") {
+        Some(Value::Array(types)) => {
+            let mut names = types.iter().filter_map(Value::as_str);
+            let real: Vec<&str> = names.by_ref().filter(|t| *t != "null").collect();
+            let nullable = types.iter().any(|t| t == "null");
+            return Some(format!(
+                "{}{}",
+                if nullable { "nullable " } else { "" },
+                real.join("|")
+            ));
+        }
+        Some(t) => return Some(t.as_str().map_or_else(|| t.to_string(), str::to_owned)),
+        None => {}
+    }
+    let parts = value.get("anyOf")?.as_array()?;
+    let null = |p: &Value| p.get("type").and_then(Value::as_str) == Some("null");
+    if parts.len() == 2 && parts.iter().any(null) {
+        let other = parts.iter().find(|p| !null(p))?;
+        return Some(format!("nullable {}", kind_of(other)?));
+    }
+    None
+}
+
 /// The names a schema defines, as `Def.name` paths, and which of them are required.
 #[derive(Default)]
 struct Shape {
@@ -194,14 +229,33 @@ impl Shape {
             .map(|r| r.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default();
         if let Some(properties) = object.get("properties").and_then(Value::as_object) {
-            // An externally tagged variant is an object whose one required property is
-            // its name; it is a variant, not a field that can become required.
-            let wrapper = variant && properties.len() == 1 && required.len() == 1;
+            // A branch of a union names its variant by a property holding a constant (an
+            // internally tagged enum: its fields live under that variant), or is an object
+            // whose one required property is the variant's name (externally tagged).
+            let tag = variant
+                .then(|| {
+                    properties
+                        .iter()
+                        .find_map(|(k, v)| v.get("const").and_then(Value::as_str).map(|c| (k, c)))
+                })
+                .flatten();
+            let wrapper = variant && tag.is_none() && properties.len() == 1 && required.len() == 1;
+            let base = match tag {
+                Some((_, name)) => {
+                    let at = format!("{path}.{name}");
+                    self.names.insert(at.clone());
+                    at
+                }
+                None => path.to_owned(),
+            };
             for (name, value) in properties {
-                let at = format!("{path}.{name}");
+                if tag.is_some_and(|(k, _)| k == name) {
+                    continue;
+                }
+                let at = format!("{base}.{name}");
                 self.names.insert(at.clone());
-                if let Some(kind) = value.get("$ref").or_else(|| value.get("type")) {
-                    self.kinds.insert(at.clone(), kind.to_string());
+                if let Some(kind) = kind_of(value) {
+                    self.kinds.insert(at.clone(), kind);
                 }
                 if !wrapper && required.contains(&name.as_str()) {
                     self.required.insert(at.clone());
@@ -298,5 +352,64 @@ mod tests {
         let old = schema(json!({ "properties": { "a": { "type": "string" } } }));
         let new = schema(json!({ "properties": { "a": { "type": "integer" } } }));
         assert_eq!(not_additive(&old, &new), ["Thing.a changed type"]);
+    }
+
+    fn tagged(branches: Vec<Value>) -> Value {
+        schema(json!({ "oneOf": branches }))
+    }
+
+    fn branch(tag: &str, fields: &[(&str, bool)]) -> Value {
+        let mut properties = Map::new();
+        properties.insert("kind".into(), json!({ "const": tag, "type": "string" }));
+        let mut required = vec![json!("kind")];
+        for (name, needed) in fields {
+            properties.insert((*name).into(), json!({ "type": "string" }));
+            if *needed {
+                required.push(json!(name));
+            }
+        }
+        json!({ "type": "object", "properties": properties, "required": required })
+    }
+
+    #[test]
+    fn a_new_tagged_variant_may_carry_required_fields() {
+        let old = tagged(vec![branch("alpha", &[("text", true)])]);
+        let new = tagged(vec![
+            branch("alpha", &[("text", true)]),
+            branch("badge", &[("label", true)]),
+        ]);
+        assert!(not_additive(&old, &new).is_empty());
+    }
+
+    #[test]
+    fn an_existing_tagged_variant_gaining_a_required_field_is_not_additive() {
+        let old = tagged(vec![
+            branch("alpha", &[("text", true)]),
+            branch("beta", &[]),
+        ]);
+        let new = tagged(vec![
+            branch("alpha", &[("text", true), ("more", true)]),
+            branch("beta", &[]),
+        ]);
+        assert_eq!(not_additive(&old, &new), ["Thing.alpha.more"]);
+        let dropped = tagged(vec![branch("alpha", &[]), branch("beta", &[])]);
+        assert_eq!(not_additive(&old, &dropped), ["Thing.alpha.text"]);
+    }
+
+    #[test]
+    fn making_a_primitive_optional_is_not_additive() {
+        let old = schema(json!({ "properties": { "a": { "type": "string" } } }));
+        let new = schema(json!({ "properties": { "a": { "type": ["string", "null"] } } }));
+        assert_eq!(not_additive(&old, &new), ["Thing.a changed type"]);
+    }
+
+    #[test]
+    fn making_a_reference_optional_is_not_additive() {
+        let plain = json!({ "$ref": "#/$defs/Other" });
+        let optional = json!({ "anyOf": [{ "$ref": "#/$defs/Other" }, { "type": "null" }] });
+        let old = schema(json!({ "properties": { "a": plain } }));
+        let new = schema(json!({ "properties": { "a": optional } }));
+        assert_eq!(not_additive(&old, &new), ["Thing.a changed type"]);
+        assert!(not_additive(&new, &new).is_empty());
     }
 }
