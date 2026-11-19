@@ -1,5 +1,6 @@
 //! Tools about the thread itself: its history and tasks, skills, the user's memory,
-//! questions to the user, and the images and blocks shown to them.
+//! questions to the user, the images and blocks shown to them, and the Workshop's
+//! listings found for them.
 
 mod ask_user;
 mod display_audio;
@@ -13,6 +14,7 @@ mod remember;
 mod show;
 mod stored_result;
 mod tasks;
+mod workshop;
 
 pub use ask_user::{AskUser, Question};
 pub use display_audio::{DisplayAudio, is_sound, save_sound};
@@ -28,3 +30,4 @@ pub use remember::Remember;
 pub(crate) use remember::project_folder;
 pub use show::Show;
 pub use tasks::{GatesYes, Started, Tasks, TeamRunner};
+pub use workshop::{SearchWorkshop, SuggestFromWorkshop};

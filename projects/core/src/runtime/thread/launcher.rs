@@ -25,8 +25,8 @@ use crate::{
     state::{Identity, State},
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
-        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Show, Tasks,
-        ToolRegistry, ToolScope,
+        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, SearchWorkshop, Show,
+        SuggestFromWorkshop, Tasks, ToolRegistry, ToolScope,
     },
 };
 
@@ -179,6 +179,8 @@ impl Launcher {
         if depth == 0 {
             tools.add(Box::new(AskUser));
             tools.add(Box::new(Show));
+            tools.add(Box::new(SearchWorkshop::new(self.paths.clone())));
+            tools.add(Box::new(SuggestFromWorkshop::new(self.paths.clone())));
             tools.add(Box::new(GoalTool::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
@@ -344,7 +346,9 @@ mod tests {
         ("run_command", false, false),
         ("screenshot", true, false),
         ("search_files", true, true),
+        ("search_workshop", true, true),
         ("show", true, false),
+        ("suggest_from_workshop", true, false),
         ("tasks", false, false),
         ("type_text", false, false),
         ("window_session", false, false),
