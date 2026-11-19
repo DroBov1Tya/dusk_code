@@ -166,7 +166,10 @@ impl RawCheck {
             Stage::Skipped
         } else if self.state == "SUCCESS" || (status == "COMPLETED" && !conclusion.is_empty()) {
             Stage::Passed
-        } else if waiting.contains(&status) || self.state == "EXPECTED" {
+        } else if waiting.contains(&status)
+            || waiting.contains(&self.state.as_str())
+            || self.state == "EXPECTED"
+        {
             Stage::Queued
         } else {
             Stage::Running
