@@ -17,7 +17,7 @@ use super::sections::{
     MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, is_zero, yes,
 };
 use super::{
-    Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
+    Appearance, ApprovalPolicy, Arbiter, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
     MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
     MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, McpServerConfig, Memory, Plugged,
     PluginConfig, ProviderConfig, Team, ThreadConfig, VersionControl, WorkHistory, Workshop,
@@ -66,6 +66,9 @@ pub struct Config {
     /// Version control settings; clients show this section as "Version control".
     #[serde(default, skip_serializing_if = "VersionControl::is_default")]
     version_control: VersionControl,
+    /// How auto mode's arbiter judges.
+    #[serde(default, skip_serializing_if = "Arbiter::is_default")]
+    arbiter: Arbiter,
     #[serde(default, skip_serializing_if = "Appearance::is_default")]
     appearance: Appearance,
     /// Tools switched on or off by name; a tool not listed is on.
@@ -261,6 +264,7 @@ impl Config {
 
     pub(super) fn validate(&self) -> Result<()> {
         self.workshop.validate()?;
+        self.arbiter.validate().map_err(|error| anyhow!(error))?;
         for endpoint in [&self.voice.stt, &self.voice.tts].into_iter().flatten() {
             crate::voice::check_endpoint(endpoint)?;
         }

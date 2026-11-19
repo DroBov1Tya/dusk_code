@@ -3,6 +3,7 @@
 pub mod about_me;
 pub mod ai;
 mod appearance;
+pub mod arbiter;
 mod behavior;
 pub use behavior::LimitEdit;
 pub mod providers;
@@ -219,6 +220,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         SettingsPage::Secrets => secrets::render(ws, cx),
         SettingsPage::Workshop => workshop::render(ws, cx),
         SettingsPage::Plugins => crate::plugins::settings_page(ws, cx),
+        SettingsPage::Safety => {
+            let arbiter = arbiter::render(ws, window, cx);
+            behavior::render(ws, SettingsPage::Safety, cx).child(arbiter)
+        }
         page => behavior::render(ws, page, cx),
     };
     div().size_full().flex().flex_row().child(menu).child(

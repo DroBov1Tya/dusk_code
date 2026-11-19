@@ -154,6 +154,7 @@ impl Runtime {
             .set_judge(Arc::new(super::arbiter::Arbiter::new(
                 Arc::clone(&launcher.state),
                 Arc::clone(&launcher.model),
+                Arc::clone(&launcher.config),
             )));
         let temporary_root = super::temporary::TemporaryRoot::make()?;
         let temporary = {
@@ -164,6 +165,7 @@ impl Runtime {
             approvals.set_judge(Arc::new(super::arbiter::Arbiter::new(
                 Arc::clone(&memory),
                 Arc::clone(&launcher.model),
+                Arc::clone(&launcher.config),
             )));
             Launcher {
                 jobs: JobManager::new(

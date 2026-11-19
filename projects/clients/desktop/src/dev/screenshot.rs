@@ -33,7 +33,8 @@
 //!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
 //! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
 //!   icon, and a chat that links two of them, drawn as chips;
-//! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
+//! - `fake=approval|approval-long|question`: put a request for approval (a long heredoc
+//!   command for `approval-long`), or a question, in the shown chat;
 //! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
 //!   menu; `fake=sentpicture`: a user's message with a picture thumbnail under it;
 //!   `viewer=picture`: the same picture large over the window;
@@ -884,6 +885,21 @@ fn act(
                         "Evict on a timer".into(),
                     ],
                     multiple: false,
+                }),
+                "approval-long" => ThreadEvent::Approval(ApprovalRequest {
+                    id: 2,
+                    request: Request::Command {
+                        command: (0..60).fold(
+                            "python3 - <<'EOF'\nimport json, pathlib\n".to_owned(),
+                            |text, line| {
+                                text + &format!(
+                                    "print(json.dumps({{'row': {line}, 'path': str(pathlib.Path.cwd() / 'data' / 'part-{line}.json')}}))\n"
+                                )
+                            },
+                        ) + "EOF",
+                    },
+                    session: None,
+                    steps: Vec::new(),
                 }),
                 _ => ThreadEvent::Approval(ApprovalRequest {
                     id: 1,

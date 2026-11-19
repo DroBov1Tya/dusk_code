@@ -195,6 +195,7 @@ pub struct Workspace {
     pub drafts: chat::composer::Drafts,
     /// The profile and snippets a message names with `@`, and their settings fields.
     pub me: crate::pages::settings::about_me::AboutMe,
+    pub arbiter: crate::pages::settings::arbiter::ArbiterForm,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
     /// A short note over any page, and when it came; see `toast`.
@@ -280,6 +281,8 @@ pub struct Workspace {
     pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.
     pub picked: Vec<usize>,
+    /// Approval command boxes shown in full, by request and step.
+    pub approval_open: std::collections::HashSet<(u64, usize)>,
     pub attach_open: bool,
     pub left_hidden: bool,
     /// The strip of places at the left edge, hidden on the user's word.

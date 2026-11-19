@@ -22,7 +22,7 @@ pub use dusk_protocol::tools::Decision;
 
 /// What decides a request in the user's place, in arbiter mode.
 pub trait Judge: Send + Sync {
-    /// Never an error: a judge that cannot decide says no.
+    /// An error leaves the request to the user.
     fn judge<'a>(&'a self, request: &'a Request) -> crate::BoxFuture<'a, Verdict>;
 }
 
@@ -227,14 +227,13 @@ impl Approvals {
     async fn arbitrate(&self, request: Request, progress: Option<Progress>) -> Result<()> {
         let what = request.what();
         let verdict = match self.judge.get() {
-            Some(judge) => judge.judge(&request).await.unwrap_or_else(|error| Verdict {
-                allow: false,
-                reason: format!("the arbiter could not decide: {error:#}"),
-            }),
-            None => Verdict {
-                allow: false,
-                reason: "no arbiter is running".into(),
-            },
+            Some(judge) => judge.judge(&request).await,
+            None => Err(anyhow::anyhow!("no arbiter is running")),
+        };
+        // An unclear answer or a failure is not a no the user gave: they are asked.
+        let Ok(verdict) = verdict else {
+            let session = session_grant(&request);
+            return self.prompt(request, session, Vec::new(), progress).await;
         };
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::ArbiterDecided {

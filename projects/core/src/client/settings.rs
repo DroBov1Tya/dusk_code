@@ -59,6 +59,11 @@ impl Settings<'_> {
             .await
     }
 
+    /// How auto mode's arbiter judges; empty fields go back to the defaults.
+    pub async fn arbiter(&self, arbiter: dusk_protocol::config::Arbiter) -> Result<()> {
+        self.done(SettingsRequest::Arbiter(arbiter)).await
+    }
+
     /// Returns the mode switched to.
     pub async fn next_mode(&self) -> Result<String> {
         self.0

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::client::Secret;
-use crate::config::{ApprovalPolicy, ContextPolicy, ProviderKind, VoiceSettings};
+use crate::config::{ApprovalPolicy, Arbiter, ContextPolicy, ProviderKind, VoiceSettings};
 /// What `/settings` changes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SettingsRequest {
@@ -26,6 +26,8 @@ pub enum SettingsRequest {
     },
     /// The version control branch prefix; empty adds none.
     BranchPrefix(String),
+    /// How auto mode's arbiter judges; empty fields go back to the defaults.
+    Arbiter(Arbiter),
     /// Answers with the mode switched to.
     NextMode,
     /// Switches to the mode of this name.

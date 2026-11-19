@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::catalog::{AgentTree, SkillInfo};
-use crate::config::{ApprovalPolicy, McpInfo, Memory, VersionControl, WorkHistory};
+use crate::config::{ApprovalPolicy, Arbiter, McpInfo, Memory, VersionControl, WorkHistory};
 use crate::release::Channel;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
@@ -20,6 +20,10 @@ pub struct Settings {
     pub approvals: ApprovalPolicy,
     /// Version control settings, shown as their own section.
     pub version_control: VersionControl,
+    /// How auto mode's arbiter judges.
+    pub arbiter: Arbiter,
+    /// The built-in review prompt, for an editor to show and reset to.
+    pub arbiter_default_prompt: String,
     /// Whether clients notify at all; the bell is the TUI's notification.
     pub notifications: bool,
     /// Whether notifications ring the terminal bell; off stays silent.
