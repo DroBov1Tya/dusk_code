@@ -17,7 +17,7 @@ mod summary;
 mod task;
 mod team;
 mod tokens;
-mod transcript;
+pub mod transcript;
 mod turn;
 
 pub use block::{
@@ -51,7 +51,8 @@ pub use team::{
 };
 pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, short_count};
 pub use transcript::{
-    AgentState, DETAIL_KEYS, MAX_MARK_CHARS, Note, Retry, RetryRow, SHOWN_CHARS, Span, Tone, Tool,
-    ToolState, TurnSpend, clip, marks, note, retry_row, tool_detail, turn_spend, unmarked,
+    AgentState, Applied, ChatLog, DETAIL_KEYS, FAILED_PREFIXES, MAX_MARK_CHARS, Note, Retry,
+    RetryRow, SHOWN_CHARS, Span, Subagent, Tone, Tool, ToolState, TurnSpend, clip, marks, note,
+    retry_row, stored_failure, tool_detail, turn_spend, unmarked,
 };
 pub use turn::{Turn, TurnFailure, TurnStatus, TurnWait, duration_words};
