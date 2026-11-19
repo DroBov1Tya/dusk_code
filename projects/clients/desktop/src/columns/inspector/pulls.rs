@@ -12,6 +12,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::ui::looping::Loop;
 use crate::{
     ui::{Type, icons, widgets},
     workspace::Workspace,
@@ -155,11 +156,9 @@ fn checks(
     let theme = cx.theme();
     let dot = div().size_1p5().rounded_full().bg(check_color(state, cx));
     let dot = if state == CheckState::Pending {
-        dot.with_animation(
-            SharedString::from(format!("pull-running-{}", pull.number)),
-            Animation::new(std::time::Duration::from_millis(1400)).repeat(),
-            |dot, phase| dot.opacity(0.35 + 0.65 * (phase * std::f32::consts::TAU).cos().abs()),
-        )
+        dot.looping(std::time::Duration::from_millis(1400), |dot, phase| {
+            dot.opacity(0.35 + 0.65 * (phase * std::f32::consts::TAU).cos().abs())
+        })
         .into_any_element()
     } else {
         dot.into_any_element()

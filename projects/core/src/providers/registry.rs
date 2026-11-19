@@ -8,9 +8,9 @@ use std::{
 use anyhow::Result;
 
 use super::{
-    anthropic::{Anthropic, MessageStream},
-    google::{GenerateStream, Google},
-    openai::{ChatGpt, CompletionStream, OpenAiCompatible, ResponseStream},
+    anthropic::Anthropic,
+    google::Google,
+    openai::{ChatGpt, OpenAiCompatible},
     output::{ChatStream, ModelEvent},
     request::ChatRequest,
 };
@@ -51,18 +51,11 @@ enum ProviderAdapter {
 }
 
 struct ProviderStream {
-    adapter: StreamAdapter,
+    adapter: Box<dyn ChatStream>,
     tags: Option<TagSplitter>,
     pending: VecDeque<ModelEvent>,
     /// The model's price, for a usage report that comes without a cost.
     price: Option<Price>,
-}
-
-enum StreamAdapter {
-    OpenAiCompatible(CompletionStream),
-    ChatGpt(ResponseStream),
-    Anthropic(MessageStream),
-    Google(GenerateStream),
 }
 
 impl ProviderRegistry {
@@ -147,19 +140,15 @@ impl ModelProvider for Provider {
                 rate.take().await;
             }
             let price = self.prices.get(request.model).copied();
-            let adapter = match &self.adapter {
+            let adapter: Box<dyn ChatStream> = match &self.adapter {
                 ProviderAdapter::OpenAiCompatible(adapter) => {
-                    StreamAdapter::OpenAiCompatible(adapter.stream_chat(request).await?)
+                    Box::new(adapter.stream_chat(request).await?)
                 }
-                ProviderAdapter::ChatGpt(adapter) => {
-                    StreamAdapter::ChatGpt(adapter.stream_chat(request).await?)
-                }
+                ProviderAdapter::ChatGpt(adapter) => Box::new(adapter.stream_chat(request).await?),
                 ProviderAdapter::Anthropic(adapter) => {
-                    StreamAdapter::Anthropic(adapter.stream_chat(request).await?)
+                    Box::new(adapter.stream_chat(request).await?)
                 }
-                ProviderAdapter::Google(adapter) => {
-                    StreamAdapter::Google(adapter.stream_chat(request).await?)
-                }
+                ProviderAdapter::Google(adapter) => Box::new(adapter.stream_chat(request).await?),
             };
             let stream = ProviderStream {
                 adapter,
@@ -179,12 +168,7 @@ impl ChatStream for ProviderStream {
                 if let Some(event) = self.pending.pop_front() {
                     return Ok(Some(event));
                 }
-                let mut event = match &mut self.adapter {
-                    StreamAdapter::OpenAiCompatible(stream) => stream.next_event().await?,
-                    StreamAdapter::ChatGpt(stream) => stream.next_event().await?,
-                    StreamAdapter::Anthropic(stream) => stream.next_event().await?,
-                    StreamAdapter::Google(stream) => stream.next_event().await?,
-                };
+                let mut event = self.adapter.next_event().await?;
                 if let (Some(ModelEvent::Usage(usage)), Some(price)) = (&mut event, &self.price)
                     && usage.cost.is_none()
                 {

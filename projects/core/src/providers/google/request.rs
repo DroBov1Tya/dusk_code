@@ -8,7 +8,7 @@ use serde_json::{Map, Value, json};
 use super::signatures::{PLACEHOLDER, Signatures};
 use crate::{
     config::Effort,
-    providers::request::{ChatMessage, ChatRequest, Picture, ToolSpec},
+    providers::request::{ChatMessage, ChatRequest, Picture, ToolSpec, arguments_object},
 };
 
 #[derive(Serialize)]
@@ -104,11 +104,7 @@ fn contents(
                 let mut parts = text_part(text);
                 for (index, call) in tool_calls.iter().enumerate() {
                     names.insert(&call.id, &call.name);
-                    // Arguments must be an object; ones that were not JSON go back as none.
-                    let args = match &call.arguments {
-                        Value::Object(_) => call.arguments.clone(),
-                        _ => json!({}),
-                    };
+                    let args = arguments_object(call);
                     let mut part = json!({
                         "functionCall": {"id": call.id, "name": call.name, "args": args},
                     });

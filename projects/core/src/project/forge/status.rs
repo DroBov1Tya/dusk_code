@@ -1,35 +1,36 @@
 //! A project's repository at a glance: the work tree's diff stat, the current branch,
 //! and the pull requests that matter to it with their checks counted. The forge's part
-//! says why it is missing where the forge cannot be asked (no plugin, `gh` unusable,
-//! another host).
+//! comes from the plugin that serves the remote's host, else from `gh` for github.com,
+//! and says why it is missing where neither can be asked.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use dusk_protocol::project::{
-    CheckStage, CheckState, Checks, Forge, ForgeSignIn, ForgeStatus, Project, PullState,
-    PullStatus, RepositoryStatus,
+use dusk_protocol::{
+    plugin::contract::{
+        ErrorKind,
+        forge::{Limits, StatusArgs},
+    },
+    project::{Forge, ForgeSignIn, ForgeStatus, Project, PullState, PullStatus, RepositoryStatus},
 };
 use serde::Deserialize;
 
 use super::{
-    Remote,
+    Forges, Remote, checked,
     gh::{PROGRAM, gh, link, output, plain, ready, time},
     pulls::RawCheck,
 };
-use crate::project::{diff, git};
+use crate::{
+    plugins::contract::{
+        Served,
+        forge::{MAX_BRANCH_PULLS, MAX_CHECKS, MAX_OPEN_PULLS},
+    },
+    project::{diff, git},
+};
 
-/// The plugin that answers for now: the built-in GitHub one.
+/// The plugin `gh` answers for.
 const PLUGIN: &str = "github";
 
-/// The current branch's pull requests, newest first, merged and closed ones too.
-const MAX_BRANCH_PULLS: usize = 5;
-/// The project's other open pull requests.
-const MAX_OPEN_PULLS: usize = 10;
-/// More checks than this on one pull request are not counted.
-const MAX_CHECKS: usize = 500;
-/// More checks than this on one pull request are counted but not listed.
-const MAX_LISTED_CHECKS: usize = 50;
 const MAX_TITLE_CHARS: usize = 300;
 const FIELDS: &str = "number,title,state,isDraft,isCrossRepository,headRefName,author,\
                       createdAt,updatedAt,additions,deletions,changedFiles,url,statusCheckRollup";
@@ -45,11 +46,11 @@ pub struct Reading {
 }
 
 /// Never an error: what cannot be read is left out, with its reason.
-pub async fn read(project: &Project) -> Reading {
-    read_with(PROGRAM, &project.dir).await
+pub async fn read(project: &Project, forges: &Forges) -> Reading {
+    read_with(PROGRAM, &project.dir, forges).await
 }
 
-async fn read_with(program: &str, dir: &Path) -> Reading {
+pub(super) async fn read_with(program: &str, dir: &Path, forges: &Forges) -> Reading {
     let mut reading = Reading {
         status: RepositoryStatus::default(),
         mine: 0,
@@ -73,6 +74,10 @@ async fn read_with(program: &str, dir: &Path) -> Reading {
     let Some(remote) = Remote::of(dir).await else {
         return reading;
     };
+    if let Some(served) = forges.route(&remote.host) {
+        ask(&served, dir, forges, remote, &mut reading).await;
+        return reading;
+    }
     if !is_github(&remote) {
         status.forge = Forge::Unserved {
             host: remote.host,
@@ -111,15 +116,64 @@ async fn read_with(program: &str, dir: &Path) -> Reading {
     reading
 }
 
-/// The one forge the core asks for now: github.com, `owner/repo`; another host or a
+/// The `status` of the plugin that serves the remote.
+async fn ask(served: &Served, dir: &Path, forges: &Forges, remote: Remote, reading: &mut Reading) {
+    let plugin = &served.plugin;
+    let branch = reading.status.branch.clone();
+    let args = StatusArgs {
+        host: remote.host.clone(),
+        repository: remote.path.clone(),
+        branch: branch.clone(),
+        limits: Limits {
+            branch_pulls: MAX_BRANCH_PULLS as u32,
+            open_pulls: MAX_OPEN_PULLS as u32,
+            checks: MAX_CHECKS as u32,
+        },
+    };
+    let answer = forges.call(served, "status", dir, &args).await;
+    let note = |note: String| {
+        // The tracker puts back the last prefix and name of the same plugin.
+        Forge::Served(Box::new(ForgeStatus {
+            plugin: plugin.clone(),
+            name: plugin.clone(),
+            repository: remote.path.clone(),
+            pull_prefix: String::new(),
+            pulls: Vec::new(),
+            unavailable: Some(note),
+        }))
+    };
+    reading.status.forge = match answer {
+        Ok(ok) => match checked::status(ok, &remote, branch.as_deref(), plugin) {
+            Some((status, mine)) => {
+                reading.mine = mine;
+                Forge::Served(Box::new(status))
+            }
+            None => note(format!("{plugin} could not be read")),
+        },
+        // An answer, not trouble: asking again sooner would not sign anyone in.
+        Err(error) if error.kind == ErrorKind::SignedOut => Forge::SignIn(ForgeSignIn {
+            host: remote.host.clone(),
+            plugin: plugin.clone(),
+            hint: error.hint,
+        }),
+        Err(error) => {
+            let (text, trouble) = checked::note(&error, plugin);
+            reading.trouble = trouble;
+            note(text)
+        }
+    };
+}
+
+/// The one forge `gh` is asked about: github.com, `owner/repo`; another host or a
 /// deeper path is not asked.
 fn is_github(remote: &Remote) -> bool {
     remote.host == "github.com" && remote.path.split('/').count() == 2
 }
 
 /// Pull request `number` of the project's own GitHub repository, asked of that
-/// repository by name; `None` when it has none such or GitHub cannot be asked.
-pub(super) async fn read_one(project: &Project, number: u64) -> Option<PullStatus> {
+/// repository by name; `None` when it has none such, its page is not `prefix` and its
+/// number, or GitHub cannot be asked.
+pub(super) async fn read_one(project: &Project, number: u64, prefix: &str) -> Option<PullStatus> {
     let remote = Remote::of(&project.dir).await.filter(is_github)?;
     let slug = &remote.path;
     let number_arg = number.to_string();
@@ -134,6 +188,7 @@ pub(super) async fn read_one(project: &Project, number: u64) -> Option<PullStatu
         }
     };
     one(&text, &remote, number)
+        .filter(|pull| pull.url.eq_ignore_ascii_case(&format!("{prefix}{number}")))
 }
 
 /// The pull request of the current branch, as the forge has it; the newest when the
@@ -201,42 +256,6 @@ fn parse(text: &str, max: usize) -> Result<Vec<(PullStatus, bool)>> {
         .collect())
 }
 
-/// Every check counted, the state the worst of them; and the first of them listed,
-/// the ones that need a look first.
-pub(super) fn roll_up(checks: &[RawCheck]) -> Checks {
-    let mut counted = Checks::default();
-    let checks = &checks[..checks.len().min(MAX_CHECKS)];
-    let mut list: Vec<_> = checks.iter().map(RawCheck::shown).collect();
-    // Stable, so checks of one stage keep the order GitHub gave.
-    list.sort_by_key(|check| match check.stage {
-        CheckStage::Failed => 0,
-        CheckStage::Running => 1,
-        CheckStage::Queued => 2,
-        CheckStage::Passed => 3,
-        CheckStage::Skipped => 4,
-    });
-    list.truncate(MAX_LISTED_CHECKS);
-    counted.list = list;
-    for check in checks {
-        counted.total += 1;
-        match check.state() {
-            CheckState::Passing => counted.passed += 1,
-            CheckState::Failing => counted.failed += 1,
-            CheckState::Pending => counted.running += 1,
-        }
-    }
-    counted.state = if counted.total == 0 {
-        None
-    } else if counted.failed > 0 {
-        Some(CheckState::Failing)
-    } else if counted.running > 0 {
-        Some(CheckState::Pending)
-    } else {
-        Some(CheckState::Passing)
-    };
-    counted
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawPull {
@@ -302,14 +321,25 @@ impl RawPull {
                 url.split(['?', '#']).next().unwrap_or("")
             )),
             url,
-            checks: roll_up(&self.status_check_rollup),
+            checks: rolled(&self.status_check_rollup),
         }
     }
+}
+
+/// `gh`'s checks rolled up as a plugin's would be.
+fn rolled(checks: &[RawCheck]) -> dusk_protocol::project::Checks {
+    let checks: Vec<_> = checks
+        .iter()
+        .take(MAX_CHECKS)
+        .map(RawCheck::neutral)
+        .collect();
+    checked::roll_up(&checks)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dusk_protocol::project::{CheckStage, CheckState, Checks};
 
     fn remote(path: &str) -> Remote {
         Remote {
@@ -331,18 +361,18 @@ mod tests {
         let failed = check(r#"{"name":"e","status":"COMPLETED","conclusion":"TIMED_OUT"}"#);
         let errored = check(r#"{"context":"f","state":"ERROR"}"#);
 
-        assert_eq!(roll_up(&[]), Checks::default());
-        let all_passed = roll_up(&[passed, skipped]);
+        assert_eq!(rolled(&[]), Checks::default());
+        let all_passed = rolled(&[passed, skipped]);
         assert_eq!((all_passed.total, all_passed.passed), (2, 2));
         assert_eq!(all_passed.state, Some(CheckState::Passing));
         let passed = check(r#"{"name":"a","status":"COMPLETED","conclusion":"SUCCESS"}"#);
-        let some_running = roll_up(&[passed, running, queued]);
+        let some_running = rolled(&[passed, running, queued]);
         assert_eq!(
             (some_running.running, some_running.state),
             (2, Some(CheckState::Pending))
         );
         let running = check(r#"{"name":"c","status":"QUEUED"}"#);
-        let one_failed = roll_up(&[running, failed, errored]);
+        let one_failed = rolled(&[running, failed, errored]);
         assert_eq!(
             (one_failed.total, one_failed.failed, one_failed.running),
             (3, 2, 1)
@@ -483,12 +513,12 @@ mod tests {
         let checks: Vec<RawCheck> = (0..30)
             .flat_map(|_| stages.iter().map(|json| check(json)))
             .collect();
-        let counted = roll_up(&checks);
+        let counted = rolled(&checks);
         assert_eq!(counted.total, 150);
-        assert_eq!(counted.list.len(), MAX_LISTED_CHECKS);
+        assert_eq!(counted.list.len(), checked::MAX_LISTED);
         let names: String = counted.list.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, format!("{}{}", "f".repeat(30), "r".repeat(20)));
-        let few = roll_up(&checks[..5]);
+        let few = rolled(&checks[..5]);
         let names: Vec<_> = few.list.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["f", "r", "q", "p", "s"]);
     }
@@ -498,7 +528,7 @@ mod tests {
         let dir = crate::testing::temp_dir("forge_status");
         std::fs::create_dir_all(&dir).unwrap();
         // A program that does not exist: asking it would be a failure, not a reason.
-        let reading = read_with("/nonexistent/gh", &dir).await;
+        let reading = read_with("/nonexistent/gh", &dir, &Forges::default()).await;
         assert_eq!(
             reading.status.unavailable.as_deref(),
             Some("Not a git repository")
@@ -523,7 +553,7 @@ mod tests {
         let gh = dir.join("gh");
         std::fs::write(&gh, "#!/bin/sh\nexit 1\n").unwrap();
         std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let reading = read_with(gh.to_str().unwrap(), &dir).await;
+        let reading = read_with(gh.to_str().unwrap(), &dir, &Forges::default()).await;
         let Forge::SignIn(sign_in) = &reading.status.forge else {
             panic!("{:?}", reading.status.forge)
         };

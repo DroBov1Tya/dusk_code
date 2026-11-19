@@ -9,11 +9,7 @@ use crate::{ui::widgets, workspace::Workspace};
 const SHOWN: usize = 30;
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let threads: Vec<_> = super::listed(ws, cx)
-        .into_iter()
-        .take(SHOWN)
-        .cloned()
-        .collect();
+    let threads: Vec<_> = super::listed(ws, cx).take(SHOWN).cloned().collect();
     let mut list = div().flex().flex_col().gap_0p5().pt_1();
     if threads.is_empty() {
         return list.child(widgets::muted("No chats yet.", cx));

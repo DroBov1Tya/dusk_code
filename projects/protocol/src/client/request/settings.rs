@@ -78,6 +78,12 @@ pub enum SettingsRequest {
         name: String,
         enabled: bool,
     },
+    /// Chooses the plugin a contract goes to for one host.
+    SetContractPlugin {
+        contract: String,
+        host: String,
+        plugin: String,
+    },
     /// Kept in memory for this run only, never in the config file.
     PluginSecret {
         plugin: String,

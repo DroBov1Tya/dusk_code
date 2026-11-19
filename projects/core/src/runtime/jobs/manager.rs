@@ -18,7 +18,7 @@ use super::lease::{JobLease, Owner};
 use crate::{
     runtime::agent::{Input, Mailboxes},
     state::{BackgroundJob, JobSummary, State},
-    tools::console::process::{CommandEnv, HeadTail, Running},
+    tools::console::process::{CommandEnv, HeadTail, Running, exit_line, report},
 };
 
 pub use dusk_protocol::thread::JobInfo;
@@ -443,26 +443,13 @@ async fn execute(
     };
     let (stdout, stderr, failure) = running.collect().await;
     let exited_cleanly = matches!(&exit, Some(Ok(exit)) if exit.success());
-    let mut output = match exit {
-        Some(Ok(exit)) => format!(
-            "exit code: {}",
-            exit.code().map_or_else(
-                || "none (terminated by a signal)".into(),
-                |code| code.to_string()
-            )
-        ),
+    let failed = failure.is_some() || matches!(exit, Some(Err(_)));
+    let first = match exit {
+        Some(Ok(exit)) => exit_line(exit.code()),
         Some(Err(error)) => format!("cannot wait for command: {error}"),
         None => "exit code: none (stopped)".into(),
     };
-    let failed = failure.is_some() || output.starts_with("cannot wait");
-    for (name, text) in [("stdout", stdout), ("stderr", stderr)] {
-        if !text.is_empty() {
-            output.push_str(&format!("\n{name}:\n{text}"));
-        }
-    }
-    if let Some(failure) = failure {
-        output.push_str(&format!("\n{failure}"));
-    }
+    let output = report(first, &stdout, &stderr, failure.as_deref());
     // Cancelled and timed-out jobs keep their own status; a finished one is judged by
     // its exit code, which the model sees in the output as well.
     let status = if status == "completed" && (failed || !exited_cleanly) {

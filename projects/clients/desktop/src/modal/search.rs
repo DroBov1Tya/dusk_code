@@ -17,10 +17,11 @@ const SHOWN: usize = 40;
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let mut list = div().flex().flex_col().gap_0p5().p_2();
+    let search = ws.search_words(cx);
     let threads: Vec<_> = ws
         .threads
         .iter()
-        .filter(|thread| ws.matches_search(thread, cx))
+        .filter(|thread| search.keeps(thread))
         .take(SHOWN)
         .cloned()
         .collect();

@@ -43,29 +43,6 @@ pub fn tone(shade: usize, cx: &App) -> Hsla {
 
 /// The tile for `name`, `size` px square. `bundled_icon` is the slot for a picture the
 /// signed catalog ships for the connector; when present it is drawn instead of the letter.
-/// A cover made for `name` where a listing brings none: two of the shades run into each
-/// other across the box, picked by the name alone, so the same name has the same cover
-/// on every run and machine. No picture and no file.
-pub fn cover_fill(name: &str, cx: &App) -> Background {
-    let hash = hash(name);
-    let first = (hash % SHADES as u64) as usize;
-    // One to three steps on, so the two ends are never one color.
-    let second = (first + 1 + (hash / SHADES as u64 % 3) as usize) % SHADES;
-    let angle = COVER_ANGLES[(hash / 64 % COVER_ANGLES.len() as u64) as usize];
-    let surface = cx.theme().muted;
-    linear_gradient(
-        angle,
-        linear_color_stop(surface.blend(tone(first, cx).opacity(COVER_TINT.0)), 0.),
-        linear_color_stop(surface.blend(tone(second, cx).opacity(COVER_TINT.1)), 1.),
-    )
-}
-
-/// The directions a made cover's colors run in, in degrees from the top.
-const COVER_ANGLES: [f32; 4] = [115., 135., 155., 205.];
-/// How much of each end's color is mixed into the surface: enough to tell covers apart,
-/// and calm beside the drawn ones.
-const COVER_TINT: (f32, f32) = (0.46, 0.22);
-
 pub fn avatar(name: &str, size: f32, bundled_icon: Option<std::path::PathBuf>, cx: &App) -> Div {
     let tile = div().size(px(size)).flex_none().rounded_md();
     if let Some(path) = bundled_icon {

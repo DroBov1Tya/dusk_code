@@ -6,8 +6,7 @@
 
 use crate::{
     message::plain::plain,
-    state::{GoalCheck, PlanStatus, PlanTask},
-    tools::short_task_id,
+    state::{GoalCheck, PlanStatus, PlanTask, short_task_id},
 };
 
 /// The most bytes of a card; the lead's brief is what gets cut.

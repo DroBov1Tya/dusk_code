@@ -158,7 +158,6 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .meta()
                 .text_color(muted)
                 .child(crate::pages::chat::working_mark(
-                    SharedString::from(format!("agent-working-{agent}")),
                     accent,
                     cx.theme().foreground,
                 ))

@@ -13,7 +13,7 @@ use gpui_kit::{
 use super::threads;
 use crate::{ui::widgets, workspace::Workspace};
 
-pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (muted, hover) = (theme.muted_foreground, theme.accent);
     let mut list = div().flex().flex_col();
@@ -31,7 +31,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 ),
             );
     }
-    for project in ws.projects.clone() {
+    let grouped = threads::Grouped::new(ws, cx);
+    for project in &ws.projects {
         let open = !ws.collapsed.contains(&project.id);
         let id = project.id.clone();
         let chevron = if open {
@@ -94,14 +95,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .on_click(cx.listener(move |ws, _, _, cx| ws.toggle_project(&id, cx)));
         list = list.child(header);
         if open {
-            list = list.child(threads::render(ws, &project, window, cx));
+            list = list.child(threads::render(ws, grouped.of(project), cx));
         }
     }
     // The chats of no saved project close the list, so every chat has one place.
-    let loose = threads::loose(ws, cx);
-    if !loose.is_empty() {
+    if !grouped.loose.is_empty() {
         let mut rows = div().flex().flex_col().gap_0p5();
-        for thread in &loose {
+        for thread in &grouped.loose {
             rows = rows.child(threads::chat_row(ws, thread, None, cx));
         }
         list = list.child(widgets::caption("No project", cx)).child(rows);

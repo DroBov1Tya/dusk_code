@@ -21,7 +21,7 @@ mod forward;
 mod policy;
 mod tunnel;
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{fmt, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -34,7 +34,7 @@ use tokio::{
 };
 use tracing::debug;
 
-pub use policy::{Key, Origin, Policy, is_public};
+pub use policy::{Key, Origin, Policy};
 
 /// A request's line and headers; more is not a request a plugin needs to send.
 const MAX_HEAD: usize = 64 * 1024;
@@ -78,6 +78,13 @@ impl Broker {
         self.port
     }
 
+    /// The way in for a program that cannot reach `port`.
+    pub fn gate(&self) -> Gate {
+        Gate {
+            policy: Arc::clone(&self.policy),
+        }
+    }
+
     /// The token stays: programs already running keep theirs.
     pub fn set_policy(&self, mut policy: Policy) {
         policy.token = self.token.clone();
@@ -87,8 +94,14 @@ impl Broker {
     /// What a program of the plugin is given: the proxy, plain and as the standard
     /// proxy variables with the token as the password.
     pub fn env(&self) -> Vec<(String, String)> {
-        let plain = format!("http://127.0.0.1:{}", self.port);
-        let with_token = format!("http://dusk:{}@127.0.0.1:{}", self.token.0, self.port);
+        self.env_at(self.port)
+    }
+
+    /// The same, for a program that reaches the proxy at `port` of its own loopback: a
+    /// [`Gate`] in its network namespace.
+    pub fn env_at(&self, port: u16) -> Vec<(String, String)> {
+        let plain = format!("http://127.0.0.1:{port}");
+        let with_token = format!("http://dusk:{}@127.0.0.1:{port}", self.token.0);
         let mut env = vec![
             ("DUSKCODE_PLUGIN_PROXY".to_owned(), plain),
             (
@@ -103,6 +116,30 @@ impl Broker {
     }
 }
 
+/// Another way into the same proxy: it serves a socket made elsewhere, such as one in
+/// a program's own network namespace, with the broker's policy as it is at each
+/// connection and the broker's token.
+#[derive(Clone)]
+pub struct Gate {
+    policy: Arc<RwLock<Arc<Policy>>>,
+}
+
+impl Gate {
+    /// Accepts on `listener` until the returned task is aborted. Call inside the tokio
+    /// runtime.
+    pub fn serve(&self, listener: std::net::TcpListener) -> Result<JoinHandle<()>> {
+        listener.set_nonblocking(true)?;
+        let listener = TcpListener::from_std(listener)?;
+        Ok(tokio::spawn(accept(listener, Arc::clone(&self.policy))))
+    }
+}
+
+impl fmt::Debug for Gate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Gate")
+    }
+}
+
 /// A fresh random capability token.
 pub fn new_token() -> Result<Secret> {
     let mut bytes = [0u8; 32];
@@ -112,13 +149,19 @@ pub fn new_token() -> Result<Secret> {
     ))
 }
 
+/// Accepts until dropped; the connections it serves, tunnels among them, end with it.
 async fn accept(listener: TcpListener, policy: Arc<RwLock<Arc<Policy>>>) {
+    let mut connections = tokio::task::JoinSet::new();
     loop {
-        let Ok((stream, _)) = listener.accept().await else {
+        let accepted = tokio::select! {
+            accepted = listener.accept() => accepted,
+            Some(_) = connections.join_next(), if !connections.is_empty() => continue,
+        };
+        let Ok((stream, _)) = accepted else {
             continue;
         };
         let policy = Arc::clone(&policy.read());
-        tokio::spawn(async move {
+        connections.spawn(async move {
             if let Err(error) = serve(stream, &policy).await {
                 // The error names no key or URL with one in it.
                 debug!("plugin proxy: {error:#}");

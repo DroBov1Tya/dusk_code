@@ -212,6 +212,25 @@ impl ModelChoice {
         self.current.read().choice.clone()
     }
 
+    /// The largest request the current model takes under `config`'s policy.
+    pub fn current_input_limit(&self, config: &Config) -> u64 {
+        self.current()
+            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
+                choice.input_limit(config)
+            })
+    }
+
+    /// Refuses a message that alone is past the input limit: it could never be answered.
+    pub fn ensure_fits(&self, text: &str, config: &Config) -> Result<()> {
+        let limit = self.current_input_limit(config);
+        let tokens = crate::state::estimate_tokens(text);
+        ensure!(
+            tokens <= limit,
+            "the message is about {tokens} tokens, past the input limit of {limit}"
+        );
+        Ok(())
+    }
+
     pub fn set(&self, choice: Choice) {
         let mut current = self.current.write();
         current.choice = Some(choice);

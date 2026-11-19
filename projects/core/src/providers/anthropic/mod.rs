@@ -7,4 +7,3 @@ mod request;
 mod stream;
 
 pub use client::Anthropic;
-pub use stream::MessageStream;

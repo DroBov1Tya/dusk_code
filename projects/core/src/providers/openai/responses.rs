@@ -4,7 +4,7 @@
 //! and system messages; the system prompt goes as `instructions`.
 
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap},
     sync::Arc,
     time::Duration,
 };
@@ -25,8 +25,11 @@ use crate::{
         limits::{Account, Headers, PlanUse},
         output::{FinishReason, ModelEvent, Usage},
         registry::Model,
-        request::{ChatMessage, ChatRequest, Picture},
-        transport::{http, sse::SseDecoder},
+        request::{ChatMessage, ChatRequest, Picture, arguments_text},
+        transport::{
+            http,
+            sse::{EventParser, SseDecoder, SseStream},
+        },
     },
 };
 
@@ -145,20 +148,10 @@ impl ChatGpt {
             {
                 continue;
             }
-            ensure!(
-                !model.slug.trim().is_empty() && !model.slug.chars().any(char::is_control),
-                "provider returned an empty or invalid model ID"
-            );
-            models.insert(model.slug, model.context_window);
+            http::check_model_id(&model.slug)?;
+            models.insert(model.slug, (model.context_window, None));
         }
-        Ok(models
-            .into_iter()
-            .map(|(id, context_window)| Model {
-                id,
-                context_window,
-                max_output: None,
-            })
-            .collect())
+        Ok(http::models(models))
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<ResponseStream> {
@@ -208,30 +201,18 @@ impl ChatGpt {
                 bail!(refusal(response, "completion").await);
             }
         }
-        Ok(ResponseStream {
-            response,
-            account: self.account,
-            parser: Parser::default(),
-            pending: VecDeque::new(),
-            finished: false,
-        })
+        let parser = Parser {
+            account: Some(self.account),
+            ..Parser::default()
+        };
+        Ok(SseStream::new(response, parser))
     }
 }
 
-async fn body(mut response: Response) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
+async fn body(response: Response) -> Result<Vec<u8>> {
+    crate::net::read_limited(response, MAX_BODY_BYTES)
         .await
-        .map_err(|_| anyhow!("cannot read the provider's answer"))?
-    {
-        ensure!(
-            chunk.len() <= MAX_BODY_BYTES - bytes.len(),
-            "the provider's answer is too large"
-        );
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(bytes)
+        .map_err(|error| error.about("the provider's answer"))
 }
 
 /// Why a request was refused, from the error's code alone: its message can echo input.
@@ -329,10 +310,7 @@ fn wire_request(request: &ChatRequest<'_>) -> Value {
                     }));
                 }
                 for call in tool_calls {
-                    let arguments = match &call.arguments {
-                        Value::String(raw) => raw.clone(),
-                        arguments => arguments.to_string(),
-                    };
+                    let arguments = arguments_text(call);
                     input.push(json!({
                         "type": "function_call",
                         "call_id": call.id,
@@ -399,49 +377,19 @@ fn spoken(role: &str, text: &str, pictures: &[Picture]) -> Value {
     content.extend(pictures.iter().map(|picture| {
         json!({
             "type": "input_image",
-            "image_url": format!("data:{};base64,{}", picture.mime_type, picture.base64),
+            "image_url": picture.data_url(),
         })
     }));
     json!({ "role": role, "content": content })
 }
 
-pub struct ResponseStream {
-    /// Where the plan's windows the stream reports are kept.
-    account: Account,
-    response: Response,
-    parser: Parser,
-    pending: VecDeque<ModelEvent>,
-    finished: bool,
-}
-
-impl ResponseStream {
-    pub async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
-        loop {
-            if let Some(event) = self.pending.pop_front() {
-                return Ok(Some(event));
-            }
-            if self.finished {
-                return Ok(None);
-            }
-            // Mark first so an error also ends the stream.
-            self.finished = true;
-            let chunk = self.response.chunk().await.map_err(http::cut)?;
-            match chunk {
-                Some(bytes) => {
-                    let parsed = self.parser.feed(&bytes);
-                    self.parser.note_plan(self.account);
-                    self.pending.extend(parsed?);
-                    self.finished = self.parser.done;
-                }
-                None => bail!(ended_early()),
-            }
-        }
-    }
-}
+pub type ResponseStream = SseStream<Parser>;
 
 #[derive(Default)]
-struct Parser {
+pub struct Parser {
     decoder: SseDecoder,
+    /// Where the plan's windows the stream reports are kept.
+    account: Option<Account>,
     /// The tool calls so far, by the place of their item in the output: the number the
     /// agent knows them by, and whether their arguments came in pieces.
     calls: HashMap<u64, (u32, bool)>,
@@ -524,27 +472,43 @@ struct OutputDetails {
     reasoning_tokens: Option<u64>,
 }
 
-impl Parser {
-    fn note_plan(&mut self, account: Account) {
+impl EventParser for Parser {
+    fn decoder(&mut self) -> &mut SseDecoder {
+        &mut self.decoder
+    }
+
+    fn parse(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
+        // Upstream payloads can echo input; never copy them into errors.
+        let event: Event = serde_json::from_str(data)
+            .map_err(|_| anyhow!("invalid provider stream event JSON"))?;
+        let mut events = Vec::new();
+        self.take(event, &mut events)?;
+        Ok(events)
+    }
+
+    fn done(&self) -> bool {
+        self.done
+    }
+
+    /// The stream ends with `response.completed` or another closing event; EOF before
+    /// one is a cut stream.
+    fn finish(&mut self) -> Result<()> {
+        bail!(ended_early())
+    }
+
+    /// The plan's windows are kept after every chunk, even one whose events failed:
+    /// a spent plan reports its windows beside the error.
+    fn fed(&mut self) {
+        let Some(account) = self.account else {
+            return;
+        };
         for windows in self.plan.drain(..) {
             account.note_plan(windows);
         }
     }
+}
 
-    fn feed(&mut self, bytes: &[u8]) -> Result<Vec<ModelEvent>> {
-        let mut events = Vec::new();
-        for data in self.decoder.feed(bytes)? {
-            if self.done {
-                break;
-            }
-            // Upstream payloads can echo input; never copy them into errors.
-            let event: Event = serde_json::from_str(&data)
-                .map_err(|_| anyhow!("invalid provider stream event JSON"))?;
-            self.take(event, &mut events)?;
-        }
-        Ok(events)
-    }
-
+impl Parser {
     fn take(&mut self, event: Event, events: &mut Vec<ModelEvent>) -> Result<()> {
         let text = |delta: Option<String>| delta.filter(|delta| !delta.is_empty());
         match event.r#type.as_str() {
@@ -597,7 +561,7 @@ impl Parser {
                     true => FinishReason::Stop,
                     false => FinishReason::ToolCalls,
                 };
-                self.finish(event.response, reason, events);
+                self.complete(event.response, reason, events);
             }
             "response.incomplete" => {
                 let why = event
@@ -610,7 +574,7 @@ impl Parser {
                     "content_filter" => FinishReason::ContentFilter,
                     _ => FinishReason::Length,
                 };
-                self.finish(event.response, reason, events);
+                self.complete(event.response, reason, events);
             }
             // ChatGPT says how much of the plan is used as an event of its own.
             "codex.rate_limits" => {
@@ -658,7 +622,7 @@ impl Parser {
         Ok(())
     }
 
-    fn finish(
+    fn complete(
         &mut self,
         response: Option<Finished>,
         reason: FinishReason,

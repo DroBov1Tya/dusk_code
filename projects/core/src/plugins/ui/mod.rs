@@ -14,7 +14,7 @@
 mod host;
 pub mod icon;
 pub(crate) mod phone;
-mod process;
+pub(in crate::plugins) mod process;
 
 pub use host::{UiHost, UiSpec};
 pub use phone::PhoneDependency;

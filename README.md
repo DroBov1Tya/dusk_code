@@ -112,7 +112,9 @@ or unstage a file, stage all, commit, discard a file's changes (after a yes), ma
 branch, fetch, pull (fast-forward only) and push (after a yes, to the upstream or to
 `origin` as a new one). The core also merges with a list of conflicts, aborts a merge,
 adds and removes worktrees beside the repository, and reads and opens pull requests
-through the GitHub CLI when `gh` is installed and signed in; the clients show them
+through the GitHub CLI when `gh` is installed and signed in, or through a plugin that
+serves the remote's host while `plugin_contracts` is on. Either way a pull request on
+GitHub is made by `gh pr create`, the GitHub plugin's included; the clients show them
 in the Changes module and as chips on pull request links in chat. Git runs with an argument vector and never a shell, with your own hooks,
 config and credential helper; the app never reads a token.
 

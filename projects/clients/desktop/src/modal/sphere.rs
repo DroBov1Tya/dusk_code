@@ -11,6 +11,8 @@ use std::{
 
 use gpui_kit::*;
 
+use crate::ui::looping::Loop;
+
 const SIZE: f32 = 200.;
 const DOTS: usize = 160;
 /// The golden angle spreads the points evenly over the sphere.
@@ -22,20 +24,15 @@ const BREATHS_PER_TURN: f32 = 6.;
 const WAVE: f32 = 1.6;
 const RING: f32 = 2.6;
 
-pub fn render(
-    id: impl Into<ElementId>,
-    last: Option<Instant>,
-    calm: Hsla,
-    stirred: Hsla,
-) -> impl IntoElement {
-    div().relative().size(px(SIZE)).flex_none().with_animation(
-        id,
-        Animation::new(TURN).repeat(),
-        move |sphere, phase| {
+pub fn render(last: Option<Instant>, calm: Hsla, stirred: Hsla) -> impl IntoElement {
+    div()
+        .relative()
+        .size(px(SIZE))
+        .flex_none()
+        .looping(TURN, move |sphere, phase| {
             let since = last.map(|at| at.elapsed().as_secs_f32());
             sphere.children(dots(phase, since, calm, stirred))
-        },
-    )
+        })
 }
 
 /// How far each dot is pulled toward the center, 0 to 1, and the sphere's scale, for a

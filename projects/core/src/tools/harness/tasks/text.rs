@@ -4,7 +4,7 @@
 use dusk_protocol::thread::{GoalCheck, Team, TeamStatus};
 use serde_json::{Value, json};
 
-use crate::state::{PlanStatus, PlanTask, WaitsOn};
+use crate::state::{PlanStatus, PlanTask, WaitsOn, short_task_id};
 
 pub const DESCRIPTION: &str = "\
     The plan of this work, shared with the agents you lead; the core runs it. `add` \
@@ -100,12 +100,6 @@ const LINE_TEXT: usize = 100;
 const LINE_NOTE: usize = 60;
 /// Dependencies named on a line.
 const LINE_AFTER: usize = 4;
-
-/// The end of an id, as every line shows it.
-pub fn short(id: &str) -> &str {
-    let from = id.char_indices().rev().nth(7).map_or(0, |(index, _)| index);
-    &id[from..]
-}
 
 /// Model or member text on one line: line breaks become spaces, other control
 /// characters `?`, and at most `max` characters, with `…` when cut. For display only;
@@ -242,7 +236,7 @@ fn line(shown: &Shown<'_>) -> String {
     let mut text = format!(
         "{} #{} {} ({}",
         mark(task.status),
-        short(&task.task_id),
+        short_task_id(&task.task_id),
         plain(&task.description, LINE_TEXT),
         role(task)
     );
@@ -266,7 +260,7 @@ fn state_words(task: &PlanTask) -> String {
             (_, Some(GoalCheck::Command { .. })) => " gate runs".into(),
         },
         PlanStatus::Blocked => match &task.waits_on {
-            Some(WaitsOn::Task(id)) => format!(" behind failed {}", short(id)),
+            Some(WaitsOn::Task(id)) => format!(" behind failed {}", short_task_id(id)),
             Some(WaitsOn::Message(_)) => " waits on a message".into(),
             _ if task.note.is_empty() => String::new(),
             _ => format!(": {}", note()),
@@ -279,7 +273,7 @@ fn state_words(task: &PlanTask) -> String {
                 .depends_on
                 .iter()
                 .take(LINE_AFTER)
-                .map(|id| short(id))
+                .map(|id| short_task_id(id))
                 .collect();
             let more = task.depends_on.len().saturating_sub(LINE_AFTER);
             let more = if more > 0 {
@@ -298,7 +292,7 @@ pub fn task(shown: &Shown<'_>, after: &[(String, Option<PlanStatus>)]) -> String
     let task = shown.task;
     let mut text = format!(
         "#{} {}: {}\nRole: {}",
-        short(&task.task_id),
+        short_task_id(&task.task_id),
         task.status.as_str(),
         plain(&task.description, usize::MAX),
         role(task)
@@ -318,7 +312,7 @@ pub fn task(shown: &Shown<'_>, after: &[(String, Option<PlanStatus>)]) -> String
             .iter()
             .map(|(id, status)| {
                 let status = status.map_or("gone", PlanStatus::as_str);
-                format!("#{} ({status})", short(id))
+                format!("#{} ({status})", short_task_id(id))
             })
             .collect();
         text.push_str(&format!("\nAfter: {}", after.join(", ")));

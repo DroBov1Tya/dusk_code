@@ -17,6 +17,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::ui::looping::Loop;
 use crate::{
     ui::{Type, widgets},
     workspace::Workspace,
@@ -64,7 +65,21 @@ pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         tip.push_str(&format!(" \u{00B7} {cost}"));
     }
     let tip = SharedString::from(tip);
-    let breathes = share > 0.85;
+    let ring =
+        div()
+            .absolute()
+            .inset_0()
+            .child(render(size, share, fullness(share, cx), track(cx)));
+    // A ring nearly full breathes; one with room stands still and asks for no frames.
+    let ring = if share > 0.85 {
+        ring.looping(std::time::Duration::from_millis(2600), |ring, phase| {
+            let breath = (phase * TAU).sin() * 0.5 + 0.5;
+            ring.opacity(0.5 + breath * 0.5)
+        })
+        .into_any_element()
+    } else {
+        ring.into_any_element()
+    };
     div()
         .id("context-ring")
         .relative()
@@ -72,24 +87,7 @@ pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .child(render(size, share, fullness(share, cx), track(cx)))
-                .with_animation(
-                    if breathes {
-                        "context-breath"
-                    } else {
-                        "context-still"
-                    },
-                    Animation::new(std::time::Duration::from_millis(2600)).repeat(),
-                    move |ring, phase| {
-                        let breath = (phase * TAU).sin() * 0.5 + 0.5;
-                        ring.opacity(if breathes { 0.5 + breath * 0.5 } else { 1. })
-                    },
-                ),
-        )
+        .child(ring)
         .child(
             div()
                 .text_size(px(9.))

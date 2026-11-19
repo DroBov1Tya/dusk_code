@@ -1,5 +1,5 @@
-//! The repository status of projects: answered beside the loop, since GitHub may take a
-//! while, and read again when the tracker says a project is due. A change is told to
+//! The repository status of projects: answered beside the loop, since a forge may take
+//! a while, and read again when the tracker says a project is due. A change is told to
 //! the clients that may read projects.
 
 use std::sync::Arc;
@@ -44,9 +44,16 @@ impl Server {
     }
 
     /// One pull request of the project's own repository, for a card in a chat: from
-    /// the tracker when it has it, else read beside the loop, once at a time.
+    /// the tracker when it has it, else read beside the loop, once at a time. Only once
+    /// a forge named the prefix of its pulls: until then none, and the project is read,
+    /// so the client hears of the status and asks again.
     pub(super) fn pull_status(&self, id: String, number: u64, reply: oneshot::Sender<Response>) {
         let answer = |pull: Option<PullStatus>| Response::PullStatus(pull.map(Box::new));
+        let Some(prefix) = self.pulls.prefix(&id) else {
+            self.pulls.changed(&id);
+            let _ = reply.send(Response::PullStatus(None));
+            return;
+        };
         match self.pulls.look_up(&id, number) {
             forge::Look::Known(pull) => {
                 let _ = reply.send(Response::PullStatus(pull));
@@ -60,7 +67,12 @@ impl Server {
                 let (runtime, tracker) = (Arc::clone(&self.runtime), self.pulls.clone());
                 tokio::spawn(async move {
                     let pull = match project::find(runtime.state(), &id).await {
-                        Ok(project) => forge::read_pull(&project, number).await,
+                        Ok(project) => match forges(&runtime, &id).await {
+                            Ok(forges) => {
+                                forge::read_pull(&project, number, &forges, &prefix).await
+                            }
+                            Err(_) => None,
+                        },
                         Err(_) => None,
                     };
                     tracker.looked_up(&id, number, pull.clone());
@@ -88,7 +100,8 @@ impl Server {
         tokio::spawn(async move {
             let made = async {
                 let project = project::find(runtime.state(), &id).await?;
-                forge::create(&project, &title, &body, base.as_deref()).await
+                let forges = forges(&runtime, &id).await?;
+                forge::create(&project, &title, &body, base.as_deref(), &forges).await
             };
             let response = match made.await {
                 Ok(pull) => Response::PullStatus(Some(Box::new(pull))),
@@ -134,9 +147,42 @@ async fn refresh(
             return Err(error);
         }
     };
-    let (status, changed) = tracker.finish(id, forge::read_status(&project).await);
+    let forges = match forges(runtime, id).await {
+        Ok(forges) => forges,
+        Err(error) => {
+            tracker.failed(id);
+            return Err(error);
+        }
+    };
+    let (status, changed) = tracker.finish(id, forge::read_status(&project, &forges).await);
     if changed {
         publish::repository_status(subscribers, id, &status);
     }
     Ok(status)
+}
+
+/// What a read of project `id` asks a forge plugin with: the switch and the choices of
+/// now, and every other saved project's folder to hide from the call.
+pub(super) async fn forges(runtime: &Runtime, id: &str) -> Result<forge::Forges> {
+    let config = runtime.config().current();
+    let on = config.contracts_on();
+    // Only a plugin's call hides them; with the switch off none is made.
+    let others = if on {
+        runtime
+            .state()
+            .list_projects()
+            .await?
+            .into_iter()
+            .filter(|project| project.id != id)
+            .map(|project| project.dir)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Ok(forge::Forges {
+        contracts: runtime.contracts(),
+        on,
+        chosen: config.contracts().forge.clone(),
+        others,
+    })
 }

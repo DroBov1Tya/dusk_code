@@ -15,6 +15,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::ui::looping::Loop;
 use crate::{
     ui::{Type, icons, widgets},
     workspace::Workspace,
@@ -133,7 +134,7 @@ fn group(
         .rounded_md()
         .cursor_pointer()
         .hover(|row| row.bg(cx.theme().list_hover))
-        .child(stage_icon(stage, id, cx))
+        .child(stage_icon(stage, cx))
         .child(div().flex_1().min_w_0().truncate().small().child(name))
         .child(
             div()
@@ -210,7 +211,7 @@ fn line(number: u64, index: usize, check: &Check, now: i64, cx: &App) -> Statefu
             line.cursor_pointer()
                 .hover(|line| line.bg(cx.theme().list_hover))
         })
-        .child(stage_icon(check.stage, id, cx))
+        .child(stage_icon(check.stage, cx))
         .child(
             div()
                 .flex_1()
@@ -237,7 +238,7 @@ fn line(number: u64, index: usize, check: &Check, now: i64, cx: &App) -> Statefu
 }
 
 /// Passed green, failed red, running yellow and turning, queued and skipped muted.
-fn stage_icon(stage: CheckStage, id: SharedString, cx: &App) -> AnyElement {
+fn stage_icon(stage: CheckStage, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let (icon, color) = match stage {
         CheckStage::Passed => (Icon::new(IconName::CircleCheck), theme.success),
@@ -254,11 +255,9 @@ fn stage_icon(stage: CheckStage, id: SharedString, cx: &App) -> AnyElement {
     };
     let icon = widgets::icon(icon, color);
     if stage == CheckStage::Running {
-        icon.with_animation(
-            id,
-            Animation::new(std::time::Duration::from_millis(1200)).repeat(),
-            |icon, delta| icon.rotate(percentage(delta)),
-        )
+        icon.looping(std::time::Duration::from_millis(1200), |icon, delta| {
+            icon.rotate(percentage(delta))
+        })
         .into_any_element()
     } else {
         icon.into_any_element()

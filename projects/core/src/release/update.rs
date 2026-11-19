@@ -243,7 +243,7 @@ pub async fn install_with_progress(
     })?;
     let name = format!("duskcode-{TARGET}");
     let base = format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}.tar.gz");
-    let archive = download(&client, &base, &progress).await.with_context(|| {
+    let archive = fetch(&client, &base, &progress).await.with_context(|| {
         format!(
             "cannot download the {tag} build for {TARGET}; right after a release is \
              tagged its builds take a few minutes on GitHub, so try again later"
@@ -350,15 +350,6 @@ pub(super) fn asset_url(tag: &str, name: &str) -> String {
     format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}")
 }
 
-/// Downloads `url`, reporting how far it got.
-pub(super) async fn fetch(
-    client: &Client,
-    url: &str,
-    progress: &watch::Sender<InstallProgress>,
-) -> Result<Vec<u8>> {
-    download(client, url, progress).await
-}
-
 pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     hex(&Sha256::digest(bytes))
 }
@@ -380,12 +371,13 @@ async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -
         .context("unexpected answer from GitHub")
 }
 
-async fn download(
+/// Downloads `url`, reporting how far it got.
+pub(super) async fn fetch(
     client: &Client,
     url: &str,
     progress: &watch::Sender<InstallProgress>,
 ) -> Result<Vec<u8>> {
-    let mut response = client
+    let response = client
         .get(url)
         .send()
         .await
@@ -398,16 +390,11 @@ async fn download(
         downloaded: 0,
         total: response.content_length().filter(|total| *total > 0),
     });
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.context("the download broke off")? {
-        bytes.extend_from_slice(&chunk);
-        ensure!(
-            bytes.len() <= MAX_ARCHIVE_BYTES,
-            "the download is too large"
-        );
-        progress.send_modify(|value| value.downloaded = bytes.len() as u64);
-    }
-    Ok(bytes)
+    crate::net::read_limited_reporting(response, MAX_ARCHIVE_BYTES, |read| {
+        progress.send_modify(|value| value.downloaded = read as u64);
+    })
+    .await
+    .map_err(|error| error.about("the download"))
 }
 
 /// Why GitHub said no, in words: a missing release, a used-up rate limit with the time

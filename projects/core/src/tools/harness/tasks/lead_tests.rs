@@ -204,7 +204,7 @@ async fn add_makes_a_whole_plan_in_one_call() {
     assert_eq!(plan.len(), 7);
     let shorts: Vec<String> = plan
         .iter()
-        .map(|task| format!("#{}", text::short(&task.task_id)))
+        .map(|task| format!("#{}", short_task_id(&task.task_id)))
         .collect();
     assert_eq!(answer, format!("added 7 tasks: {}", shorts.join(" ")));
     assert_eq!(answer.len(), 84);
@@ -421,7 +421,7 @@ async fn show_prints_the_plan_in_lines_within_its_caps() {
     f.drive(&ids[0], "m0", PlanStatus::Done).await;
     f.drive(&ids[1], "m1", PlanStatus::Running).await;
     f.drive(&ids[2], "m2", PlanStatus::Review).await;
-    let s = |index: usize| text::short(&ids[index]).to_owned();
+    let s = |index: usize| short_task_id(&ids[index]).to_owned();
     let shown = f.call(json!({ "action": "show" })).await.unwrap();
     let expected = format!(
         "Plan: 1 of 4 done, 1 running, 1 in review, 1 open.\n\
@@ -497,7 +497,7 @@ async fn review_takes_tasks_in_review_and_answers_a_repeat_as_before() {
         .await
         .unwrap();
     let ids = f.ids().await;
-    let s = |index: usize| text::short(&ids[index]).to_owned();
+    let s = |index: usize| short_task_id(&ids[index]).to_owned();
     f.drive(&ids[0], "m0", PlanStatus::Review).await;
     f.drive(&ids[1], "m1", PlanStatus::Review).await;
 
@@ -543,7 +543,7 @@ async fn fail_and_reopen_repeated_change_nothing_more() {
         .await
         .unwrap();
     let ids = f.ids().await;
-    let id = text::short(&ids[0]).to_owned();
+    let id = short_task_id(&ids[0]).to_owned();
     let fail = json!({ "action": "fail", "id": id, "text": "wrong approach" });
     assert!(f.tasks.repeatable(&fail));
     let answer = f.call(fail.clone()).await.unwrap();

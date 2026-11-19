@@ -8,17 +8,22 @@
 //! hosts. Its SHA-256 is checked either way; the limits keep the core from being sent
 //! to fetch from anywhere a list or a redirect names.
 
-use std::{net::SocketAddr, sync::Arc, sync::LazyLock, time::Duration};
+use std::{sync::Arc, sync::LazyLock, time::Duration};
 
-use anyhow::{Context, Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, anyhow, ensure};
 use reqwest::{
     Client, Url,
-    dns::{Addrs, Name, Resolve, Resolving},
     redirect::{Attempt, Policy},
 };
 use sha2::{Digest, Sha256};
 
-use crate::{plugins::broker::is_public, release::update::VERSION};
+use crate::{
+    net::{
+        BodyError,
+        public::{PublicOnly, is_public},
+    },
+    release::update::VERSION,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(120);
 /// A list or a picture is small; a source that takes longer is reported, not waited on.
@@ -54,7 +59,7 @@ pub async fn fetch(url: &str, max: u64, via: Via) -> Result<Vec<u8>> {
         Via::Direct => DIRECT_TIMEOUT,
         Via::Package => TIMEOUT,
     };
-    let mut response = client
+    let response = client
         .get(url)
         .timeout(timeout)
         .send()
@@ -62,15 +67,13 @@ pub async fn fetch(url: &str, max: u64, via: Via) -> Result<Vec<u8>> {
         .with_context(|| format!("cannot reach {url}"))?
         .error_for_status()
         .with_context(|| format!("the store refused {url}"))?;
-    if response.content_length().is_some_and(|length| length > max) {
-        bail!("{url} is over {max} bytes");
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        body.extend_from_slice(&chunk);
-        ensure!(body.len() as u64 <= max, "{url} is over {max} bytes");
-    }
-    Ok(body)
+    let max_bytes = usize::try_from(max).unwrap_or(usize::MAX);
+    crate::net::read_limited(response, max_bytes)
+        .await
+        .map_err(|error| match error {
+            BodyError::TooLarge => anyhow!("{url} is over {max} bytes"),
+            BodyError::Broken => anyhow!("the download of {url} broke off"),
+        })
 }
 
 /// The file at `url`, when it has exactly `size` bytes and the SHA-256 `sha256`.
@@ -153,25 +156,4 @@ fn client(redirects: Policy) -> Result<Client, String> {
         .user_agent(format!("duskcode/{VERSION}"))
         .build()
         .map_err(|error| format!("cannot start the store's client: {error}"))
-}
-
-/// Resolves a name only when every address it has is a public one, so a list cannot
-/// point the core at this machine, the local network or a cloud's metadata service.
-pub struct PublicOnly;
-
-impl Resolve for PublicOnly {
-    fn resolve(&self, name: Name) -> Resolving {
-        let host = name.as_str().to_owned();
-        Box::pin(async move {
-            let addresses: Vec<SocketAddr> =
-                tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
-            if addresses.is_empty() || !addresses.iter().all(|address| is_public(address.ip())) {
-                return Err(format!(
-                    "{host} resolves to an address on this machine or a private network"
-                )
-                .into());
-            }
-            Ok(Box::new(addresses.into_iter()) as Addrs)
-        })
-    }
 }

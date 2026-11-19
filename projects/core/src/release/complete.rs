@@ -11,12 +11,13 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use futures::{StreamExt, TryStreamExt, stream};
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 
 use super::update::{REPOSITORY, client};
+use crate::net::BodyError;
 
 const API: &str = "https://api.github.com/repos";
 const RAW: &str = "https://raw.githubusercontent.com";
@@ -251,12 +252,13 @@ async fn fetch(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
         .await
         .context("cannot reach GitHub")?;
     ensure!(response.status().is_success(), "cannot download {url}");
-    let bytes = response.bytes().await.context("the download broke off")?;
-    ensure!(
-        bytes.len() <= MAX_FILE_BYTES,
-        "{url} is too large for a resource"
-    );
-    Ok(bytes.to_vec())
+    // Read with a cap while it arrives: the timeout bounds time, not memory.
+    crate::net::read_limited(response, MAX_FILE_BYTES)
+        .await
+        .map_err(|error| match error {
+            BodyError::TooLarge => anyhow!("{url} is too large for a resource"),
+            BodyError::Broken => anyhow!("the download broke off"),
+        })
 }
 
 /// A path from the tree as plain names only, so it cannot leave the resource folder.

@@ -46,7 +46,7 @@ impl Workspace {
         let (muted, accent) = (theme.muted_foreground, theme.primary);
         // Space between rows lives in the rows, as the list has no gap of its own.
         let content = match row {
-            Row::Working => super::working_row::render(&shown, chat, cx),
+            Row::Working => super::working_row::render(chat, cx),
             Row::Activity {
                 start,
                 end,

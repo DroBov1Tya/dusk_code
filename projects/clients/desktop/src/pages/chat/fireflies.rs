@@ -7,6 +7,7 @@ use std::{f32::consts::TAU, time::Duration};
 
 use gpui_kit::*;
 
+use crate::ui::looping::Loop;
 use crate::workspace::Workspace;
 
 /// More agents than this still show this many lights.
@@ -35,13 +36,9 @@ pub fn render(ws: &Workspace, cx: &App) -> Option<impl IntoElement + use<>> {
             .right_0()
             .bottom_0()
             .h(px(BAND))
-            .with_animation(
-                "fireflies",
-                Animation::new(Duration::from_secs(24))
-                    .repeat()
-                    .with_max_fps(24.),
-                move |band, phase| band.children((0..working).map(|index| firefly(index, phase))),
-            ),
+            .looping(Duration::from_secs(24), move |band, phase| {
+                band.children((0..working).map(|index| firefly(index, phase)))
+            }),
     )
 }
 

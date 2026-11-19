@@ -13,6 +13,7 @@ use gpui_kit::{
 };
 
 use super::sphere;
+use crate::ui::looping::Loop;
 use crate::{
     pages::chat::transcript::{CHAT, ExchangeKind},
     ui::widgets,
@@ -78,11 +79,9 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
         // The one at work breathes; the others rest.
         let dot = if agent.working() {
             dot.bg(accent)
-                .with_animation(
-                    SharedString::from(format!("arbiter-agent-{}", agent.name)),
-                    Animation::new(Duration::from_millis(1400)).repeat(),
-                    |dot, at| dot.opacity(0.35 + 0.65 * (at * std::f32::consts::TAU).cos().abs()),
-                )
+                .looping(Duration::from_millis(1400), |dot, at| {
+                    dot.opacity(0.35 + 0.65 * (at * std::f32::consts::TAU).cos().abs())
+                })
                 .into_any_element()
         } else {
             dot.bg(muted.opacity(0.45)).into_any_element()
@@ -156,12 +155,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
         .flex_col()
         .items_center()
         .gap_4()
-        .child(sphere::render(
-            SharedString::from(format!("arbiter-sphere-{thread_id}")),
-            chat.arbiter_at,
-            accent,
-            warning,
-        ))
+        .child(sphere::render(chat.arbiter_at, accent, warning))
         .child(
             div()
                 .flex()

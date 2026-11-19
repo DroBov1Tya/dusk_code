@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 
 use sqlx::{Sqlite, Transaction};
+
+use crate::state::thread::threads::chat_of;
 use uuid::Uuid;
 
 use super::{
@@ -257,19 +259,41 @@ pub(in crate::state::thread::work) async fn root_of(
     transaction: &mut Tx<'_>,
     thread: &str,
 ) -> Result<String, PlanError> {
-    // UNION ends the walk on parent links that loop, as `State::root_thread` does.
-    sqlx::query_scalar(
-        "WITH RECURSIVE above(id, parent) AS (
-            SELECT id, parent_thread_id FROM threads WHERE id = ?
-            UNION
-            SELECT threads.id, threads.parent_thread_id
-            FROM threads JOIN above ON threads.id = above.parent
-         ) SELECT id FROM above WHERE parent IS NULL",
-    )
-    .bind(thread)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| PlanError::NoSuchThread(thread.to_owned()))
+    chat_of(&mut **transaction, thread)
+        .await?
+        .ok_or_else(|| PlanError::NoSuchThread(thread.to_owned()))
+}
+
+/// An id as given, or the end of one: trimmed, without the `#` the board prints, with its
+/// length in characters, lowercased as ids are made. `None` when it is shorter than 4 or
+/// longer than `MAX_ID`.
+pub(super) fn id_end(id: &str) -> Option<(String, i64)> {
+    let id = id.trim().trim_start_matches('#').to_ascii_lowercase();
+    let length = id.chars().count();
+    (4..=MAX_ID)
+        .contains(&length)
+        .then(|| (id, i64::try_from(length).unwrap_or(i64::MAX)))
+}
+
+/// `$column` is the id bound as `?2`, or ends with it, `?3` characters long. Compared,
+/// never matched as a pattern: `%` and `_` in an id are just characters.
+macro_rules! fits_id {
+    ($column:literal) => {
+        concat!("(", $column, " = ?2 OR substr(", $column, ", -?3) = ?2)")
+    };
+}
+pub(super) use fits_id;
+
+/// What fits an id end: one, or the whole id when more than one ends with it.
+pub(super) fn only<T>(mut found: Vec<T>, whole: impl Fn(&T) -> bool) -> Result<Option<T>, ()> {
+    if found.len() > 1 && found.iter().any(&whole) {
+        found.retain(whole);
+    }
+    match found.len() {
+        0 => Ok(None),
+        1 => Ok(found.pop()),
+        _ => Err(()),
+    }
 }
 
 /// The id of a task of the plan, from the id or the end of it when only one fits.
@@ -278,28 +302,24 @@ pub(super) async fn locate(
     root: &str,
     id: &str,
 ) -> Result<String, PlanError> {
-    let id = id.trim().trim_start_matches('#');
-    let length = id.chars().count();
-    if !(4..=MAX_ID).contains(&length) {
-        return Err(PlanError::NoSuchTask(id.to_owned()));
-    }
-    // Compared, never matched as a pattern: `%` and `_` in an id are just characters.
-    let mut found: Vec<String> = sqlx::query_scalar(
-        "SELECT task_id FROM tasks
-         WHERE thread_id = ?1 AND (task_id = ?2 OR substr(task_id, -?3) = ?2)",
-    )
+    let Some((id, length)) = id_end(id) else {
+        return Err(PlanError::NoSuchTask(
+            id.trim().trim_start_matches('#').to_owned(),
+        ));
+    };
+    let found: Vec<String> = sqlx::query_scalar(concat!(
+        "SELECT task_id FROM tasks WHERE thread_id = ?1 AND ",
+        fits_id!("task_id")
+    ))
     .bind(root)
-    .bind(id)
-    .bind(i64::try_from(length).unwrap_or(i64::MAX))
+    .bind(&id)
+    .bind(length)
     .fetch_all(&mut **transaction)
     .await?;
-    if found.len() > 1 {
-        found.retain(|task_id| task_id == id);
-    }
-    match found.len() {
-        1 => Ok(found.remove(0)),
-        0 => Err(PlanError::NoSuchTask(id.to_owned())),
-        _ => Err(PlanError::Ambiguous(id.to_owned())),
+    match only(found, |task_id| *task_id == id) {
+        Ok(Some(task_id)) => Ok(task_id),
+        Ok(None) => Err(PlanError::NoSuchTask(id.clone())),
+        Err(()) => Err(PlanError::Ambiguous(id)),
     }
 }
 
