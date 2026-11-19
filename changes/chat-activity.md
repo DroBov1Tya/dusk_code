@@ -1,0 +1,2 @@
+Changed
+While the agent works, the chat shows what kind of work it is, each with its own quiet look: a spark that changes shape beside a shimmering word while it thinks, nothing but the growing text while it writes, three lines being written while it plans, a small live mark on the running step, a dot for each agent at work, a steady ring while it waits for you, and lines drawn together while it compacts. The desktop app, the browser and the terminal choose the kind the same way, and everything stands still under reduced motion.
