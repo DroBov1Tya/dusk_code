@@ -229,7 +229,8 @@ mod tests {
     use super::*;
     use crate::app::{Activity, TabMove, test_app};
     use crossterm::event::Event;
-    use dusk_protocol::model::ToolCall;
+    use dusk_protocol::model::{ModelEvent, ToolCall};
+    use dusk_protocol::thread::ThreadEvent;
     use serde_json::json;
 
     fn press(app: &mut App, key: KeyCode, modifiers: KeyModifiers) -> Action {
@@ -253,8 +254,16 @@ mod tests {
             name: "show".into(),
             arguments: json!({ "choices": { "labels": labels } }),
         };
-        let block = Block::asked(&call).expect("a block");
-        app.transcript.entries_mut().push(Entry::Block(block));
+        let shown = Block::asked(&call).expect("a block").text();
+        app.transcript.apply(ThreadEvent::ToolStarted(call));
+        app.transcript.apply(ThreadEvent::ToolFinished {
+            call_id: "a".into(),
+            result: dusk_protocol::tools::ToolResult::text(shown),
+        });
+        assert!(matches!(
+            app.transcript.entries.last(),
+            Some(Entry::Block(_))
+        ));
         app
     }
 
@@ -338,7 +347,9 @@ mod tests {
         app.activity = Activity::Thinking;
         assert!(app.reply_labels().is_empty(), "the turn has not ended");
         app.activity = Activity::Idle;
-        app.transcript.add_answer("Anything else?");
+        app.transcript.apply(ThreadEvent::Model(ModelEvent::Text(
+            "Anything else?".into(),
+        )));
         assert!(app.reply_labels().is_empty(), "something came after");
     }
 

@@ -28,6 +28,10 @@ pub struct PluginInfo {
     /// The clients that can draw its parts; all when empty.
     #[serde(default)]
     pub clients: Vec<crate::plugin::Client>,
+    /// Hosts it serves where another plugin that is on serves them too and this one is
+    /// not the routed one: the client offers "Use for {host}" for each.
+    #[serde(default)]
+    pub choose: Vec<String>,
     /// Why it cannot load, when it cannot.
     pub problem: Option<String>,
 }

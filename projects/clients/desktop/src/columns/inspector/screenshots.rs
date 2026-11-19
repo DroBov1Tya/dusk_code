@@ -17,9 +17,9 @@ use crate::{
 const FIRST: usize = 5;
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let shots = ws
+    let shots: Vec<_> = ws
         .shown_chat()
-        .map(|chat| chat.screenshots.as_slice())
+        .map(|chat| chat.screenshots().collect())
         .unwrap_or_default();
     if shots.is_empty() {
         return div().child(widgets::muted("Screenshots the model takes show here.", cx));

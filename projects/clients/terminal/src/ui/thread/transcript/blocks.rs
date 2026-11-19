@@ -17,9 +17,8 @@ use crate::ui::thread::{
     wrap,
 };
 use dusk_protocol::{
-    model::ToolCall,
-    thread::JobResult,
-    tools::{Answered, ToolResult},
+    thread::{JobResult, Tool, ToolState},
+    tools::Answered,
 };
 use ratatui::{
     style::Style,
@@ -172,24 +171,25 @@ fn card(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
 }
 
 pub(super) fn tool(
-    call: &ToolCall,
-    result: Option<&ToolResult>,
+    tool: &Tool,
     open: bool,
     width: usize,
     live: Option<&App>,
 ) -> Vec<Line<'static>> {
+    // The arguments as they were sent, when they were short enough to be kept whole.
+    let arguments = serde_json::from_str::<serde_json::Value>(&tool.arguments).ok();
     // The mark says what kind of work the step is; its colour, how the step stands.
-    let glyph = step_glyph(&call.name);
-    let (mark, status) = match result {
-        None => (
+    let glyph = step_glyph(&tool.name);
+    let (mark, status) = match tool.state {
+        ToolState::Running => (
             Span::styled(format!("   {glyph} "), fg(ACCENT)),
             Span::styled(live.map_or("", spinner), fg(ACCENT)),
         ),
-        Some(result) if result.is_error => (
+        ToolState::Failed => (
             Span::styled(format!("   {glyph} "), fg(NEGATIVE)),
             Span::styled(FAILED, fg(NEGATIVE)),
         ),
-        Some(_) => (
+        ToolState::Done => (
             Span::styled(format!("   {glyph} "), fg(TEXT_MUTED)),
             Span::styled(DONE, fg(POSITIVE)),
         ),
@@ -197,20 +197,20 @@ pub(super) fn tool(
     // Said as a person would, the tool's own name once the step is open; work handed to
     // another agent carries the accent.
     let said = if open {
-        call.name.clone()
+        tool.name.clone()
     } else {
-        dusk_protocol::tools::phrase(&call.name, &call.id).to_owned()
+        dusk_protocol::tools::phrase(&tool.name, &tool.call_id).to_owned()
     };
-    let lead = if dusk_protocol::tools::is_agent_tool(&call.name) {
+    let lead = if dusk_protocol::tools::is_agent_tool(&tool.name) {
         ACCENT
     } else {
         TEXT
     };
     let name = Span::styled(said, fg(lead));
     // A command says what it does in a few words; the command itself is in the body.
-    let about = call
-        .arguments
-        .get("description")
+    let about = arguments
+        .as_ref()
+        .and_then(|arguments| arguments.get("description"))
         .and_then(|text| text.as_str())
         .map(|text| {
             // Whatever is left after the mark, the name and the status, so the status
@@ -230,17 +230,15 @@ pub(super) fn tool(
     ]);
     folded(header, open, || {
         let gutter = format!("   {GUTTER} ");
-        let mut body = indent(
-            verbatim(&pretty(&call.arguments), width - 2, dim()),
-            &gutter,
-        );
-        if let Some(result) = result {
-            let style = if result.is_error {
+        let shown = arguments.as_ref().map_or(tool.arguments.clone(), pretty);
+        let mut body = indent(verbatim(&shown, width - 2, dim()), &gutter);
+        if tool.state != ToolState::Running {
+            let style = if tool.state == ToolState::Failed {
                 fg(NEGATIVE)
             } else {
                 Style::new()
             };
-            let all: Vec<&str> = result.content.lines().collect();
+            let all: Vec<&str> = tool.output.lines().collect();
             let shown = all
                 .iter()
                 .take(MAX_RESULT_LINES)
@@ -249,7 +247,7 @@ pub(super) fn tool(
                 .join("\n");
             body.push(Line::from(vec![
                 Span::styled(format!("   {GUTTER}"), dim()),
-                Span::styled(format!(" {} returned", call.name), thought()),
+                Span::styled(format!(" {} returned", tool.name), thought()),
             ]));
             body.extend(indent(verbatim(&shown, width - 2, style), &gutter));
             if all.len() > MAX_RESULT_LINES {

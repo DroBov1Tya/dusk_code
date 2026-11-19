@@ -42,7 +42,7 @@ use tracing::warn;
 
 use crate::{
     BoxFuture,
-    catalog::modes::TEAM,
+    catalog::modes::{Modes, TEAM},
     runtime::Launcher,
     state::{BudgetBy, PlanTask, TeamCeilings, TeamError, timestamp_ms},
     tools::{Progress, Started, TeamRunner},
@@ -250,11 +250,11 @@ impl Launcher {
 
 /// Whether the chat `lead` is in TEAM mode: its own mode, the one its user last wrote
 /// to it in, else the setting's. A switch made for another chat does not pause its team.
+/// A stored mode that is gone counts as the setting's, as the lead's steps run in it.
 pub(super) async fn in_team_mode(launcher: &Launcher, lead: &str) -> Result<bool> {
-    let mode = match launcher.state.chat_mode(lead).await? {
-        Some(mode) => mode,
-        None => launcher.config.current().mode().to_owned(),
-    };
+    let stored = launcher.state.chat_mode(lead).await?;
+    let config = launcher.config.current();
+    let mode = Modes::new(&launcher.paths.modes_dir()).effective(stored, config.mode());
     Ok(mode == TEAM)
 }
 

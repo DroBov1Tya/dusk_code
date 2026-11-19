@@ -386,20 +386,10 @@ async fn ask_tokens(http: &Client, form: &[(&str, &str)]) -> Result<Tokens> {
     bail!("the ChatGPT sign-in server refused ({status} {code})")
 }
 
-async fn limited(mut response: reqwest::Response) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
+async fn limited(response: reqwest::Response) -> Result<Vec<u8>> {
+    crate::net::read_limited(response, MAX_ANSWER_BYTES)
         .await
-        .map_err(|_| anyhow!("cannot read the ChatGPT sign-in server's answer"))?
-    {
-        ensure!(
-            chunk.len() <= MAX_ANSWER_BYTES - bytes.len(),
-            "the ChatGPT sign-in server's answer is too large"
-        );
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(bytes)
+        .map_err(|error| error.about("the ChatGPT sign-in server's answer"))
 }
 
 #[derive(Deserialize)]

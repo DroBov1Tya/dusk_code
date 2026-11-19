@@ -6,6 +6,19 @@ use uuid::Uuid;
 
 use super::{State, messages::estimate_tokens};
 
+/// Copies the messages `?3` lists, as `[sequence, new id]` pairs in order, from thread
+/// `?2` into `?1`, numbered from 1. The pairs drive the join, so each message is one
+/// lookup by (thread_id, sequence).
+const COPY_MESSAGES: &str = "INSERT INTO messages (message_id, thread_id, sequence, role, content,
+        reasoning, tool_calls_json, tool_call_id, content_tokens, tool_calls_tokens,
+        reasoning_tokens, created_at, from_thread_id, artifacts_json)
+     SELECT json_extract(pair.value, '$[1]'), ?1, pair.key + 1, m.role, m.content, m.reasoning,
+        m.tool_calls_json, m.tool_call_id, m.content_tokens, m.tool_calls_tokens,
+        m.reasoning_tokens, m.created_at, m.from_thread_id, m.artifacts_json
+     FROM json_each(?3) pair CROSS JOIN messages m
+     WHERE m.thread_id = ?2 AND m.sequence = json_extract(pair.value, '$[0]')
+     ORDER BY pair.key";
+
 impl State {
     /// Copies `source`'s history up to and including `message_id` into `target`, which
     /// holds nothing yet, in one transaction. A compaction before the cut is carried as
@@ -66,31 +79,29 @@ impl State {
         .await
         .context("list the fork's messages")?;
         ensure!(!sequences.is_empty(), "nothing to fork");
-        let mut copied = 0i64;
-        let mut summary_after = 0i64;
-        for sequence in &sequences {
-            copied += 1;
-            if *sequence <= through {
-                summary_after = copied;
-            }
-            sqlx::query(
-                "INSERT INTO messages (message_id, thread_id, sequence, role, content, reasoning,
-                    tool_calls_json, tool_call_id, content_tokens, tool_calls_tokens,
-                    reasoning_tokens, created_at, from_thread_id, artifacts_json)
-                 SELECT ?, ?, ?, role, content, reasoning, tool_calls_json, tool_call_id,
-                    content_tokens, tool_calls_tokens, reasoning_tokens, created_at,
-                    from_thread_id, artifacts_json
-                 FROM messages WHERE thread_id = ? AND sequence = ?",
-            )
-            .bind(Uuid::now_v7().to_string())
+        // The copies are numbered from 1 in the source's order, so the summary covers as
+        // many of them as there are copied messages it covered.
+        let summary_after = i64::try_from(sequences.iter().filter(|s| **s <= through).count())
+            .context("too many messages")?;
+        // Each copied sequence with a fresh id, made in order so the ids sort as the copies
+        // do. The copies are found from these pairs by (thread_id, sequence).
+        let pairs: Vec<(i64, String)> = sequences
+            .iter()
+            .map(|sequence| (*sequence, Uuid::now_v7().to_string()))
+            .collect();
+        let pairs = serde_json::to_string(&pairs).context("list the copies")?;
+        let copied = sqlx::query(COPY_MESSAGES)
             .bind(target)
-            .bind(copied)
             .bind(source)
-            .bind(sequence)
+            .bind(&pairs)
             .execute(&mut *tx)
             .await
-            .context("copy a message")?;
-        }
+            .context("copy the messages")?
+            .rows_affected();
+        ensure!(
+            copied == sequences.len() as u64,
+            "the fork's messages changed while copying"
+        );
         if let Some(summary) = summary {
             // Covers the copied system prompts, as the source's covered its own.
             ensure!(
@@ -129,7 +140,7 @@ impl State {
         .await
         .context("copy the sources")?;
         tx.commit().await.context("commit fork")?;
-        Ok(copied as u64)
+        Ok(copied)
     }
 }
 
@@ -140,6 +151,15 @@ mod tests {
     async fn texts(state: &State, thread_id: &str) -> Vec<String> {
         let messages = state.list_messages(thread_id).await.unwrap();
         messages.into_iter().map(|m| m.content).collect()
+    }
+
+    #[tokio::test]
+    async fn a_fork_finds_each_message_by_index() {
+        let state = temp_state("fork_plan").await;
+        let sql = format!("EXPLAIN QUERY PLAN {}", super::COPY_MESSAGES);
+        let plan = crate::testing::query_plan(&state, sql.leak()).await;
+        assert!(plan.contains("SEARCH m USING"), "{plan}");
+        assert!(!plan.contains("SCAN m"), "{plan}");
     }
 
     #[tokio::test]
@@ -165,6 +185,12 @@ mod tests {
             4
         );
         assert_eq!(texts(&state, "plain").await, ["prompt", "m1", "m2", "m3"]);
+        // Numbered from 1, with fresh ids that sort as the copies do.
+        let copies = state.list_messages("plain").await.unwrap();
+        let sequences: Vec<u64> = copies.iter().map(|m| m.sequence).collect();
+        assert_eq!(sequences, [1, 2, 3, 4]);
+        assert!(copies.windows(2).all(|w| w[0].message_id < w[1].message_id));
+        assert!(copies.iter().all(|m| !ids.contains(&m.message_id)));
         assert!(state.latest_compaction("plain").await.unwrap().is_none());
 
         // The summary covers m1 and m2 (sequences 2 and 3); m4 is chosen.

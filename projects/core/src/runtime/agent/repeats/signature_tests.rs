@@ -270,6 +270,13 @@ fn the_program_is_what_runs_after_setup_and_wrappers() {
             Some("check.sh"),
         ),
         ("(cd web && npm test)", Some("npm")),
+        // Quotes keep their words whole; a comment runs nothing.
+        ("X=\"a b\" cargo test", Some("cargo")),
+        ("echo 'a; b' | tee x", Some("echo")),
+        ("# check first\ncargo check", Some("cargo")),
+        ("{ cargo test; }", Some("cargo")),
+        ("cargo test $(echo -p core)", Some("cargo")),
+        ("make 'unclosed", Some("make")),
         ("cd /nowhere", None),
         ("", None),
         ("   ", None),

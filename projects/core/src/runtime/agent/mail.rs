@@ -385,14 +385,13 @@ impl Launcher {
         let Some(message_id) = message_id else {
             return "(no answer)".into();
         };
-        let messages = self
-            .state
-            .list_messages(thread_id)
-            .await
-            .unwrap_or_default();
-        messages
-            .into_iter()
-            .find(|message| message.message_id == message_id)
-            .map_or_else(|| "(no answer)".into(), |message| message.content)
+        match self.state.message_content(thread_id, message_id).await {
+            Ok(Some(content)) => content,
+            Ok(None) => "(no answer)".into(),
+            Err(error) => {
+                warn!("cannot read the answer of {thread_id}: {error:#}");
+                "(no answer)".into()
+            }
+        }
     }
 }

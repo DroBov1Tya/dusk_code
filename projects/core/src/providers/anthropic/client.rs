@@ -4,11 +4,10 @@ use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::{Result, anyhow, bail, ensure};
 use reqwest::{
-    Client, RequestBuilder, Response, StatusCode, Url,
+    Client, RequestBuilder, StatusCode, Url,
     header::{ACCEPT, HeaderName, HeaderValue},
 };
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::{
     config::{Effort, ProviderConfig},
@@ -21,13 +20,12 @@ use crate::{
     },
 };
 
-use super::{request::MessagesRequest, stream::MessageStream};
+use super::{
+    request::MessagesRequest,
+    stream::{self, MessageStream},
+};
 
 const API_VERSION: &str = "2023-06-01";
-const MAX_ERROR_BYTES: usize = 64 * 1024;
-const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
-/// Error messages reach the transcript; a long one is cut.
-const MAX_ERROR_CHARS: usize = 300;
 const MAX_CATALOGUE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CATALOGUE_PAGES: usize = 10;
 const CATALOGUE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -58,14 +56,7 @@ struct ModelEntry {
 impl Anthropic {
     pub fn new(config: &ProviderConfig) -> Result<Self> {
         let base_url = http::base_url(&config.base_url, config.allow_http)?;
-        let api_key = if config.api_key.0.is_empty() {
-            None
-        } else {
-            let mut value = HeaderValue::from_str(&config.api_key.0)
-                .map_err(|_| anyhow!("invalid provider API key"))?;
-            value.set_sensitive(true);
-            Some(value)
-        };
+        let api_key = http::sensitive_header(&config.api_key.0, "")?;
         let client = http::client()?;
         Ok(Self {
             client,
@@ -88,10 +79,7 @@ impl Anthropic {
             let page: ModelPage = serde_json::from_slice(&self.catalogue_page(url).await?)
                 .map_err(|_| anyhow!("invalid provider model catalogue JSON"))?;
             for model in page.data {
-                ensure!(
-                    !model.id.trim().is_empty() && !model.id.chars().any(char::is_control),
-                    "provider returned an empty or invalid model ID"
-                );
+                http::check_model_id(&model.id)?;
                 models.insert(model.id, (model.max_input_tokens, model.max_tokens));
             }
             match (page.has_more, page.last_id) {
@@ -99,18 +87,11 @@ impl Anthropic {
                 _ => break,
             }
         }
-        Ok(models
-            .into_iter()
-            .map(|(id, (context_window, max_output))| Model {
-                id,
-                context_window,
-                max_output,
-            })
-            .collect())
+        Ok(http::models(models))
     }
 
     async fn catalogue_page(&self, url: Url) -> Result<Vec<u8>> {
-        let mut response = self
+        let response = self
             .with_headers(self.client.get(url))
             .header(ACCEPT, "application/json")
             .timeout(CATALOGUE_TIMEOUT)
@@ -122,19 +103,9 @@ impl Anthropic {
             response.status().is_success(),
             http::refused("model", response.status())
         );
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
+        crate::net::read_limited(response, MAX_CATALOGUE_BYTES)
             .await
-            .map_err(|_| anyhow!("cannot read provider model catalogue"))?
-        {
-            ensure!(
-                chunk.len() <= MAX_CATALOGUE_BYTES - bytes.len(),
-                "provider model catalogue is too large"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
-        Ok(bytes)
+            .map_err(|error| error.about("provider model catalogue"))
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<MessageStream> {
@@ -154,17 +125,7 @@ impl Anthropic {
         self.account.note(Headers::Anthropic, response.headers());
         let status = response.status();
         if !status.is_success() {
-            // Read before the body, which takes the response.
-            let mut failure = http::status_failure(&response, String::new());
-            let reason = tokio::time::timeout(ERROR_BODY_TIMEOUT, error_message(response))
-                .await
-                .ok()
-                .flatten();
-            let refused = http::refused("completion", status);
-            failure.message = match &reason {
-                Some(reason) => format!("{refused}: {reason}"),
-                None => refused,
-            };
+            let (failure, reason) = http::refused_with_reason(response, "completion").await;
             if failure.kind.is_retryable() {
                 bail!(failure);
             }
@@ -181,7 +142,7 @@ impl Anthropic {
             http::is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(MessageStream::new(response))
+        Ok(stream::stream(response))
     }
 
     fn with_headers(&self, request: RequestBuilder) -> RequestBuilder {
@@ -191,18 +152,4 @@ impl Anthropic {
             None => request,
         }
     }
-}
-
-/// The API's own words about a failed request, bounded.
-async fn error_message(mut response: Response) -> Option<String> {
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.ok()? {
-        if chunk.len() > MAX_ERROR_BYTES - bytes.len() {
-            return None;
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let body: Value = serde_json::from_slice(&bytes).ok()?;
-    let message = body.pointer("/error/message")?.as_str()?;
-    Some(message.chars().take(MAX_ERROR_CHARS).collect())
 }

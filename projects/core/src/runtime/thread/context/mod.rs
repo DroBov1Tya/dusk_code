@@ -207,7 +207,7 @@ impl Conversation {
     fn estimated_after(&self, sequence: u64) -> u64 {
         self.messages
             .iter()
-            .filter(|message| message.sequence > sequence && self.chat_message(message).is_some())
+            .filter(|message| message.sequence > sequence && is_sent(message))
             .map(|message| self.sent_tokens(message))
             .sum()
     }
@@ -245,6 +245,7 @@ impl Conversation {
         }
     }
 
+    /// Keep in step with `is_sent`: it decides which messages this returns `Some` for.
     fn chat_message(&self, message: &Message) -> Option<ChatMessage> {
         let content = message.content.clone();
         match message.role {
@@ -280,6 +281,12 @@ impl Conversation {
     }
 }
 
+/// Whether `Conversation::chat_message` sends this message, without building it: only a
+/// result without the call it answers is left out.
+fn is_sent(message: &Message) -> bool {
+    message.role != MessageRole::Tool || message.tool_call_id.is_some()
+}
+
 /// What decides how full a thread's context is: the tools it is offered and the model
 /// it asks. A running thread shares its own through its mailbox, so the context report
 /// and the thread's `Tokens` events count with the same inputs and agree.
@@ -298,12 +305,7 @@ impl ContextSource {
 
     /// The largest request under the selected model policy and its known window.
     pub fn limit(&self) -> u64 {
-        let config = self.config.current();
-        self.model
-            .current()
-            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
-                choice.input_limit(&config)
-            })
+        self.model.current_input_limit(&self.config.current())
     }
 }
 
@@ -375,6 +377,40 @@ mod tests {
         assert_eq!(conversation.newest_sequence(), 6);
         assert_eq!(conversation.compactable_through(), Some(5), "6 is queued");
         assert_eq!(conversation.tokens(&[]), 5 + 5 + 2 + 5);
+    }
+
+    /// Token counts filter with `is_sent` instead of building each message; the two
+    /// must agree on every role, a result without its call included.
+    #[test]
+    fn is_sent_agrees_with_chat_message() {
+        let mut orphan = message(6, MessageRole::Tool, "lost");
+        orphan.tool_call_id = None;
+        let messages = vec![
+            message(1, MessageRole::System, "prompt"),
+            message(2, MessageRole::User, "hi"),
+            message(3, MessageRole::Job, "out"),
+            message(4, MessageRole::Assistant, "ok"),
+            message(5, MessageRole::Tool, "result"),
+            orphan,
+        ];
+        let conversation = Conversation {
+            messages: messages.clone(),
+            compaction: None,
+            answered_through: 6,
+            last_prompt: None,
+            senders: HashMap::new(),
+            stubs: HashMap::new(),
+            shaped: HashMap::new(),
+        };
+        for message in &messages {
+            assert_eq!(
+                is_sent(message),
+                conversation.chat_message(message).is_some(),
+                "{:?}",
+                message.role
+            );
+        }
+        assert!(!is_sent(&messages[5]));
     }
 
     #[test]

@@ -84,6 +84,15 @@ impl<'a> Modes<'a> {
             .collect()
     }
 
+    /// The mode a chat runs in: its own stored mode when it is a known one, else the
+    /// setting's. The folder is listed only when the two differ.
+    pub fn effective(&self, stored: Option<String>, setting: &str) -> String {
+        match stored {
+            Some(mode) if mode == setting || self.list().contains(&mode) => mode,
+            _ => setting.to_owned(),
+        }
+    }
+
     /// The mode after `mode`, round to the first.
     pub fn next(&self, mode: &str) -> String {
         let modes = self.list();

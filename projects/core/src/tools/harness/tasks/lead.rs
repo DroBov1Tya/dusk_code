@@ -11,14 +11,14 @@ use serde::Deserialize;
 use super::{
     check::{self, TaskArguments},
     team::{GatesYes, TeamRunner},
-    text::{self, Shown, short},
+    text::{self, Shown},
 };
 use crate::{
     catalog::agents::Agents,
     config::Limits,
     state::{
         MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
-        PlanTask, State, TaskEdit, timestamp_ms,
+        PlanTask, State, TaskEdit, short_task_id, timestamp_ms,
     },
     tools::ToolContext,
 };
@@ -228,11 +228,11 @@ impl Lead {
             (None, None) => bail!("edit needs `text`, or one task in `tasks` with what changes"),
         };
         match state.edit_plan_task(thread, id, &edit).await {
-            Ok(task) => Ok(changed(format!("edited #{}", short(&task.task_id)))),
+            Ok(task) => Ok(changed(format!("edited #{}", short_task_id(&task.task_id)))),
             Err(PlanError::Illegal { task, from, .. }) => bail!(
                 "task #{} is {}; edit changes only a task not yet started. Fail it and add \
                  a new one instead",
-                short(&task),
+                short_task_id(&task),
                 from.as_str()
             ),
             Err(error) => Err(explain(error)),
@@ -290,7 +290,10 @@ impl Lead {
 /// `added 7 tasks: #5d01aa3c #77aa01bc ...`, in the order of the add.
 fn added(ids: &[&str]) -> String {
     let noun = if ids.len() == 1 { "task" } else { "tasks" };
-    let ids: Vec<String> = ids.iter().map(|id| format!("#{}", short(id))).collect();
+    let ids: Vec<String> = ids
+        .iter()
+        .map(|id| format!("#{}", short_task_id(id)))
+        .collect();
     format!("added {} {noun}: {}", ids.len(), ids.join(" "))
 }
 
@@ -322,8 +325,8 @@ fn replayed<'a>(new: &[NewTask], plan: &'a [PlanTask]) -> Result<Option<Vec<&'a 
             "task {} is the same as #{} already in the plan; leave it out, or reopen #{} \
              if it failed",
             index + 1,
-            short(id),
-            short(id)
+            short_task_id(id),
+            short_task_id(id)
         ),
     }
 }
@@ -410,14 +413,14 @@ async fn accept(state: &State, thread: &str, ids: &[String]) -> Result<Answer> {
                     &accepted,
                     anyhow!(
                         "task #{} is {}; review takes a task in review, which show marks [?]",
-                        short(&task),
+                        short_task_id(&task),
                         from.as_str()
                     ),
                 ));
             }
             Err(error) => return Err(partly(&accepted, explain(error))),
         };
-        accepted.push(format!("#{}", short(&task_id)));
+        accepted.push(format!("#{}", short_task_id(&task_id)));
     }
     Ok(changed(format!("accepted {}", accepted.join(" "))))
 }
@@ -441,7 +444,7 @@ async fn reject(state: &State, thread: &str, id: &str, text: &str) -> Result<Ans
             ensure!(
                 again,
                 "task #{} is {}; review takes a task in review, which show marks [?]",
-                short(&task),
+                short_task_id(&task),
                 from.as_str()
             );
             found
@@ -451,11 +454,11 @@ async fn reject(state: &State, thread: &str, id: &str, text: &str) -> Result<Ans
     let line = match task.status {
         PlanStatus::Failed => format!(
             "#{} failed: sent back {MAX_REWORKS} times already",
-            short(&task.task_id)
+            short_task_id(&task.task_id)
         ),
         _ => format!(
             "sent back #{} to redo ({} of {MAX_REWORKS})",
-            short(&task.task_id),
+            short_task_id(&task.task_id),
             task.reworks
         ),
     };
@@ -480,11 +483,11 @@ async fn fail(state: &State, thread: &str, id: &str, note: Option<String>) -> Re
             ..
         }) => bail!(
             "task #{} is done, which is final; add a new task for more work",
-            short(&task)
+            short_task_id(&task)
         ),
         Err(error) => return Err(explain(error)),
     };
-    Ok(changed(format!("failed #{}", short(&task_id))))
+    Ok(changed(format!("failed #{}", short_task_id(&task_id))))
 }
 
 /// Run again on an open task, it is already so.
@@ -498,12 +501,12 @@ async fn reopen(state: &State, thread: &str, id: &str) -> Result<Answer> {
         }) => task,
         Err(PlanError::Illegal { task, from, .. }) => bail!(
             "task #{} is {}; reopen takes a failed or blocked task",
-            short(&task),
+            short_task_id(&task),
             from.as_str()
         ),
         Err(error) => return Err(explain(error)),
     };
-    Ok(changed(format!("reopened #{}", short(&task_id))))
+    Ok(changed(format!("reopened #{}", short_task_id(&task_id))))
 }
 
 /// The budget the lead asked for, each part held to its ceiling; a part left out is the

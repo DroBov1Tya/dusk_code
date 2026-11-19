@@ -171,6 +171,16 @@ impl Settings<'_> {
             .await
     }
 
+    /// Chooses the plugin a contract goes to for one host.
+    pub async fn contract_plugin(&self, contract: &str, host: &str, plugin: &str) -> Result<()> {
+        self.done(SettingsRequest::SetContractPlugin {
+            contract: contract.to_owned(),
+            host: host.to_owned(),
+            plugin: plugin.to_owned(),
+        })
+        .await
+    }
+
     /// Kept for this run only, never written to the config file.
     pub async fn plugin_secret(&self, plugin: &str, key: &str, value: &str) -> Result<()> {
         let (plugin, key) = (plugin.to_owned(), key.to_owned());

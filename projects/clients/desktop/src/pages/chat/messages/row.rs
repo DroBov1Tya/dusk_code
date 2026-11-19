@@ -46,7 +46,7 @@ impl Workspace {
         let (muted, accent) = (theme.muted_foreground, theme.primary);
         // Space between rows lives in the rows, as the list has no gap of its own.
         let content = match row {
-            Row::Working => super::working_row::render(&shown, chat, cx),
+            Row::Working => super::working_row::render(chat, cx),
             Row::Activity {
                 start,
                 end,
@@ -71,7 +71,11 @@ impl Workspace {
             Row::Item(at) => {
                 let key = format!("{shown}-{at}");
                 match &chat.items[at] {
-                    Item::User { text, sequence } => {
+                    Item::User {
+                        text,
+                        sequence,
+                        answered,
+                    } => {
                         let group = SharedString::from(format!("user-row-{key}"));
                         let mut tools = div()
                             .flex()
@@ -118,12 +122,11 @@ impl Workspace {
                             .flex_col()
                             .items_end()
                             .gap_1()
-                            .when_some(chat.answered.get(&at), |row, answers| {
-                                row.child(super::answered(&key, answers, cx))
+                            .when(!answered.is_empty(), |row| {
+                                row.child(super::answered(&key, answered, cx))
                             })
                             .when(
-                                !chat.answered.contains_key(&at)
-                                    && !user_text(text).trim().is_empty(),
+                                answered.is_empty() && !user_text(text).trim().is_empty(),
                                 |row| {
                                     row.child(
                                         // The user's words carry a breath of the accent, so the
@@ -161,8 +164,8 @@ impl Workspace {
                     Item::Job(result) => {
                         super::job(self, &shown, at, result, cx).into_any_element()
                     }
-                    Item::Command(run) => command_card(&key, run, cx),
-                    Item::Agent { from, text } => {
+                    Item::Local(run) => command_card(&key, run, cx),
+                    Item::Agent { from, text, .. } => {
                         agent_report(self, &shown, at, (from, text), true, cx).into_any_element()
                     }
                     Item::Assistant { text, .. } => {
@@ -242,9 +245,14 @@ impl Workspace {
                         answer.into_any_element()
                     }
                     Item::Block(shown_block) => block::render(self, &shown, at, shown_block, cx),
-                    Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
-                    Item::Audio(clip) => crate::pages::chat::audio::card(self, &key, clip, cx),
-                    Item::Notice(text) => {
+                    Item::Image { card, .. } => {
+                        picture(&self.status.artifacts_dir, &card.into(), cx)
+                    }
+                    Item::Audio(card) => {
+                        crate::pages::chat::audio::card(self, &key, &card.into(), cx)
+                    }
+                    // What a compaction wrote reads as a quiet note.
+                    Item::Notice(text) | Item::Summary(text) => {
                         notice(&key, div().meta().text_color(muted), text, cx).into_any_element()
                     }
                     Item::Error(text) => {

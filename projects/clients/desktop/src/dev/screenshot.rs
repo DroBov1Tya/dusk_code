@@ -279,7 +279,8 @@ fn act(
             let minutes: i64 = value.parse().unwrap_or(7);
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
                 chat.working = true;
-                chat.activity_boundaries.push(chat.items.len());
+                let end = chat.items.len();
+                chat.activity_boundaries.push(end);
                 chat.boundary_times
                     .push(dusk_protocol::system::now_ms() - minutes * 60_000);
                 chat.boundary_spend.push(None);
@@ -687,13 +688,17 @@ fn act(
             let image = std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, demo_png()));
             let thread_id = "shot".to_owned();
             let mut chat = Transcript::default();
-            chat.items.push(Item::User {
-                text: format!(
-                    "Here is the layout {}",
-                    dusk_protocol::thread::source_tag(name)
-                ),
-                sequence: Some(1),
-            });
+            chat.push(
+                Item::User {
+                    text: format!(
+                        "Here is the layout {}",
+                        dusk_protocol::thread::source_tag(name)
+                    ),
+                    sequence: Some(1),
+                    answered: Vec::new(),
+                },
+                0,
+            );
             ws.sent_pictures
                 .insert((thread_id.clone(), name.into()), SentPicture::Ready(image));
             ws.chats.insert(thread_id.clone(), chat);
@@ -799,7 +804,7 @@ fn act(
         }
         "fake" if value == "agentchat" => {
             // A subagent's chat with a run of steps and an answer, in the window.
-            use crate::pages::chat::transcript::{Item, Transcript};
+            use crate::pages::chat::transcript::Item;
             use dusk_protocol::thread::{Tool, ToolState};
             let step = |index: usize, name: &str, detail: &str| {
                 Item::Tool(Tool {
@@ -827,20 +832,27 @@ fn act(
                     .into(),
                 state: ToolState::Done,
             });
-            let mut inner = Transcript::default();
-            inner.items.push(Item::User {
-                text: "Add expiry to the cache".into(),
-                sequence: Some(1),
-            });
-            inner.items.push(long);
-            inner.items.push(step(2, "read_file", "src/cache.rs"));
-            inner.items.push(step(2, "search_files", "ttl"));
-            inner.items.push(step(3, "run_command", "cargo test"));
-            inner.items.push(step(4, "run_command", "cargo clippy"));
-            inner.items.push(Item::Assistant {
-                text: "Entries now expire after the time set in `ttl`; the tests pass.".into(),
-                reasoning: String::new(),
-            });
+            let mut inner = crate::pages::chat::transcript::Log::default();
+            inner.push(
+                Item::User {
+                    text: "Add expiry to the cache".into(),
+                    sequence: Some(1),
+                    answered: Vec::new(),
+                },
+                0,
+            );
+            inner.push(long, 0);
+            inner.push(step(2, "read_file", "src/cache.rs"), 0);
+            inner.push(step(2, "search_files", "ttl"), 0);
+            inner.push(step(3, "run_command", "cargo test"), 0);
+            inner.push(step(4, "run_command", "cargo clippy"), 0);
+            inner.push(
+                Item::Assistant {
+                    text: "Entries now expire after the time set in `ttl`; the tests pass.".into(),
+                    reasoning: String::new(),
+                },
+                0,
+            );
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
                 chat.agent_chats.insert("fake-agent".into(), inner);
             }
@@ -856,34 +868,50 @@ fn act(
         }
         "demo" => {
             // A chat that holds a sound card, to look at the player.
-            use crate::pages::chat::transcript::{Clip, Item, Transcript};
+            use crate::pages::chat::transcript::{Item, Transcript};
             let mut chat = Transcript::default();
-            chat.items.push(Item::User {
-                text: "Say it once more, slower".into(),
-                sequence: Some(1),
-            });
-            chat.items.push(Item::Audio(Clip {
-                id: "0192-ab".into(),
-                title: Some("scales-voice-b-revised.mp3".into()),
-                mime: "audio/mpeg".into(),
-                duration: Some(Duration::from_secs(6)),
-            }));
+            chat.push(
+                Item::User {
+                    text: "Say it once more, slower".into(),
+                    sequence: Some(1),
+                    answered: Vec::new(),
+                },
+                0,
+            );
+            chat.push(
+                Item::Audio(dusk_protocol::tools::Card {
+                    id: "0192-ab".into(),
+                    title: Some("scales-voice-b-revised.mp3".into()),
+                    mime_type: "audio/mpeg".into(),
+                    duration_ms: 6_000,
+                    kind: dusk_protocol::tools::CardKind::Audio,
+                    ..Default::default()
+                }),
+                0,
+            );
             // A sound the user sent, and work handed to a subagent with its model.
-            chat.items.push(Item::User {
-                text: format!(
-                    "Compare it with mine {}",
-                    dusk_protocol::thread::sound_tag("0192-cd", "/Users/me/voice-take.m4a")
-                ),
-                sequence: Some(2),
-            });
-            chat.items.push(Item::Tool(dusk_protocol::thread::Tool {
-                call_id: "ask-1".into(),
-                name: "ask_agent".into(),
-                detail: "Compare the two takes".into(),
-                arguments: "{}".into(),
-                output: String::new(),
-                state: dusk_protocol::thread::ToolState::Running,
-            }));
+            chat.push(
+                Item::User {
+                    text: format!(
+                        "Compare it with mine {}",
+                        dusk_protocol::thread::sound_tag("0192-cd", "/Users/me/voice-take.m4a")
+                    ),
+                    sequence: Some(2),
+                    answered: Vec::new(),
+                },
+                0,
+            );
+            chat.push(
+                Item::Tool(dusk_protocol::thread::Tool {
+                    call_id: "ask-1".into(),
+                    name: "ask_agent".into(),
+                    detail: "Compare the two takes".into(),
+                    arguments: "{}".into(),
+                    output: String::new(),
+                    state: dusk_protocol::thread::ToolState::Running,
+                }),
+                0,
+            );
             chat.apply(dusk_protocol::thread::ThreadEvent::SubagentStarted {
                 call_id: "ask-1".into(),
                 thread_id: "0000000a-fake".into(),
@@ -1166,19 +1194,23 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     );
     crate::pages::chat::pull_link::show(ws, cx);
     let mut chat = crate::pages::chat::transcript::Transcript::default();
-    chat.items = vec![
-        crate::pages::chat::transcript::Item::User {
-            text: "Where is https://github.com/example/repo/pull/12 now?".into(),
-            sequence: Some(1),
-        },
-        crate::pages::chat::transcript::Item::Assistant {
-            text: "It is open: https://github.com/example/repo/pull/12 builds on \
+    chat.extend(
+        vec![
+            crate::pages::chat::transcript::Item::User {
+                text: "Where is https://github.com/example/repo/pull/12 now?".into(),
+                sequence: Some(1),
+                answered: Vec::new(),
+            },
+            crate::pages::chat::transcript::Item::Assistant {
+                text: "It is open: https://github.com/example/repo/pull/12 builds on \
                    https://github.com/example/repo/pull/9, which is merged. A fork has its own, \
                    https://github.com/someone/fork/pull/3, which stays a plain link."
-                .into(),
-            reasoning: String::new(),
-        },
-    ];
+                    .into(),
+                reasoning: String::new(),
+            },
+        ],
+        0,
+    );
     let thread_id = ws.shown.clone().unwrap_or_else(|| "shot".to_owned());
     ws.chats.insert(thread_id.clone(), chat);
     ws.shown = Some(thread_id);

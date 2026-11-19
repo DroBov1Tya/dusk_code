@@ -30,14 +30,7 @@ pub fn render(accent: Hsla, light: Hsla) -> impl IntoElement {
 
 /// The figure, or at rest, frozen at the start of its loop, when the turn waits for the
 /// user or the person asked for less motion.
-pub fn figure(
-    // Kept for the callers in the chat rows; the loop keeps no state an ID would name.
-    _id: impl Into<ElementId>,
-    accent: Hsla,
-    light: Hsla,
-    still: bool,
-    cx: &App,
-) -> AnyElement {
+pub fn figure(accent: Hsla, light: Hsla, still: bool, cx: &App) -> AnyElement {
     if still || cx.reduce_motion() {
         div()
             .relative()

@@ -1,7 +1,5 @@
 //! The streamed completion, parsed from raw bytes into model events.
 
-use std::collections::VecDeque;
-
 use anyhow::{Result, anyhow, bail};
 use reqwest::Response;
 use serde::Deserialize;
@@ -11,58 +9,26 @@ use crate::providers::{
     cost,
     errors::{UnsupportedEffort, ended_early},
     output::{FinishReason, ModelEvent, Usage},
-    transport::{http, sse::SseDecoder},
+    transport::sse::{EventParser, SseDecoder, SseStream},
 };
 
 use super::client::error_rejects_effort_off;
 
 const DONE_MARKER: &str = "[DONE]";
 
-pub struct CompletionStream {
-    response: Response,
-    parser: CompletionParser,
-    pending: VecDeque<ModelEvent>,
-    finished: bool,
-}
+pub type CompletionStream = SseStream<CompletionParser>;
 
-impl CompletionStream {
-    pub fn new(response: Response, effort_off: bool) -> Self {
-        Self {
-            response,
-            parser: CompletionParser {
-                effort_off,
-                ..CompletionParser::default()
-            },
-            pending: VecDeque::new(),
-            finished: false,
-        }
-    }
-
-    pub async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
-        loop {
-            if let Some(event) = self.pending.pop_front() {
-                return Ok(Some(event));
-            }
-            if self.finished {
-                return Ok(None);
-            }
-            // Mark first so an error also ends the stream.
-            self.finished = true;
-            let chunk = self.response.chunk().await.map_err(http::cut)?;
-            match chunk {
-                Some(bytes) => {
-                    self.pending.extend(self.parser.feed(&bytes)?);
-                    self.finished = self.parser.done;
-                }
-                None => self.parser.finish()?,
-            }
-        }
-    }
+pub fn stream(response: Response, effort_off: bool) -> CompletionStream {
+    let parser = CompletionParser {
+        effort_off,
+        ..CompletionParser::default()
+    };
+    SseStream::new(response, parser)
 }
 
 /// Network-independent parser, so the protocol can be tested from raw bytes.
 #[derive(Default)]
-struct CompletionParser {
+pub struct CompletionParser {
     decoder: SseDecoder,
     effort_off: bool,
     finish_seen: bool,
@@ -135,25 +101,27 @@ struct CompletionDetails {
     reasoning_tokens: Option<u64>,
 }
 
-impl CompletionParser {
-    fn feed(&mut self, bytes: &[u8]) -> Result<Vec<ModelEvent>> {
-        let mut events = Vec::new();
-        for data in self.decoder.feed(bytes)? {
-            if self.done {
-                break;
+impl EventParser for CompletionParser {
+    fn decoder(&mut self) -> &mut SseDecoder {
+        &mut self.decoder
+    }
+
+    fn parse(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
+        if data == DONE_MARKER {
+            // Some servers end with [DONE] alone; it still means the answer is whole.
+            let mut events = Vec::new();
+            if !self.finish_seen {
+                self.finish_seen = true;
+                events.push(ModelEvent::Finished(FinishReason::Stop));
             }
-            if data == DONE_MARKER {
-                // Some servers end with [DONE] alone; it still means the answer is whole.
-                if !self.finish_seen {
-                    self.finish_seen = true;
-                    events.push(ModelEvent::Finished(FinishReason::Stop));
-                }
-                self.finish()?;
-                break;
-            }
-            events.extend(self.parse_chunk(&data)?);
+            self.finish()?;
+            return Ok(events);
         }
-        Ok(events)
+        self.parse_chunk(data)
+    }
+
+    fn done(&self) -> bool {
+        self.done
     }
 
     /// The model is done once it reported a finish reason or `[DONE]`; EOF before either is
@@ -165,7 +133,9 @@ impl CompletionParser {
         }
         Ok(())
     }
+}
 
+impl CompletionParser {
     fn parse_chunk(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
         // Upstream payloads can echo input; never copy them into errors.
         let chunk: Chunk = serde_json::from_str(data)

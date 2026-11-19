@@ -18,6 +18,7 @@ mod turn;
 mod wait;
 
 pub use resume::{Decision, Recovered};
+pub(crate) use turn::Admit;
 
 use super::Stop;
 use crate::plugins::Hooks;

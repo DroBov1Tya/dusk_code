@@ -77,6 +77,15 @@ impl Server {
             SettingsRequest::PluginEnabled { name, enabled } => {
                 runtime.set_plugin_enabled(&name, enabled)?;
             }
+            SettingsRequest::SetContractPlugin {
+                contract,
+                host,
+                plugin,
+            } => {
+                runtime.set_contract_plugin(&contract, &host, &plugin)?;
+                // Read again under the new routing, not at the next period.
+                self.pulls.all_due();
+            }
             SettingsRequest::PluginSecret { plugin, key, value } => {
                 runtime.set_plugin_secret(&plugin, &key, &value.0)?;
             }

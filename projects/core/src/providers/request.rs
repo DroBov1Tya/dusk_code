@@ -12,6 +12,31 @@ pub struct Picture {
     pub base64: String,
 }
 
+impl Picture {
+    /// The picture as a `data:` URL, as the OpenAI protocols take it.
+    pub fn data_url(&self) -> String {
+        format!("data:{};base64,{}", self.mime_type, self.base64)
+    }
+}
+
+/// A call's arguments as JSON text; arguments that were not JSON go back as the model
+/// wrote them.
+pub fn arguments_text(call: &ToolCall) -> String {
+    match &call.arguments {
+        Value::String(raw) => raw.clone(),
+        arguments => arguments.to_string(),
+    }
+}
+
+/// A call's arguments as an object, for protocols that take nothing else; arguments
+/// that were not JSON go back as none.
+pub fn arguments_object(call: &ToolCall) -> Value {
+    match &call.arguments {
+        Value::Object(_) => call.arguments.clone(),
+        _ => Value::Object(serde_json::Map::new()),
+    }
+}
+
 /// One message as the model sees it: role and text, without core metadata.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]

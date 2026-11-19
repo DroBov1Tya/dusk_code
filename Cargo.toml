@@ -31,16 +31,16 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "env-filter"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "macros", "migrate"] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 # The system keychain; exact, since it holds the keys of every provider.
 keyring = "=4.2.0"
 # The sounds a chat plays, and the microphone it dictates from.
 rodio = { version = "=0.23.0", default-features = false, features = ["playback", "recording", "flac", "mp3", "mp4", "vorbis", "wav"] }
 # The pseudo-terminal of the user's own shell; exact, since it starts processes.
 portable-pty = "=0.9.0"
-nix = { version = "0.31", default-features = false, features = ["signal"] }
+nix = { version = "0.31", default-features = false, features = ["poll", "signal", "socket", "uio"] }
 ratatui = "0.30.2"
-base64 = "0.22.1"
+base64 = "0.23.1"
 ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 futures = "0.3"

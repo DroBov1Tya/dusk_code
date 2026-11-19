@@ -90,6 +90,25 @@ fn installed(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
 }
 
 impl Workspace {
+    /// Sends the user's choice of `plugin` for `host` of the forge contract.
+    pub fn use_for_host(&mut self, plugin: &str, host: &str, cx: &mut Context<Self>) {
+        let (plugin, host) = (plugin.to_owned(), host.to_owned());
+        self.core.call(
+            cx,
+            move |client| async move {
+                client
+                    .settings()
+                    .contract_plugin("forge", &host, &plugin)
+                    .await
+            },
+            |ws, result, cx| {
+                if let Err(error) = result {
+                    ws.fail(error, cx);
+                }
+            },
+        );
+    }
+
     fn plugin_enabled(&mut self, name: &str, on: bool, cx: &mut Context<Self>) {
         let name = name.to_owned();
         self.core.call(

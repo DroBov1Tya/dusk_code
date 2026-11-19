@@ -81,15 +81,10 @@ pub(super) fn append_entry(
     };
     // A picture stays in the thread whether or not its step is folded.
     if transcript.images.enabled()
-        && let Entry::Tool {
-            call,
-            result: Some(result),
-            ..
-        } = entry
-        && call.name == "display_image"
-        && !result.is_error
+        && let Entry::Tool { tool, pictures, .. } = entry
+        && tool.state != dusk_protocol::thread::ToolState::Failed
     {
-        for artifact in &result.artifacts {
+        for artifact in pictures {
             let (card, preview) =
                 crate::ui::text::image_card::render(transcript, artifact, text_width);
             if let Some(preview) = preview {
@@ -130,7 +125,7 @@ pub(super) fn activity(transcript: &Transcript, index: usize) -> Vec<Line<'stati
     let failed = transcript
         .run(index)
         .filter(
-            |entry| matches!(entry, Entry::Tool { result: Some(result), .. } if result.is_error),
+            |entry| matches!(entry, Entry::Tool { tool, .. } if tool.state == dusk_protocol::thread::ToolState::Failed),
         )
         .count();
     let said = match steps {
@@ -222,7 +217,9 @@ pub(super) fn entry_lines(
                 indent(body, &format!("   {GUTTER} "))
             })
         }
-        Entry::Tool { call, result, open } => tool(call, result.as_ref(), *open, width, live),
+        Entry::Tool {
+            tool: step, open, ..
+        } => tool(step, *open, width, live),
         // Drawn from the whole run in `append_entry`.
         Entry::Activity { .. } => Vec::new(),
         Entry::Summary { text, open } => {
