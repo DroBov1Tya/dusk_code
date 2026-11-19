@@ -20,6 +20,7 @@ use super::{note, retry_row, turn_spend};
 use crate::{
     catalog::SkillChange,
     model::{ModelEvent, ToolCall},
+    plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
         Block, JobResult, Pin, Task, ThreadEvent, ThreadTokens, TurnStatus, TurnWait, agent_name,
     },
@@ -60,6 +61,9 @@ pub enum Item<L = Infallible> {
     Tool(Tool),
     /// What a `show` call put in the chat, in place of that call's step.
     Block(Block),
+    /// The Workshop listings a `suggest_from_workshop` call put in the chat, in place of
+    /// that call's step.
+    Suggestion(Suggestion),
     /// A picture a tool or a message carries. `aside`: a picture the model took to see,
     /// such as a screenshot, which a client may keep beside the chat instead of in it;
     /// those `display_image` shows and those of a message are not aside.
@@ -652,7 +656,9 @@ impl<L> ChatLog<L> {
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => self.start_tool(&call, ToolState::Running, now),
             ThreadEvent::ToolFinished { call_id, result } => {
-                if !self.show_block(&call_id, &result.content)
+                let shown = !result.is_error && self.suggestion(&call_id, &result.content);
+                if !shown
+                    && !self.show_block(&call_id, &result.content)
                     && let Some(index) = self.tool_index(&call_id)
                 {
                     if let Item::Tool(tool) = &mut self.items[index] {
@@ -900,6 +906,24 @@ impl<L> ChatLog<L> {
             return false;
         };
         self.items[index] = Item::Block(block);
+        self.touch(index);
+        self.reshape();
+        true
+    }
+
+    /// Puts the card of a finished `suggest_from_workshop` call in place of its step,
+    /// when `result` holds one; whether it did.
+    fn suggestion(&mut self, call_id: &str, result: &str) -> bool {
+        let Some(index) = self.tool_index(call_id) else {
+            return false;
+        };
+        if !matches!(&self.items[index], Item::Tool(tool) if tool.name == SUGGEST_TOOL) {
+            return false;
+        }
+        let Some(card) = Suggestion::read(result) else {
+            return false;
+        };
+        self.items[index] = Item::Suggestion(card);
         self.touch(index);
         self.reshape();
         true

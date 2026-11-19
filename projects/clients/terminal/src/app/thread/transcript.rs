@@ -501,7 +501,7 @@ impl Transcript {
                 return;
             }
             // Sounds, and pictures the model took to see, are not drawn here.
-            Item::Image { .. } | Item::Audio(_) => return,
+            Item::Image { .. } | Item::Audio(_) | Item::Suggestion(_) => return,
             Item::Notice(text) => Entry::Notice {
                 text: text.clone(),
                 tone: Tone::Info,

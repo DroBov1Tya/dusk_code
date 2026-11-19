@@ -429,6 +429,7 @@ fn item_view(
             view! { <div class="msg assistant"><Markdown text=text /></div> }.into_any()
         }
         Item::Block(block) => view! { <ShownBlock block id chat thread read_only /> }.into_any(),
+        Item::Suggestion(_) => ().into_any(),
         Item::Image { card, .. } => view! { <ImageCard card /> }.into_any(),
         Item::Audio(card) => view! { <AudioCard card /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),
