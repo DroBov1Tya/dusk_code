@@ -6,9 +6,9 @@ use dusk_protocol::{
     config::ApprovalPolicy,
     model::{ModelEvent, ToolCall},
     thread::{
-        AgentState, Block, JobResult, Message, MessageRole, Note, Pin, Retry, RetryRow, Task,
-        ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, agent_name, clip, note,
-        retry_row, turn_spend,
+        AgentState, Block, JobResult, LiveTurn, Message, MessageRole, Note, Pin, Task, ThreadEvent,
+        ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, Work, WorkKind, activity, agent_name,
+        clip, note, turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind, Question},
 };
@@ -78,6 +78,8 @@ pub struct Agent {
 pub struct ChatData {
     pub items: Vec<Entry>,
     pub working: bool,
+    /// The live signals the working row's kind is chosen from.
+    pub live: LiveTurn,
     /// Agents below the chat are at work, as the core says; the sidebar shows it working.
     pub agents_working: bool,
     /// When the running turn began, in Unix milliseconds of the core's clock.
@@ -88,8 +90,6 @@ pub struct ChatData {
     pub spend: Option<TurnSpend>,
     /// The context is being compacted.
     pub compacting: bool,
-    /// The model call being tried again and when its event came, in Unix milliseconds.
-    pub retry: Option<(Retry, i64)>,
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
     pub cost: Option<String>,
@@ -272,17 +272,13 @@ impl ChatData {
 
     pub fn apply(&mut self, event: ThreadEvent) {
         self.clock = now_ms();
+        self.live.apply(&event, self.clock);
         self.track_turn(&event);
         if matches!(
             event,
             ThreadEvent::TurnFinished(_) | ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_)
         ) {
             self.moved += 1;
-        }
-        match retry_row(&event) {
-            Some(RetryRow::Show(retry)) => self.retry = Some((retry, self.clock)),
-            Some(RetryRow::Clear) => self.retry = None,
-            None => {}
         }
         // The row is the whole of a retry: it leaves no notice.
         if matches!(event, ThreadEvent::Retrying { .. }) {
@@ -449,11 +445,28 @@ impl ChatData {
 }
 
 impl ChatData {
-    /// The retry row's words at `now` in Unix milliseconds; none when no call is tried
-    /// again.
-    pub fn retry_line(&self, now: i64) -> Option<String> {
-        let (retry, arrived) = self.retry.as_ref()?;
-        Some(retry.line(u64::try_from(now.saturating_sub(*arrived)).unwrap_or(0)))
+    /// What the chat does at `now`, as the protocol tells the kinds apart; none when
+    /// nothing runs. A chat marked as working before its turn's first event thinks.
+    pub fn work(&self, now: i64) -> Option<Work> {
+        activity(&self.live, now).or_else(|| {
+            self.working.then(|| Work {
+                kind: WorkKind::Thinking,
+                label: "Thinking".to_owned(),
+                stalled: false,
+            })
+        })
+    }
+
+    /// The entry whose text grows right now: the answer being written, for the caret
+    /// at its end.
+    pub fn writing(&self) -> Option<u64> {
+        let writes = self
+            .work(now_ms())
+            .is_some_and(|work| work.kind == WorkKind::Writing);
+        match self.items.last() {
+            Some(entry) if writes && matches!(entry.item, Item::Assistant { .. }) => Some(entry.id),
+            _ => None,
+        }
     }
 }
 

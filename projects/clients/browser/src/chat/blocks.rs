@@ -170,7 +170,8 @@ pub fn Transcript(
             <For each=pending key=|(at, text)| (*at, text.clone()) let:pair>
                 <div class="msg user queued"><div class="bubble">{pair.1}</div><div class="muted">"queued"</div></div>
             </For>
-            <Show when=move || chat.with(|c| c.working)>
+            // Agents below the chat may work on after its own turn: the row stays for them.
+            <Show when=move || chat.with(|c| c.work(super::data::now_ms()).is_some())>
                 <Working chat />
             </Show>
         </div>
@@ -241,7 +242,9 @@ fn item_view(entry: Entry, chat: Chat, thread: Option<String>, read_only: bool) 
         .into_any(),
         Item::Assistant { text, reasoning } => {
             let fork = fork_button(id, chat, thread.clone());
-            assistant_view(text, reasoning, fork).into_any()
+            // The answer being written has a soft caret at its growing end.
+            let writing = Signal::derive(move || chat.with(|c| c.writing() == Some(id)));
+            assistant_view(text, reasoning, fork, writing).into_any()
         }
         Item::Tool(_) => ().into_any(),
         Item::Block(block) => view! { <ShownBlock block id chat thread read_only /> }.into_any(),
@@ -278,7 +281,12 @@ fn fork_button(id: u64, chat: Chat, thread: Option<String>) -> Option<impl IntoV
     })
 }
 
-fn assistant_view(text: String, reasoning: String, fork: Option<impl IntoView>) -> impl IntoView {
+fn assistant_view(
+    text: String,
+    reasoning: String,
+    fork: Option<impl IntoView>,
+    writing: Signal<bool>,
+) -> impl IntoView {
     let has_reasoning = !reasoning.is_empty();
     let speak_text = text.clone();
     let copy_text = text.clone();
@@ -292,7 +300,7 @@ fn assistant_view(text: String, reasoning: String, fork: Option<impl IntoView>) 
         });
     };
     view! {
-        <div class="msg assistant">
+        <div class="msg assistant" class:writing=move || writing.get()>
             {has_reasoning.then(|| view! {
                 <details class="reasoning">
                     <summary>"Thinking"</summary>
@@ -335,7 +343,12 @@ pub(super) fn copy(text: &str) {
 /// and under it every step, thought and remark.
 #[component]
 fn Turn(entries: Vec<Entry>, took: Option<i64>, chat: Chat) -> impl IntoView {
-    let running = took.is_none();
+    // A step that runs marks the turn's line; what else the turn does, the row below says.
+    let running = took.is_none()
+        && chat.with_untracked(|c| c.working)
+        && entries
+            .iter()
+            .any(|e| matches!(&e.item, Item::Tool(t) if t.state == ToolState::Running));
     let failed = entries
         .iter()
         .filter(|e| matches!(&e.item, Item::Tool(t) if t.state == ToolState::Failed))
@@ -352,6 +365,7 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>, chat: Chat) -> impl IntoView {
             })
             .unwrap_or_else(|| "Thinking".to_owned()),
     };
+    let turn_runs = took.is_none() && chat.with_untracked(|c| c.working);
     let names = summary_line(&entries);
     // A folded turn still shows what its steps changed in skills, as the desktop does.
     let calls: Vec<String> = entries
@@ -364,13 +378,13 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>, chat: Chat) -> impl IntoView {
     view! {
         <details class="steps">
             <summary>
-                {running.then(|| view! { <span class="spinner"></span> })}
+                {running.then(|| view! { <span class="act-slot" aria-hidden="true"><span class="act-live"></span></span> })}
                 <span>{title}</span>
                 <span class="muted">{names}</span>
                 {(failed > 0).then(|| view! { <span class="bad">{format!("{failed} failed")}</span> })}
             </summary>
             {entries.into_iter().map(|entry| match entry.item {
-                Item::Tool(tool) => view! { <ToolStep tool /> }.into_any(),
+                Item::Tool(tool) => view! { <ToolStep tool turn_runs /> }.into_any(),
                 Item::Assistant { text, reasoning } => view! {
                     <div class="step-said">
                         {(!reasoning.trim().is_empty()).then(|| view! {
@@ -416,8 +430,16 @@ fn summary_line(steps: &[Entry]) -> String {
         .join(", ")
 }
 
+/// A step and its state at the end of its line: a live mark while it runs, a check once
+/// it is done, a cross when it failed. A step its turn left running has no mark.
 #[component]
-fn ToolStep(tool: Tool) -> impl IntoView {
+fn ToolStep(tool: Tool, turn_runs: bool) -> impl IntoView {
+    let mark = match tool.state {
+        ToolState::Running if turn_runs => view! { <span class="act-live"></span> }.into_any(),
+        ToolState::Running => ().into_any(),
+        ToolState::Done => view! { <Icon name=IconName::Check /> }.into_any(),
+        ToolState::Failed => view! { <Icon name=IconName::Close /> }.into_any(),
+    };
     let state_class = match tool.state {
         ToolState::Running => "running",
         ToolState::Done => "done",
@@ -430,6 +452,8 @@ fn ToolStep(tool: Tool) -> impl IntoView {
                     {dusk_protocol::tools::phrase(&tool.name, &tool.call_id)}
                 </span>
                 <span class="muted">{tool.detail.clone()}</span>
+                {(tool.state == ToolState::Failed).then(|| view! { <span class="tool-failed">"Failed"</span> })}
+                <span class="tool-mark" aria-hidden="true">{mark}</span>
             </summary>
             <div class="muted mono">{tool.name.clone()}</div>
             <pre class="tool-args">{tool.arguments.clone()}</pre>

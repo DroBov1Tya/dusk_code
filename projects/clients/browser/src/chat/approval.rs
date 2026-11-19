@@ -69,6 +69,7 @@ fn answer_question(
         c.answers.push(reply);
         c.question = c.questions_waiting.pop_front();
         if c.question.is_none() {
+            c.live.answered();
             all = Some(std::mem::take(&mut c.answers).join("\n\n"));
         }
     });
@@ -127,6 +128,7 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
                 c.answers.push(reply);
                 c.questions_waiting.clear();
                 c.question = None;
+                c.live.answered();
                 all = std::mem::take(&mut c.answers).join("\n\n");
             });
             app.send(id_decline.clone(), all, false, Vec::new());

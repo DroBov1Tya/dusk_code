@@ -152,28 +152,35 @@ fn one_retry_row_is_replaced_counts_down_and_goes_when_the_call_answers() {
         max_attempts: Some(3),
     };
     let mut chat = ChatData::default();
+    chat.apply(ThreadEvent::TurnStarted(dusk_protocol::thread::Turn {
+        turn_id: "t".into(),
+        thread_id: "x".into(),
+        last_sequence: 1,
+        response_message_id: None,
+        status: dusk_protocol::thread::TurnStatus::Running,
+        started_at: 0,
+        finished_at: None,
+        error_message: None,
+        waiting: None,
+        steps: 0,
+        tokens: 0,
+        cost_micro_usd: 0,
+    }));
     chat.apply(retrying(1));
     chat.apply(retrying(2));
-    // No notice per attempt; the row holds the newest.
+    // No notice per attempt; the working row holds the newest.
     assert!(chat.items.is_empty());
-    let line = chat.retry_line(0).expect("a row");
+    let line = |now| chat.work(now).expect("a row").label;
     assert!(
-        line.ends_with("attempt 3 of 3 \u{00B7} next in 8 s"),
-        "{line}"
+        line(0).ends_with("attempt 3 of 3 \u{00B7} next in 8 s"),
+        "{}",
+        line(0)
     );
-    assert!(
-        chat.retry_line(7_500)
-            .expect("a row")
-            .ends_with("next in 1 s")
-    );
-    assert!(
-        chat.retry_line(8_000)
-            .expect("a row")
-            .ends_with("trying now")
-    );
+    assert!(line(7_500).ends_with("next in 1 s"));
+    assert!(line(8_000).ends_with("trying now"));
 
     chat.apply(ThreadEvent::Model(ModelEvent::Text("hi".into())));
-    assert_eq!(chat.retry_line(0), None);
+    assert_eq!(chat.work(0).expect("a row").label, "Writing");
 }
 
 fn show(id: &str, arguments: serde_json::Value) -> ToolCall {
