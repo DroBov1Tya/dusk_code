@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Version control settings; clients show this section as "Version control".
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VersionControl {

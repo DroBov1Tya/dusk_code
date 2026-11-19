@@ -10,6 +10,7 @@ pub const MAX_PINS: usize = 8;
 /// The longest excerpt of a pin.
 pub const PIN_CHARS: usize = 120;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pin {
     pub message_id: String,

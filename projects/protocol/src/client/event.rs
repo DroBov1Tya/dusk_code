@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::thread::ThreadEvent;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
     Thread {

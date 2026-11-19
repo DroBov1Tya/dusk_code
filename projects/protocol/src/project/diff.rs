@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::project::ChangeKind;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiffStat {
     pub files: u64,
@@ -11,6 +12,7 @@ pub struct DiffStat {
 }
 
 /// One changed file as a reader of a diff sees it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileDiff {
     /// Relative to the project folder.
@@ -23,6 +25,7 @@ pub struct FileDiff {
     pub hunks: Vec<Hunk>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hunk {
     /// The `@@ -a,b +c,d @@` line, with the function git names after it.
@@ -30,6 +33,7 @@ pub struct Hunk {
     pub lines: Vec<DiffLine>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiffLine {
     pub kind: DiffKind,
@@ -39,6 +43,7 @@ pub struct DiffLine {
     pub text: String,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiffKind {
     Context,

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 /// What to do in a saved project's repository. Paths are relative to the project folder;
 /// branch names are letters, digits and `-_./`. Nothing here forces, amends or prunes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GitRequest {
     /// A new branch from `base`, or from the current commit. With `switch` the work tree

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::tools::WindowAccess;
 /// What a tool asks to do.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Request {
     /// A path outside the working directory and the workspace.
@@ -59,6 +60,7 @@ impl Request {
 }
 
 /// A request as the client sees it; `id` is what its answer names.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalRequest {
     pub id: u64,
@@ -74,6 +76,7 @@ pub struct ApprovalRequest {
 }
 
 /// One step of a batch as the user sees it before saying yes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalStep {
     /// Its place in the batch, from 1.
@@ -125,6 +128,7 @@ impl ApprovalRequest {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Decision {
     Once,

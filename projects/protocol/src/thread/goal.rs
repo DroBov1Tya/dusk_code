@@ -4,6 +4,7 @@ use anyhow::{Result, bail, ensure};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GoalStatus {
     Active,
@@ -11,6 +12,7 @@ pub enum GoalStatus {
     Done,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Goal {
     pub thread_id: String,

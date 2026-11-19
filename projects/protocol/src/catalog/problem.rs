@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A node that could not be read, or a link to a node that is not there.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Problem {
     pub node: String,

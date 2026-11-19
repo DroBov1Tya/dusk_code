@@ -32,6 +32,7 @@ const MAX_CLIENT_NAME: usize = 40;
 /// newer client that sends a claim it does not know still gets `Refused { Version }`. A
 /// client never acts on a `Refused` that came before the core's proof beyond showing it:
 /// anyone on the socket can send one.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
     pub protocol: u32,
@@ -73,6 +74,7 @@ impl Hello {
 }
 
 /// Which secret a client says it holds.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Claim {
     /// The core's own key, for the user's own apps.
@@ -82,6 +84,7 @@ pub enum Claim {
 }
 
 /// The client's second line: its own proof, and what it wants.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Proof {
     pub proof: String,
@@ -89,7 +92,9 @@ pub struct Proof {
 }
 
 /// What a client wants once it has proved itself.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", schemars(extend("x-open" = true)))]
 pub enum Then {
     Attach,
     /// Stop the core for everyone; only with the key.
@@ -97,11 +102,13 @@ pub enum Then {
     /// Ask the owner's user to restart the core for a newer app; only with the key.
     Handover,
     /// A wish this core does not know, from a newer client; the core refuses it.
+    #[cfg_attr(feature = "schema", schemars(skip))]
     #[serde(other)]
     Unknown,
 }
 
 /// Every line the core sends during the handshake.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Greeting {
     /// The answer to a `Hello` that can go on: the core proves it holds the secret.
@@ -119,6 +126,7 @@ pub enum Greeting {
 }
 
 /// What a client learns about the core it reached.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreInfo {
     /// The core's `PROTOCOL_VERSION`.
@@ -132,17 +140,21 @@ pub struct CoreInfo {
 }
 
 /// Which app started the core.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", schemars(extend("x-open" = true)))]
 pub enum OwnerKind {
     Gui,
     Tui,
     Serve,
     /// An owner a newer core knows and this client does not.
+    #[cfg_attr(feature = "schema", schemars(skip))]
     #[serde(other)]
     Unknown,
 }
 
 /// How much the core is doing, so a client can tell whether a restart would hurt.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Busy {
     pub clients: u32,
@@ -150,7 +162,9 @@ pub struct Busy {
 }
 
 /// Why the core will not go on with a client.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", schemars(extend("x-open" = true)))]
 pub enum Refusal {
     Version,
     Auth,
@@ -160,6 +174,7 @@ pub enum Refusal {
     Stopping,
     Declined,
     /// A reason a newer core knows and this client does not.
+    #[cfg_attr(feature = "schema", schemars(skip))]
     #[serde(other)]
     Unknown,
 }
