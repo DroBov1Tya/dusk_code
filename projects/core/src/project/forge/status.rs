@@ -285,11 +285,11 @@ impl RawPull {
             added: self.additions,
             removed: self.deletions,
             files: self.changed_files,
-            checks_url: if url.is_empty() {
-                String::new()
-            } else {
-                format!("{url}/checks")
-            },
+            // Without a query or fragment, and held to the same link rules.
+            checks_url: link(&format!(
+                "{}/checks",
+                url.split(['?', '#']).next().unwrap_or("")
+            )),
             url,
             checks: roll_up(&self.status_check_rollup),
         }
@@ -443,6 +443,15 @@ mod tests {
         );
         assert_eq!(pull.checks.state, Some(CheckState::Failing));
         assert_eq!(pull.checks_url, "https://github.com/o/r/pull/13/checks");
+        let pull_at = |url: &str| {
+            let text = format!(r#"[{{"number":3,"url":"{url}"}}]"#);
+            parse(&text, 1).unwrap().remove(0).0
+        };
+        let queried = pull_at("https://github.com/o/r/pull/3?x=1#top");
+        assert_eq!(queried.checks_url, "https://github.com/o/r/pull/3/checks");
+        let long = format!("https://github.com/o/r/pull/3/{}", "a".repeat(465));
+        assert!(long.len() <= 500 && pull_at(&long).checks_url.is_empty());
+        assert!(pull_at("").checks_url.is_empty());
 
         // Another number, another repository, or a list in place of one: no card.
         assert!(one(text, &r, 12).is_none());
