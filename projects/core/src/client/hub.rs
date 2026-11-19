@@ -66,7 +66,8 @@ impl Hub {
             scope: scope.clone(),
             queue,
         });
-        let status = match scope.reads_status() {
+        let reads_status = scope.reads_status();
+        let status = match reads_status {
             true => self.status.clone(),
             false => self.blank.subscribe(),
         };
@@ -79,6 +80,7 @@ impl Hub {
         Ok(Client {
             events,
             status,
+            reads_status,
             id,
             hub: Arc::clone(self),
         })

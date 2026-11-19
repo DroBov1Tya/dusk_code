@@ -192,7 +192,7 @@ impl Scope {
 
     /// Whether the client gets the status: it is settings-level state, so only a scope
     /// that may read the settings anyway has it.
-    pub(super) fn reads_status(&self) -> bool {
+    pub fn reads_status(&self) -> bool {
         match &self.0 {
             Kind::Full => true,
             Kind::Web => WEB.contains(&Area::Settings),

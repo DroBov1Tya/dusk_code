@@ -1,28 +1,21 @@
 //! One browser's stream: its requests go to the core as any client's would, and the
 //! responses, events and status come back as frames.
 
+use crate::stream::{self, Frames, SEND_TIMEOUT, SIGNED_OUT, pump};
 use anyhow::{Context, Result};
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use dusk_core::client::{Client, Hub, Scope};
-use dusk_protocol::client::{
-    Hello, Request, RequestFrame, Response, ServerFrame, VoiceRequest, WorkRequest,
-};
-use std::{sync::Arc, time::Duration};
-use tokio::sync::{Semaphore, mpsc, watch};
+use dusk_protocol::client::{Event, Hello};
+use std::sync::Arc;
+use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
 
-/// The largest frame a browser may send. A recording to transcribe is the big one.
-pub const MAX_FRAME: usize = 32 * 1024 * 1024;
+/// The largest frame a browser may send.
+pub const MAX_FRAME: usize = stream::MAX_FRAME;
 
-/// Requests of one browser the core works on at once.
-const IN_FLIGHT: usize = 32;
-
-/// The WebSocket close code for data the server does not take.
+/// The WebSocket close codes for data the server does not take, and for a session over.
 const UNSUPPORTED: u16 = 1003;
 const POLICY: u16 = 1008;
-
-/// How often an open stream is checked for a live session.
-const SESSION_CHECK: Duration = Duration::from_secs(20);
 
 /// Carries one browser until it leaves, the core stops or `stop` fires.
 pub async fn run(
@@ -33,7 +26,8 @@ pub async fn run(
 ) {
     match attach(&hub) {
         Ok((client, events)) => {
-            if let Err(error) = carry(&mut socket, client, events, &mut stop, &signed_in).await {
+            let mut frames = Socket(&mut socket);
+            if let Err(error) = pump(&mut frames, client, events, &mut stop, &signed_in).await {
                 debug!("web stream ended: {error:#}");
             }
         }
@@ -42,134 +36,58 @@ pub async fn run(
     let _ = tokio::time::timeout(SEND_TIMEOUT, socket.send(Message::Close(None))).await;
 }
 
-fn attach(
-    hub: &Arc<Hub>,
-) -> Result<(
-    Arc<Client>,
-    mpsc::UnboundedReceiver<dusk_protocol::client::Event>,
-)> {
+fn attach(hub: &Arc<Hub>) -> Result<(Arc<Client>, mpsc::UnboundedReceiver<Event>)> {
     // What a browser may ask is the core's to check: it is attached with the web scope.
     let mut client = hub.attach(Hello::new("web"), Scope::web())?;
     let events = std::mem::replace(&mut client.events, mpsc::unbounded_channel().1);
     Ok((Arc::new(client), events))
 }
 
-async fn carry(
-    socket: &mut WebSocket,
-    client: Arc<Client>,
-    mut events: mpsc::UnboundedReceiver<dusk_protocol::client::Event>,
-    stop: &mut watch::Receiver<bool>,
-    signed_in: &impl Fn() -> bool,
-) -> Result<()> {
-    let mut recheck = tokio::time::interval(SESSION_CHECK);
-    let mut status = client.status.clone();
-    let (replies, mut answers) = mpsc::unbounded_channel::<ServerFrame>();
-    let permits = Arc::new(Semaphore::new(IN_FLIGHT));
-    let first = ServerFrame::Status(Box::new(status.borrow_and_update().clone()));
-    send(socket, &first).await?;
-    loop {
-        tokio::select! {
-            _ = stop.changed() => return Ok(()),
-            _ = recheck.tick() => {
-                // Signing out, or a session that ran out, ends the stream too.
-                if !signed_in() {
-                    return refuse(socket, POLICY, "signed out").await;
+/// A browser's WebSocket as text frames.
+struct Socket<'a>(&'a mut WebSocket);
+
+impl Frames for Socket<'_> {
+    async fn next(&mut self) -> Result<Option<String>> {
+        loop {
+            let Some(message) = self.0.recv().await else {
+                return Ok(None);
+            };
+            match message.context("the stream broke")? {
+                Message::Text(text) => return Ok(Some(text.as_str().to_owned())),
+                Message::Binary(_) => {
+                    self.close("text frames only").await;
+                    return Ok(None);
                 }
-            }
-            message = socket.recv() => {
-                let Some(message) = message else { return Ok(()) };
-                match message.context("the stream broke")? {
-                    Message::Text(text) => match serde_json::from_str::<RequestFrame>(&text) {
-                        Ok(frame) => dispatch(frame, text.len(), &client, &permits, &replies),
-                        Err(error) => {
-                            return refuse(socket, UNSUPPORTED, &format!("not a request: {error}")).await;
-                        }
-                    },
-                    Message::Binary(_) => return refuse(socket, UNSUPPORTED, "text frames only").await,
-                    Message::Close(_) => return Ok(()),
-                    Message::Ping(_) | Message::Pong(_) => {}
-                }
-            }
-            Some(frame) = answers.recv() => send(socket, &frame).await?,
-            event = events.recv() => match event {
-                Some(event) => send(socket, &ServerFrame::Event(event)).await?,
-                None => return Ok(()),
-            },
-            changed = status.changed() => {
-                changed.context("the core has stopped")?;
-                let now = status.borrow_and_update().clone();
-                send(socket, &ServerFrame::Status(Box::new(now))).await?;
+                Message::Close(_) => return Ok(None),
+                Message::Ping(_) | Message::Pong(_) => {}
             }
         }
     }
-}
 
-/// Runs a request on its own task, so a slow one does not hold the stream.
-fn dispatch(
-    frame: RequestFrame,
-    size: usize,
-    client: &Arc<Client>,
-    permits: &Arc<Semaphore>,
-    replies: &mpsc::UnboundedSender<ServerFrame>,
-) {
-    let RequestFrame { id, request } = frame;
-    if too_large(&request, size) {
-        let response = Response::Error("the request is too large".to_owned());
-        let _ = replies.send(ServerFrame::Response { id, response });
-        return;
+    async fn send(&mut self, text: String) -> Result<()> {
+        Ok(self.0.send(Message::Text(text.into())).await?)
     }
-    let Ok(permit) = Arc::clone(permits).try_acquire_owned() else {
-        let response = Response::Error("too many requests at once".to_owned());
-        let _ = replies.send(ServerFrame::Response { id, response });
-        return;
-    };
-    let (client, replies) = (Arc::clone(client), replies.clone());
-    tokio::spawn(async move {
-        let response = client.request(request).await;
-        drop(permit);
-        let _ = replies.send(ServerFrame::Response { id, response });
-    });
-}
 
-/// The size of an ordinary request; only a recording to transcribe may be larger.
-const MAX_REQUEST: usize = 1024 * 1024;
-
-/// Whether the frame is over the ordinary size. Sound and pictures are bytes: the core
-/// caps a picture, the frame cap the rest.
-fn too_large(request: &Request, size: usize) -> bool {
-    let bytes = matches!(
-        request,
-        Request::Voice(VoiceRequest::Transcribe { .. })
-            | Request::Work(WorkRequest::UploadPicture { .. })
-    );
-    !bytes && size > MAX_REQUEST
-}
-
-/// How long a browser may take to accept one frame before it is let go: a stalled one
-/// would otherwise make the events queue up in memory without end.
-const SEND_TIMEOUT: Duration = Duration::from_secs(15);
-
-async fn send(socket: &mut WebSocket, frame: &ServerFrame) -> Result<()> {
-    let text = serde_json::to_string(frame).context("cannot write a frame")?;
-    tokio::time::timeout(SEND_TIMEOUT, socket.send(Message::Text(text.into())))
-        .await
-        .context("the browser is too slow")?
-        .context("the browser is gone")
-}
-
-async fn refuse(socket: &mut WebSocket, code: u16, reason: &str) -> Result<()> {
-    let frame = CloseFrame {
-        code,
-        reason: reason.to_owned().into(),
-    };
-    let _ = socket.send(Message::Close(Some(frame))).await;
-    Ok(())
+    async fn close(&mut self, reason: &str) -> () {
+        let code = if reason == SIGNED_OUT {
+            POLICY
+        } else {
+            UNSUPPORTED
+        };
+        let frame = CloseFrame {
+            code,
+            reason: reason.to_owned().into(),
+        };
+        let _ = tokio::time::timeout(SEND_TIMEOUT, self.0.send(Message::Close(Some(frame)))).await;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stream::{MAX_REQUEST, too_large};
     use dusk_protocol::client::{CatalogRequest, ProjectRequest, TerminalRequest, ThreadRequest};
+    use dusk_protocol::client::{Request, VoiceRequest};
 
     /// Whether the core refuses the request of a browser.
     fn refused(request: &Request) -> bool {

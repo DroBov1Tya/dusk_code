@@ -21,6 +21,9 @@ pub struct Client {
     pub events: mpsc::UnboundedReceiver<Event>,
     /// The latest status; `changed` wakes when the core sends a new one.
     pub status: watch::Receiver<Status>,
+    /// Whether `status` is the core's: false when the scope may not read it, and the
+    /// status is then a blank that never changes.
+    pub(super) reads_status: bool,
     pub(super) id: ClientId,
     pub(super) hub: Arc<Hub>,
 }
@@ -32,6 +35,11 @@ impl Drop for Client {
 }
 
 impl Client {
+    /// Whether `status` is the core's; false when it is a blank that never changes.
+    pub fn reads_status(&self) -> bool {
+        self.reads_status
+    }
+
     pub fn threads(&self) -> Threads<'_> {
         Threads(self)
     }
