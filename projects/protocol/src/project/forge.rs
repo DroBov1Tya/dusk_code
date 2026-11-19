@@ -144,20 +144,23 @@ pub struct PullSummary {
     pub checks: Option<CheckState>,
 }
 
-/// The number of the pull request `url` points to when it is one of `github`'s, the
-/// `owner/repo` of a project; `None` for any other page, host or repository.
-pub fn pull_number(url: &str, github: &str) -> Option<u64> {
-    let path = url.strip_prefix("https://github.com/")?;
-    let (repository, rest) = path.split_at_checked(github.len())?;
-    let rest = rest.strip_prefix("/pull/")?;
+/// The number of the pull request `url` points to when it starts with `prefix`, the
+/// pull link base the forge plugin gave (ends with `/`); `None` for any other link.
+pub fn pull_number(url: &str, prefix: &str) -> Option<u64> {
+    if !prefix.ends_with('/') {
+        return None;
+    }
+    let head = url.as_bytes().get(..prefix.len())?;
+    if !head.eq_ignore_ascii_case(prefix.as_bytes()) {
+        return None;
+    }
+    let rest = url.get(prefix.len()..)?;
     let end = rest.find(['/', '#', '?']).unwrap_or(rest.len());
-    let (digits, _) = rest.split_at(end);
-    let own = !github.is_empty() && repository.eq_ignore_ascii_case(github);
-    let number = (digits.len() <= 12 && digits.bytes().all(|b| b.is_ascii_digit()))
+    let digits = &rest[..end];
+    (digits.len() <= 12 && digits.bytes().all(|b| b.is_ascii_digit()))
         .then(|| digits.parse::<u64>().ok())
         .flatten()
-        .filter(|number| *number > 0);
-    number.filter(|_| own)
+        .filter(|number| *number > 0)
 }
 
 #[cfg(test)]
@@ -165,14 +168,15 @@ mod tests {
     use super::pull_number;
 
     #[test]
-    fn only_a_link_to_the_projects_own_pull_request_has_a_number() {
-        let own = "DroBov1Tya/dusk_code";
+    fn only_a_link_under_the_prefix_has_a_number() {
+        let prefix = "https://github.com/DroBov1Tya/dusk_code/pull/";
         let base = "https://github.com/DroBov1Tya/dusk_code/pull";
-        assert_eq!(pull_number(&format!("{base}/13"), own), Some(13));
-        assert_eq!(pull_number(&format!("{base}/13/files"), own), Some(13));
-        assert_eq!(pull_number(&format!("{base}/13#top"), own), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13"), prefix), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13/files"), prefix), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13#top"), prefix), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13?x=1"), prefix), Some(13));
         assert_eq!(
-            pull_number("https://github.com/drobov1tya/DUSK_CODE/pull/7", own),
+            pull_number("https://github.com/drobov1tya/DUSK_CODE/pull/7", prefix),
             Some(7)
         );
         for other in [
@@ -187,9 +191,11 @@ mod tests {
             format!("{base}/12a"),
             format!("{base}/99999999999999999999"),
             "https://github.com/DroBov1Tya/dusk_code/issues/13".to_owned(),
+            "é".to_owned(),
         ] {
-            assert_eq!(pull_number(&other, own), None, "{other}");
+            assert_eq!(pull_number(&other, prefix), None, "{other}");
         }
         assert_eq!(pull_number(&format!("{base}/13"), ""), None);
+        assert_eq!(pull_number(&format!("{base}/13"), base), None);
     }
 }

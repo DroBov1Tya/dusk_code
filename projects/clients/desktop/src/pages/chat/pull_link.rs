@@ -118,7 +118,8 @@ impl MarkdownPlugin for PullLink {
         let url = node.data::<String>()?;
         let links = cx.try_global::<PullLinks>()?;
         let github = links.github.clone()?;
-        let number = pull_number(url, &github)?;
+        let prefix = format!("https://github.com/{github}/pull/");
+        let number = pull_number(url, &prefix)?;
         if let Some(pull) = links.pull(number) {
             return Some(InlineElement::new(chip(&github, pull, cx)));
         }

@@ -6,10 +6,14 @@
 mod gh;
 mod lookup;
 mod pulls;
+#[expect(dead_code, reason = "the forge host routing reads it next")]
+mod remote;
 mod status;
 mod watch;
 
 pub use lookup::{Look, read as read_pull};
 pub use pulls::{create, list, view};
+#[expect(unused_imports, reason = "the forge host routing reads it next")]
+pub use remote::Remote;
 pub use status::read as read_status;
 pub use watch::{PERIOD as TRACK_PERIOD, Tracker};

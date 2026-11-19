@@ -51,12 +51,13 @@ fn claim_links(root: &Element, project: &str, github: &str) {
     let Ok(links) = root.query_selector_all("a[href]") else {
         return;
     };
+    let prefix = format!("https://github.com/{github}/pull/");
     for index in 0..links.length() {
         let Some(link) = links.item(index).and_then(|n| n.dyn_into::<Element>().ok()) else {
             continue;
         };
         let href = link.get_attribute("href").unwrap_or_default();
-        let Some(number) = pull_number(&href, github) else {
+        let Some(number) = pull_number(&href, &prefix) else {
             continue;
         };
         let (project, github) = (project.to_owned(), github.to_owned());
