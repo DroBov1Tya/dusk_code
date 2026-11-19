@@ -505,8 +505,13 @@ A pull request from a branch the user already pushed.
   "title":"Fix the thing","body":"..."}}
 ```
 
-`base: null` means the repository's default branch. Answer
-`{"type":"result","ok":{"pull":PULL}}`. When the service refuses (no commits between the
+`base: null` means the repository's default branch. Make the pull request the way the
+service's own tool does; the GitHub plugin runs `gh pr create` and nothing more. Answer
+`{"type":"result","ok":{"pull":{"number":12,"url":"https://github.com/owner/repo/pull/12"}}}`:
+the number and the page the tool printed are enough, and the other fields of a `PULL`
+may be left out. The core checks only the answer's shape (a `number` above 0 and a safe
+`url`), not whose page it is, and the repository status shows the rest on its next
+read. When the service refuses (no commits between the
 branches, one exists already, the branch is not pushed), answer `refused` with the
 service's message. The core has already checked the arguments: `head` and `base` are
 valid branch names, `title` is a valid one-line message, and `body` is at most 20000
@@ -550,8 +555,7 @@ and at most 500 bytes, else it becomes empty (never repaired).
   `/owner/repo/pulls/`, `/ws/repo/pull-requests/`.
 - A pull's `url` must equal `pull_prefix` plus its `number` (case-insensitive), or the
   pull is dropped. Its `number` must be above 0. The pull `create_pull` answers is held to
-  its shape only: a `number` above 0 and a safe `url`, such as the page `gh pr create`
-  printed; other fields may be left out.
+  its shape only (see `create_pull`).
 - `checks_url` must start with `https://{host}/`, else it becomes empty. A check's `url`
   is any safe https link, else empty.
 - Title at most 300 characters, author 100, branch 250.
