@@ -138,13 +138,13 @@ fn skill_row(ws: &Workspace, shown: &str, row: &SkillRow, cx: &mut Context<Works
     if open {
         block = block.child(widgets::unfold(
             SharedString::from(format!("unfold-skill-{shown}-{id}")),
-            div().pl_4().pt_1().child(diff_view(row, cx)),
+            div().pl_4().pt_1().child(diff_view(shown, row, cx)),
         ));
     }
     block
 }
 
-fn diff_view(row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
+fn diff_view(shown: &str, row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (accent, muted, text, surface) = (
         theme.primary,
@@ -167,7 +167,10 @@ fn diff_view(row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
         .unwrap_or_else(|| "Menlo".to_owned());
     let size = prefs.mono_size;
     let mut lines = div()
-        .id("skill-diff-lines")
+        .id(SharedString::from(format!(
+            "skill-diff-lines-{shown}-{}",
+            row.change.id
+        )))
         .flex()
         .flex_col()
         .max_h(px(320.))
