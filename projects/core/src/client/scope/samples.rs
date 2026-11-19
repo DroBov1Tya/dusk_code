@@ -62,6 +62,7 @@ fn threads() -> Vec<T> {
         T::Search { text: word() },
         T::Messages { thread_id: id() },
         T::Tasks { thread_id: id() },
+        T::SkillChanges { thread_id: id() },
         T::LocalUnsent { thread_id: id() },
         T::ResendLocalUnsent {
             thread_id: id(),
@@ -238,6 +239,8 @@ fn catalog() -> Vec<C> {
         named(|name| C::Skill { name }),
         saved(|name, text| C::SaveSkill { name, text }),
         C::SkillPacks,
+        C::SkillDiff { id: 1 },
+        C::UndoSkillChange { id: 1 },
         named(|name| C::Agent { name }),
         saved(|name, text| C::SaveAgent { name, text }),
         C::McpServers,

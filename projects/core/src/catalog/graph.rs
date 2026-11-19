@@ -334,7 +334,7 @@ pub fn save_node_text(directory: &Path, file: &str, name: &str, text: &str) -> R
 
 /// The node's file by name; the name is folder names joined by `/`, never a way out of
 /// the directory.
-fn node_file(directory: &Path, file: &str, name: &str) -> Result<PathBuf> {
+pub fn node_file(directory: &Path, file: &str, name: &str) -> Result<PathBuf> {
     ensure!(
         !name.is_empty() && name.split('/').all(is_plain_folder_name),
         "invalid name {name:?}"
