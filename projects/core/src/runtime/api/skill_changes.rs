@@ -1,13 +1,16 @@
 //! What agents changed in skills: listing it, reading a change as lines, undoing it.
 
-use std::{fs, path::Path};
+use std::{
+    fs::{self, OpenOptions},
+    io::{ErrorKind, Write},
+    path::Path,
+};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use dusk_protocol::catalog::{SkillChange, SkillDiff, SkillSaveAction};
 
 use crate::catalog::graph::{SKILL_FILE, node_file, read_node_text, save_node_text};
 use crate::catalog::history;
-use crate::init::files::write_keeping;
 use crate::runtime::Runtime;
 
 /// Said when the file is no longer as the change left it.
@@ -52,7 +55,7 @@ impl Runtime {
             let Some(before) = change.before.as_deref() else {
                 bail!("{NOT_KEPT}");
             };
-            restore(&directory, &file, before)?;
+            restore(&directory, &change.skill, before)?;
         } else {
             let now = read_node_text(&directory, SKILL_FILE, &change.skill).ok();
             ensure!(
@@ -90,17 +93,53 @@ impl Runtime {
     }
 }
 
-/// Writes a deleted skill's text back. Its folder may be made again, but only inside the
-/// skills folder: a link put in its place cannot send the write elsewhere.
-fn restore(directory: &Path, file: &Path, text: &str) -> Result<()> {
-    let folder = file.parent().context("a skill file has a folder")?;
-    fs::create_dir_all(folder)?;
+/// Writes a deleted skill's text back as a new file. The agent can write the skills
+/// folder, so a link planted on the way must not take the write out of it: each folder of
+/// the name is checked, or made, one at a time, before anything is written.
+fn restore(directory: &Path, name: &str, text: &str) -> Result<()> {
+    fs::create_dir_all(directory)?;
     let inside = directory.canonicalize()?;
-    ensure!(
-        folder.canonicalize()?.starts_with(&inside),
-        "the skill folder leads out of the skills folder"
-    );
-    write_keeping(file, text.as_bytes(), None)
+    let mut folder = inside.clone();
+    for part in name.split('/') {
+        folder.push(part);
+        match fs::symlink_metadata(&folder) {
+            Ok(found) => ensure!(
+                found.is_dir() && folder.canonicalize()?.starts_with(&inside),
+                "the skill folder leads out of the skills folder"
+            ),
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                fs::create_dir(&folder)
+                    .with_context(|| format!("cannot make {}", folder.display()))?;
+                ensure!(
+                    fs::symlink_metadata(&folder)?.is_dir(),
+                    "the skill folder is not a folder"
+                );
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    write_new(&folder.join(SKILL_FILE), text)
+}
+
+/// Writes `text` to a file that must not exist yet: one made meanwhile is never replaced.
+fn write_new(file: &Path, text: &str) -> Result<()> {
+    let mut opened = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(file)
+        .map_err(|error| match error.kind() {
+            ErrorKind::AlreadyExists => anyhow!("{CHANGED_SINCE}"),
+            _ => anyhow!("cannot write {}: {error}", file.display()),
+        })?;
+    let written = opened
+        .write_all(text.as_bytes())
+        .and_then(|()| opened.sync_all());
+    if let Err(error) = written {
+        // The file is this call's own; half of it is no skill.
+        let _ = fs::remove_file(file);
+        bail!("cannot write {}: {error}", file.display());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -219,6 +258,41 @@ mod tests {
         let rows = runtime.skill_changes("t").await.unwrap();
         assert!(!rows.iter().find(|row| row.id == lost).unwrap().can_undo);
         assert!(runtime.undo_skill_change(lost).await.is_err());
+    }
+
+    /// A link planted for a pack folder cannot take the restored file out of the skills
+    /// folder: the undo is refused and nothing is made outside.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn undo_of_a_deletion_does_not_follow_a_planted_link() {
+        let (runtime, skills) = rig("undo_linked").await;
+        let outside = temp_dir("undo_linked_outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::create_dir_all(&skills).unwrap();
+        std::os::unix::fs::symlink(&outside, skills.join("pack")).unwrap();
+        let id = record_as(
+            &runtime,
+            "pack/y",
+            SkillSaveAction::Deleted,
+            Some(&skill("y")),
+            "",
+        )
+        .await;
+        assert!(runtime.undo_skill_change(id).await.is_err());
+        assert!(!outside.join("y").exists());
+        assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
+    }
+
+    /// A file that appears before the write is not replaced.
+    #[test]
+    fn a_restored_file_never_replaces_one() {
+        let root = temp_dir("restore_new");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join(SKILL_FILE);
+        std::fs::write(&file, "theirs").unwrap();
+        let error = write_new(&file, "ours").unwrap_err();
+        assert!(error.to_string().contains(CHANGED_SINCE));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "theirs");
     }
 
     /// A move is a deletion and a creation: undoing the creation alone removes the new
