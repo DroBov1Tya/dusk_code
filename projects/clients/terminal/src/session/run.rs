@@ -20,7 +20,7 @@ use super::{
     actions::{Flow, apply, set_update_note},
     answers::{jobs_wanted, refresh_jobs, refresh_overview, refresh_system, system_open},
     tabs::{self, Held},
-    thread::{OpenThread, close, send},
+    thread::{OpenThread, close, send, show_skill_changes},
 };
 use crate::{
     app::{Action, App, PRESS, Panel, SettingCategory, Tone},
@@ -176,7 +176,8 @@ pub async fn run(
                 Ok(history) => {
                     let (title, goal) = (app.title.take(), app.goal.take());
                     let (tasks, tokens) = (std::mem::take(&mut app.tasks), app.tokens);
-                    app.open(Some(thread_id), title, &history);
+                    app.open(Some(thread_id.clone()), title, &history);
+                    show_skill_changes(client, &mut app, &thread_id).await;
                     (app.goal, app.tasks, app.tokens) = (goal, tasks, tokens);
                     app.input.set(text);
                     app.flash = Some("went back; the message is in the box".into());

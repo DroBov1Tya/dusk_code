@@ -9,5 +9,6 @@ pub use agent::{AgentNode, AgentTree};
 pub use node::NodeText;
 pub use problem::Problem;
 pub use skill::{
-    PackSkill, SAVE_MARKER, SkillInfo, SkillKind, SkillPack, SkillSave, SkillSaveAction,
+    DiffKind, DiffLine, PackSkill, SAVE_MARKER, SkillChange, SkillDiff, SkillInfo, SkillKind,
+    SkillPack, SkillSave, SkillSaveAction,
 };

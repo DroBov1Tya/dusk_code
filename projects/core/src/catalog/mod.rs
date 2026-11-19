@@ -3,6 +3,7 @@
 
 pub mod agents;
 pub mod graph;
+pub mod history;
 pub mod mentions;
 pub mod modes;
 pub mod packs;

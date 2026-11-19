@@ -120,6 +120,11 @@ pub enum ThreadRequest {
         message_id: String,
         pinned: bool,
     },
+    /// Answers with `Response::SkillChanges`: what the thread's agents changed in skills,
+    /// oldest first.
+    SkillChanges {
+        thread_id: String,
+    },
     /// Answers with `Response::Pins`: the thread's pins, oldest message first.
     Pins {
         thread_id: String,

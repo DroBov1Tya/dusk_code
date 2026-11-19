@@ -396,6 +396,10 @@ fn runner_seeing(
         lock: ThreadLock::take(&root).unwrap(),
         hooks: Arc::default(),
         health: Arc::default(),
+        skill_watch: Arc::new(crate::catalog::history::Watch::new(Some(
+            root.join("skills"),
+        ))),
+        skill_state: Arc::clone(state),
     })
 }
 
@@ -434,6 +438,7 @@ mod retries;
 mod shaped;
 mod shrink;
 mod simulator;
+mod skills;
 mod stubs;
 mod tail;
 mod together;

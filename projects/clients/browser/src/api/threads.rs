@@ -117,6 +117,12 @@ pub async fn get_approvals(thread_id: &str) -> Res<Option<ApprovalPolicy>> {
     ask!(thread(ThreadRequest::GetApprovals { thread_id }), Response::Approvals(a) => a)
 }
 
+/// What the thread's agents changed in skills, oldest first.
+pub async fn skill_changes(thread_id: &str) -> Res<Vec<dusk_protocol::catalog::SkillChange>> {
+    let thread_id = thread_id.to_owned();
+    ask!(thread(ThreadRequest::SkillChanges { thread_id }), Response::SkillChanges(c) => c)
+}
+
 /// The thread's pins, oldest message first.
 pub async fn pins(thread_id: &str) -> Res<Vec<dusk_protocol::thread::Pin>> {
     let thread_id = thread_id.to_owned();

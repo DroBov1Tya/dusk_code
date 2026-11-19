@@ -222,6 +222,9 @@ impl Server {
                 );
                 Response::Pins(pins)
             }
+            ThreadRequest::SkillChanges { thread_id } => {
+                Response::SkillChanges(runtime.skill_changes(&thread_id).await?)
+            }
             ThreadRequest::Pins { thread_id } => Response::Pins(runtime.pins(&thread_id).await?),
         })
     }

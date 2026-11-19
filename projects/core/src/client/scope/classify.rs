@@ -110,6 +110,7 @@ fn thread(request: &Thread) -> Access<'_> {
         Thread::List | Thread::Search { .. } => all(Area::ThreadRead),
         Thread::Messages { thread_id }
         | Thread::Tasks { thread_id }
+        | Thread::SkillChanges { thread_id }
         | Thread::LocalUnsent { thread_id }
         | Thread::GetApprovals { thread_id }
         | Thread::Pins { thread_id } => of(Area::ThreadRead, thread_id),
@@ -240,6 +241,8 @@ fn catalog(request: &Catalog) -> Area {
         | Catalog::Skill { .. }
         | Catalog::SaveSkill { .. }
         | Catalog::SkillPacks
+        | Catalog::SkillDiff { .. }
+        | Catalog::UndoSkillChange { .. }
         | Catalog::Agent { .. }
         | Catalog::SaveAgent { .. }
         | Catalog::McpServers

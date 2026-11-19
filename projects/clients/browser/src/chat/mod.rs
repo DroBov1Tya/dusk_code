@@ -11,6 +11,7 @@ mod pins;
 mod plan;
 mod pull_link;
 mod shown;
+mod skill_change;
 mod voice;
 mod working;
 pub use composer::Draft;
@@ -41,6 +42,9 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
     let chat = chat_of(app, id.as_deref());
     let open = id.is_some();
     let menu_id = id.clone();
+    if let Some(id) = id.clone() {
+        skill_change::load(id, chat);
+    }
     let project_name = move || {
         app.project
             .get()

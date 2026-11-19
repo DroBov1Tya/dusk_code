@@ -72,12 +72,13 @@ pub struct SkillSave {
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillSaveAction {
     Created,
     Updated,
-    Unchanged,
+    /// The file is gone; its text is the change's `before`.
+    Deleted,
 }
 
 impl SkillSave {
@@ -89,18 +90,42 @@ impl SkillSave {
     pub fn from_result(content: &str) -> Option<Self> {
         serde_json::from_str(content.lines().last()?.strip_prefix(SAVE_MARKER)?).ok()
     }
+}
 
-    pub fn notice(&self) -> String {
-        let action = match self.action {
-            SkillSaveAction::Created => "created",
-            SkillSaveAction::Updated => "updated",
-            SkillSaveAction::Unchanged => "saved without changes",
-        };
-        let name: String = self
-            .name
-            .chars()
-            .map(|c| if c.is_control() { '?' } else { c })
-            .collect();
-        format!("Skill {action}: {name}")
-    }
+/// One change an agent made to a skill file, kept so it can be seen and undone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillChange {
+    pub id: i64,
+    pub skill: String,
+    /// The tool call that made it, in its thread.
+    pub call_id: String,
+    pub action: SkillSaveAction,
+    /// One plain line, as the agent gave it.
+    pub reason: String,
+    pub changed_at_ms: i64,
+    pub undone: bool,
+    /// Not undone, and the text before it is known (or it created the skill).
+    pub can_undo: bool,
+}
+
+/// A change as lines. The text is skill data: shown as plain text, never as markup.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillDiff {
+    pub change: SkillChange,
+    pub lines: Vec<DiffLine>,
+    /// More lines followed that are not here.
+    pub cut: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiffLine {
+    pub kind: DiffKind,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DiffKind {
+    Same,
+    Added,
+    Removed,
 }

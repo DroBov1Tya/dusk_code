@@ -17,6 +17,15 @@ pub enum CatalogRequest {
     /// The skill packs with their skills and switches; answered with
     /// `Response::SkillPacks`.
     SkillPacks,
+    /// One recorded skill change as lines; answered with `Response::SkillDiff`.
+    SkillDiff {
+        id: i64,
+    },
+    /// Puts a skill back as it was before the change, unless the file changed since;
+    /// answers with `Response::SkillChanges` holding that one change.
+    UndoSkillChange {
+        id: i64,
+    },
     Agent {
         name: String,
     },

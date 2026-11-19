@@ -403,8 +403,7 @@ fn packs() -> Vec<SkillPack> {
                 &[
                     "duskcode",
                     "skill-creator",
-                    "skill-improve",
-                    "skill-from-practice",
+                    "skill-evolve",
                     "computer-use",
                     "token-thrift",
                 ],
