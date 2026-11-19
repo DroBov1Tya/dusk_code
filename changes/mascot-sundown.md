@@ -1,0 +1,2 @@
+Changed
+The subagents' mascot is Sundown, a small sun half set on its horizon, in place of the pixel fox, in Desktop and the browser. Each activity has its own calm rhythm (thinking breathes under orbiting motes, writing bobs, searching darts its eyes under a turning light, reading traces a line, planning shuts its eyes under three stars, running rises with turning rays); a change of activity blends over 280 ms, done hops clear of the horizon once and failed sets below it and greys, and both then hold still. Mascots side by side blink and glance on their own.
