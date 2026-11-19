@@ -1,11 +1,13 @@
 //! The pull requests under the Changes module: a state icon, the title, the repository
-//! with the number and the lines, and the checks as a dot and a count. The core reads
-//! them, keeps them fresh while the project is shown, and says when they change; a row
-//! opens its page, its checks open their list.
+//! with the number and the lines, and the checks as a pill of a dot and a count. The core
+//! reads them, keeps them fresh while the project is shown, and says when they change; a
+//! row opens its page, its pill opens the checks.
+
+use std::collections::HashMap;
 
 use dusk_protocol::project::{CheckState, Checks, PullState, PullStatus, RepositoryStatus};
 use gpui_kit::{
-    component::{ActiveTheme, Icon, Selectable, popover::Popover},
+    component::{ActiveTheme, Icon, Selectable, popover::Popover, tooltip::Tooltip},
     prelude::FluentBuilder,
     *,
 };
@@ -22,7 +24,7 @@ pub fn rows(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     };
     let mut column = div().flex().flex_col();
     for pull in &status.pulls {
-        column = column.child(row(status, pull, cx));
+        column = column.child(row(status, pull, &ws.checks_open, cx));
     }
     if let Some(reason) = &status.unavailable {
         column = column.child(
@@ -37,10 +39,16 @@ pub fn rows(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     column
 }
 
-fn row(status: &RepositoryStatus, pull: &PullStatus, cx: &mut Context<Workspace>) -> Stateful<Div> {
+fn row(
+    status: &RepositoryStatus,
+    pull: &PullStatus,
+    open: &HashMap<(u64, &'static str), bool>,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, ok, bad) = (theme.muted_foreground, theme.success, theme.danger);
     let url = pull.url.clone();
+    let pill = checks(pull, open, cx);
     widgets::row(("pull", pull.number as usize), false, cx)
         .h_auto()
         .py_1p5()
@@ -74,10 +82,10 @@ fn row(status: &RepositoryStatus, pull: &PullStatus, cx: &mut Context<Workspace>
                             div()
                                 .text_color(bad)
                                 .child(format!("\u{2212}{}", grouped(pull.removed))),
-                        ),
+                        )
+                        .when_some(pill, |line, pill| line.child(div().flex_1()).child(pill)),
                 ),
         )
-        .when_some(checks(pull, cx), |row, checks| row.child(checks))
         .on_click(move |_, _, cx| {
             // The core gives https links only; anything else is not opened.
             if url.starts_with("https://") || url.starts_with("http://") {
@@ -86,13 +94,17 @@ fn row(status: &RepositoryStatus, pull: &PullStatus, cx: &mut Context<Workspace>
         })
 }
 
-/// The checks at the row's right: a dot on the title's line (green passed, yellow and
-/// breathing while one runs, red failed) and "passed/total" on the line under it; nothing
-/// without checks. A press opens the list of every check over the column.
-fn checks(pull: &PullStatus, cx: &App) -> Option<AnyElement> {
+/// The checks at the right of the row's second line: a pill with a dot (green passed,
+/// yellow and breathing while one runs, red failed) and "passed/total"; nothing without
+/// checks. A press opens the checks grouped by state over the column.
+fn checks(
+    pull: &PullStatus,
+    open: &HashMap<(u64, &'static str), bool>,
+    cx: &Context<Workspace>,
+) -> Option<AnyElement> {
     let state = pull.checks.state?;
-    let color = check_color(state, cx);
-    let dot = div().size_2().rounded_full().bg(color);
+    let theme = cx.theme();
+    let dot = div().size_1p5().rounded_full().bg(check_color(state, cx));
     let dot = if state == CheckState::Pending {
         dot.with_animation(
             SharedString::from(format!("pull-running-{}", pull.number)),
@@ -103,43 +115,43 @@ fn checks(pull: &PullStatus, cx: &App) -> Option<AnyElement> {
     } else {
         dot.into_any_element()
     };
+    let tip = SharedString::from(match state {
+        CheckState::Pending => "CI: checks in progress",
+        CheckState::Passing => "CI: checks passed",
+        CheckState::Failing => "CI: checks failed",
+    });
     let number = pull.number as usize;
+    let hover = theme.list_active;
     let trigger = div()
         .id(("pull-checks", number))
         .role(Role::Button)
         .aria_label(checks_said(&pull.checks))
         .flex_none()
         .flex()
-        .flex_col()
-        .items_end()
-        .px_1()
-        .rounded_md()
+        .flex_row()
+        .items_center()
+        .gap_1()
+        .px_1p5()
+        .rounded_full()
+        .bg(theme.muted)
         .cursor_pointer()
-        .hover(|trigger| trigger.bg(cx.theme().list_active))
-        // An empty character gives the line the title's height, so the dot sits on it.
-        .child(
-            div()
-                .small()
-                .flex()
-                .items_center()
-                .child(dot)
-                .child("\u{200B}"),
-        )
-        .child(
-            div()
-                .meta()
-                .font_features(crate::pages::chat::working::tabular())
-                .text_color(color)
-                .child(format!("{}/{}", pull.checks.passed, pull.checks.total)),
-        )
+        .hover(move |pill| pill.bg(hover))
+        .meta()
+        .font_features(crate::pages::chat::working::tabular())
+        .text_color(theme.muted_foreground)
+        .child(dot)
+        .child(format!("{}/{}", pull.checks.passed, pull.checks.total))
+        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
         // The press is the window's, not the row's, which would open the pull request.
         .on_click(|_, _, cx| cx.stop_propagation());
     let shown = pull.clone();
+    let open = open.clone();
+    let ws = cx.entity().downgrade();
     Some(
         Popover::new(("pull-checks-window", number))
             .anchor(Anchor::TopRight)
             .trigger(Trigger(trigger))
-            .content(move |_, _, cx| super::checks::window(&shown, cx))
+            .content(move |_, _, cx| super::checks::window(&shown, &open, ws.clone(), cx))
             // The window pads its own rows; the popover's wide padding made a small list large.
             .p_1()
             .into_any_element(),
