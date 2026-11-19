@@ -123,7 +123,7 @@ async fn serve(
                     take(plugin, parts, &taken, owners, &mut frames);
                 }
                 Ok(false) => return Some("its interface stopped".into()),
-                Err(why) => return Some(why),
+                Err(why) => return Some(format!("its interface {why}")),
             },
             _ = ticks.tick() => {
                 for ((part, widget), jpeg) in std::mem::take(&mut frames) {
@@ -217,8 +217,9 @@ fn decode_frame(base64: &str) -> Result<Vec<u8>, String> {
 }
 
 /// Reads up to the end of a line into `line`, which keeps what came across a cancel.
-/// False at the end of the stream; the reason when a line grows past `MAX_LINE`.
-async fn read_line(
+/// False at the end of the stream; the reason when a line grows past `MAX_LINE`, to
+/// follow "its interface" or the like.
+pub(in crate::plugins) async fn read_line(
     reader: &mut (impl AsyncBufRead + Unpin),
     line: &mut Vec<u8>,
 ) -> Result<bool, String> {
@@ -226,7 +227,7 @@ async fn read_line(
         let buffer = reader
             .fill_buf()
             .await
-            .map_err(|error| format!("cannot read its interface: {error}"))?;
+            .map_err(|error| format!("could not be read: {error}"))?;
         if buffer.is_empty() {
             return Ok(false);
         }
@@ -237,7 +238,7 @@ async fn read_line(
         let content = if done { used - 1 } else { used };
         if line.len() + content > MAX_LINE {
             return Err(format!(
-                "its interface sent a line over {} MiB and was stopped",
+                "sent a line over {} MiB and was stopped",
                 MAX_LINE / (1024 * 1024)
             ));
         }
