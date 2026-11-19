@@ -15,7 +15,8 @@ use super::{
     activity::{agent_report, notice, turn_activity},
     block,
     command::command_card,
-    cost::TurnCost,
+    cost::spend_label,
+    error_row::error_row,
     picture::picture,
     sent_picture::{is_picture_name, sent_pictures},
 };
@@ -41,7 +42,7 @@ impl Workspace {
             return div().into_any_element();
         };
         let theme = cx.theme();
-        let (muted, accent, danger) = (theme.muted_foreground, theme.primary, theme.danger);
+        let (muted, accent) = (theme.muted_foreground, theme.primary);
         // Space between rows lives in the rows, as the list has no gap of its own.
         let content = match row {
             Row::Working => super::working_row::render(&shown, chat, cx),
@@ -54,9 +55,17 @@ impl Workspace {
                 let dear = spent
                     .zip(chat.mean_turn_cost())
                     .is_some_and(|((_, micro), mean)| micro > 2 * mean.max(1));
-                turn_activity(self, &shown, start, &chat.items[start..end], span, cx)
-                    .child_cost(spent, dear, cx)
-                    .into_any_element()
+                let spend = spend_label(spent, dear).map(|text| (text, dear));
+                turn_activity(
+                    self,
+                    &shown,
+                    start,
+                    &chat.items[start..end],
+                    span,
+                    spend,
+                    cx,
+                )
+                .into_any_element()
             }
             Row::Item(at) => {
                 let key = format!("{shown}-{at}");
@@ -232,22 +241,27 @@ impl Workspace {
                     Item::Notice(text) => {
                         notice(&key, div().meta().text_color(muted), text, cx).into_any_element()
                     }
-                    Item::Error(text) => div()
-                        .px_3()
-                        .py_2()
-                        .rounded_md()
-                        .meta()
-                        .text_color(danger)
-                        .bg(danger.opacity(0.1))
-                        .child(text.clone())
-                        .into_any_element(),
+                    Item::Error(text) => {
+                        // Only the error the chat ends with can be answered by sending
+                        // again, and only while no turn runs.
+                        let last = at + 1 == chat.items.len() && !chat.working;
+                        let again = (last && chat.last_sent().is_some()).then(|| shown.clone());
+                        error_row(&key, text, again, cx)
+                    }
                     Item::Tool(_) => div().into_any_element(),
                 }
             }
         };
         let activity = matches!(row, Row::Activity { .. });
         let gutter = if activity { 3. } else { 8. };
-        let top = if ix == 0 { 24. } else { gutter };
+        // A message of the user opens a turn: the air above it parts one exchange from the
+        // next, so the chat reads in pieces.
+        let opens_turn = matches!(row, Row::Item(at) if matches!(chat.items[at], Item::User { sequence: Some(_), .. }));
+        let top = match (ix, opens_turn) {
+            (0, _) => 24.,
+            (_, true) => TURN_GAP - 8.,
+            _ => gutter,
+        };
         let bottom = if ix + 1 == self.rows.len() {
             24.
         } else {
@@ -263,6 +277,9 @@ impl Workspace {
             .into_any_element()
     }
 }
+
+/// The air between the end of one turn and the message that opens the next.
+const TURN_GAP: f32 = crate::ui::size::GAP_XXL;
 
 /// A sent message as the user wrote it, each paste and kept file as a short label.
 fn user_text(text: &str) -> String {

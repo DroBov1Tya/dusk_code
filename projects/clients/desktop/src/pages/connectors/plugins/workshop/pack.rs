@@ -3,6 +3,7 @@
 //! switches on one column, once the pack is here, or by name while it is only offered.
 //! A listing's window shows the same rows on its Skills tab.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::{
     catalog::SkillPack,
     client::Switch as CoreSwitch,
@@ -133,6 +134,7 @@ fn banner(
     }
     hero::banner(
         listing.map_or(Shown::Placeholder(Look::None), |listing| ws.cover(listing)),
+        name,
         listing.map_or(Kind::Pack, |listing| listing.kind),
         grid.width,
         panel,
@@ -170,14 +172,12 @@ fn description<'a>(ws: &'a Workspace, name: &str) -> Option<&'a str> {
 /// the right edge.
 fn skills(ws: &Workspace, pack: &SkillPack, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (border, muted, surface) = (theme.border, theme.muted_foreground, theme.muted);
+    let (border, muted) = (theme.border, theme.muted_foreground);
     let mut rows = div()
         .flex()
         .flex_col()
         .rounded_lg()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
+        .elevation(Level::Raised, cx)
         .overflow_hidden();
     for (index, skill) in pack.skills.iter().enumerate() {
         let full = skill.name.clone();
@@ -260,7 +260,7 @@ fn skills(ws: &Workspace, pack: &SkillPack, cx: &mut Context<Workspace>) -> Div 
 /// The skills a pack not yet here holds, by name.
 fn offered(listing: &Listing, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (border, muted, surface) = (theme.border, theme.muted_foreground, theme.muted);
+    let (border, muted) = (theme.border, theme.muted_foreground);
     // The pack is the context, so a skill goes by its own name.
     let prefix = format!("{}/", listing.name);
     let rows = listing.skills.iter().enumerate().map(|(index, skill)| {
@@ -301,9 +301,7 @@ fn offered(listing: &Listing, cx: &mut Context<Workspace>) -> Div {
                 .flex()
                 .flex_col()
                 .rounded_lg()
-                .border_1()
-                .border_color(border)
-                .bg(surface)
+                .elevation(Level::Raised, cx)
                 .overflow_hidden()
                 .children(rows),
         )

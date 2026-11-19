@@ -2,6 +2,8 @@
 //! are, and a click pulls a drawer of them down over the chat; a row goes to its message.
 //! Excerpts are the core's plain text.
 
+use crate::ui::elevation::{Level, shadows};
+use crate::ui::press::Press;
 use std::time::{Duration, Instant};
 
 use dusk_protocol::thread::{MessageRole, Pin};
@@ -79,6 +81,7 @@ pub fn handle(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Di
             .border_color(border)
             .cursor_pointer()
             .hover(move |bar| bar.bg(raised))
+            .press(raised, cx)
             .child(Icon::default().path(icons::PIN).xsmall().text_color(accent))
             .child(
                 div()
@@ -121,7 +124,7 @@ pub fn drawer(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .bg(surface)
         .border_b_1()
         .border_color(border)
-        .shadow_md()
+        .shadow(shadows(Level::Floating, cx))
         .children(
             pins.iter()
                 .enumerate()
@@ -167,6 +170,7 @@ fn list_row(
         .rounded_md()
         .cursor_pointer()
         .hover(move |row| row.bg(raised))
+        .press(raised, cx)
         .child(
             div()
                 .flex_none()

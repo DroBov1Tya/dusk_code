@@ -2,6 +2,8 @@
 //! work; unfolded, the plan's numbered rows, six in sight and the rest behind a scroll that
 //! lays out only the rows in sight, so two hundred tasks cost what six do.
 
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use std::ops::Range;
 
 use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus};
@@ -34,7 +36,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     }
     let open = ws.dock.plan_open;
     let theme = cx.theme();
-    let (muted, border, surface) = (theme.muted_foreground, theme.border, theme.muted);
+    let (muted, border) = (theme.muted_foreground, theme.border);
     let summary = match counts {
         Some(counts) => div()
             .small()
@@ -68,6 +70,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(|line| line.bg(cx.theme().list_hover))
+        .press(cx.theme().list_hover, cx)
         .focusable_row(cx)
         .child(
             widgets::icon(
@@ -116,9 +119,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                 .flex()
                 .flex_col()
                 .rounded_xl()
-                .border_1()
-                .border_color(border)
-                .bg(surface)
+                .elevation(Level::Raised, cx)
                 .overflow_hidden()
                 .child(line)
                 // The hairline under the line is the rows' own frame, so their air

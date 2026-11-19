@@ -4,6 +4,7 @@
 //! Nothing is drawn over the cover, and every card of a row is the same height whatever
 //! its text. A click opens the listing's window.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::{
     catalog::SkillPack,
     client::Switch as CoreSwitch,
@@ -84,6 +85,7 @@ pub fn render(
         .on_click(cx.listener(move |ws, _, window, cx| ws.open_listing(&opened, window, cx)))
         .child(art(
             ws.cover(listing),
+            &listing.name,
             listing.kind,
             inner(width),
             top_corners(),
@@ -138,6 +140,7 @@ pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Statef
         }))
         .child(art(
             Shown::Placeholder(Look::None),
+            &pack.name,
             Kind::Pack,
             inner(width),
             top_corners(),
@@ -161,7 +164,8 @@ pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Statef
 /// surface while pressed, the accent border while the keyboard is on it.
 fn shell(group: SharedString, width: f32, cx: &App) -> Stateful<Div> {
     let theme = cx.theme();
-    let (border, surface, hover, ring) = (theme.border, theme.muted, theme.list_hover, theme.ring);
+    let (surface, hover, ring) = (theme.muted, theme.list_hover, theme.ring);
+    let dent = crate::ui::press::dent(cx);
     div()
         .id(group.clone())
         .group(group)
@@ -171,12 +175,14 @@ fn shell(group: SharedString, width: f32, cx: &App) -> Stateful<Div> {
         .w(px(width))
         .h(px(height(width)))
         .rounded(px(RADIUS))
-        .border_1()
-        .border_color(border)
-        .bg(surface)
+        .elevation(Level::Raised, cx)
         .cursor_pointer()
         .hover(move |card| card.border_color(ring.opacity(0.45)).bg(hover))
-        .active(move |card| card.border_color(ring.opacity(0.6)).bg(surface))
+        .active(move |card| {
+            card.border_color(ring.opacity(0.6))
+                .bg(surface)
+                .shadow(dent)
+        })
         .tab_stop(true)
         .tab_index(0)
         .focus_visible(move |card| card.border_color(ring))
@@ -359,7 +365,14 @@ pub fn rounded<E: Styled>(element: E, corners: Corners<Pixels>) -> E {
 /// The cover at `width` and the art's aspect, cropped to fill, or the placeholder in its
 /// place. The picture carries the corners itself, since gpui clips a child to its
 /// parent's rectangle, not its radius.
-pub fn art(shown: Shown, kind: Kind, width: f32, corners: Corners<Pixels>, cx: &App) -> Div {
+pub fn art(
+    shown: Shown,
+    name: &str,
+    kind: Kind,
+    width: f32,
+    corners: Corners<Pixels>,
+    cx: &App,
+) -> Div {
     match shown {
         Shown::Ready(image) => div()
             .flex_none()
@@ -369,7 +382,7 @@ pub fn art(shown: Shown, kind: Kind, width: f32, corners: Corners<Pixels>, cx: &
                 img(image).size_full().object_fit(ObjectFit::Cover),
                 corners,
             )),
-        Shown::Placeholder(look) => placeholder::render(kind, look, width, corners, cx),
+        Shown::Placeholder(look) => placeholder::render(name, kind, look, width, corners, cx),
     }
 }
 

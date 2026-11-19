@@ -4,6 +4,7 @@
 //! core's to apply, so changing one reads the store again; tiers and kinds only narrow
 //! what is shown here, as the core has no such filter.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::time::{Duration, Instant};
 
 use dusk_protocol::plugin::Order;
@@ -129,7 +130,7 @@ pub fn button(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
     let shop = &ws.workshop;
     let theme = cx.theme();
-    let (border, surface) = (theme.border, theme.popover);
+    let border = theme.border;
     let column = |id: &'static str| {
         div()
             .id(id)
@@ -222,10 +223,7 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
         .flex()
         .flex_col()
         .rounded_lg()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .occlude()
         .on_mouse_down_out(cx.listener(|ws, _, _, cx| {
             ws.workshop.filters = false;
@@ -257,7 +255,7 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
     widgets::on_top(widgets::appear("workshop-filters-open", panel))
 }
 
-fn clear(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+pub fn clear(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     ws.workshop.tiers.clear();
     ws.workshop.kinds.clear();
     let reload = ws.workshop.category.take().is_some() || ws.workshop.order != Order::Trust;

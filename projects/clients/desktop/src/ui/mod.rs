@@ -13,16 +13,18 @@
 pub mod avatar;
 pub mod clipboard;
 pub mod controls;
+pub mod elevation;
 pub mod icons;
 pub mod layout;
 pub mod phone;
+pub mod press;
 pub mod theme;
 pub mod widgets;
 
 use std::time::Duration;
 
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName, Sizable},
+    component::{ActiveTheme, Icon, IconName, Sizable, button::Button},
     *,
 };
 
@@ -142,23 +144,37 @@ pub fn loading(text: &str, cx: &App) -> Div {
         .child(text.to_owned())
 }
 
-/// An empty place says what goes here and what to do, in two short lines.
-pub fn empty(icon: impl Into<Icon>, title: &str, hint: &str, cx: &App) -> Div {
-    let muted = cx.theme().muted_foreground;
+/// An empty place: one line that says what goes here, and the one thing to do about it,
+/// so a page with nothing on it is never a dead end. `action` is made with `action`.
+pub fn empty(icon: impl Into<Icon>, line: &str, action: Option<Button>, cx: &App) -> Div {
+    let theme = cx.theme();
     div()
         .flex()
         .flex_col()
         .items_center()
-        .gap_2()
+        .gap_3()
         .px_6()
         .py_8()
         .text_center()
-        .child(icon.into().text_color(muted.opacity(0.7)))
         .child(
             div()
-                .body()
-                .font_weight(FontWeight::MEDIUM)
-                .child(title.to_owned()),
+                .size(px(48.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(theme.muted)
+                .child(
+                    icon.into()
+                        .size(px(size::ICON_LARGE))
+                        .text_color(theme.muted_foreground),
+                ),
         )
-        .child(div().small().text_color(muted).child(hint.to_owned()))
+        .child(div().max_w(px(420.)).body().child(line.to_owned()))
+        .children(action)
+}
+
+/// The button of an empty place; the caller adds what a click does.
+pub fn action(id: impl Into<ElementId>, label: &'static str) -> Button {
+    Button::new(id).outline().label(label)
 }

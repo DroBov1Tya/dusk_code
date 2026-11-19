@@ -87,8 +87,8 @@ fn installed(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> D
     } else {
         div().child(crate::ui::empty(
             gpui_kit::component::IconName::Search,
-            "No skills match",
-            "Try another word, or clear the search.",
+            "No skill matches that word.",
+            Some(super::clear_search("skills-empty-clear", cx)),
             cx,
         ))
     }

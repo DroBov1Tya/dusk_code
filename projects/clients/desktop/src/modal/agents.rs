@@ -3,6 +3,7 @@
 //! figure with a bubble that says what it does this moment: thinking, writing, or the tool
 //! it runs. A figure that works moves; one that is done rests. A click opens its chat.
 
+use crate::ui::press::Press;
 use dusk_protocol::thread::AgentState;
 use std::time::Duration;
 
@@ -34,8 +35,8 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
     else {
         return div().p_5().child(crate::ui::empty(
             IconName::Bot,
-            "No subagents yet",
-            "When the agent asks others for help, they appear here at work.",
+            "No subagents yet. When the agent asks others for help, they appear here at work.",
+            None,
             cx,
         ));
     };
@@ -201,6 +202,7 @@ fn figure(
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
+        .press(hover, cx)
         .child(mascot::render(
             SharedString::from(format!("mascot-{id}")),
             &agent.state,

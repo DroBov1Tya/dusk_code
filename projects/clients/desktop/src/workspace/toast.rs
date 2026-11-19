@@ -1,6 +1,7 @@
 //! A short note over any page that goes away on its own: information, not an error.
 //! Errors stay in `notice`, shown until they are dismissed.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::time::{Duration, Instant};
 
 use gpui_kit::{component::ActiveTheme, *};
@@ -50,11 +51,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                     .px_3()
                     .py_2()
                     .rounded_lg()
-                    .border_1()
-                    .border_color(theme.border)
-                    .bg(theme.popover)
+                    .elevation(Level::Floating, cx)
                     .text_color(theme.popover_foreground)
-                    .shadow_lg()
                     .meta()
                     .cursor_pointer()
                     .child(text.clone())

@@ -13,6 +13,7 @@ pub use drafts::{Change, Draft, Drafts, Edit};
 pub use marks::{AGENTS_BUTTON, SIDE_MARK, agents_button, mic_button};
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level, shadows};
 use gpui_kit::{
     component::{
         ActiveTheme,
@@ -131,25 +132,29 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     // One card: what goes with the message on top, the text under it across the whole
     // width, and a row of controls at the bottom. The card grows upward, as the box sits
     // at the foot of the chat.
+    let mut lift = shadows(Level::Raised, cx);
+    // Under the band the box is the lower half of one shape: its top edge is not lit.
+    if band.is_some() {
+        lift.retain(|shadow| !shadow.inset);
+    }
+    // The box lights up a little while it is written in.
+    if writing {
+        lift.push(BoxShadow {
+            color: accent.opacity(0.14),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(18.),
+            spread_radius: px(0.),
+            inset: false,
+        });
+    }
     let card = div()
         .flex()
         .flex_col()
         .rounded_2xl()
         .when(band.is_some(), |card| card.rounded_t_none())
-        .border_1()
+        .elevation(Level::Raised, cx)
         .border_color(edge)
-        .bg(cx.theme().muted)
-        // The box lights up a little while it is written in.
-        .when(writing, |card| {
-            card.shadow(vec![BoxShadow {
-                color: accent.opacity(0.14),
-                offset: point(px(0.), px(0.)),
-                blur_radius: px(18.),
-                spread_radius: px(0.),
-                inset: false,
-            }])
-        })
-        .shadow_sm()
+        .shadow(lift)
         .relative()
         .children(mentions.map(crate::ui::widgets::on_top))
         .children(chips)

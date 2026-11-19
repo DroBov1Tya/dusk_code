@@ -1,6 +1,7 @@
 //! The Overview's sections in their order. Each is absent when it has nothing to say;
 //! the same section draws in the column and on the page, only its frame differs.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::thread::{
     LogEntry, LogKind, Overview, PlanCounts, TaskStatus, Team, TeamStatus, ThreadTokens,
 };
@@ -71,12 +72,7 @@ fn frame(form: Form, title: &'static str, aside: Option<Div>, body: Div, cx: &Ap
     let section = div().flex().flex_col().child(head).child(body.px_4());
     match form {
         Form::Narrow => section.pb_3(),
-        Form::Wide => section
-            .pb_4()
-            .rounded_xl()
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.muted),
+        Form::Wide => section.pb_4().rounded_xl().elevation(Level::Raised, cx),
     }
 }
 

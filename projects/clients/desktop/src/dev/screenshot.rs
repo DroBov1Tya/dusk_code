@@ -42,6 +42,7 @@
 //! - `hover=X,Y`: move the pointer to a point of the window; `down=X,Y`, `move=X,Y`,
 //!   `up=X,Y`: press the left button there, move with it held, let it go, as a click
 //!   (`down` then `up`) or a drag (`down`, a few `move`, `up`) would;
+//!   `press=X,Y` is `down` alone, for the pressed look;
 //! - `fake=welcome`: no providers, so the chat page shows the welcome; `welcome=form`: its
 //!   form, as the button opens it; `welcome=address:URL`: type the address in it;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
@@ -49,7 +50,8 @@
 //!   shown shell, with Return; `select=ROW:FROM-TO`: cells of a row selected;
 //! - `type=TEXT`: put the text in the message box; `idle=MIN`: as if left alone that long,
 //!   for the mist;
-//! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
+//! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse; `sidebar=project|recent`: how
+//!   the side panel lists the chats;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `size=WxH`: resize the window, as a drag of its edge would;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
@@ -149,7 +151,7 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                     }
                 }
                 // The left button pressed, moved with it held, or let go at a point.
-                "down" | "move" | "up" => {
+                "down" | "press" | "move" | "up" => {
                     let at = value
                         .split_once(',')
                         .and_then(|(x, y)| Some(point(px(x.parse().ok()?), px(y.parse().ok()?))));
@@ -158,7 +160,7 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                         continue;
                     };
                     let event = match name {
-                        "down" => PlatformInput::MouseDown(MouseDownEvent {
+                        "down" | "press" => PlatformInput::MouseDown(MouseDownEvent {
                             button: MouseButton::Left,
                             position,
                             modifiers: Modifiers::default(),
@@ -898,6 +900,15 @@ fn act(
             cx.notify();
         }
         "theme" => crate::ui::theme::change(cx, |prefs| prefs.theme = value.to_owned()),
+        "sidebar" => {
+            use crate::columns::sidebar::Order;
+            let order = if value == "recent" {
+                Order::Recent
+            } else {
+                Order::Project
+            };
+            crate::ui::theme::change(cx, |prefs| prefs.chats_by = order);
+        }
         "welcome" => match value.split_once(':') {
             Some(("address", address)) => ws.welcome_address(address, window, cx),
             _ => ws.welcome_form(window, cx),

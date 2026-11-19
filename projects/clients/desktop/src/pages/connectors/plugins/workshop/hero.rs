@@ -4,6 +4,8 @@
 //! and the arrows round the dots. Narrower than three columns the cover is on top. It
 //! never moves by itself; a change fades in.
 
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use dusk_protocol::plugin::{Kind, Listing, Tier};
 use gpui_kit::{
     component::{
@@ -94,26 +96,40 @@ pub fn render(
         )
         .child(div().flex_1())
         .when(count > 1, |foot| foot.child(steps(index, count, cx)));
-    banner(ws.cover(listing), listing.kind, grid.width, panel, foot, cx)
-        // Each pick fades in as it comes, so the change is seen without a slide.
-        .with_animation(("hero", index), Animation::new(OPEN), |hero, delta| {
-            hero.opacity(0.35 + 0.65 * delta)
-        })
+    banner(
+        ws.cover(listing),
+        &listing.name,
+        listing.kind,
+        grid.width,
+        panel,
+        foot,
+        cx,
+    )
+    // Each pick fades in as it comes, so the change is seen without a slide.
+    .with_animation(("hero", index), Animation::new(OPEN), |hero, delta| {
+        hero.opacity(0.35 + 0.65 * delta)
+    })
 }
 
 /// A cover with its panel in one card: side by side 280 high with a hairline between,
 /// or the cover on top when narrow. The pack's page draws its banner with this too.
-pub fn banner(shown: Shown, kind: Kind, width: f32, panel: Div, foot: Div, cx: &App) -> Div {
+pub fn banner(
+    shown: Shown,
+    name: &str,
+    kind: Kind,
+    width: f32,
+    panel: Div,
+    foot: Div,
+    cx: &App,
+) -> Div {
     let theme = cx.theme();
-    let (surface, border) = (theme.muted, theme.border);
+    let border = theme.border;
     let inner = width - 2.;
     let frame = div()
         .flex()
         .w(px(width))
         .rounded(px(RADIUS))
-        .border_1()
-        .border_color(border)
-        .bg(surface);
+        .elevation(Level::Raised, cx);
     let text = div()
         .flex()
         .flex_col()
@@ -133,7 +149,7 @@ pub fn banner(shown: Shown, kind: Kind, width: f32, panel: Div, foot: Div, cx: &
         };
         return frame
             .flex_col()
-            .child(capsule::art(shown, kind, inner, corners, cx))
+            .child(capsule::art(shown, name, kind, inner, corners, cx))
             .child(div().h(px(1.)).bg(border))
             .child(text);
     }
@@ -146,7 +162,7 @@ pub fn banner(shown: Shown, kind: Kind, width: f32, panel: Div, foot: Div, cx: &
     frame
         .flex_row()
         .h(px(HEIGHT + 2.))
-        .child(capsule::art(shown, kind, art_w, corners, cx))
+        .child(capsule::art(shown, name, kind, art_w, corners, cx))
         .child(div().w(px(1.)).h_full().bg(border))
         .child(text)
 }
@@ -281,5 +297,6 @@ pub fn round(id: impl Into<ElementId>, icon: IconName, cx: &App) -> Stateful<Div
         .cursor_pointer()
         .bg(back.opacity(0.85))
         .hover(move |arrow| arrow.bg(hover))
+        .press(hover, cx)
         .child(Icon::new(icon).size(px(size::ICON)).text_color(foreground))
 }

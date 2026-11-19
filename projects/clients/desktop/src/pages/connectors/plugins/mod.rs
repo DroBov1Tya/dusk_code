@@ -41,8 +41,17 @@ fn installed(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
     if plugins.is_empty() {
         return div().child(crate::ui::empty(
             gpui_kit::component::IconName::Network,
-            "No plugins installed",
-            "Plugins bring skills, agents and tools; find one in the Workshop or put one in rules/plugins/.",
+            if query.is_empty() {
+                "No plugins installed. A plugin brings skills, agents and tools."
+            } else {
+                "No installed plugin matches that word."
+            },
+            Some(if query.is_empty() {
+                crate::ui::action("plugins-empty-workshop", "Discover in Workshop")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.discover_plugins(cx)))
+            } else {
+                super::clear_search("plugins-empty-clear", cx)
+            }),
             cx,
         ));
     }

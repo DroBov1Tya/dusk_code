@@ -2,6 +2,7 @@
 //! under it. Each picker opens upward from its own control.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::{
     client::{Answer, Command},
     model::{Effort, ProviderStatus},
@@ -103,10 +104,7 @@ pub(super) fn picker_panel(cx: &App) -> Div {
         .flex_col()
         .gap_0p5()
         .rounded_xl()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .body()
 }
 

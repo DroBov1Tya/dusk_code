@@ -27,9 +27,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         None => widgets::muted("Reading the timetable...", cx).px_0(),
         Some(tasks) if tasks.is_empty() => ui::empty(
             IconName::Calendar,
-            "No scheduled tasks",
-            "A task sends its prompt to a new chat on its own: once, every few hours, every \
-             day or on the days you choose.",
+            "No scheduled tasks yet. A task sends its prompt to a new chat on its own, once or \
+             on the days you choose.",
+            Some(ui::action("schedules-empty-new", "New task").on_click(
+                cx.listener(|ws, _, window, cx| ws.open_schedule_editor(None, window, cx)),
+            )),
             cx,
         ),
         Some(tasks) => {

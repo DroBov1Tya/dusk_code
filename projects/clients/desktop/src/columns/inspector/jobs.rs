@@ -1,6 +1,7 @@
 //! The shown chat's background jobs, with a stop for those this run owns.
 
 use crate::ui::Type;
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{
         ActiveTheme, Sizable,
@@ -42,6 +43,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .bg(theme.muted)
                 .cursor_pointer()
                 .hover(move |card| card.bg(hover))
+                .press(hover, cx)
                 .on_click(cx.listener(move |ws, _, _, cx| ws.open_job(&open, cx)))
                 .child(
                     div()

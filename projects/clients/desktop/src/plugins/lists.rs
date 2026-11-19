@@ -1,6 +1,8 @@
 //! A view's `List`: rows to choose from, or a menu. A menu is a full-width box in a column
 //! and a compact title with its detail under it in a toolbar, as a device picker is.
 
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use dusk_protocol::plugin::{ListItem, UiEvent};
 use gpui_kit::{
     component::{ActiveTheme, Icon},
@@ -119,6 +121,7 @@ fn boxed_face(key: &Key, id: &str, chosen: Option<&ListItem>, cx: &App) -> State
         .border_color(border)
         .cursor_pointer()
         .hover(move |button| button.bg(hover))
+        .press(hover, cx)
         .child(
             div().flex_1().min_w_0().truncate().body().child(
                 chosen
@@ -154,6 +157,7 @@ fn compact_face(key: &Key, id: &str, chosen: Option<&ListItem>, cx: &App) -> Sta
         .rounded_lg()
         .cursor_pointer()
         .hover(move |button| button.bg(hover))
+        .press(hover, cx)
         .child(
             div()
                 .min_w_0()
@@ -189,7 +193,7 @@ fn menu(
     cx: &mut Context<Workspace>,
 ) -> Deferred {
     let theme = cx.theme();
-    let (border, muted, surface) = (theme.border, theme.muted_foreground, theme.popover);
+    let muted = theme.muted_foreground;
     let mut menu = div()
         .id(eid(key, "menu-items", id))
         .absolute()
@@ -202,10 +206,7 @@ fn menu(
         .overflow_y_scroll()
         .p_1()
         .rounded_lg()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .flex()
         .flex_col()
         .on_mouse_down_out(cx.listener(|ws, _, _, cx| {

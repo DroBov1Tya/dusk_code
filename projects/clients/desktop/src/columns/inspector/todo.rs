@@ -2,6 +2,7 @@
 //! is, and its items down a line, the one being worked on lit.
 
 use crate::ui::Type;
+use crate::ui::press::Press;
 use std::time::Duration;
 
 use gpui_kit::{
@@ -46,6 +47,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .rounded_md()
         .cursor_pointer()
         .hover(|head| head.bg(cx.theme().list_hover))
+        .press(cx.theme().list_hover, cx)
         .meta()
         .text_color(muted)
         .child(widgets::icon(

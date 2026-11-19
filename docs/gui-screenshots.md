@@ -31,7 +31,9 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `open=pins\|plan\|panel\|done`, `scroll=N`, `right=lower` | the pins drawer, the plan's rows, the composer's panel, the Todo's finished tasks; the transcript from its Nth row; the right column with its tall upper modules folded |
 | `hover=X,Y` | moves the pointer to a point of the window, for what shows only under it (the composer's tab, a module header's grip) |
 | `down=X,Y`, `move=X,Y`, `up=X,Y` | presses the left button, moves with it held, lets it go: a click is `down` then `up`, a drag (a module's grip to another place) is `down`, a few `move`, `up`; a `shot` between shows the drop line |
+| `press=X,Y` | `down` with no `up`: the pressed look of what is under the pointer |
 | `select=ROW:FROM-TO` | selects cells of a row of the shown terminal |
+| `sidebar=project\|recent` | lists the chats under their projects, or all by last activity |
 | `size=WxH` | resizes the window, as a drag of its edge would |
 | `shot=NAME` | saves `$DUSK_SHOT_DIR/NAME.png`, drawn at the window's scale (2x on a Retina screen) |
 | `quit` | ends |

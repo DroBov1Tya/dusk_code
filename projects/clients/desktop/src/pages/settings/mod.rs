@@ -12,6 +12,7 @@ mod shortcuts;
 mod system;
 pub mod uninstall;
 
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{ActiveTheme, Colorize, Icon, IconName},
     prelude::FluentBuilder,
@@ -295,9 +296,7 @@ pub fn list(rows: impl IntoIterator<Item = Div>, cx: &App) -> Div {
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(border)
-        .bg(theme.muted)
+        .elevation(Level::Raised, cx)
         .overflow_hidden()
         .children(rows.into_iter().enumerate().map(move |(index, row)| {
             row.when(index > 0, |row| row.border_t_1().border_color(border))
@@ -311,9 +310,7 @@ fn section(title: &str, hint: &str, cx: &App) -> Div {
         .gap_3()
         .p_5()
         .rounded_xl()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().muted)
+        .elevation(Level::Raised, cx)
         .child(
             div()
                 .flex()

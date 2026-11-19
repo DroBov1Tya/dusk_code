@@ -141,8 +141,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         } else {
             crate::ui::empty(
                 Icon::default().path(crate::ui::icons::GIT_COMPARE),
-                "Nothing to review",
-                "The work tree matches the last commit.",
+                "Nothing to review: the work tree matches the last commit.",
+                Some(
+                    crate::ui::action("review-empty-again", "Check again")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
+                ),
                 cx,
             )
         };

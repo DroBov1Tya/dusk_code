@@ -348,14 +348,27 @@ fn local_packs<'a>(ws: &'a Workspace, query: &str) -> Vec<&'a SkillPack> {
         .collect()
 }
 
-fn nothing(ws: &Workspace, cx: &App) -> Div {
+fn nothing(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let shop = &ws.workshop;
-    let (title, hint) = match shop.listings.as_ref().is_some_and(|all| all.is_empty()) {
-        true if !shop.failed_sources.is_empty() => {
-            ("No source could be read", "Try again when online.")
-        }
-        true => ("The store is empty", "Nothing is offered yet."),
-        false => ("Nothing matches", "Try another word or filter."),
+    let again = |cx: &mut Context<Workspace>| {
+        crate::ui::action("workshop-empty-again", "Read the store again")
+            .on_click(cx.listener(|ws, _, _, cx| ws.load_store(cx)))
     };
-    crate::ui::empty(IconName::Inbox, title, hint, cx)
+    let (line, action) = match shop.listings.as_ref().is_some_and(|all| all.is_empty()) {
+        true if !shop.failed_sources.is_empty() => {
+            ("No source of the store could be read.", again(cx))
+        }
+        true => ("The store offers nothing yet.", again(cx)),
+        false => (
+            "Nothing matches that word and those filters.",
+            crate::ui::action("workshop-empty-clear", "Clear the search and filters").on_click(
+                cx.listener(|ws, _, window, cx| {
+                    ws.shelf_search
+                        .update(cx, |search, cx| search.set_value("", window, cx));
+                    filters::clear(ws, cx);
+                }),
+            ),
+        ),
+    };
+    crate::ui::empty(IconName::Inbox, line, Some(action), cx)
 }

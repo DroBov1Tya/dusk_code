@@ -760,6 +760,17 @@ impl Transcript {
 
     /// When the turn whose items end at boundary `index` began and ended; the turn after
     /// the last boundary is still open.
+    /// The words of the last message the user sent, as they went to the core.
+    pub fn last_sent(&self) -> Option<&str> {
+        self.items.iter().rev().find_map(|item| match item {
+            Item::User {
+                text,
+                sequence: Some(_),
+            } => Some(text.as_str()),
+            _ => None,
+        })
+    }
+
     /// The mean cost of the turns that have one, to tell an unusually dear turn.
     pub fn mean_turn_cost(&self) -> Option<u64> {
         let costs: Vec<u64> = self

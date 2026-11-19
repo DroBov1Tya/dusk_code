@@ -1,5 +1,6 @@
 //! The marks beside the box: the microphone and the chat's subagents.
 
+use crate::ui::press::Press;
 use crate::ui::{Type, widgets::Focusable};
 use gpui_kit::{
     component::{
@@ -102,6 +103,7 @@ pub fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div>
         .bg(surface)
         .cursor_pointer()
         .hover(move |button| button.bg(hover).border_color(muted.opacity(0.6)))
+        .press(hover, cx)
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(label.clone()).build(window, cx)
         })

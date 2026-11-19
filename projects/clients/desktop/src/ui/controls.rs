@@ -2,6 +2,7 @@
 //! minus and plus, a value to copy, a measured figure. Each part is at least 28 px, the
 //! size a pointer finds without aiming.
 
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Icon, IconName, Sizable,
@@ -171,9 +172,7 @@ pub fn stat(label: &str, value: String, hint: &str, cx: &App) -> Div {
         .min_w(px(160.))
         .flex_1()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.muted)
+        .elevation(Level::Raised, cx)
         .child(
             div()
                 .small()

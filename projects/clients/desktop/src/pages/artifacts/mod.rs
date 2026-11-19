@@ -109,8 +109,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     let body = if files.is_empty() {
         crate::ui::empty(
             IconName::LayoutDashboard,
-            "No files yet",
-            "Files the agents write in the workspace appear here.",
+            "No files yet. What the agents write in the workspace appears here.",
+            Some(
+                crate::ui::action("artifacts-empty-chat", "New chat")
+                    .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx))),
+            ),
             cx,
         )
         .into_any_element()

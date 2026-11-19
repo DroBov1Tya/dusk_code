@@ -7,6 +7,7 @@
 //! switching another plugin on moves a default pin only when its name ranks first. A
 //! place shows at most `SHOWN` pinned icons; the rest are reached from the menu.
 
+use crate::ui::press::Press;
 use dusk_protocol::plugin::{Client, Opens, Part, Place};
 use gpui_kit::{
     component::{
@@ -138,7 +139,7 @@ fn square(
         .cursor_pointer()
         .when(shown, |square| square.bg(selected))
         .hover(move |square| square.bg(hover))
-        .active(move |square| square.bg(selected))
+        .press(selected, cx)
         .focusable_row(cx)
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
         .child(icon(part, glyph, color))

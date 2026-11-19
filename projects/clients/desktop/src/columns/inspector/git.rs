@@ -2,6 +2,7 @@
 //! the worktrees. The core refuses a switch while changes would be lost.
 
 use crate::ui::Type;
+use crate::ui::press::Press;
 use dusk_protocol::project::ChangeKind;
 use gpui_kit::{
     component::{
@@ -96,6 +97,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .rounded_md()
                 .cursor_pointer()
                 .hover(|row| row.bg(cx.theme().list_hover))
+                .press(cx.theme().list_hover, cx)
                 .children(repository.map(|name| div().small().truncate().child(name)))
                 .child(
                     div()

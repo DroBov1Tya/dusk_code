@@ -1,6 +1,7 @@
 //! A picture over the whole window. The wheel, a pinch or + and - zoom it, 0 fits it
 //! again, a drag moves it; a click beside it or Escape closes it.
 
+use crate::ui::elevation::{Level, shadows};
 use std::io::Cursor;
 
 use gpui_kit::*;
@@ -78,6 +79,7 @@ pub fn render(
         .w(px(width))
         .h(px(height))
         .cursor_grab()
+        .shadow(shadows(Level::Floating, cx))
         .child(
             img(image.clone())
                 .size_full()
