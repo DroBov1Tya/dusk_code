@@ -4,7 +4,12 @@
 //! ```text
 //! cargo run -p dusk_protocol --features schema --example schema            # write
 //! cargo run -p dusk_protocol --features schema --example schema -- --check # CI
+//! cargo run -p dusk_protocol --features schema --example schema -- --check --base main.json
 //! ```
+//!
+//! `--base <file>` compares the generated schema with another one, such as `main`'s copy of
+//! the file, apart from the "file is current" check: regenerating the file in a branch then
+//! cannot hide a change that is not additive.
 //!
 //! While the file's `x-oldest` equals `OLDEST_PROTOCOL`, a removed property or variant, or a
 //! property that became required, is reported as `not additive: <def>.<name>` and fails: an
@@ -41,7 +46,19 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if std::env::args().any(|a| a == "--check") {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(at) = args.iter().position(|a| a == "--base") {
+        let Some(base) = args.get(at + 1) else {
+            eprintln!("--base needs a file");
+            return ExitCode::FAILURE;
+        };
+        let verdict = check_base(&PathBuf::from(base), &generated);
+        // A base check alone never writes the file.
+        if verdict == ExitCode::FAILURE || !args.iter().any(|a| a == "--check") {
+            return verdict;
+        }
+    }
+    if args.iter().any(|a| a == "--check") {
         return check(&path, &generated);
     }
     if let Some(dir) = path.parent()
@@ -125,6 +142,42 @@ fn check(path: &PathBuf, generated: &str) -> ExitCode {
         "docs/api/schema.json is out of date; run: cargo run -p dusk_protocol --features schema --example schema"
     );
     ExitCode::FAILURE
+}
+
+/// Fails when the generated schema is not additive over `base`.
+fn check_base(base: &PathBuf, generated: &str) -> ExitCode {
+    let text = match std::fs::read_to_string(base) {
+        Ok(text) => text,
+        Err(e) => {
+            eprintln!("cannot read {}: {e}", base.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    match base_problems(&text, generated) {
+        Ok(problems) if problems.is_empty() => ExitCode::SUCCESS,
+        Ok(problems) => {
+            for problem in problems {
+                println!("not additive: {problem}");
+            }
+            eprintln!("the schema is not additive over {}", base.display());
+            ExitCode::FAILURE
+        }
+        Err(e) => {
+            eprintln!("cannot read {} as a schema: {e}", base.display());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// What the generated schema breaks of `base`; nothing when `base` belongs to an older
+/// baseline (its `x-oldest` is not `OLDEST_PROTOCOL`).
+fn base_problems(base: &str, generated: &str) -> serde_json::Result<Vec<String>> {
+    let base: Value = serde_json::from_str(base)?;
+    let generated: Value = serde_json::from_str(generated)?;
+    if base["x-oldest"].as_u64() != Some(u64::from(OLDEST_PROTOCOL)) {
+        return Ok(Vec::new());
+    }
+    Ok(not_additive(&base, &generated))
 }
 
 /// What the old schema had and the new one lacks, or demands where it did not.
@@ -286,6 +339,23 @@ mod tests {
 
     fn schema(def: Value) -> Value {
         json!({ "x-oldest": OLDEST_PROTOCOL, "$defs": { "Thing": def } })
+    }
+
+    #[test]
+    fn a_base_catches_what_regenerating_the_file_hides() {
+        let base = schema(json!({ "properties": { "a": {}, "b": {} } }));
+        let generated = schema(json!({ "properties": { "a": {} } }));
+        let problems = base_problems(&base.to_string(), &generated.to_string());
+        assert_eq!(problems.ok(), Some(vec!["Thing.b".to_owned()]));
+        assert_eq!(
+            base_problems(&generated.to_string(), &base.to_string()).ok(),
+            Some(Vec::new())
+        );
+        let mut older = base.clone();
+        older["x-oldest"] = json!(OLDEST_PROTOCOL - 1);
+        let skipped = base_problems(&older.to_string(), &generated.to_string());
+        assert_eq!(skipped.ok(), Some(Vec::new()));
+        assert!(base_problems("not json", &generated.to_string()).is_err());
     }
 
     #[test]

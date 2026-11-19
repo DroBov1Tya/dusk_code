@@ -94,6 +94,12 @@ jobs:
         run: |
           cargo test -p dusk_protocol --features schema --example schema --locked
           cargo run -p dusk_protocol --features schema --example schema --locked -- --check
+          # Regenerating the file in a branch must not hide a break: compare with main's
+          # copy too, when main has one.
+          git fetch --no-tags --depth=1 origin main || true
+          if git show origin/main:docs/api/schema.json > base.json 2>/dev/null; then
+            cargo run -p dusk_protocol --features schema --example schema --locked -- --base base.json
+          fi
 
   # The web client is built for wasm exactly as releases build it, so a change that breaks
   # it fails here and not on a release tag.
