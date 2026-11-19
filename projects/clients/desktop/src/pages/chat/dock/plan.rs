@@ -6,7 +6,7 @@ use crate::ui::elevation::{Elevation, Level};
 use crate::ui::press::Press;
 use std::ops::Range;
 
-use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus};
+use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus, current_task};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
     prelude::FluentBuilder,
@@ -34,7 +34,7 @@ const BAR_EASE: std::time::Duration = std::time::Duration::from_millis(300);
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat()?;
     let counts = ws.dock.counts_of(ws.shown.as_deref());
-    let all = counts.map_or(0, total);
+    let all = counts.map_or(0, |counts| counts.total());
     if chat.tasks.is_empty() && all == 0 {
         return None;
     }
@@ -50,7 +50,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             .small()
             .text_color(theme.foreground)
             .whitespace_nowrap()
-            .child(summary(counts))
+            .child(counts.summary())
             .into_any_element(),
         // The counts are on their way: a still placeholder of their size.
         None => div()
@@ -60,7 +60,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             .bg(border)
             .into_any_element(),
     };
-    let current = current(&chat.tasks).map(|(number, task)| {
+    let current = current_task(&chat.tasks).map(|(number, task)| {
         div()
             .meta()
             .text_color(muted)
@@ -157,60 +157,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     )
 }
 
-/// "3 of 7 done · 1 running · 1 blocked": the parts that are not zero after the done.
-fn summary(counts: PlanCounts) -> String {
-    let mut text = format!("{} of {} done", counts.done, total(counts));
-    for (count, word) in [
-        (counts.running, "running"),
-        (counts.claimed, "claimed"),
-        (counts.review, "in review"),
-        (counts.blocked, "blocked"),
-        (counts.failed, "failed"),
-    ] {
-        if count > 0 {
-            text.push_str(&format!(" \u{00B7} {count} {word}"));
-        }
-    }
-    text
-}
-
-fn total(counts: PlanCounts) -> u32 {
-    let PlanCounts {
-        open,
-        claimed,
-        running,
-        blocked,
-        review,
-        done,
-        failed,
-    } = counts;
-    [open, claimed, running, blocked, review, done, failed]
-        .into_iter()
-        .fold(0, u32::saturating_add)
-}
-
-/// The task the folded line names, with its number: the first running, else the first
-/// that is not over.
-fn current(tasks: &[Task]) -> Option<(usize, &Task)> {
-    let numbered = || {
-        tasks
-            .iter()
-            .enumerate()
-            .map(|(index, task)| (index + 1, task))
-    };
-    numbered()
-        .find(|(_, task)| task.status == TaskStatus::Running)
-        .or_else(|| {
-            numbered()
-                .find(|(_, task)| !matches!(task.status, TaskStatus::Done | TaskStatus::Failed))
-        })
-}
-
 /// The plan as one bar of fixed width: done, running, failed and blocked shares in their
 /// colours on the track; it never grows with the number of tasks.
 fn bar(counts: PlanCounts, before: Option<(PlanCounts, std::time::Instant)>, cx: &App) -> Div {
     let theme = cx.theme();
-    let share = |count: u32, of: PlanCounts| count as f32 / total(of).max(1) as f32;
+    let share = |count: u32, of: PlanCounts| count as f32 / of.total().max(1) as f32;
     // While the shares ease from what they were, each is between the old and the new.
     let easing = before.and_then(|(before, since)| {
         crate::pages::chat::activity::arriving(since, BAR_EASE, cx).map(|t| (before, t))

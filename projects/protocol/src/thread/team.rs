@@ -139,6 +139,87 @@ pub struct TeamUsed {
     pub minutes: u32,
 }
 
+/// From this share of a budget part on, clients draw it as nearly spent.
+pub const BUDGET_NEAR: f32 = 0.8;
+
+/// One part of a team's budget as the Overview draws it: its name, a bar and "used of all".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BudgetPart {
+    pub name: &'static str,
+    pub used: u64,
+    pub all: u64,
+    /// Counted in minutes; the others are plain counts.
+    pub minutes: bool,
+}
+
+impl BudgetPart {
+    /// How much is used, from 0 to 1.
+    pub fn share(&self) -> f32 {
+        (self.used as f32 / self.all.max(1) as f32).min(1.)
+    }
+
+    pub fn near(&self) -> bool {
+        self.share() >= BUDGET_NEAR
+    }
+
+    /// "1.2k of 5k", or "12 of 60 min".
+    pub fn text(&self) -> String {
+        if self.minutes {
+            format!("{} of {} min", self.used, self.all)
+        } else {
+            let short = crate::thread::short_count;
+            format!("{} of {}", short(self.used), short(self.all))
+        }
+    }
+}
+
+impl Team {
+    pub fn state_word(&self) -> &'static str {
+        match self.status {
+            TeamStatus::Running => "running",
+            TeamStatus::Ended(_) => "ended",
+        }
+    }
+
+    /// "running · 12 min".
+    pub fn progress_note(&self) -> String {
+        format!("{} \u{00B7} {} min", self.state_word(), self.used.minutes)
+    }
+
+    /// Members whose task is claimed or running.
+    pub fn at_work(&self) -> usize {
+        self.members
+            .iter()
+            .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
+            .count()
+    }
+
+    /// Steps, tokens and time: what is used of each part of the budget.
+    pub fn budget_parts(&self) -> [BudgetPart; 3] {
+        let (budget, used) = (self.budget, self.used);
+        [
+            BudgetPart {
+                name: "Steps",
+                used: used.steps.into(),
+                all: budget.steps().into(),
+                minutes: false,
+            },
+            BudgetPart {
+                name: "Tokens",
+                used: used.tokens,
+                all: budget.tokens(),
+                minutes: false,
+            },
+            BudgetPart {
+                name: "Time",
+                used: used.minutes.into(),
+                all: budget.minutes().into(),
+                minutes: true,
+            },
+        ]
+    }
+}
+
 /// A thread that holds a task of the plan.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

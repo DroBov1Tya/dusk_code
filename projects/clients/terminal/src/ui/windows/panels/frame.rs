@@ -1,5 +1,6 @@
 //! The panel on screen: which one draws, the window it sits in, and the rows they share.
 
+use dusk_protocol::thread::labelled;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -141,7 +142,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 .iter()
                 .enumerate()
                 .map(|(index, point)| {
-                    let text = paste::labelled(&point.text).replace('\n', " ");
+                    let text = labelled(&point.text, paste::label).replace('\n', " ");
                     selectable(
                         vec![
                             Span::styled(format!(" {:>3}  ", index + 1), dim()),
@@ -355,21 +356,4 @@ pub fn fit(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
             Line::from(spans).style(style)
         })
         .collect()
-}
-
-pub fn ago(ms: i64) -> String {
-    match age(ms).as_str() {
-        "now" => "just now".into(),
-        age => format!("{age} ago"),
-    }
-}
-
-pub fn age(ms: i64) -> String {
-    let minutes = ms.max(0) / 60_000;
-    match minutes {
-        0 => "now".into(),
-        1..60 => format!("{minutes}m"),
-        60..1440 => format!("{}h", minutes / 60),
-        _ => format!("{}d", minutes / 1440),
-    }
 }

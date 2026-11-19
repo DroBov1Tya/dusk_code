@@ -1,6 +1,6 @@
 //! The tasks still open, each folded to its name and progress or unfolded to its steps.
 
-use dusk_protocol::thread::Task;
+use dusk_protocol::thread::{Task, clock_words};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -13,12 +13,8 @@ use super::{
     Sidebar,
     section::{GAUGE, PAD, fill, ruled, scroll_limit, section},
 };
-use crate::ui::{
-    text::format::format_duration,
-    theme::{
-        ACCENT, DEEP, DONE, DOT, FOLDED, HAIRLINE, ON, POSITIVE, TEXT, TEXT_SOFT, UNFOLDED, bold,
-        fg,
-    },
+use crate::ui::theme::{
+    ACCENT, DEEP, DONE, DOT, FOLDED, HAIRLINE, ON, POSITIVE, TEXT, TEXT_SOFT, UNFOLDED, bold, fg,
 };
 use dusk_protocol::system::now_ms;
 
@@ -120,10 +116,7 @@ fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'
             .started_at
             .map(|start| {
                 let end = item.finished_at.unwrap_or(now);
-                format!(
-                    " {}",
-                    format_duration(end.saturating_sub(start).max(0) as u64)
-                )
+                format!(" {}", clock_words(end.saturating_sub(start).max(0) as u64))
             })
             .unwrap_or_default();
         lines.push(Line::from(vec![

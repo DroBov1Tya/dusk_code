@@ -193,6 +193,18 @@ impl TaskStatus {
         }
     }
 
+    /// How a team member's state reads beside its name: a claimed task still "waits".
+    pub fn member_word(self) -> &'static str {
+        match self {
+            Self::Open | Self::Claimed => "waits",
+            Self::Running => "running",
+            Self::Blocked => "blocked",
+            Self::Review => "in review",
+            Self::Done => "done",
+            Self::Failed => "failed",
+        }
+    }
+
     pub fn parse(text: &str) -> Result<Self> {
         Ok(match text {
             "open" => Self::Open,
@@ -250,6 +262,72 @@ pub struct PlanCounts {
     pub review: u32,
     pub done: u32,
     pub failed: u32,
+}
+
+impl PlanCounts {
+    pub fn total(&self) -> u32 {
+        [
+            self.open,
+            self.claimed,
+            self.running,
+            self.blocked,
+            self.review,
+            self.done,
+            self.failed,
+        ]
+        .into_iter()
+        .fold(0, u32::saturating_add)
+    }
+
+    /// Tasks a member holds: claimed or running.
+    pub fn at_work(&self) -> u32 {
+        self.claimed.saturating_add(self.running)
+    }
+
+    /// The progress bar's shares in its order: done, at work or in review, blocked or
+    /// failed, open.
+    pub fn shares(&self) -> [u32; 4] {
+        [
+            self.done,
+            self.at_work().saturating_add(self.review),
+            self.blocked.saturating_add(self.failed),
+            self.open,
+        ]
+    }
+
+    /// "3 of 7 done · 1 running · 1 blocked": the parts that are not zero after the done.
+    pub fn summary(&self) -> String {
+        let mut text = format!("{} of {} done", self.done, self.total());
+        for (count, word) in [
+            (self.running, "running"),
+            (self.claimed, "claimed"),
+            (self.review, "in review"),
+            (self.blocked, "blocked"),
+            (self.failed, "failed"),
+        ] {
+            if count > 0 {
+                text.push_str(&format!(" \u{00B7} {count} {word}"));
+            }
+        }
+        text
+    }
+}
+
+/// The task a plan strip names, with its number from 1: the first running, else the
+/// first that is not over.
+pub fn current_task(tasks: &[Task]) -> Option<(usize, &Task)> {
+    let numbered = || {
+        tasks
+            .iter()
+            .enumerate()
+            .map(|(index, task)| (index + 1, task))
+    };
+    numbered()
+        .find(|(_, task)| task.status == TaskStatus::Running)
+        .or_else(|| {
+            numbered()
+                .find(|(_, task)| !matches!(task.status, TaskStatus::Done | TaskStatus::Failed))
+        })
 }
 
 #[cfg(test)]

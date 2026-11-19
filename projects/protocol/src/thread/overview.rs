@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::thread::Line;
+use crate::thread::{Line, plural};
 
 /// The most used tools an `Overview` names.
 pub const OVERVIEW_TOOLS: usize = 8;
@@ -68,6 +68,34 @@ pub struct ChangedPath {
     pub path: String,
     pub added: u64,
     pub removed: u64,
+}
+
+impl Activity {
+    /// "12 tool runs · 1 agent asked".
+    pub fn summary(&self) -> String {
+        format!(
+            "{} \u{00B7} {} asked",
+            plural(self.tool_runs, "tool run"),
+            plural(self.agents_asked, "agent")
+        )
+    }
+}
+
+impl ChangeSum {
+    /// "3 files · +40 −2".
+    pub fn summary(&self) -> String {
+        format!(
+            "{} \u{00B7} +{} \u{2212}{}",
+            plural(self.files, "file"),
+            self.added,
+            self.removed
+        )
+    }
+
+    /// Changed paths past the newest ones listed.
+    pub fn more(&self) -> usize {
+        (self.files as usize).saturating_sub(self.newest.len())
+    }
 }
 
 /// One line of a thread's event log, written by the core from what it stored.

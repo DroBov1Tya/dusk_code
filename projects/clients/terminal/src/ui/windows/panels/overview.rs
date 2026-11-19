@@ -5,7 +5,7 @@
 use ratatui::text::{Line, Span};
 
 use dusk_protocol::thread::{
-    LogKind, PlanCounts, TaskStatus, Team, TeamMember, TeamStatus, ThreadTokens,
+    LogKind, PlanCounts, TaskStatus, Team, TeamMember, TeamStatus, ThreadTokens, plural,
 };
 
 use super::context::context;
@@ -17,7 +17,7 @@ use crate::ui::windows::theme::{
 
 pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if let Some(counts) = app.plan.filter(|counts| total(*counts) > 0) {
+    if let Some(counts) = app.plan.filter(|counts| counts.total() > 0) {
         heading(&mut lines, "progress", plan_line(counts, app.team.as_ref()));
         if let Some(team) = &app.team {
             let (budget, used) = (team.budget, team.used);
@@ -36,7 +36,7 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
         }
     }
     if let Some(team) = app.team.as_ref().filter(|team| !team.members.is_empty()) {
-        heading(&mut lines, "members", format!("{} at work", at_work(team)));
+        heading(&mut lines, "members", format!("{} at work", team.at_work()));
         for member in &team.members {
             lines.push(member_line(member, "   "));
         }
@@ -48,11 +48,7 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     lines.extend(context(&view.context));
     let changes = &view.overview.changes;
     if changes.files > 0 {
-        let sum = format!(
-            "{} files {DOT} +{} \u{2212}{}",
-            changes.files, changes.added, changes.removed
-        );
-        heading(&mut lines, "changes", sum);
+        heading(&mut lines, "changes", changes.summary());
         for path in &changes.newest {
             lines.push(Line::from(vec![
                 Span::raw(format!("   {}", printable(&path.path))),
@@ -63,11 +59,7 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     }
     let activity = &view.overview.activity;
     if activity.tool_runs > 0 || activity.agents_asked > 0 {
-        let sum = format!(
-            "{} tool runs {DOT} {} agents asked",
-            activity.tool_runs, activity.agents_asked
-        );
-        heading(&mut lines, "activity", sum);
+        heading(&mut lines, "activity", activity.summary());
         for tool in &activity.by_tool {
             lines.push(Line::from(vec![
                 Span::raw(format!("   {}", printable(&tool.name))),
@@ -100,8 +92,8 @@ pub fn plan_line(counts: PlanCounts, team: Option<&Team>) -> String {
     let mut line = format!(
         "plan {}/{} {DOT} {ON} {} {DOT} \u{25C6} {}",
         counts.done,
-        total(counts),
-        counts.claimed + counts.running,
+        counts.total(),
+        counts.at_work(),
         counts.blocked
     );
     if let Some(team) = team {
@@ -115,14 +107,14 @@ pub fn plan_line(counts: PlanCounts, team: Option<&Team>) -> String {
 
 /// `● Ember-0c coder running`, the dot in the colour of its task's state.
 pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
-    let (word, color) = match member.status {
-        TaskStatus::Open | TaskStatus::Claimed => ("waits", TEXT_MUTED),
-        TaskStatus::Running => ("running", ACCENT),
-        TaskStatus::Blocked => ("blocked", WARNING),
-        TaskStatus::Review => ("in review", ACCENT),
-        TaskStatus::Done => ("done", POSITIVE),
-        TaskStatus::Failed => ("failed", NEGATIVE),
+    let color = match member.status {
+        TaskStatus::Open | TaskStatus::Claimed => TEXT_MUTED,
+        TaskStatus::Running | TaskStatus::Review => ACCENT,
+        TaskStatus::Blocked => WARNING,
+        TaskStatus::Done => POSITIVE,
+        TaskStatus::Failed => NEGATIVE,
     };
+    let word = member.status.member_word();
     let role = member.role.as_deref().unwrap_or("general");
     Line::from(vec![
         Span::styled(format!("{indent}{ON} "), fg(color)),
@@ -133,30 +125,12 @@ pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
     ])
 }
 
-pub fn total(counts: PlanCounts) -> u32 {
-    counts.open
-        + counts.claimed
-        + counts.running
-        + counts.blocked
-        + counts.review
-        + counts.done
-        + counts.failed
-}
-
-fn at_work(team: &Team) -> usize {
-    team.members
-        .iter()
-        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
-        .count()
-}
-
 fn tokens_line(tokens: &ThreadTokens) -> String {
-    let spent = tokens.spent.prompt_tokens + tokens.spent.completion_tokens;
-    let cached = tokens.spent.cached_prompt_tokens * 100 / tokens.spent.prompt_tokens.max(1);
     let mut line = format!(
-        "{} spent {DOT} {cached}% from cache {DOT} {} calls",
-        compact_number(spent),
-        tokens.model_calls
+        "{} spent {DOT} {}% from cache {DOT} {}",
+        compact_number(tokens.spent_tokens()),
+        tokens.cached_percent(),
+        plural(tokens.model_calls, "call")
     );
     if let Some(cost) = tokens.cost() {
         line.push_str(&format!(" {DOT} {cost}"));

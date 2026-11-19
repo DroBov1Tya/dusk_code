@@ -31,6 +31,23 @@ pub struct ThreadTokens {
 }
 
 impl ThreadTokens {
+    /// Tokens sent and written over every call.
+    pub fn spent_tokens(&self) -> u64 {
+        self.spent
+            .prompt_tokens
+            .saturating_add(self.spent.completion_tokens)
+    }
+
+    /// The share of the prompt tokens served from the cache, from 0 to 100.
+    pub fn cached_percent(&self) -> u64 {
+        self.spent.cached_prompt_tokens.saturating_mul(100) / self.spent.prompt_tokens.max(1)
+    }
+
+    /// Spent tokens per finished task; none before one is done.
+    pub fn per_task(&self, done: u32) -> Option<u64> {
+        (done > 0).then(|| self.spent_tokens() / u64::from(done))
+    }
+
     /// What the thread cost, as `$0.42`; `+` when some calls have no known cost. None
     /// when no call has one, so free and local models show nothing.
     pub fn cost(&self) -> Option<String> {
@@ -45,6 +62,15 @@ impl ThreadTokens {
     }
 }
 
+/// "1 file", "2 files": a count with its noun in the plural unless it is one.
+pub fn plural<N>(count: N, noun: &str) -> String
+where
+    N: std::fmt::Display + PartialEq + From<u8>,
+{
+    let ending = if count == N::from(1) { "" } else { "s" };
+    format!("{count} {noun}{ending}")
+}
+
 /// A count as every client says it: "950", "18.4k", "1.2M"; a tenth of zero is left out,
 /// so 12000 reads "12k".
 pub fn short_count(value: u64) -> String {
@@ -53,6 +79,22 @@ pub fn short_count(value: u64) -> String {
         1_000..1_000_000 => format!("{}k", tenths(value, 1_000)),
         _ => format!("{}M", tenths(value, 1_000_000)),
     }
+}
+
+/// A size in bytes as every client says it: "950 B", "1.5 KB", "12.0 MB", in steps of
+/// 1024 up to TB.
+pub fn short_size(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.;
+    let mut unit = 0;
+    while value >= 1024. && unit + 1 < UNITS.len() {
+        value /= 1024.;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
 }
 
 /// `value / unit` rounded to one decimal, dropped when it is zero.
@@ -121,5 +163,24 @@ mod short_count_tests {
         assert_eq!(short_count(18_420), "18.4k");
         assert_eq!(short_count(999_949), "999.9k");
         assert_eq!(short_count(1_250_000), "1.3M");
+    }
+
+    #[test]
+    fn a_count_names_its_noun_in_the_plural_unless_one() {
+        use super::plural;
+        assert_eq!(plural(0_u64, "file"), "0 files");
+        assert_eq!(plural(1_usize, "file"), "1 file");
+        assert_eq!(plural(2_u32, "tool run"), "2 tool runs");
+    }
+
+    #[test]
+    fn sizes_read_in_steps_of_1024() {
+        use super::short_size;
+        assert_eq!(short_size(0), "0 B");
+        assert_eq!(short_size(1023), "1023 B");
+        assert_eq!(short_size(1536), "1.5 KB");
+        assert_eq!(short_size(5 * 1024 * 1024), "5.0 MB");
+        assert_eq!(short_size(3 << 40), "3.0 TB");
+        assert_eq!(short_size(u64::MAX), "16777216.0 TB");
     }
 }

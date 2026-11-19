@@ -9,7 +9,7 @@ use ratatui::{
 
 use dusk_protocol::thread::MessageRole;
 
-use super::frame::{age, ago, fit, selectable, window};
+use super::frame::{fit, selectable, window};
 use crate::app::{App, ThreadList, paste};
 use crate::ui::windows::{
     markdown,
@@ -19,6 +19,7 @@ use crate::ui::windows::{
     },
     wrap,
 };
+use dusk_protocol::thread::{age_words, ago_words, labelled};
 
 /// Messages shown at the end of a preview, after the one the thread began with.
 pub const PREVIEW_LAST: usize = 4;
@@ -124,8 +125,8 @@ pub fn preview(list: &ThreadList, width: usize, height: usize) -> Vec<Line<'stat
     };
     let meta = format!(
         "started {} {DOT} active {} {DOT} {} messages {DOT} {} tool calls",
-        ago(now - thread.created_at),
-        ago(now - thread.active_at),
+        ago_words(now - thread.created_at),
+        ago_words(now - thread.active_at),
         preview.messages.len(),
         preview.tool_calls,
     );
@@ -159,7 +160,7 @@ pub fn preview(list: &ThreadList, width: usize, height: usize) -> Vec<Line<'stat
 pub fn message_lines((role, text): &(MessageRole, String), width: usize) -> Vec<Line<'static>> {
     let (mut lines, limit) = match role {
         MessageRole::User => {
-            let lines = paste::labelled(text)
+            let lines = labelled(text, paste::label)
                 .lines()
                 .flat_map(|line| wrap::words(vec![Span::raw(line.to_owned())], width - 3, 0))
                 .map(|spans| {
@@ -206,7 +207,7 @@ pub fn threads(list: &ThreadList, current: Option<&str>) -> Vec<Line<'static>> {
                 Some(title) => Span::raw(title.clone()),
                 None => Span::styled("no messages", thought()),
             };
-            let age = Span::styled(age(now - thread.active_at), dim());
+            let age = Span::styled(age_words(now - thread.active_at), dim());
             selectable(vec![mark, title], age, row == list.selected)
         })
         .collect()

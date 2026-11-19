@@ -1,0 +1,2 @@
+Changed
+Sizes, times and counts read the same in the terminal, desktop and browser apps. File and memory sizes show one decimal from KB up (`1.5 KB`, `12.0 MB`, up to TB) in every app; the desktop artifacts, Workshop file list and Usage page used other units. Elapsed clocks show `00:06` everywhere, the desktop audio player included. Check and pull request times on the desktop say "just now" instead of "now ago". Counts take their plural only when they are not one in the terminal Overview ("1 tool run", "1 file", "1 call").

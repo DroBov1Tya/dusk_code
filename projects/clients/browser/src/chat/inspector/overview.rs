@@ -9,8 +9,8 @@ use crate::{
     ui::{Icon, IconName, compact, run, sleep},
 };
 use dusk_protocol::thread::{
-    ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG, Overview, PlanCounts, TaskStatus,
-    Team, TeamStatus, ThreadTokens,
+    BudgetPart, ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG, Overview, PlanCounts,
+    TaskStatus, Team, ThreadTokens, plural,
 };
 use leptos::prelude::*;
 
@@ -150,37 +150,24 @@ fn figure(value: String, label: &'static str) -> impl IntoView {
 }
 
 fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
-    let running = counts.claimed + counts.running;
-    let all = running + counts.open + counts.blocked + counts.review + counts.done + counts.failed;
+    let running = counts.at_work();
+    let all = counts.total();
     if all == 0 {
         return None;
     }
-    let aside = team.map_or_else(String::new, |team| {
-        let state = match team.status {
-            TeamStatus::Running => "running",
-            TeamStatus::Ended(_) => "ended",
-        };
-        format!("{state} \u{00B7} {} min", team.used.minutes)
-    });
-    let parts = [
-        ("done", counts.done),
-        ("run", running + counts.review),
-        ("block", counts.blocked + counts.failed),
-        ("", counts.open),
-    ];
-    let segments = parts
+    let aside = team.map_or_else(String::new, Team::progress_note);
+    let segments = ["done", "run", "block", ""]
         .into_iter()
+        .zip(counts.shares())
         .filter(|(_, count)| *count > 0)
         // One segment a status, as wide as its share: 200 tasks stay one bar.
         .map(|(class, count)| view! { <i class=class style=format!("flex:{count}")></i> })
         .collect_view();
     let budget = team.map(|team| {
-        let (budget, used) = (team.budget, team.used);
-        view! {
-            {budget_row("Steps", used.steps.into(), budget.steps().into(), "")}
-            {budget_row("Tokens", used.tokens, budget.tokens(), "")}
-            {budget_row("Time", used.minutes.into(), budget.minutes().into(), " min")}
-        }
+        team.budget_parts()
+            .into_iter()
+            .map(budget_row)
+            .collect_view()
     });
     Some(
         view! {
@@ -199,22 +186,14 @@ fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
     )
 }
 
-fn budget_row(name: &'static str, used: u64, all: u64, unit: &'static str) -> impl IntoView {
-    let share = (used as f64 / all.max(1) as f64).min(1.0);
-    let amount = move |value: u64| {
-        if unit.is_empty() {
-            compact(value)
-        } else {
-            value.to_string()
-        }
-    };
+fn budget_row(part: BudgetPart) -> impl IntoView {
     view! {
         <div class="ov-budget">
-            <span>{name}</span>
+            <span>{part.name}</span>
             <div class="ov-track">
-                <i class:near={share >= 0.8} style=format!("width:{:.0}%", share * 100.0)></i>
+                <i class:near=part.near() style=format!("width:{:.0}%", part.share() * 100.0)></i>
             </div>
-            <span class="num">{format!("{} of {}{unit}", amount(used), amount(all))}</span>
+            <span class="num">{part.text()}</span>
         </div>
     }
 }
@@ -223,23 +202,19 @@ fn members(team: &Team) -> Option<AnyView> {
     if team.members.is_empty() {
         return None;
     }
-    let at_work = team
-        .members
-        .iter()
-        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
-        .count();
+    let at_work = team.at_work();
     let rows = team
         .members
         .iter()
         .map(|member| {
-            let (word, class) = match member.status {
-                TaskStatus::Open | TaskStatus::Claimed => ("waits", "muted"),
-                TaskStatus::Running => ("running", "live"),
-                TaskStatus::Blocked => ("blocked", "warn"),
-                TaskStatus::Review => ("in review", "live"),
-                TaskStatus::Done => ("done", "good"),
-                TaskStatus::Failed => ("failed", "bad"),
+            let class = match member.status {
+                TaskStatus::Open | TaskStatus::Claimed => "muted",
+                TaskStatus::Running | TaskStatus::Review => "live",
+                TaskStatus::Blocked => "warn",
+                TaskStatus::Done => "good",
+                TaskStatus::Failed => "bad",
             };
+            let word = member.status.member_word();
             let role = member.role.clone().unwrap_or_else(|| "general".into());
             view! {
                 <div class="ov-row">
@@ -262,15 +237,16 @@ fn tokens(usage: ThreadTokens, plan: PlanCounts) -> Option<AnyView> {
     if usage.model_calls == 0 {
         return None;
     }
-    let spent = usage.spent.prompt_tokens + usage.spent.completion_tokens;
-    let cached = usage.spent.cached_prompt_tokens * 100 / usage.spent.prompt_tokens.max(1);
+    let spent = usage.spent_tokens();
+    let cached = usage.cached_percent();
     let calls = plural(usage.model_calls, "call");
     let aside = match usage.cost() {
         Some(cost) => format!("{calls} \u{00B7} {cost}"),
         None => calls,
     };
-    let per_task =
-        (plan.done > 0).then(|| figure(compact(spent / u64::from(plan.done)), "per task done"));
+    let per_task = usage
+        .per_task(plan.done)
+        .map(|per_task| figure(compact(per_task), "per task done"));
     Some(
         view! {
             <section class="ov-sec">
@@ -304,13 +280,8 @@ fn changes(overview: &Overview) -> Option<AnyView> {
             }
         })
         .collect_view();
-    let more = (changes.files as usize).saturating_sub(changes.newest.len());
-    let aside = format!(
-        "{} \u{00B7} +{} \u{2212}{}",
-        plural(changes.files.into(), "file"),
-        changes.added,
-        changes.removed
-    );
+    let more = changes.more();
+    let aside = changes.summary();
     Some(
         view! {
             <section class="ov-sec">
@@ -328,11 +299,7 @@ fn activity(overview: &Overview) -> Option<AnyView> {
     if activity.tool_runs == 0 && activity.agents_asked == 0 {
         return None;
     }
-    let aside = format!(
-        "{} \u{00B7} {} asked",
-        plural(activity.tool_runs, "tool run"),
-        plural(activity.agents_asked.into(), "agent")
-    );
+    let aside = activity.summary();
     let rows = activity
         .by_tool
         .iter()
@@ -387,10 +354,6 @@ fn log(newest: &[LogEntry], older: Vec<LogEntry>, narrow: bool) -> Option<AnyVie
         }
         .into_any(),
     )
-}
-
-fn plural(count: u64, noun: &str) -> String {
-    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
 }
 
 /// The local time of day of a log line.

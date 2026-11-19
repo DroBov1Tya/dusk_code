@@ -133,9 +133,57 @@ pub fn duration_words(ms: i64) -> String {
     }
 }
 
+/// How old something is in its largest whole unit: "now", "4m", "4h", "3d".
+pub fn age_words(ms: i64) -> String {
+    let minutes = ms.max(0) / 60_000;
+    match minutes {
+        0 => "now".into(),
+        1..60 => format!("{minutes}m"),
+        60..1440 => format!("{}h", minutes / 60),
+        _ => format!("{}d", minutes / 1440),
+    }
+}
+
+/// [`age_words`] as a phrase: "just now", "4m ago".
+pub fn ago_words(ms: i64) -> String {
+    match age_words(ms).as_str() {
+        "now" => "just now".into(),
+        age => format!("{age} ago"),
+    }
+}
+
+/// A running clock: `01:24`, or `1:02:03` from an hour on.
+pub fn clock_words(ms: u64) -> String {
+    let seconds = ms / 1_000;
+    let minutes = seconds / 60;
+    if minutes >= 60 {
+        format!("{}:{:02}:{:02}", minutes / 60, minutes % 60, seconds % 60)
+    } else {
+        format!("{minutes:02}:{:02}", seconds % 60)
+    }
+}
+
+/// [`duration_words`] for a count of seconds, as providers report waits.
+pub fn duration_words_secs(seconds: u64) -> String {
+    let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
+    duration_words(ms)
+}
+
 #[cfg(test)]
 mod wait_tests {
     use super::*;
+
+    #[test]
+    fn times_read_in_their_largest_unit() {
+        assert_eq!(ago_words(-5), "just now");
+        assert_eq!(ago_words(59_999), "just now");
+        assert_eq!(ago_words(4 * 60_000), "4m ago");
+        assert_eq!(age_words(5 * 3_600_000), "5h");
+        assert_eq!(age_words(3 * 86_400_000), "3d");
+        assert_eq!(clock_words(6_000), "00:06");
+        assert_eq!(clock_words(84_000), "01:24");
+        assert_eq!(clock_words(3_723_000), "1:02:03");
+    }
 
     fn turn(waiting: Option<TurnWait>) -> Turn {
         Turn {
