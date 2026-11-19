@@ -92,6 +92,10 @@ pub enum Response {
     StoreContents(crate::plugin::Contents),
     /// One text file of a store listing.
     StoreFile(crate::plugin::FilePreview),
+    /// What a repository's list holds, read without saving it.
+    StoreProbe(crate::plugin::Probe),
+    /// The repositories the user added, with their state.
+    StoreSources(Vec<crate::plugin::SourceRow>),
     /// A store picture (a cover or a screenshot), checked against its list: its bytes in
     /// base64, and their type.
     Media {

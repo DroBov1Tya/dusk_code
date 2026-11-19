@@ -164,6 +164,7 @@ impl Workspace {
             voice_form: crate::pages::settings::ai::voice::VoiceForm::new(window, cx),
             workshop: Default::default(),
             token_box: crate::pages::settings::TokenBox::new(window, cx),
+            repositories: crate::pages::settings::Repositories::new(window, cx),
             limit_edit,
             context_open: HashSet::new(),
             context_load: Default::default(),

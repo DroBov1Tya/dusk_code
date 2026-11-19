@@ -53,6 +53,11 @@ impl Config {
         &self.workshop
     }
 
+    /// The repositories the user added; checked when the config is written.
+    pub fn workshop_mut(&mut self) -> &mut super::super::Workshop {
+        &mut self.workshop
+    }
+
     pub fn plugin(&self, name: &str) -> PluginConfig {
         self.plugins.get(name).cloned().unwrap_or_default()
     }

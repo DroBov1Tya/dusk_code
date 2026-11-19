@@ -126,6 +126,39 @@ impl Runtime {
                 let file = store::contents::file(&source, &name, &path).await?;
                 return Ok(Response::StoreFile(file));
             }
+            StoreRequest::Probe { url, key } => {
+                let (mirror, index) = store::probe(&url, &key).await?;
+                return Ok(Response::StoreProbe(store::probed(&mirror.url, &index)));
+            }
+            StoreRequest::Sources => {
+                let rows = store::sources(self.paths(), &mirrors).await;
+                return Ok(Response::StoreSources(rows));
+            }
+            StoreRequest::AddSource { url, key } => {
+                // The client's probe is not trusted: the list is read again here.
+                let (mut mirror, _) = store::probe(&url, &key).await?;
+                anyhow::ensure!(
+                    !mirrors.iter().any(|item| item.url == mirror.url),
+                    "this repository is added already"
+                );
+                mirror.name = store::name_for(&mirror.url, &mirrors);
+                tracing::info!("workshop repository {} added", mirror.name);
+                self.config()
+                    .update(|config| config.workshop_mut().sources.push(mirror))?;
+            }
+            StoreRequest::RemoveSource { name } => {
+                anyhow::ensure!(
+                    mirrors.iter().any(|item| item.name == name),
+                    "there is no repository named {name}"
+                );
+                self.config().update(|config| {
+                    config
+                        .workshop_mut()
+                        .sources
+                        .retain(|item| item.name != name)
+                })?;
+                tracing::info!("workshop repository {name} removed");
+            }
         }
         Ok(Response::Done)
     }

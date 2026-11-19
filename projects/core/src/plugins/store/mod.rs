@@ -34,6 +34,8 @@ mod picture;
 #[cfg(test)]
 mod picture_tests;
 mod record;
+#[cfg(test)]
+mod repositories_tests;
 mod source;
 #[cfg(test)]
 mod tests;
@@ -59,6 +61,7 @@ use source::Fetched;
 pub use listing::Here;
 pub use pack::{FILE as PACK_FILE, Pack};
 pub use picture::{cover, screenshot};
+pub use source::{name_for, probe, probed};
 
 /// Where the store keeps a package while it is checked, under the plugins folder; the
 /// leading dot keeps it out of the plugins found.
@@ -107,6 +110,12 @@ pub async fn list(
         failed,
         picks,
     })
+}
+
+/// The repositories the user added, each read now, with its state.
+pub async fn sources(paths: &Paths, mirrors: &[Mirror]) -> Vec<dusk_protocol::plugin::SourceRow> {
+    let (fetched, failed) = source::read(paths, mirrors).await;
+    source::rows(mirrors, &fetched, &failed)
 }
 
 /// What the user agreed to install, as they were shown it.

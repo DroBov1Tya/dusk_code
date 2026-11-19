@@ -314,6 +314,44 @@ pub enum StoreRequest {
         name: String,
         path: String,
     },
+    /// Reads the signed list at `url` with the Ed25519 `key` (base64) without saving
+    /// anything; answered with `Response::StoreProbe`. `url` is a list's `https` address
+    /// or a GitHub repository's, whose list is then on its GitHub Pages site.
+    Probe { url: String, key: String },
+    /// The repositories the user added, each read now; answered with
+    /// `Response::StoreSources`.
+    Sources,
+    /// Probes `url` with `key` again and, when it passes, saves it as a repository under a
+    /// name the core gives it. Its items are Community.
+    AddSource { url: String, key: String },
+    /// Forgets a repository the user added; what it installed stays.
+    RemoveSource { name: String },
+}
+
+/// The answer to `StoreRequest::Probe`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Probe {
+    /// The list's address the probe read, after a repository's was turned into it.
+    pub url: String,
+    pub entries: u32,
+    pub plugins: u32,
+    pub serial: u64,
+    /// RFC 3339.
+    pub expires: String,
+}
+
+/// A repository the user added, as `StoreRequest::Sources` read it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceRow {
+    pub name: String,
+    pub url: String,
+    /// The first 16 hex digits of the SHA-256 of its key.
+    pub fingerprint: String,
+    /// Community, or Verified when the official list vouches for it.
+    pub tier: Tier,
+    pub entries: u32,
+    /// Why its list was refused; none when it was read.
+    pub error: Option<String>,
 }
 
 /// The answer to `StoreRequest::Contents`.

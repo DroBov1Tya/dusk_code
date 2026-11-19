@@ -11,6 +11,8 @@ pub use secrets::TokenBox;
 mod shortcuts;
 mod system;
 pub mod uninstall;
+mod workshop;
+pub use workshop::Repositories;
 
 use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
@@ -39,6 +41,8 @@ pub enum SettingsPage {
     Updates,
     Usage,
     Secrets,
+    /// The repositories added beside the official store.
+    Workshop,
     /// The pages plugins add; listed while one does.
     Plugins,
 }
@@ -104,6 +108,11 @@ const GROUPS: &[(&str, &[Page])] = &[
         &[
             (SettingsPage::Secrets, Glyph::Kit(IconName::Eye), "Secrets"),
             (
+                SettingsPage::Workshop,
+                Glyph::Kit(IconName::Globe),
+                "Workshop",
+            ),
+            (
                 SettingsPage::VersionControl,
                 Glyph::Own(icons::GIT_BRANCH),
                 "Version control",
@@ -134,6 +143,7 @@ const GROUPS: &[(&str, &[Page])] = &[
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     ws.token_box.settle(window, cx);
+    ws.repositories.settle(window, cx);
     let theme = cx.theme();
     let (border, muted) = (theme.border, theme.muted_foreground);
     let menu_width = if window.viewport_size().width < px(1200.) {
@@ -207,6 +217,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         SettingsPage::Keyboard => shortcuts::page(cx),
         SettingsPage::Updates | SettingsPage::Usage => system::render(ws, ws.settings_page, cx),
         SettingsPage::Secrets => secrets::render(ws, cx),
+        SettingsPage::Workshop => workshop::render(ws, cx),
         SettingsPage::Plugins => crate::plugins::settings_page(ws, cx),
         page => behavior::render(ws, page, cx),
     };
@@ -259,6 +270,7 @@ fn about(page: SettingsPage) -> &'static str {
         SettingsPage::Updates => "The version you run and the newest one.",
         SettingsPage::Usage => "What duskcode takes from this machine.",
         SettingsPage::Secrets => "Keys and tokens, kept in the system keychain.",
+        SettingsPage::Workshop => "Repositories of skills and plugins you added.",
         SettingsPage::Plugins => "Settings the switched-on plugins add.",
     }
 }

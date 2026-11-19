@@ -22,8 +22,8 @@ pub use permission::{KeyUse, Permissions};
 pub use place::{Opens, Part, Place};
 pub use store::{
     CATEGORIES, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind,
-    LOCAL_SOURCE, Listing, OFFICIAL_SOURCE, Order, PICKS, PREVIEW_BYTES, Picks, RepoStars, Runs,
-    ScreenshotRef, SourceFailure, StoreList, StoreRequest, Tier, UpdateReport,
+    LOCAL_SOURCE, Listing, OFFICIAL_SOURCE, Order, PICKS, PREVIEW_BYTES, Picks, Probe, RepoStars,
+    Runs, ScreenshotRef, SourceFailure, SourceRow, StoreList, StoreRequest, Tier, UpdateReport,
 };
 pub use view::{
     ButtonIcon, ListItem, MAX_NODES, MAX_TEXT, RowLayout, Size, Tone, UiEvent, Widget, check_view,

@@ -191,6 +191,10 @@ named! {
     R::Store(St::Screenshot { .. }) => "store.screenshot",
     R::Store(St::Contents { .. }) => "store.contents",
     R::Store(St::File { .. }) => "store.file",
+    R::Store(St::Probe { .. }) => "store.probe",
+    R::Store(St::Sources) => "store.sources",
+    R::Store(St::AddSource { .. }) => "store.add_source",
+    R::Store(St::RemoveSource { .. }) => "store.remove_source",
     R::InstallUpdate { .. } => "install_update",
     R::Shutdown => "shutdown",
 }

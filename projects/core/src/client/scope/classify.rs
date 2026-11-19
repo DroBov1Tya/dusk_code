@@ -83,11 +83,17 @@ pub fn classify(request: &Request) -> Access<'_> {
             | Store::Cover { .. }
             | Store::Screenshot { .. }
             | Store::Contents { .. }
-            | Store::File { .. },
+            | Store::File { .. }
+            | Store::Probe { .. }
+            | Store::Sources,
         ) => apart(Area::Store),
-        Request::Store(Store::Install { .. } | Store::Remove { .. } | Store::UpdateAll) => {
-            apart(Area::StoreInstall)
-        }
+        Request::Store(
+            Store::Install { .. }
+            | Store::Remove { .. }
+            | Store::UpdateAll
+            | Store::AddSource { .. }
+            | Store::RemoveSource { .. },
+        ) => apart(Area::StoreInstall),
         Request::SystemReport => apart(Area::System),
         Request::InstallUpdate { .. } => apart(Area::Update),
         Request::Shutdown => apart(Area::Shutdown),

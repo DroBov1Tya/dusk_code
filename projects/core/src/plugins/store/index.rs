@@ -25,6 +25,8 @@ pub const PUBLIC_KEY: &str = "ajB547F8pPEYYXGxEYBRZgpgw+iU57ydMrr6VtaLwBQ=";
 const FORMATS: [u32; 3] = [1, 2, 3];
 pub const MAX_INDEX_BYTES: u64 = 4 * 1024 * 1024;
 pub const MAX_SIGNATURE_BYTES: u64 = 1024;
+/// More than a list is ever expected to hold; a list past it is refused whole.
+pub const MAX_ENTRIES: usize = 2000;
 /// The largest package the store may name.
 pub const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 /// The largest cover: a picture for a card, not a gallery.
@@ -69,6 +71,8 @@ pub struct Index {
     /// Grows with every list signed; a list older than one seen is refused, so an old
     /// signed list cannot bring back an old package or hide an update.
     pub serial: u64,
+    /// RFC 3339, in the future.
+    pub expires: String,
     pub plugins: Vec<Entry>,
     /// Mirrors this list vouches for. Only the official list's are believed.
     pub verified: Vec<Mirror>,
@@ -246,6 +250,11 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
         raw.expires
     );
     ensure!(
+        raw.plugins.len() <= MAX_ENTRIES,
+        "the list names {} entries; at most {MAX_ENTRIES} are read",
+        raw.plugins.len()
+    );
+    ensure!(
         raw.format >= 2 || raw.verified.is_empty(),
         "a format 1 list names verified mirrors"
     );
@@ -269,6 +278,7 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
     }
     Ok(Index {
         serial: raw.serial,
+        expires: raw.expires,
         plugins,
         verified: raw.verified,
     })
