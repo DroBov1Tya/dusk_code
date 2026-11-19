@@ -240,7 +240,7 @@ fn item_view(entry: Entry, chat: Chat, thread: Option<String>, read_only: bool) 
         Item::Image(shown) => view! { <ImageCard shown /> }.into_any(),
         Item::Audio(shown) => view! { <AudioCard shown /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),
-        Item::Error(text) => view! { <div class="notice error">{text}</div> }.into_any(),
+        Item::Error(text) => view! { <ErrorRow id text chat thread /> }.into_any(),
     }
 }
 
@@ -549,5 +549,35 @@ mod tests {
                 .iter()
                 .any(|block| matches!(block, Block::Turn { .. }))
         );
+    }
+}
+
+/// A failure said quietly: the words in the text color on a raised row with a thin edge
+/// in the danger color. The error the chat ends with while no turn runs offers to send
+/// the last message once more.
+#[component]
+fn ErrorRow(id: u64, text: String, chat: Chat, thread: Option<String>) -> impl IntoView {
+    let last_sent = move || {
+        chat.with(|c| {
+            let ends_here = !c.working && c.items.last().is_some_and(|e| e.id == id);
+            ends_here.then(|| {
+                c.items.iter().rev().find_map(|e| match &e.item {
+                    Item::User(text) => Some(text.clone()),
+                    _ => None,
+                })
+            })?
+        })
+    };
+    let thread = StoredValue::new(thread);
+    view! {
+        <div class="error-row" role="alert">
+            <Icon name=IconName::TriangleAlert />
+            <span class="error-text">{text}</span>
+            {move || thread.get_value().and(last_sent()).map(|again| view! {
+                <button class="ghost quiet" title="Send your last message once more" on:click=move |_| {
+                    crate::state::state().send(thread.get_value(), again.clone(), false, Vec::new());
+                }>"Send again"</button>
+            })}
+        </div>
     }
 }

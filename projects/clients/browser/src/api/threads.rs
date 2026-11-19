@@ -107,3 +107,22 @@ pub async fn get_approvals(thread_id: &str) -> Res<Option<ApprovalPolicy>> {
     let thread_id = thread_id.to_owned();
     ask!(thread(ThreadRequest::GetApprovals { thread_id }), Response::Approvals(a) => a)
 }
+
+/// The thread's pins, oldest message first.
+pub async fn pins(thread_id: &str) -> Res<Vec<dusk_protocol::thread::Pin>> {
+    let thread_id = thread_id.to_owned();
+    ask!(thread(ThreadRequest::Pins { thread_id }), Response::Pins(p) => p)
+}
+
+/// Pins or unpins one message; answers with the thread's pins.
+pub async fn set_pinned(
+    thread_id: &str,
+    message_id: &str,
+    pinned: bool,
+) -> Res<Vec<dusk_protocol::thread::Pin>> {
+    let (thread_id, message_id) = (thread_id.to_owned(), message_id.to_owned());
+    ask!(
+        thread(ThreadRequest::Pin { thread_id, message_id, pinned }),
+        Response::Pins(p) => p
+    )
+}

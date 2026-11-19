@@ -1,7 +1,7 @@
 //! The right column of a chat: its plan and tasks, subagents, changed files, background
 //! jobs and what the context holds.
 
-use crate::{api, pages::review::DiffView, ui::run};
+use crate::{api, pages::review::DiffView, state::state, ui::run};
 use dusk_protocol::project::{Change, ChangeKind, FileDiff};
 use leptos::prelude::*;
 
@@ -40,8 +40,30 @@ pub fn ChangesTab(id: String) -> impl IntoView {
         }
     };
     let show_all = show.clone();
+    // The project's pull requests, as the core keeps them told.
+    let app = state();
+    if let Some(project) = app.project.get_untracked() {
+        let id = project.clone();
+        run(
+            async move { api::repository_status(&id).await },
+            move |status| app.repository.set(Some((project, status))),
+        );
+    }
+    let pulls = move || {
+        let project = app.project.get()?;
+        app.repository
+            .get()
+            .filter(|(of, _)| *of == project && !of.is_empty())
+            .map(|(_, status)| status)
+            .filter(|status| !status.pulls.is_empty())
+    };
     view! {
         <div class="changes">
+            {move || pulls().map(|status| view! {
+                <ul class="pulls">
+                    {status.pulls.iter().map(|pull| crate::pages::project::pull_row(&status.repository, pull)).collect_view()}
+                </ul>
+            })}
             <div class="row-actions">
                 <button class="ghost" on:click=move |_| load()>"Refresh"</button>
                 <button class="ghost" on:click=move |_| show_all(None)>"All changes"</button>

@@ -213,12 +213,14 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
             .map(|(name, help)| (*name, *help))
             .collect::<Vec<_>>()
     };
+    let panel_open = id.is_some();
     let access_id = id.clone();
     let paste_id = id.clone();
     let drop_id = id.clone();
     let pick_id = id.clone();
     view! {
         <div class="composer-wrap">
+            {panel_open.then(|| view! { <super::panel::Panel /> })}
             <div class="composer">
                 <Show when=move || !suggestions().is_empty()>
                     <ul class="suggest">

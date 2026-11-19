@@ -5,7 +5,11 @@ mod blocks;
 mod composer;
 mod controls;
 mod markdown;
+mod panel;
 mod pictures;
+mod pins;
+mod plan;
+mod pull_link;
 mod shown;
 mod voice;
 mod working;
@@ -51,9 +55,11 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
                     {menu_id.clone().map(|id| view! { <ChatMenu id /> })}
                 </header>
             </Show>
+            {id.clone().map(|id| view! { <pins::Pins id chat /> })}
             <Transcript chat thread=id.clone() />
             <approval::Approvals chat />
             <approval::AskUser chat id=id.clone() />
+            {id.clone().map(|id| view! { <plan::PlanStrip id chat /> })}
             <Composer id chat />
         </div>
     }

@@ -216,9 +216,10 @@ fn GitSection(id: String) -> impl IntoView {
     }
 }
 
-/// A pull request: its state, title, number and lines, and a dot for its checks. The
-/// core gives https links only.
-fn pull_row(repository: &str, pull: &PullStatus) -> impl IntoView + use<> {
+/// A pull request: its state, title, number and lines, and its checks as a dot and a
+/// "passed/total" count whose click opens the list of every check, as the desktop app
+/// has it. The core gives https links only.
+pub fn pull_row(repository: &str, pull: &PullStatus) -> impl IntoView + use<> {
     let (tone, state) = match pull.state {
         PullState::Open => ("tone-success", "open"),
         PullState::Draft => ("tone-neutral", "draft"),
@@ -230,11 +231,14 @@ fn pull_row(repository: &str, pull: &PullStatus) -> impl IntoView + use<> {
         CheckState::Pending => "dot wait running",
         CheckState::Failing => "dot off",
     });
-    let checks = format!(
+    let said = format!(
         "{} checks: {} passed, {} running, {} failed",
         pull.checks.total, pull.checks.passed, pull.checks.running, pull.checks.failed
     );
     let url = Some(pull.url.clone()).filter(|url| url.starts_with("https://"));
+    let open = RwSignal::new(false);
+    let count = format!("{}/{}", pull.checks.passed, pull.checks.total);
+    let list = pull.checks.list.clone();
     view! {
         <li>
             <span class=format!("tone {tone} pull-state")>{state}</span>
@@ -244,12 +248,19 @@ fn pull_row(repository: &str, pull: &PullStatus) -> impl IntoView + use<> {
             <span class="muted">{format!("{repository} #{}", pull.number)}</span>
             <span class="add">{format!("+{}", pull.added)}</span>
             <span class="del">{format!("\u{2212}{}", pull.removed)}</span>
-            {dot.map(|dot| view! { <span class=dot title=checks.clone()></span> })}
-            {(!pull.checks.list.is_empty()).then(|| view! {
-                <details class="pull-checks">
-                    <summary class="muted">{checks.clone()}</summary>
-                    <ul>{pull.checks.list.iter().map(check_row).collect_view()}</ul>
-                </details>
+            {dot.map(|dot| view! {
+                <span class="pull-checks">
+                    <button class="pull-count" title=said.clone() aria-label=said.clone()
+                        aria-expanded=move || open.get().to_string()
+                        on:click=move |_| open.update(|o| *o = !*o)>
+                        <span class=dot></span><span class="num">{count.clone()}</span>
+                    </button>
+                    <Show when=move || open.get()>
+                        <div class="checks-pop" on:keydown=move |ev| if ev.key() == "Escape" { open.set(false) }>
+                            <ul>{list.iter().map(check_row).collect_view()}</ul>
+                        </div>
+                    </Show>
+                </span>
             })}
         </li>
     }

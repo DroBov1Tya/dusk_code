@@ -5,7 +5,7 @@ use dusk_protocol::{
     config::ApprovalPolicy,
     model::{ModelEvent, ToolCall},
     thread::{
-        AgentState, Block, JobResult, Message, MessageRole, Note, Retry, RetryRow, Task,
+        AgentState, Block, JobResult, Message, MessageRole, Note, Pin, Retry, RetryRow, Task,
         ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, agent_name, clip, note,
         retry_row, turn_spend,
     },
@@ -99,6 +99,8 @@ pub struct ChatData {
     pub moved: u64,
     pub access: Option<ApprovalPolicy>,
     pub tasks: Vec<Task>,
+    /// The pinned messages, as the core cut their excerpts.
+    pub pins: Vec<Pin>,
     pub agents: Vec<Agent>,
     pub approvals: Vec<ApprovalRequest>,
     pub question: Option<Question>,
@@ -328,6 +330,13 @@ impl ChatData {
                 self.tokens = Some((used, input_limit));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::Pins(pins) => self.pins = pins,
+            ThreadEvent::TaskChanged(task) => {
+                match self.tasks.iter_mut().find(|t| t.task_id == task.task_id) {
+                    Some(known) => *known = task,
+                    None => self.tasks.push(task),
+                }
+            }
             ThreadEvent::SubagentStarted {
                 thread_id,
                 agent,

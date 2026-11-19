@@ -20,6 +20,7 @@ pub fn Markdown(
         let source = text.get();
         if let Some(root) = root.get() {
             draw(&root, &source, marks);
+            super::pull_link::claim(&root);
         }
     });
     view! { <div class="md" node_ref=root></div> }
