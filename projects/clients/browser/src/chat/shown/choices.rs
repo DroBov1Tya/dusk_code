@@ -53,8 +53,9 @@ pub fn live(chat: &ChatData, id: u64) -> bool {
         && chat.pending.is_empty()
         && chat
             .items
-            .last()
-            .is_some_and(|last| last.id == id && matches!(last.item, Item::Block(_)))
+            .len()
+            .checked_sub(1)
+            .is_some_and(|last| chat.id(last) == id && matches!(chat.items[last], Item::Block(_)))
 }
 
 /// The labels a question is drawn with as reply buttons: none when it is not light, and
@@ -143,7 +144,6 @@ fn step(element: &web_sys::Element, forward: bool) -> Option<web_sys::Element> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat::data::Entry;
     use dusk_protocol::{
         thread::{Block, Line},
         tools::Question,
@@ -165,11 +165,7 @@ mod tests {
 
     fn chat_with_block() -> ChatData {
         let mut chat = ChatData::default();
-        chat.items.push(Entry {
-            id: 1,
-            item: Item::Block(choices()),
-            at: 0,
-        });
+        chat.push(Item::Block(choices()), 0);
         chat
     }
 
@@ -202,11 +198,14 @@ mod tests {
         chat.sent("hello".into());
         assert!(!live(&chat, 1));
         chat.pending.clear();
-        chat.items.push(Entry {
-            id: 2,
-            item: Item::User("later".into()),
-            at: 1,
-        });
+        chat.push(
+            Item::User {
+                text: "later".into(),
+                sequence: None,
+                answered: Vec::new(),
+            },
+            1,
+        );
         assert!(!live(&chat, 1));
     }
 }
