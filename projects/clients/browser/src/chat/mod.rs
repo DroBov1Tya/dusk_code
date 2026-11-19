@@ -5,6 +5,7 @@ mod blocks;
 mod composer;
 mod controls;
 mod markdown;
+mod panel;
 mod pictures;
 mod pins;
 mod plan;

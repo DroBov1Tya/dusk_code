@@ -845,3 +845,25 @@ button.link.quiet:hover { color: var(--fg); }
 .pin-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .pin-unpin { visibility: hidden; min-width: 24px; height: 24px; }
 .pin-row:hover .pin-unpin, .pin-unpin:focus-visible { visibility: visible; }
+
+/* The composer's panel: a tab on the box's edge, in sight while the pointer is over the
+   chat, and the band it opens glued on top of the box. */
+.composer-panel { grid-column: 1 / -1; position: relative; display: flex; flex-direction: column; align-items: center; }
+.composer-tab { width: 36px; height: 14px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--panel); color: var(--muted); opacity: 0; transition: opacity 140ms var(--ease); margin-bottom: -1px; z-index: 1; }
+.chat:hover .composer-tab, .composer-tab:focus-visible, .composer-tab.open { opacity: 1; }
+.composer-tab .glyph { width: 12px; height: 12px; transform: rotate(180deg); }
+.composer-tab.open .glyph { transform: none; }
+.composer-band { align-self: stretch; display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s3); background: var(--panel); border: 1px solid var(--line); border-bottom: 0; border-radius: 16px 16px 0 0; margin-bottom: -12px; padding-bottom: calc(var(--s1) + 12px); animation: rise var(--t-open) var(--ease); }
+.composer-band .grow { flex: 1; }
+.composer-folder { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ring.small { width: 16px; height: 16px; font-size: 0; }
+.limits { position: relative; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; }
+.limits-card { display: none; position: absolute; right: 0; bottom: calc(100% + 6px); width: 264px; padding: var(--s3); flex-direction: column; gap: var(--s2); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px color-mix(in srgb, var(--bg) 60%, transparent); font-size: 13px; z-index: 5; }
+.limits:hover .limits-card, .limits:focus-visible .limits-card { display: flex; animation: rise var(--t-open) var(--ease); }
+.limits-row { display: flex; align-items: baseline; gap: var(--s2); }
+.limits-row .grow { flex: 1; }
+.limits-row .muted { font-size: 12px; }
+.limits-window { display: flex; flex-direction: column; gap: 6px; }
+.limits-bar { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.limits-bar span { display: block; height: 100%; border-radius: 999px; }
+.limits-bar .tone-accent { background: var(--accent); } .limits-bar .tone-warn { background: var(--warn); } .limits-bar .tone-bad { background: var(--bad); }
