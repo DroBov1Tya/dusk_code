@@ -279,6 +279,8 @@ pub struct Workspace {
     pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.
     pub picked: Vec<usize>,
+    /// Approval command boxes shown in full, by request and step.
+    pub approval_open: std::collections::HashSet<(u64, usize)>,
     pub attach_open: bool,
     pub left_hidden: bool,
     /// The strip of places at the left edge, hidden on the user's word.

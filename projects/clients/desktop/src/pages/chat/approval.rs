@@ -19,8 +19,24 @@ use crate::{
     workspace::Workspace,
 };
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let mut cards = div().flex().flex_col().gap_2();
+/// Lines of a command shown before its box scrolls.
+const SHOWN_LINES: f32 = 3.;
+const LINE: f32 = 18.;
+/// Room the buttons row and the card's padding take.
+const BUTTONS: f32 = 72.;
+
+/// The dock never takes more than half the window; each card fits in it with its buttons,
+/// so a long command scrolls inside its box and the yes and no stay in view.
+pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
+    let dock = (window.viewport_size().height * 0.5).max(px(160.));
+    let budget = (dock - px(BUTTONS)).max(px(LINE * SHOWN_LINES + 16.));
+    let mut cards = div()
+        .id("approval-dock")
+        .max_h(dock)
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .gap_2();
     let Some(chat) = ws.shown_chat() else {
         return cards;
     };
@@ -52,7 +68,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .label("Deny")
                 .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Deny, cx))),
         );
-        // A command is shown as code, in full: it came from the model and is about to run.
+        // A command is shown as code: it came from the model and is about to run. Its box
+        // shows three lines and scrolls; "Show all" opens it up to the card's room.
         // A batch shows every step, one row each: the yes covers all of them.
         let what = match &request.request {
             // A long batch scrolls inside the card, so the buttons stay in view.
@@ -60,12 +77,23 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 let steps = request.steps.iter().fold(
                     div()
                         .id(SharedString::from(format!("steps-{id}")))
-                        .max_h(px(240.))
+                        .max_h(budget - px(24.))
                         .overflow_y_scroll()
                         .flex()
                         .flex_col()
                         .gap_1(),
-                    |list, step| list.child(div().pl_3().child(step.line())),
+                    |list, step| match &step.request {
+                        Request::Command { command } if !step.allowed => list.child(
+                            div()
+                                .pl_3()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(format!("{}.", step.number))
+                                .child(code(ws, (id, step.number), command, budget, cx)),
+                        ),
+                        _ => list.child(div().pl_3().child(step.line())),
+                    },
                 );
                 div()
                     .flex()
@@ -74,34 +102,19 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .child(request.title("The agent"))
                     .child(steps)
             }
-            Request::Command { command } => {
-                let mono = crate::ui::theme::prefs(cx)
-                    .mono_font
-                    .clone()
-                    .unwrap_or_else(|| "Menlo".to_owned());
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child("The agent wants to run")
-                    .child(
-                        div()
-                            .px_3()
-                            .py_2()
-                            .rounded_lg()
-                            .bg(cx.theme().background)
-                            .small()
-                            .font_family(mono)
-                            .child(command.clone()),
-                    )
-            }
+            Request::Command { command } => div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child("The agent wants to run")
+                .child(code(ws, (id, 0), command, budget - px(24.), cx)),
             other => div().child(other.describe("The agent")),
         };
         cards = cards.child(
             card(cx)
                 .border_color(warning.opacity(0.6))
                 .child(what)
-                .child(buttons),
+                .child(buttons.flex_none()),
         );
     }
     if let Some(question) = chat.questions.front().filter(|question| buttons(question)) {
@@ -185,6 +198,70 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         cards = cards.child(card);
     }
     cards
+}
+
+/// A command in a box of three lines that scrolls inside; long lines wrap. `key` is the
+/// request and step, so each box opens on its own; open, it grows up to `room`.
+fn code(
+    ws: &Workspace,
+    key: (u64, usize),
+    command: &str,
+    room: Pixels,
+    cx: &mut Context<Workspace>,
+) -> Div {
+    let mono = crate::ui::theme::prefs(cx)
+        .mono_font
+        .clone()
+        .unwrap_or_else(|| "Menlo".to_owned());
+    let open = ws.approval_open.contains(&key);
+    let shut = px(LINE * SHOWN_LINES + 16.);
+    let long = long(command);
+    let height = if open {
+        (room - px(28.)).max(shut)
+    } else {
+        shut
+    };
+    let (id, step) = key;
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            div()
+                .id(SharedString::from(format!("command-{id}-{step}")))
+                .max_h(height)
+                .overflow_y_scroll()
+                .px_3()
+                .py_2()
+                .rounded_lg()
+                .bg(cx.theme().background)
+                .small()
+                .line_height(px(LINE))
+                .font_family(mono)
+                .whitespace_normal()
+                .child(command.to_owned()),
+        )
+        .when(long, |column| {
+            column.child(
+                div()
+                    .id(SharedString::from(format!("command-more-{id}-{step}")))
+                    .meta()
+                    .text_color(cx.theme().muted_foreground)
+                    .cursor_pointer()
+                    .child(if open { "Show less" } else { "Show all" })
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        if !ws.approval_open.remove(&key) {
+                            ws.approval_open.insert(key);
+                        }
+                        cx.notify();
+                    })),
+            )
+        })
+}
+
+/// More than the box shows: over three lines, or a line long enough to wrap past them.
+fn long(command: &str) -> bool {
+    command.lines().count() > SHOWN_LINES as usize || command.chars().count() > 240
 }
 
 /// A short question is answered with one click on a pill, not in a card.
