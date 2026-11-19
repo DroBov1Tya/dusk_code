@@ -29,6 +29,23 @@ pub use dusk_protocol::catalog::{AgentNode, AgentTree};
 pub const GENERAL_AGENT: &str = "general";
 pub const GENERAL_DESCRIPTION: &str = "works like the chat in MAIN mode, with every tool; \
 for research, reading code and self-contained parts of a task";
+/// The names of the agents duskcode brings: the general agent and those it ships in
+/// `resources/agents`. No source but the official one may take one, and a folder of
+/// one a store put here from elsewhere is not used.
+pub fn builtin_names() -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::from([GENERAL_AGENT.to_owned()]);
+    let shipped = resources::root().ok().map(|root| root.join("agents"));
+    if let Some(entries) = shipped.and_then(|folder| std::fs::read_dir(folder).ok()) {
+        names.extend(
+            entries
+                .flatten()
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .filter(|name| !name.starts_with('.')),
+        );
+    }
+    names
+}
+
 /// A chat is at depth 0; an agent three levels down can no longer ask another.
 pub const MAX_AGENT_DEPTH: usize = 3;
 
@@ -54,10 +71,11 @@ impl Agents {
     /// Reads `agents/` and records what is there.
     pub async fn scan(&self) -> Result<()> {
         let directory = self.directory.clone();
-        let (found, problems, skipped) =
-            tokio::task::spawn_blocking(move || read_agents(&directory))
-                .await
-                .context("cannot read the agents")?;
+        let (found, problems, skipped) = tokio::task::spawn_blocking(move || {
+            without_impostors(read_agents(&directory), &directory)
+        })
+        .await
+        .context("cannot read the agents")?;
         let identities = self.state.sync_identities(&found).await?;
         *self.identities.write() = identities;
         *self.problems.write() = problems;
@@ -250,6 +268,48 @@ fn branches(
             children: branches(Some(&identity.name), placed, all, config),
         })
         .collect()
+}
+
+/// Leaves out an agent with a built-in agent's name that the store put here from a source
+/// other than the official one: the built-in one stays. A folder the user made keeps its
+/// name, as `agents/general` replaces the general agent.
+fn without_impostors(
+    (found, mut problems, skipped): (Vec<Identity>, Vec<Problem>, Vec<Problem>),
+    directory: &std::path::Path,
+) -> (Vec<Identity>, Vec<Problem>, Vec<Problem>) {
+    use crate::plugins::store::origin::Origins;
+    use dusk_protocol::plugin::OFFICIAL_SOURCE;
+    let builtin = builtin_names();
+    let origins = Origins::beside(directory);
+    let found = found
+        .into_iter()
+        .filter(|identity| {
+            let impostor = origins
+                .of("agents", &identity.name)
+                .filter(|(_, origin)| {
+                    builtin.contains(&identity.name) && origin.source != OFFICIAL_SOURCE
+                })
+                .map(|(_, origin)| origin.source.clone());
+            match impostor {
+                Some(source) => {
+                    warn!(
+                        "agent {} from {source} not used: the name is a built-in agent's",
+                        identity.name
+                    );
+                    problems.push(Problem {
+                        node: identity.name.clone(),
+                        reason: format!(
+                            "{} is a built-in agent's name; the copy from {source} is not used",
+                            identity.name
+                        ),
+                    });
+                    false
+                }
+                None => true,
+            }
+        })
+        .collect();
+    (found, problems, skipped)
 }
 
 fn read_agents(directory: &std::path::Path) -> (Vec<Identity>, Vec<Problem>, Vec<Problem>) {
@@ -479,5 +539,36 @@ mod tests {
         );
         assert_eq!(origins.unverified("agents", "mine"), None);
         assert_eq!(origins.unverified("skills", "far"), None);
+    }
+
+    /// An agent a store put here under a built-in agent's name from any source but the
+    /// official one is not used, so the built-in one stays; the user's own folder of that
+    /// name still replaces it.
+    #[tokio::test]
+    async fn a_built_in_agent_is_not_replaced_from_another_source() {
+        let paths = crate::testing::temp_paths("agents-impostor");
+        agent_file(&paths, GENERAL_AGENT);
+        installed(&paths, GENERAL_AGENT, "hub", "");
+        let state = Arc::new(crate::testing::temp_state("agents-impostor").await);
+        let agents = Agents::new(paths.agents_dir(), Arc::clone(&state));
+        agents.scan().await.unwrap();
+        assert!(agents.get(GENERAL_AGENT).is_none());
+        let config = crate::testing::temp_live_config("agents-impostor").current();
+        assert!(agents.builtin_general(&config));
+        assert!(
+            agents
+                .problems
+                .read()
+                .iter()
+                .any(|problem| problem.node == GENERAL_AGENT)
+        );
+        // A keyed mirror is no better.
+        installed(&paths, GENERAL_AGENT, "friends", "a2V5");
+        agents.scan().await.unwrap();
+        assert!(agents.get(GENERAL_AGENT).is_none());
+        // The user's own folder of that name is theirs to keep.
+        std::fs::remove_file(paths.config_root().join("store.json")).unwrap();
+        agents.scan().await.unwrap();
+        assert!(agents.get(GENERAL_AGENT).is_some());
     }
 }

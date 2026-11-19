@@ -381,3 +381,34 @@ fn a_review_shows_what_an_update_changes_on_disk() {
     let review = review::compare("hash".into(), &BTreeMap::new(), &agent);
     assert!(review.agent && review.agent_tools.is_none());
 }
+
+/// No source but the official one may bring an agent named as, or close to, one duskcode
+/// brings: it would replace the general agent every chat delegates to.
+#[test]
+fn a_built_in_agent_s_name_is_taken_from_every_other_source() {
+    use dusk_protocol::plugin::OFFICIAL_SOURCE;
+    for name in ["general", "generall"] {
+        for source in ["loose", "friends"] {
+            assert!(
+                listing::reserved(source, Kind::Agent, name).is_some(),
+                "{name} {source}"
+            );
+        }
+        assert!(listing::reserved(OFFICIAL_SOURCE, Kind::Agent, name).is_none());
+    }
+    assert!(listing::reserved("loose", Kind::Skill, "general").is_none());
+    assert!(listing::reserved("loose", Kind::Agent, "doc-writer").is_none());
+    // A shipped agent's name, when the release's agents are here to read.
+    if let Some(name) = crate::catalog::agents::builtin_names()
+        .into_iter()
+        .find(|name| name != "general")
+    {
+        assert!(
+            listing::reserved("loose", Kind::Agent, &name).is_some(),
+            "{name}"
+        );
+    }
+    let paths = crate::testing::temp_paths("guard-agents");
+    let taken = listing::taken(&paths, &Record::default(), &[], "loose");
+    assert!(taken.contains("general"));
+}

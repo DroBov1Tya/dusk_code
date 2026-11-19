@@ -118,6 +118,7 @@ pub async fn list(
         })
         .collect();
     listing::guard_names(&mut listings, &taken);
+    listing::guard_agents(&mut listings);
     listings.retain(|listing| {
         (kinds.is_empty() || kinds.contains(&listing.kind))
             && category.is_none_or(|category| {
@@ -163,6 +164,9 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
         return Err(anyhow!("{}: {}", failure.source, failure.error));
     }
     let (source, entry) = pick(&fetched, agreed)?;
+    if let Some(why) = listing::reserved(&source.name, entry.kind, &entry.name) {
+        anyhow::bail!(why);
+    }
     if source.tier == Tier::Unverified {
         let record = Record::load(paths)?;
         let taken = listing::taken(paths, &record, &fetched, &source.name);
