@@ -434,6 +434,11 @@ The program runs confined for this one call. It cannot widen this by any message
 
 On Linux a call runs in its own user and network namespace; where unprivileged user
 namespaces are off, the plugin does not start and its row in Settings, Plugins says why.
+Its Landlock rules handle every file right the kernel knows, truncation among them, so
+nothing it may not write can be emptied either; where Landlock is older than Linux 6.2 a
+plugin that serves a contract does not start, and its row says "this Linux cannot stop a
+program from emptying files". A call refuses when `HOME` is `/`, empty or not a folder,
+since home could not be hidden then.
 
 ### Versions
 

@@ -149,6 +149,14 @@ impl Isolation {
             (false, Some(broker)) => Network::Broker(broker.port()),
             (false, None) => anyhow::bail!("the plugin may connect, but has no broker"),
         };
+        // A call promises a read-only project and a hidden home: a Landlock that cannot
+        // close truncation cannot keep that.
+        #[cfg(target_os = "linux")]
+        if contract {
+            platform::every_file_right().map_err(|error| {
+                anyhow::anyhow!("{error}, so a plugin that serves a contract cannot start here")
+            })?;
+        }
         // Landlock cannot keep a program to one address: only a namespace can, and only
         // a contract's programs get one.
         #[cfg(target_os = "linux")]
@@ -206,6 +214,7 @@ impl Isolation {
                 hand_off: true,
                 stat: Vec::new(),
                 listed: Vec::new(),
+                every_file_right: false,
             },
             #[cfg(target_os = "linux")]
             gate,
@@ -420,6 +429,7 @@ impl Isolation {
         confinement.reopened.extend(reopened);
         confinement.keychain = self.keychain;
         confinement.hand_off = false;
+        confinement.every_file_right = true;
         call.cwd = Some(project);
         Ok(call)
     }

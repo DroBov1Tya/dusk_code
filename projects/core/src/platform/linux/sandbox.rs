@@ -36,6 +36,46 @@ const SYSTEM_PROGRAMS: [&str; 7] = [
     "/nix/store",
 ];
 
+/// Landlock handles truncation since this ABI (Linux 6.2); before it any file the user
+/// owns can be emptied by a confined program.
+const TRUNCATE_ABI: i32 = 3;
+/// The newest ABI whose file rights are known here; later ones add no file right but
+/// `ResolveUnix`, which would close every Unix socket.
+const NEWEST_FILE_ABI: i32 = 8;
+
+/// The Landlock ABI of the running kernel; 0 when it has none. Asked once.
+fn running_abi() -> i32 {
+    static ABI_FOUND: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *ABI_FOUND.get_or_init(|| {
+        // SAFETY: the version query takes no ruleset and writes nothing.
+        let version = unsafe {
+            libc::syscall(
+                libc::SYS_landlock_create_ruleset,
+                std::ptr::null::<libc::c_void>(),
+                0usize,
+                1u32, // LANDLOCK_CREATE_RULESET_VERSION
+            )
+        };
+        i32::try_from(version).unwrap_or(0).max(0)
+    })
+}
+
+/// Whether a confinement that must handle every file right can be made here: why not,
+/// in brackets after "this Linux cannot stop a program from emptying files".
+pub fn every_file_right() -> Result<()> {
+    file_rights(running_abi()).map(|_| ())
+}
+
+/// The file rights ABI `abi` handles, when it closes truncation.
+fn file_rights(abi: i32) -> Result<ABI> {
+    ensure!(
+        abi >= TRUNCATE_ABI,
+        "this Linux cannot stop a program from emptying files (Landlock here is older than \
+         Linux 6.2)"
+    );
+    Ok(ABI::from(abi.min(NEWEST_FILE_ABI)))
+}
+
 pub fn available() -> bool {
     rules(&Confinement::around(Path::new("/"), Path::new("/"), None)).is_ok()
 }
@@ -83,11 +123,19 @@ pub fn confine(command: &mut Command, confinement: &Confinement) -> Result<()> {
 }
 
 fn rules(confinement: &Confinement) -> Result<RulesetCreated> {
-    let all = AccessFs::from_all(ABI_VERSION);
+    // A rule handled only grants: what this ABI does not name stays open, truncation
+    // and device ioctls among it before 6.2 and 6.10.
+    let abi = match confinement.every_file_right {
+        true => file_rights(running_abi())?,
+        false => ABI_VERSION,
+    };
+    let all = AccessFs::from_all(abi);
     let read: BitFlags<AccessFs> = match confinement.programs {
         Some(_) => AccessFs::ReadFile | AccessFs::ReadDir,
         None => AccessFs::from_read(ABI_VERSION),
     };
+    // `> /dev/null` opens it with O_TRUNC; ioctls on the terminal stay closed.
+    let device_rights: BitFlags<AccessFs> = all & (AccessFs::WriteFile | AccessFs::Truncate);
     let devices = ["/dev/null", "/dev/zero", "/dev/tty"];
     let mut ruleset = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
@@ -107,7 +155,7 @@ fn rules(confinement: &Confinement) -> Result<RulesetCreated> {
         .create()?
         .add_rules(path_beneath_rules(readable(&confinement.hidden), read))?
         .add_rules(path_beneath_rules(&confinement.reopened, read))?
-        .add_rules(path_beneath_rules(devices, AccessFs::WriteFile))?
+        .add_rules(path_beneath_rules(devices, device_rights))?
         .add_rules(path_beneath_rules(&confinement.writable, all))?;
     if let Some(programs) = &confinement.programs {
         let execute = AccessFs::Execute | AccessFs::ReadFile | AccessFs::ReadDir;
@@ -190,5 +238,78 @@ mod tests {
         assert!(run(format!("echo yes > {}/file", open.display())).await);
         assert!(!run(format!("echo no > {}/file", root.display())).await);
         assert!(!run(format!("cat {}/key", closed.display())).await);
+    }
+
+    #[test]
+    fn a_landlock_without_truncation_is_refused() {
+        for abi in [0, 1, 2] {
+            let error = file_rights(abi).unwrap_err().to_string();
+            assert!(error.contains("older than Linux 6.2"), "{error}");
+        }
+        assert_eq!(file_rights(3).unwrap(), ABI::V3);
+        assert_eq!(file_rights(5).unwrap(), ABI::V5);
+        assert_eq!(file_rights(9).unwrap(), ABI::V8, "no ResolveUnix");
+    }
+
+    /// With every file right handled, a file it may read or may not see cannot be
+    /// emptied: not by truncate(2), not by an open with O_TRUNC, not through a
+    /// read-only descriptor it was given. Without, the first two can (ABI v1 alone).
+    #[tokio::test]
+    async fn every_file_right_closes_truncation() {
+        if every_file_right().is_err() || !Path::new("/usr/bin/perl").exists() {
+            eprintln!("no Landlock with truncation, or no perl; skipped");
+            return;
+        }
+        let root = crate::testing::temp_dir("landlock-truncate");
+        let open = root.join("open");
+        let closed = root.join("closed");
+        std::fs::create_dir_all(&open).unwrap();
+        std::fs::create_dir_all(&closed).unwrap();
+        let readable = root.join("readable");
+        let hidden = closed.join("key");
+        let confinement = |every_file_right| Confinement {
+            writable: vec![open.clone()],
+            hidden: vec![closed.clone()],
+            every_file_right,
+            ..Confinement::around(&open, &open, None)
+        };
+        let perl = |code: &str, file: &Path, every| {
+            let mut command = command(
+                Path::new("/usr/bin/perl"),
+                &[
+                    "-MFcntl".into(),
+                    "-e".into(),
+                    code.into(),
+                    file.display().to_string(),
+                ],
+                &confinement(every),
+            )
+            .unwrap();
+            command.stdin(std::fs::File::open(&readable).unwrap());
+            async move { command.status().await.unwrap().success() }
+        };
+        let by_path = "exit(truncate($ARGV[0], 0) ? 0 : 1)";
+        let by_open = "exit(sysopen(my $f, $ARGV[0], O_RDONLY | O_TRUNC) ? 0 : 1)";
+        let by_descriptor = "exit(truncate(STDIN, 0) ? 0 : 1)";
+        for file in [&readable, &hidden] {
+            for code in [by_path, by_open, by_descriptor] {
+                std::fs::write(file, "kept").unwrap();
+                assert!(
+                    !perl(code, file, true).await,
+                    "{code} on {}",
+                    file.display()
+                );
+                assert_eq!(std::fs::read_to_string(file).unwrap(), "kept");
+            }
+        }
+        // Writable files still can be.
+        let own = open.join("own");
+        std::fs::write(&own, "gone").unwrap();
+        assert!(perl(by_path, &own, true).await);
+        assert_eq!(std::fs::read_to_string(&own).unwrap(), "");
+        // The gap it closes, as every other confinement on Linux still has it.
+        std::fs::write(&readable, "kept").unwrap();
+        assert!(perl(by_open, &readable, false).await);
+        assert_eq!(std::fs::read_to_string(&readable).unwrap(), "");
     }
 }

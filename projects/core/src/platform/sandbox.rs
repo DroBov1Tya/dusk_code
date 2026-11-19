@@ -43,6 +43,11 @@ pub struct Confinement {
     /// git on Linux learns its path from the kernel, and Landlock keeps the list closed.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub listed: Vec<PathBuf>,
+    /// Linux: every file right the running Landlock knows is handled (truncation and
+    /// device ioctls among them), and a Landlock too old to handle truncation refuses.
+    /// macOS closes them all anyway.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub every_file_right: bool,
 }
 
 /// What a confined program may reach over the network.
@@ -88,6 +93,7 @@ impl Default for Confinement {
             hand_off: false,
             stat: Vec::new(),
             listed: Vec::new(),
+            every_file_right: false,
         }
     }
 }
@@ -110,6 +116,7 @@ impl Confinement {
             hand_off: true,
             stat: Vec::new(),
             listed: Vec::new(),
+            every_file_right: false,
         }
     }
 }
