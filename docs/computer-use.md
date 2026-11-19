@@ -27,8 +27,9 @@ when another app covers it. Click using the latest picture's coordinates. A pres
 can bring the app to the foreground. The session disables shared keyboard and
 pointer input. Use `{"action":"release"}` with `window_session` to end it.
 
-After a confirmed press, duskcode draws an amber ring at the target's screen
-coordinates and leaves its own cursor there for ten seconds. The overlay passes
+After a confirmed press, duskcode's own cursor glides from where it last acted to the
+press point (250 to 400 ms by distance, eased out), ripples an amber ring there, and
+fades after three idle seconds. The overlay passes
 mouse input through and works in a selected window session too. If another window
 covers the target, the ring marks the point over the visible window.
 

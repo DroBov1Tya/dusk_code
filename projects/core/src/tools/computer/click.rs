@@ -53,15 +53,13 @@ pub struct Click(pub Arc<Screen>);
 struct ClickArguments {
     x: f64,
     y: f64,
-    /// Fields of the old click, read only to refuse them with the way forward.
+    /// Fields of the old click, accepted by the check and hidden from the model, so a
+    /// saved call that asks for the pointer is refused with the way forward.
     #[serde(default)]
-    #[schemars(skip)]
     right: bool,
     #[serde(default)]
-    #[schemars(skip)]
     double: bool,
     #[serde(default)]
-    #[schemars(skip)]
     mode: Option<PointerMode>,
 }
 
@@ -141,6 +139,10 @@ impl Tool for Click {
         schema::of::<ClickArguments>()
     }
 
+    fn offered_parameters(&self, _: &ToolContext) -> Value {
+        offered()
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let step = Self::step(&self.0, arguments)?;
@@ -148,6 +150,19 @@ impl Tool for Click {
         })
     }
 }
+
+/// The schema without the old fields, which only a saved call still sends.
+fn offered() -> Value {
+    let mut schema = schema::of::<ClickArguments>();
+    if let Some(properties) = schema["properties"].as_object_mut() {
+        for old in OLD_FIELDS {
+            properties.remove(old);
+        }
+    }
+    schema
+}
+
+const OLD_FIELDS: [&str; 3] = ["right", "double", "mode"];
 
 #[cfg(test)]
 mod tests {
@@ -176,8 +191,11 @@ mod tests {
             assert!(error.contains("physical_input"), "{error}");
         }
         assert!(ClickArguments::parse(json!({"x": 1, "y": 1, "mode": "auto"})).is_err());
-        let schema = schema::of::<ClickArguments>();
-        assert!(schema["properties"].get("mode").is_none(), "{schema}");
+        let schema = offered();
+        for old in OLD_FIELDS {
+            assert!(schema["properties"].get(old).is_none(), "{schema}");
+        }
+        assert!(schema["properties"].get("x").is_some(), "{schema}");
     }
 
     #[test]
