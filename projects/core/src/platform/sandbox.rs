@@ -28,6 +28,20 @@ pub struct Confinement {
     /// macOS keeps to them; on Linux Landlock does not reach Unix sockets.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub sockets: Vec<PathBuf>,
+    /// May hand work to the system to run outside this confinement (macOS: launchd's
+    /// `launchctl`, LaunchServices' `open`, Apple events). Only macOS can close it.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub hand_off: bool,
+    /// Folders whose own entry, not what is in them, may be looked at inside a hidden
+    /// one: the way down to a reopened folder that a program resolves step by step, as
+    /// git does its git dir. Landlock never closes that, so only macOS needs it.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub stat: Vec<PathBuf>,
+    /// Folders whose list of entries, not the files in them, may be read inside a hidden
+    /// one: the top of a repository git moves to and asks its own path. Landlock never
+    /// closes that, so only macOS needs it.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub listed: Vec<PathBuf>,
 }
 
 /// What a confined program may reach over the network.
@@ -66,6 +80,9 @@ impl Default for Confinement {
             keychain: false,
             programs: Some(Vec::new()),
             sockets: Vec::new(),
+            hand_off: false,
+            stat: Vec::new(),
+            listed: Vec::new(),
         }
     }
 }
@@ -85,6 +102,9 @@ impl Confinement {
             keychain: true,
             programs: None,
             sockets: Vec::new(),
+            hand_off: true,
+            stat: Vec::new(),
+            listed: Vec::new(),
         }
     }
 }

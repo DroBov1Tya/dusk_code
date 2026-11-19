@@ -27,6 +27,16 @@ const KEYCHAIN_SERVICES: &str = "(deny mach-lookup (global-name \"com.apple.Secu
      (global-name \"com.apple.securityd\") (global-name \"com.apple.securityd.xpc\") \
      (global-name-prefix \"com.apple.security.\"))\n";
 
+/// The ways to have the system run something outside the sandbox: a launchd job, an
+/// app or URL opened by LaunchServices, an Apple event to another app. The programs
+/// for them are refused at exec; the services are closed for any program as well, so
+/// an interpreter reaching them itself is refused too.
+const HAND_OFF: &str = "(deny process-exec (literal \"/bin/launchctl\") \
+     (literal \"/usr/bin/open\") (literal \"/usr/bin/osascript\") \
+     (literal \"/usr/bin/osacompile\") (literal \"/usr/bin/automator\") \
+     (literal \"/usr/bin/shortcuts\"))\n";
+const HAND_OFF_SERVICES: &str = "(deny lsopen)\n(deny appleevent-send)\n(deny job-creation)\n";
+
 pub fn available() -> bool {
     Path::new(SANDBOX_EXEC).is_file()
 }
@@ -58,6 +68,18 @@ fn profile(confinement: &Confinement) -> Result<String> {
         ));
     }
     // After the hidden ones: the later rule wins in Seatbelt.
+    for folder in &confinement.stat {
+        profile.push_str(&format!(
+            "(allow file-read-metadata (literal {}))\n",
+            quoted(folder)?
+        ));
+    }
+    for folder in &confinement.listed {
+        profile.push_str(&format!(
+            "(allow file-read-data (literal {}))\n",
+            quoted(folder)?
+        ));
+    }
     for folder in &confinement.reopened {
         let access = match confinement.writable.contains(folder) {
             true => "file-read* file-write*",
@@ -100,12 +122,19 @@ fn profile(confinement: &Confinement) -> Result<String> {
         }
         profile.push_str(")\n");
     }
+    if !confinement.hand_off {
+        // After the allow above: the later rule wins.
+        profile.push_str(HAND_OFF);
+        profile.push_str(HAND_OFF_SERVICES);
+    }
     Ok(profile)
 }
 
 /// A path as a profile string; one that could break out of the string is refused.
 fn quoted(path: &Path) -> Result<String> {
-    let text = path.to_string_lossy();
+    let Some(text) = path.to_str() else {
+        anyhow::bail!("{} cannot be named in a sandbox profile", path.display());
+    };
     ensure!(
         !text
             .chars()
@@ -180,6 +209,9 @@ mod tests {
             keychain: false,
             programs: Some(vec![plugin.clone()]),
             sockets: Vec::new(),
+            hand_off: true,
+            stat: Vec::new(),
+            listed: Vec::new(),
         };
         let read = |path: &Path| run(&confinement, "/bin/cat", &[&path.display().to_string()]);
         assert!(!read(&root.join("config.yml")), "the config root is closed");
@@ -242,5 +274,32 @@ mod tests {
         };
         assert!(connect(&named));
         assert!(!connect(&other));
+    }
+
+    /// Without the exec rule, a launchd job is still refused: `launchctl` stands in for
+    /// an interpreter that would ask launchd itself.
+    #[test]
+    fn the_services_alone_refuse_a_launchd_job() {
+        const LABEL: &str = "dusk.test.never";
+        let profile = format!("(version 1)\n(allow default)\n{HAND_OFF_SERVICES}");
+        let status = std::process::Command::new(SANDBOX_EXEC)
+            .args(["-p", &profile, "/bin/launchctl", "submit", "-l", LABEL])
+            .args(["--", "/usr/bin/true"])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        let listed = std::process::Command::new("/bin/launchctl")
+            .args(["list", LABEL])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        // Never leave a job behind, whatever happened.
+        let _ = std::process::Command::new("/bin/launchctl")
+            .args(["remove", LABEL])
+            .stderr(std::process::Stdio::null())
+            .status();
+        assert!(!status.success(), "launchctl submit ran");
+        assert!(!listed.success(), "a launchd job was made");
     }
 }
