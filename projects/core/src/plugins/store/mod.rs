@@ -205,7 +205,10 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
     // Nothing signed an Unverified list, so the files the user looked at are what they
     // agreed to, not the version: the list may name other files under the same one.
     if tier == Tier::Unverified {
-        let pinned = entry.upstream.as_ref().map(upstream::Upstream::digest);
+        let pinned = entry
+            .upstream
+            .as_ref()
+            .map(|upstream| upstream.digest(entry));
         ensure!(
             agreed.sha256.is_some() && agreed.sha256 == pinned.as_deref(),
             "the files of {name} are not the ones you were shown; look at them again"
@@ -406,7 +409,7 @@ async fn fetch_package(entry: &Entry) -> Result<(Package, String)> {
             let files = upstream::fetch_all(upstream)
                 .await
                 .with_context(|| format!("the files of {name}"))?;
-            (Package::Files(files), upstream.digest())
+            (Package::Files(files), upstream.digest(entry))
         }
         None => {
             let download = entry.download_here().map_err(anyhow::Error::msg)?;

@@ -94,9 +94,16 @@ impl Upstream {
         )
     }
 
-    /// One hash for the files the list pins, kept in the record as a package's is.
-    pub fn digest(&self) -> String {
+    /// One hash for what an install of `entry` from these files writes, kept in the
+    /// record as a package's is: the files the list pins, and what of the entry decides
+    /// where and as what they land, its name and kind and, for a pack, the `pack.yml` the
+    /// core writes from it. A review names it, so none of these can change after it.
+    pub fn digest(&self, entry: &super::index::Entry) -> String {
         let mut hash = Sha256::new();
+        hash.update(format!("{:?} {}\n", entry.kind, entry.name).as_bytes());
+        if let Some(yaml) = super::content::pack_yml(entry) {
+            hash.update(yaml.as_bytes());
+        }
         hash.update(self.commit.as_bytes());
         for file in &self.files {
             hash.update(format!("\n{} {} {}", file.to, file.sha256, file.size).as_bytes());

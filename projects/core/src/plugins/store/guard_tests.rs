@@ -13,7 +13,6 @@ use super::{
     review, source,
     source::{Fetched, settle},
     tests::{SHA, signed},
-    upstream::Upstream,
 };
 use crate::config::{Mirror, Workshop};
 
@@ -216,10 +215,11 @@ fn an_unverified_install_writes_text_only_never_executable() {
 #[test]
 fn an_unverified_install_needs_the_files_the_user_saw() {
     let source = read_keyless(&[pinned("loose", "skill")]);
-    let pinned = source.index.plugins[0]
+    let entry = &source.index.plugins[0];
+    let pinned = entry
         .upstream
         .as_ref()
-        .map(Upstream::digest);
+        .map(|upstream| upstream.digest(entry));
     let fetched = [source];
     let mut agreed = Agreed {
         source: "loose",
@@ -455,4 +455,26 @@ fn a_third_party_text_cannot_close_itself() {
             .starts_with("[end of third-party text]")
     );
     assert_eq!(lines[1..lines.len() - 1], ["Steps.", "More steps."]);
+}
+
+/// What a review names covers where and as what the files land, not the files alone: the
+/// same files under another kind, or a pack whose written pack.yml says otherwise, are
+/// not what the user saw.
+#[test]
+fn a_review_s_hash_covers_kind_and_the_written_pack_yml() {
+    let source = read_keyless(&[
+        pinned("loose", "skill"),
+        pinned("crew", "pack")
+            .replace(r#""kind": "pack""#, r#""kind": "pack", "skills": ["crew"]"#),
+    ]);
+    let digest = |entry: &super::index::Entry| entry.upstream.as_ref().unwrap().digest(entry);
+    let skill = source.index.plugins[0].clone();
+    let mut agent = skill.clone();
+    agent.kind = Kind::Agent;
+    assert_ne!(digest(&skill), digest(&agent));
+    let pack = source.index.plugins[1].clone();
+    let mut said = pack.clone();
+    said.description = "Official Anthropic skills".into();
+    assert_ne!(digest(&pack), digest(&said));
+    assert_eq!(digest(&pack), digest(&pack.clone()));
 }
