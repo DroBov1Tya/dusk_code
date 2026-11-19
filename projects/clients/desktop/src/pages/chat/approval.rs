@@ -14,7 +14,7 @@ use gpui_kit::{
 };
 
 use crate::{
-    pages::chat::messages,
+    pages::chat::{messages, transcript::Transcript},
     ui::{Type, widgets},
     workspace::Workspace,
 };
@@ -193,14 +193,16 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
                 )))
             })
             .child(options);
+        let mut actions = div().flex().flex_row().items_center().gap_2();
         if question.multiple {
-            card = card.child(
+            actions = actions.child(
                 Button::new("answer-chosen")
                     .primary()
                     .label("Answer")
                     .on_click(cx.listener(|ws, _, _, cx| ws.answer_picked(cx))),
             );
         }
+        card = card.child(actions.child(skip_button(cx)));
         cards = cards.child(card);
     }
     cards
@@ -307,7 +309,20 @@ fn light_question(
                 .font_weight(FontWeight::MEDIUM)
                 .child(question.question.clone()),
         )
-        .child(messages::pills("question", &labels, true, true, pick, cx))
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_start()
+                .gap_2()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(messages::pills("question", &labels, true, true, pick, cx)),
+                )
+                .child(skip_button(cx)),
+        )
         // More wait behind this one; the answers go to the agent together.
         .when(total > 1, |column| {
             column.child(
@@ -317,6 +332,14 @@ fn light_question(
                     .child(format!("Question {asked} of {total}")),
             )
         })
+}
+
+/// Leaves the question to the agent: a quiet button, since the choice is the main thing.
+fn skip_button(cx: &mut Context<Workspace>) -> Button {
+    Button::new("skip-question")
+        .ghost()
+        .label("Skip")
+        .on_click(cx.listener(|ws, _, _, cx| ws.skip_question(cx)))
 }
 
 fn card(cx: &App) -> Div {
@@ -374,13 +397,27 @@ impl Workspace {
         if chosen.is_empty() {
             return;
         }
+        self.answer_with(|chat| chat.answer(&chosen, ""), cx);
+    }
+
+    /// Skips only the question shown; the next one shows, or the answers go out.
+    fn skip_question(&mut self, cx: &mut Context<Self>) {
+        self.picked.clear();
+        self.answer_with(Transcript::skip, cx);
+    }
+
+    fn answer_with(
+        &mut self,
+        record: impl FnOnce(&mut Transcript) -> Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(thread_id) = self.shown.clone() else {
             return;
         };
         let Some(chat) = self.chats.get_mut(&thread_id) else {
             return;
         };
-        let Some(text) = chat.answer(&chosen, "") else {
+        let Some(text) = record(chat) else {
             // The next question shows; nothing is sent until the last one is answered.
             cx.notify();
             return;
@@ -403,6 +440,7 @@ mod tests {
     use dusk_protocol::tools::Question;
 
     use super::buttons;
+    use crate::pages::chat::transcript::Transcript;
 
     fn question(options: &[&str], multiple: bool) -> Question {
         Question {
@@ -419,5 +457,30 @@ mod tests {
         assert!(!buttons(&question(&["a", "b", "c", "d", "e"], false)));
         assert!(!buttons(&question(&["Yes"], false)));
         assert!(!buttons(&question(&["Yes", &"x".repeat(25)], false)));
+    }
+
+    #[test]
+    fn skipping_moves_on_and_the_last_skip_sends_every_answer() {
+        let (first, second) = (question(&["a", "b"], false), question(&["c", "d"], true));
+        let mut chat = Transcript::default();
+        chat.questions.extend([first.clone(), second.clone()]);
+        assert_eq!(chat.skip(), None);
+        assert_eq!(chat.questions.front(), Some(&second));
+        assert_eq!(chat.answers, [first.skipped()]);
+        let sent = chat.answer(&[1], "").unwrap();
+        assert_eq!(
+            sent,
+            [first.skipped(), second.answer(&[1], "")].join("\n\n")
+        );
+        assert!(chat.answers.is_empty());
+
+        chat.questions.extend([first.clone(), second.clone()]);
+        assert_eq!(chat.answer(&[0], ""), None);
+        let sent = chat.skip().unwrap();
+        assert_eq!(
+            sent,
+            [first.answer(&[0], ""), second.skipped()].join("\n\n")
+        );
+        assert_eq!(chat.skip(), None, "nothing is left to skip");
     }
 }

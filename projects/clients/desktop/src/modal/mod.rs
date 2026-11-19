@@ -31,7 +31,7 @@ use crate::workspace::Workspace;
 
 pub use chat_menu::{FADE, render as chat_menu};
 
-use crate::pages::connectors::plugins::workshop::detail as listing;
+use crate::pages::customize::plugins::workshop::detail as listing;
 pub use viewer::ViewerContent;
 
 pub enum Modal {
@@ -101,7 +101,7 @@ pub enum Modal {
     /// A push or a discard of the review page, after a yes.
     Git(crate::pages::review::GitConfirm),
     /// Installing or removing a plugin of the store, after a yes.
-    Workshop(crate::pages::connectors::plugins::Confirm),
+    Workshop(crate::pages::customize::plugins::Confirm),
     /// A listing of the Workshop as a store page, by its source and name.
     Listing {
         source: String,
@@ -209,7 +209,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             (
                 confirm.title(),
                 480.,
-                crate::pages::connectors::plugins::confirm(&confirm, &ws.confirm_focus, cx),
+                crate::pages::customize::plugins::confirm(&confirm, &ws.confirm_focus, cx),
             )
         }
         Modal::Listing { source, name } => {

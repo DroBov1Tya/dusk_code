@@ -33,14 +33,14 @@ use crate::{
     columns::topbar,
     core::Core,
     modal::Modal,
-    pages::{chat, chat::transcript::Transcript, connectors::Shelf, settings::SettingsPage},
+    pages::{chat, chat::transcript::Transcript, customize::Shelf, settings::SettingsPage},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Center {
     Chat,
     Artifacts,
-    Connectors,
+    Customize,
     Settings,
     /// The project's changes, file by file.
     Review,
@@ -157,7 +157,7 @@ pub struct Workspace {
     pub center: Center,
     pub shelf: Shelf,
     pub shelf_search: Entity<InputState>,
-    /// Where the connectors page is scrolled to; a shelf shown whole starts at its top.
+    /// Where the Customize page is scrolled to; a shelf shown whole starts at its top.
     pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,
@@ -253,7 +253,7 @@ pub struct Workspace {
     pub web_global: bool,
     pub voice_form: crate::pages::settings::ai::voice::VoiceForm,
     /// The plugin store on the plugins shelf.
-    pub workshop: crate::pages::connectors::plugins::Workshop,
+    pub workshop: crate::pages::customize::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,
     /// Settings, Workshop: the repositories added and the Add form.
     pub repositories: crate::pages::settings::Repositories,
@@ -312,6 +312,12 @@ pub struct Workspace {
     pub pending: Vec<chat::queue::Pending>,
     /// Output tokens per second by thread, from the core's rate events.
     pub rates: HashMap<String, u64>,
+    /// The user's likely next message by chat, as the model proposed it.
+    pub suggestions: HashMap<String, dusk_protocol::thread::Suggestion>,
+    /// What the composer's empty box says now: the placeholder or a suggestion.
+    pub placeholder_shown: String,
+    /// When Tab last took a suggestion in, for the box's flare.
+    pub suggestion_taken: Option<std::time::Instant>,
     /// The shown chat's sent messages, by transcript row, for the navigator.
     /// The rows of the user's sent messages: their row and their item.
     pub sent_rows: Vec<(usize, usize)>,

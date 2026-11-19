@@ -10896,6 +10896,27 @@
           "type": "object"
         },
         {
+          "additionalProperties": false,
+          "description": "The model proposed the user's next message (`suggest_next`); a composer shows it\ngreyed in its empty input until the user says something or a new turn starts\n(`ThreadEvent::ends_suggestion`). Only a chat's own: a subagent has no user.",
+          "properties": {
+            "NextSuggested": {
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "NextSuggested"
+          ],
+          "type": "object"
+        },
+        {
           "const": "Idle",
           "description": "Nothing is running and nothing will start until the next message.",
           "type": "string"

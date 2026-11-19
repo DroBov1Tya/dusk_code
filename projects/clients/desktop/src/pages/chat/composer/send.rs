@@ -42,6 +42,7 @@ impl Workspace {
             return;
         }
         let shown = self.shown.clone();
+        self.drop_suggestion(shown.as_deref());
         // A pending question takes the text as the user's own answer.
         let asked = shown
             .as_ref()

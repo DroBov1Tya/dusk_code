@@ -224,6 +224,22 @@ impl Transcript {
     }
 
     /// Folds a live event of the thread into it.
+    /// What the thread does at `now`, as the protocol tells the kinds of work apart; none
+    /// when the chat knows of nothing that runs.
+    pub fn work(&self, now: i64) -> Option<dusk_protocol::thread::Work> {
+        dusk_protocol::thread::activity(&self.log.live, now)
+    }
+
+    /// The user's message went to the agent: no question waits for it.
+    pub fn answered(&mut self) {
+        self.log.live.answered();
+    }
+
+    /// The thread stopped: nothing of it runs.
+    pub fn stopped(&mut self) {
+        self.log.live = Default::default();
+    }
+
     pub fn apply(&mut self, event: ThreadEvent) {
         self.log.apply(event, now_ms());
         self.sync();

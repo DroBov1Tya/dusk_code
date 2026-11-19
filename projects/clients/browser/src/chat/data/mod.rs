@@ -5,7 +5,7 @@
 
 use dusk_protocol::{
     config::ApprovalPolicy,
-    thread::{Applied, ChatLog, Message, ThreadEvent},
+    thread::{Applied, ChatLog, Message, Suggestion, ThreadEvent},
     tools::Question,
 };
 use leptos::prelude::{ArcTrigger, Notify, Track};
@@ -31,6 +31,8 @@ pub struct ChatData {
     pub pending: Vec<String>,
     /// The stream broke or the thread ended; sending opens it again.
     pub ended: bool,
+    /// The user's likely next message, as the model proposed it, for the composer.
+    pub suggestion: Suggestion,
     /// Fires when only one item's content changed, as a streamed piece of the answer
     /// does; the chat's own signal then stays quiet.
     pub streamed: ArcTrigger,
@@ -49,6 +51,7 @@ impl Default for ChatData {
             answers: Vec::new(),
             pending: Vec::new(),
             ended: false,
+            suggestion: Suggestion::default(),
             streamed: ArcTrigger::new(),
             subagents: ArcTrigger::new(),
         }
@@ -70,6 +73,19 @@ impl DerefMut for ChatData {
 }
 
 impl ChatData {
+    /// Keeps the answer to the question shown and shows the next one. The message for
+    /// the agent once every question asked has its answer.
+    pub fn record_answer(&mut self, reply: String) -> Option<String> {
+        self.answers.push(reply);
+        self.question = self.questions_waiting.pop_front();
+        if self.question.is_none() {
+            self.live.answered();
+        }
+        self.question
+            .is_none()
+            .then(|| std::mem::take(&mut self.answers).join("\n\n"))
+    }
+
     pub fn from_history(history: &[Message]) -> Self {
         Self {
             log: ChatLog::from_history(history),
@@ -83,6 +99,7 @@ impl ChatData {
     }
 
     pub fn apply(&mut self, event: ThreadEvent) -> Applied {
+        self.suggestion.hear(&event);
         if matches!(
             event,
             ThreadEvent::TurnFinished(_) | ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_)
@@ -126,13 +143,6 @@ impl ChatData {
         if subagents {
             self.subagents.track();
         }
-    }
-
-    /// The retry row's words at `now` in Unix milliseconds; none when no call is tried
-    /// again.
-    pub fn retry_line(&self, now: i64) -> Option<String> {
-        let (retry, arrived) = self.retry.as_ref()?;
-        Some(retry.line(u64::try_from(now.saturating_sub(*arrived)).unwrap_or(0)))
     }
 }
 

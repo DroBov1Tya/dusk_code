@@ -12,6 +12,7 @@ mod plan;
 mod pull_link;
 mod shown;
 mod skill_change;
+mod spark;
 mod voice;
 mod working;
 pub use composer::Draft;

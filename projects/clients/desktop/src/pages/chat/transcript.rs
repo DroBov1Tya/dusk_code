@@ -147,6 +147,9 @@ pub struct Transcript {
     /// When each later item was first drawn, so it fades in once and never again when
     /// the list scrolls back to it.
     pub arrived: BTreeMap<usize, Instant>,
+    /// When each step of the running turn finished, by call, so its check or cross
+    /// settles in once.
+    pub settled: BTreeMap<String, Instant>,
     next_run: u64,
 }
 
@@ -169,7 +172,20 @@ impl Transcript {
     /// asked has its answer: a second question must not take the place of the first.
     pub fn answer(&mut self, chosen: &[usize], own: &str) -> Option<String> {
         let question = self.questions.pop_front()?;
-        self.answers.push(question.answer(chosen, own));
+        self.record(question.answer(chosen, own))
+    }
+
+    /// Skips the question shown: its answer is the skip reply, the next one shows.
+    pub fn skip(&mut self) -> Option<String> {
+        let question = self.questions.pop_front()?;
+        self.record(question.skipped())
+    }
+
+    fn record(&mut self, reply: String) -> Option<String> {
+        self.answers.push(reply);
+        if self.questions.is_empty() {
+            self.log.live.answered();
+        }
         self.questions
             .is_empty()
             .then(|| std::mem::take(&mut self.answers).join("\n\n"))
@@ -196,6 +212,11 @@ impl Transcript {
                 }
             }
             ThreadEvent::SkillChanged(change) => self.skill_settled(change.id),
+            ThreadEvent::ToolFinished { call_id, .. } => {
+                self.settled.insert(call_id.clone(), Instant::now());
+            }
+            // Only a step that finishes in sight settles in; the last turn's stand.
+            ThreadEvent::TurnStarted(_) => self.settled.clear(),
             _ => {}
         }
         self.log.apply(event, now_ms());

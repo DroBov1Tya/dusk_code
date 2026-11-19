@@ -216,6 +216,7 @@ mod tests {
             hand_off: true,
             stat: Vec::new(),
             listed: Vec::new(),
+            every_file_right: false,
         };
         let read = |path: &Path| run(&confinement, "/bin/cat", &[&path.display().to_string()]);
         assert!(!read(&root.join("config.yml")), "the config root is closed");

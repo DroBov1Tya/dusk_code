@@ -65,9 +65,16 @@ pub(super) async fn run(
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                // Its own group, so whatever it starts is killed with it.
-                .process_group(0)
                 .kill_on_drop(true);
+            // Its own session, so its own group, killed with whatever it starts, and no
+            // controlling terminal of the core's to push keystrokes into.
+            // SAFETY: one async-signal-safe system call in the forked child.
+            unsafe {
+                command.pre_exec(|| match libc::setsid() {
+                    -1 => Err(std::io::Error::last_os_error()),
+                    _ => Ok(()),
+                });
+            }
             Ok(command.spawn()?)
         })
         .map_err(|error| failed(format!("cannot start {plugin}: {error:#}")))?;

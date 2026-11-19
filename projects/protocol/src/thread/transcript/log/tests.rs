@@ -5,7 +5,8 @@ use super::*;
 use crate::catalog::SkillSaveAction;
 use crate::plugin::{Kind, Listing, SUGGEST_TOOL, Suggested, Suggestion};
 use crate::thread::{
-    FAILED_PREFIXES, Message, MessageRole, SHOW_TOOL, Turn, TurnStatus, stored_failure,
+    FAILED_PREFIXES, Message, MessageRole, SHOW_TOOL, SUGGEST_NEXT_TOOL, Turn, TurnStatus,
+    stored_failure,
 };
 use crate::tools::ToolResult;
 use serde_json::json;
@@ -352,9 +353,9 @@ fn a_shown_block_takes_its_steps_place_live_and_restored() {
     }
 }
 
-/// A retry is one row of its own, never a notice; the call's answer clears it.
+/// A retry is what the indicator says, never a notice; the call's answer clears it.
 #[test]
-fn a_retry_is_a_row_not_a_notice() {
+fn a_retry_is_the_indicator_not_a_notice() {
     let mut chat = Chat::default();
     chat.apply(
         ThreadEvent::Retrying {
@@ -367,9 +368,11 @@ fn a_retry_is_a_row_not_a_notice() {
         5,
     );
     assert!(chat.items.is_empty());
-    assert!(matches!(chat.retry, Some((_, 5))));
+    let held = chat.work(5).expect("the retry shows");
+    assert_eq!(held.kind, crate::thread::WorkKind::Held);
+    assert!(held.label.ends_with("next in 1 s"), "{}", held.label);
     chat.apply(text("back"), 6);
-    assert!(chat.retry.is_none());
+    assert_eq!(chat.work(6), None, "no turn runs and the call answered");
 }
 
 /// One whole conversation, read from the history the core stores and followed live as
@@ -552,4 +555,35 @@ fn a_workshop_card_replaces_only_its_own_call() {
     ];
     let stored = Chat::from_history(&history);
     assert!(matches!(&stored.items[0], Item::Tool(tool) if tool.state == ToolState::Failed));
+}
+
+/// `suggest_next` is no step, live or read back: its text reaches the composer in
+/// `NextSuggested`, and the transcript shows nothing for it.
+#[test]
+fn a_suggested_next_message_is_no_step() {
+    let suggest = call("s", SUGGEST_NEXT_TOOL, json!({ "text": "commit it" }));
+    let mut live = Chat::default();
+    live.apply(ThreadEvent::ToolStarted(suggest.clone()), 0);
+    live.apply(
+        ThreadEvent::ToolFinished {
+            call_id: "s".into(),
+            result: ToolResult::text("Suggested.".into()),
+        },
+        0,
+    );
+    live.apply(
+        ThreadEvent::NextSuggested {
+            text: "commit it".into(),
+        },
+        0,
+    );
+    let read = call("r", "read_file", json!({ "path": "a" }));
+    let restored = Chat::from_history(&[
+        calling(vec![read, suggest]),
+        result("r", "text"),
+        result("s", "Suggested."),
+    ]);
+    assert!(live.items.is_empty(), "{:?}", live.items);
+    assert_eq!(restored.items.len(), 1);
+    assert!(matches!(&restored.items[0], Item::Tool(tool) if tool.name == "read_file"));
 }

@@ -16,6 +16,14 @@ use crate::workspace::Workspace;
 pub struct Dock {
     /// The plan's counts as the core last gave them, and the chat they are of.
     pub counts: Option<(String, PlanCounts)>,
+    /// The counts before the last change and when it came, for the bar to ease from.
+    pub counts_before: Option<(PlanCounts, std::time::Instant)>,
+    /// When each task of the shown chat's plan was first heard of, and the chat: a task
+    /// that just came draws in once.
+    pub tasks_came: (
+        Option<String>,
+        std::collections::HashMap<String, std::time::Instant>,
+    ),
     /// A request for the counts is on its way.
     busy: bool,
     /// The plan moved while busy: ask again once the answer is in.
@@ -37,6 +45,8 @@ impl Dock {
     pub fn new(cx: &mut App) -> Self {
         Self {
             counts: None,
+            counts_before: None,
+            tasks_came: Default::default(),
             busy: false,
             queued: false,
             plan_open: false,
@@ -58,9 +68,39 @@ impl Dock {
 impl Workspace {
     /// The shown chat's tasks changed: the strip asks for the plan's counts again.
     pub fn plan_heard(&mut self, thread_id: &str, event: &ThreadEvent, cx: &mut Context<Self>) {
-        let moved = matches!(event, ThreadEvent::Tasks(_) | ThreadEvent::TaskChanged(_));
-        if moved && self.shown.as_deref() == Some(thread_id) {
+        let tasks = match event {
+            ThreadEvent::Tasks(tasks) => tasks.as_slice(),
+            ThreadEvent::TaskChanged(task) => std::slice::from_ref(task),
+            _ => return,
+        };
+        if self.shown.as_deref() == Some(thread_id) {
+            self.tasks_heard(thread_id, tasks.iter().map(|task| task.task_id.as_str()));
             self.load_plan_counts(cx);
+        }
+    }
+
+    /// Notes when each of `tasks` was first heard of. Those of one event come one after
+    /// another, a little apart; the plan a chat is opened with is simply there.
+    fn tasks_heard<'a>(&mut self, thread_id: &str, tasks: impl Iterator<Item = &'a str>) {
+        use std::time::{Duration, Instant};
+        let (chat, came) = &mut self.dock.tasks_came;
+        let now = Instant::now();
+        let opened = chat.as_deref() != Some(thread_id);
+        if opened {
+            *chat = Some(thread_id.to_owned());
+            came.clear();
+        }
+        let mut fresh = 0;
+        for task in tasks {
+            if came.contains_key(task) {
+                continue;
+            }
+            let at = match opened {
+                true => now.checked_sub(plan::ARRIVE).unwrap_or(now),
+                false => now + Duration::from_millis(70) * fresh,
+            };
+            came.insert(task.to_owned(), at);
+            fresh += 1;
         }
     }
 
@@ -83,6 +123,13 @@ impl Workspace {
                 ws.dock.busy = false;
                 match result {
                     Ok(counts) => {
+                        // The bar eases from the shares it showed for the same chat.
+                        ws.dock.counts_before = match &ws.dock.counts {
+                            Some((chat, before)) if *chat == asked && *before != counts => {
+                                Some((*before, std::time::Instant::now()))
+                            }
+                            _ => None,
+                        };
                         ws.dock.counts = Some((asked, counts));
                         cx.notify();
                     }

@@ -1,7 +1,7 @@
 //! An answer to the agent's question, read back from the message that carries it, so a
 //! chat can show the question with its options instead of the raw text.
 
-use super::{DECLINED, Question};
+use super::{DECLINED, Question, SKIPPED};
 use crate::model::ToolCall;
 
 /// One answered question as a chat draws it.
@@ -14,11 +14,13 @@ pub struct Answered {
     /// The user's own words: beside the options, or instead of an answer.
     pub own: String,
     pub declined: bool,
+    /// The user skipped this question and left it to the agent.
+    pub skipped: bool,
 }
 
 impl Answered {
     /// What a card shows under the question: the chosen options joined by ", " (or
-    /// "Declined"), then the user's own words. Empty when nothing was said.
+    /// "Declined" or "Skipped"), then the user's own words. Empty when nothing was said.
     pub fn lines(&self) -> Vec<String> {
         let chosen: Vec<&str> = self
             .options
@@ -27,6 +29,7 @@ impl Answered {
             .map(|(option, _)| option.as_str())
             .collect();
         let first = match (self.declined, chosen.is_empty()) {
+            _ if self.skipped => Some("Skipped".to_owned()),
             (true, _) => Some("Declined".to_owned()),
             (false, false) => Some(chosen.join(", ")),
             (false, true) => None,
@@ -99,16 +102,24 @@ impl Question {
     /// "; " can make choices and own text look the same. Ambiguous answers stay as text.
     fn answered(self, answer: &str) -> Answered {
         let mut chosen = vec![false; self.options.len()];
-        let declined = answer == DECLINED
-            || answer
-                .strip_prefix(DECLINED)
-                .is_some_and(|message| message.starts_with("\n\n"));
-        let mut rest = if declined {
+        let skipped = answer == SKIPPED;
+        let declined = !skipped
+            && (answer == DECLINED
+                || answer
+                    .strip_prefix(DECLINED)
+                    .is_some_and(|message| message.starts_with("\n\n")));
+        let mut rest = if skipped {
+            ""
+        } else if declined {
             &answer[DECLINED.len()..]
         } else {
             answer
         };
-        while !declined && !rest.is_empty() && (self.multiple || !chosen.contains(&true)) {
+        while !declined
+            && !skipped
+            && !rest.is_empty()
+            && (self.multiple || !chosen.contains(&true))
+        {
             let mut matches = self.options.iter().enumerate().filter(|(index, option)| {
                 !chosen[*index]
                     && !option.is_empty()
@@ -135,6 +146,7 @@ impl Question {
             own: rest.trim().to_owned(),
             options: self.options.into_iter().zip(chosen).collect(),
             declined,
+            skipped,
         }
     }
 }
@@ -249,6 +261,19 @@ mod tests {
             .answer(&pick.answer(&[], "(declined) not"))
             .unwrap();
         assert!(!answers[0].declined);
+    }
+
+    #[test]
+    fn a_skipped_question_reads_back_as_skipped() {
+        let pick = question("Pick", &["a", "b"], false);
+        let other = question("Other", &["c", "d"], false);
+        let message = [pick.skipped(), other.answer(&[0], "")].join("\n\n");
+        let answers = asked(&[pick, other]).answer(&message).unwrap();
+        assert!(answers[0].skipped && !answers[0].declined);
+        assert!(chosen(&answers[0]).is_empty() && answers[0].own.is_empty());
+        assert_eq!(answers[0].lines(), ["Skipped"]);
+        assert_eq!(chosen(&answers[1]), ["c"]);
+        assert!(!answers[1].skipped);
     }
 
     #[test]

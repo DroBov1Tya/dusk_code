@@ -374,7 +374,7 @@ mod tests {
         testing::{temp_dir, temp_state},
         tools::{
             AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Show,
-            Tasks,
+            SuggestNext, Tasks,
         },
     };
 
@@ -517,6 +517,7 @@ mod tests {
         let paths = crate::init::paths::Paths::new(dir.join("config"), dir.join("work"));
         tools.push(Box::new(crate::tools::SearchWorkshop::new(paths.clone())));
         tools.push(Box::new(crate::tools::SuggestFromWorkshop::new(paths)));
+        tools.push(Box::new(SuggestNext));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {

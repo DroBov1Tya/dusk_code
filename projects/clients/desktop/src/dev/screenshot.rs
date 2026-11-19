@@ -4,7 +4,7 @@
 //!
 //! - `wait=MS`: let the core answer and the window draw;
 //! - `project=N`, `thread=N`: choose the Nth project or chat of the lists;
-//! - `center=chat|review|settings|connectors|artifacts|schedules`; `review`: open the review page;
+//! - `center=chat|review|settings|customize|artifacts|schedules` (`connectors` still works); `review`: open the review page;
 //! - `settings=PAGE` (appearance, llm, voice, image, video, chat, safety, me, notifications, vcs, memory,
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
@@ -70,7 +70,7 @@ use gpui_kit::{component::input::InputState, *};
 
 use crate::{
     modal::Modal,
-    pages::{connectors::Shelf, settings::SettingsPage},
+    pages::{customize::Shelf, settings::SettingsPage},
     workspace::{Center, Picker, Workspace},
 };
 
@@ -253,7 +253,7 @@ fn act(
             ws.center = match value {
                 "review" => Center::Review,
                 "settings" => Center::Settings,
-                "connectors" => Center::Connectors,
+                "customize" | "connectors" => Center::Customize,
                 "artifacts" => Center::Artifacts,
                 "schedules" => Center::Schedules,
                 "overview" => {
@@ -339,7 +339,7 @@ fn act(
                 "agents" => Shelf::Agents,
                 _ => Shelf::Connectors,
             };
-            ws.center = Center::Connectors;
+            ws.center = Center::Customize;
             ws.load_settings(cx);
         }
         "artifacts" => {
@@ -589,7 +589,7 @@ fn act(
             if matches!(
                 value,
                 "retry" | "unreachable" | "busy-threads" | "limits-high" | "agent-tree"
-            ) =>
+            ) || value.starts_with("activity-") =>
         {
             super::polish::state(ws, value, cx)
         }

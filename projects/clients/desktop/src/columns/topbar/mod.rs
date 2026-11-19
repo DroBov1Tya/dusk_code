@@ -243,7 +243,7 @@ fn title(ws: &Workspace, muted: Hsla) -> Stateful<Div> {
     let page = match ws.center {
         Center::Chat => None,
         Center::Artifacts => Some("Artifacts"),
-        Center::Connectors => Some("Connectors"),
+        Center::Customize => Some("Customize"),
         Center::Settings => Some("Settings"),
         Center::Schedules => Some("Scheduled tasks"),
         Center::Review => Some("Changes"),

@@ -15,14 +15,15 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{AgentState, Note, Retry, RetryRow, Tool, ToolState, TurnSpend};
-use super::{note, retry_row, turn_spend};
+use super::{AgentState, Note, Tool, ToolState, TurnSpend};
+use super::{note, turn_spend};
 use crate::{
     catalog::SkillChange,
     model::{ModelEvent, ToolCall},
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
-        Block, JobResult, Pin, Task, ThreadEvent, ThreadTokens, TurnStatus, TurnWait, agent_name,
+        Block, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, ThreadEvent, ThreadTokens,
+        TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind},
 };
@@ -190,6 +191,9 @@ pub struct ChatLog<L = Infallible> {
     /// core said when it finished; none for a turn read from history.
     pub boundary_spend: Vec<Option<(u64, u64)>>,
     pub working: bool,
+    /// The live signals the kind of work is chosen from (`work`). Every event the chat
+    /// takes feeds it, so no client does.
+    pub live: LiveTurn,
     /// Agents below the chat are at work, as the core says.
     pub agents_working: bool,
     /// The context is being compacted.
@@ -200,9 +204,6 @@ pub struct ChatLog<L = Infallible> {
     pub waiting: Option<TurnWait>,
     /// What the running turn has used so far, as the core counted it.
     pub spend: Option<TurnSpend>,
-    /// The model call being tried again and when its event came, in Unix milliseconds of
-    /// the client's clock, for the countdown.
-    pub retry: Option<(Retry, i64)>,
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
     /// The token report as the core last sent it.
@@ -243,12 +244,12 @@ impl<L> Default for ChatLog<L> {
             boundary_times: Vec::new(),
             boundary_spend: Vec::new(),
             working: false,
+            live: LiveTurn::default(),
             agents_working: false,
             compacting: false,
             turn_started: None,
             waiting: None,
             spend: None,
-            retry: None,
             tokens: None,
             usage: None,
             cost: None,
@@ -482,6 +483,28 @@ impl<L> ChatLog<L> {
             .filter(move |change| change.call_id == call_id)
     }
 
+    /// What the chat does at `now` (Unix milliseconds), as `thread::activity` tells the
+    /// kinds apart, for the one indicator a client shows while it works; none when
+    /// nothing runs. A chat marked as working before its turn's first event thinks.
+    pub fn work(&self, now: i64) -> Option<Work> {
+        activity(&self.live, now).or_else(|| {
+            self.working.then(|| Work {
+                kind: WorkKind::Thinking,
+                label: "Thinking".to_owned(),
+                stalled: false,
+            })
+        })
+    }
+
+    /// The item whose text grows right now: the answer being written, for a client that
+    /// marks its end.
+    pub fn writing(&self, now: i64) -> Option<usize> {
+        let writes = self
+            .work(now)
+            .is_some_and(|work| work.kind == WorkKind::Writing);
+        self.answer_index().filter(|_| writes)
+    }
+
     /// The mean cost of the turns that have one, to tell an unusually dear turn.
     pub fn mean_turn_cost(&self) -> Option<u64> {
         let costs: Vec<u64> = self
@@ -507,9 +530,12 @@ impl<L> ChatLog<L> {
     /// Folds one live event into the chat, at `now` in Unix milliseconds of the client's
     /// clock.
     pub fn apply(&mut self, event: ThreadEvent, now: i64) -> Applied {
+        // The piece that answers a call tried again changes what the indicator says.
+        let retried = self.live.retrying();
+        self.live.apply(&event, now);
         // The hot path: a streamed piece of the answer that moves no row.
         if let ThreadEvent::Model(ModelEvent::Text(piece) | ModelEvent::Reasoning(piece)) = &event
-            && self.retry.is_none()
+            && !retried
             && !self.compacting
             && let Some(index) = self.answer_index()
         {
@@ -545,11 +571,6 @@ impl<L> ChatLog<L> {
     }
 
     fn apply_any(&mut self, event: ThreadEvent, now: i64) {
-        match retry_row(&event) {
-            Some(RetryRow::Show(retry)) => self.retry = Some((retry, now)),
-            Some(RetryRow::Clear) => self.retry = None,
-            None => {}
-        }
         if let Some(spend) = turn_spend(&event) {
             self.spend = spend;
         }
@@ -567,7 +588,7 @@ impl<L> ChatLog<L> {
             ThreadEvent::TurnFailed(_) => self.end_turn(),
             _ => {}
         }
-        // The row above is the whole of a retry: it leaves no notice.
+        // The indicator is the whole of a retry (`work`): it leaves no notice.
         if matches!(event, ThreadEvent::Retrying { .. }) {
             return;
         }
@@ -885,6 +906,11 @@ impl<L> ChatLog<L> {
     /// A step that starts, live or read from history; a `show` call also keeps the block it
     /// asks for, which its result may put in the step's place.
     fn start_tool(&mut self, call: &ToolCall, state: ToolState, at: i64) {
+        // A suggested next message is no step: the composer shows it, from
+        // `NextSuggested`, and its result finds no row to land on.
+        if call.name == SUGGEST_NEXT_TOOL {
+            return;
+        }
         self.asked.call(call);
         if let Some(block) = Block::asked(call) {
             self.showing.insert(call.id.clone(), block);

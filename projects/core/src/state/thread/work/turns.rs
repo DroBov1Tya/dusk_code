@@ -180,6 +180,7 @@ impl State {
                         | "tasks"
                         | "remember"
                         | "ask_user"
+                        | "suggest_next"
                         | "jobs"
                 );
                 if !approved_check && !read_only {

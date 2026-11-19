@@ -11,6 +11,7 @@ use super::{Activity, App, Entry, Focus, Poll, Tone};
 
 impl App {
     pub fn apply(&mut self, event: ThreadEvent) {
+        self.suggestion.hear(&event);
         // The chat folds the event as every client's does, and says the same lines. This
         // client shows its own message as it sends it, and a goal's note its own way.
         if !matches!(
@@ -18,6 +19,10 @@ impl App {
             ThreadEvent::UserMessage(_) | ThreadEvent::Goal { .. }
         ) {
             self.transcript.apply(event.clone());
+        }
+        // The chat did not take the user's message in: it is told that no question waits.
+        if matches!(event, ThreadEvent::UserMessage(_)) {
+            self.transcript.answered();
         }
         // The retry row is the footer's activity: one state, replaced in place. Events
         // that end it hand over to the arms below, which name the next activity.

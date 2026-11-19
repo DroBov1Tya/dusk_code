@@ -63,15 +63,17 @@ fn answer_question(
     chosen: &[usize],
     own: &str,
 ) {
-    let reply = question.answer(chosen, own);
+    record(chat, id, question.answer(chosen, own));
+}
+
+/// Skips the question on the page and only that one: the agent decides it itself.
+fn skip_question(chat: Chat, id: Option<String>, question: &Question) {
+    record(chat, id, question.skipped());
+}
+
+fn record(chat: Chat, id: Option<String>, reply: String) {
     let mut all = None;
-    chat.update(|c| {
-        c.answers.push(reply);
-        c.question = c.questions_waiting.pop_front();
-        if c.question.is_none() {
-            all = Some(std::mem::take(&mut c.answers).join("\n\n"));
-        }
-    });
+    chat.update(|c| all = c.record_answer(reply));
     if let Some(all) = all {
         state().send(id, all, false, Vec::new());
     }
@@ -90,6 +92,10 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
         if !card.get()
             && let Some(labels) = question_labels(&question)
         {
+            let skip = {
+                let (asked, id) = (question.clone(), id.clone());
+                move |_| skip_question(chat, id.clone(), &asked)
+            };
             let (asked, id) = (question.clone(), id.clone());
             let pick = Callback::new(move |at: usize| {
                 answer_question(chat, id.clone(), &asked, &[at], "");
@@ -100,6 +106,9 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
                     <div class="question light" role="group" aria-label="Question from the agent">
                         <div class="question-text">{question.question.clone()}</div>
                         <ReplyRow labels live=true pick other />
+                        <div class="approval-actions">
+                            <button class="ghost" on:click=skip>"Skip"</button>
+                        </div>
                     </div>
                 }
                 .into_any(),
@@ -108,6 +117,15 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
         let multiple = question.multiple;
         let (for_answer, for_decline, id) = (question.clone(), question.clone(), id.clone());
         let id_decline = id.clone();
+        let skip = {
+            let (asked, id) = (question.clone(), id.clone());
+            move |_| {
+                skip_question(chat, id.clone(), &asked);
+                chosen.set(Vec::new());
+                own.set(String::new());
+                card.set(false);
+            }
+        };
         let submit = move |_| {
             answer_question(
                 chat,
@@ -127,6 +145,7 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
                 c.answers.push(reply);
                 c.questions_waiting.clear();
                 c.question = None;
+                c.live.answered();
                 all = std::mem::take(&mut c.answers).join("\n\n");
             });
             app.send(id_decline.clone(), all, false, Vec::new());
@@ -169,6 +188,7 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
                     />
                     <div class="approval-actions">
                         <button class="primary" on:click=submit>"Answer"</button>
+                        <button class="ghost" on:click=skip>"Skip"</button>
                         <button class="ghost" on:click=decline>"Decline"</button>
                     </div>
                 </div>

@@ -61,6 +61,10 @@ impl Workspace {
                     *event,
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }
                 );
+                self.suggestions
+                    .entry(thread_id.clone())
+                    .or_default()
+                    .hear(&event);
                 self.notify_event(&thread_id, &event, cx);
                 self.watch_plan(&thread_id, &event, cx);
                 self.overview_heard(&thread_id, &event, cx);
@@ -130,6 +134,7 @@ impl Workspace {
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.working = false;
+                    chat.live = Default::default();
                 }
             }
         }

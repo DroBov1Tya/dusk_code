@@ -503,3 +503,34 @@ async fn a_card_id_with_a_path_is_refused() {
     let answer = card_of(&server, "a", &own, "../image").await;
     assert!(matches!(answer, Response::Error(_)));
 }
+
+/// The suggestion a joining client is told follows the chat's own events: the newest
+/// one, gone once the user says something or a new turn starts; a subagent's never.
+#[test]
+fn the_kept_suggestion_follows_the_chats_events() {
+    use super::thread::suggestion_after;
+    let suggested = |text: &str| ThreadEvent::NextSuggested { text: text.into() };
+    let mut kept = None;
+    let mut hear = |event: ThreadEvent| {
+        if let Some(next) = suggestion_after(&event) {
+            kept = next;
+        }
+        kept.clone()
+    };
+    assert_eq!(
+        hear(suggested("run the tests")).as_deref(),
+        Some("run the tests")
+    );
+    assert_eq!(hear(ThreadEvent::Idle).as_deref(), Some("run the tests"));
+    let wrapped = ThreadEvent::Subagent {
+        thread_id: "child".into(),
+        event: Box::new(suggested("from a subagent")),
+    };
+    assert_eq!(hear(wrapped).as_deref(), Some("run the tests"));
+    let sent = ThreadEvent::Queued {
+        message_id: "m".into(),
+    };
+    assert_eq!(hear(sent), None);
+    hear(suggested("commit it"));
+    assert_eq!(hear(ThreadEvent::Undone { text: "x".into() }), None);
+}

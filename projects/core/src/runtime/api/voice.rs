@@ -54,7 +54,7 @@ impl Runtime {
         let endpoint = self
             .voice_settings()
             .stt
-            .context("speech recognition is not set up: see Connectors, Voice")?;
+            .context("speech recognition is not set up: see Voice in Settings or Customize")?;
         let key = self.voice_key(dusk_protocol::config::STT_KEY).await?;
         crate::voice::transcribe(&endpoint, key.as_deref(), audio).await
     }
@@ -64,7 +64,7 @@ impl Runtime {
         let endpoint = self
             .voice_settings()
             .tts
-            .context("speech synthesis is not set up: see Connectors, Voice")?;
+            .context("speech synthesis is not set up: see Voice in Settings or Customize")?;
         let key = self.voice_key(dusk_protocol::config::TTS_KEY).await?;
         let asked = speech_key(&endpoint, text);
         if let Some((_, card)) = self.speech.lock().iter().find(|(known, _)| *known == asked) {

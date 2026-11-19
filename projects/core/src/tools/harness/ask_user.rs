@@ -30,7 +30,9 @@ impl Tool for AskUser {
              and not for what has a sensible default. One question at a time, at most three \
              in a row; afterwards say what you assumed. List the option you recommend first. \
              Set `multiple` when several options may be chosen. The \
-             user can always write their own answer or decline. After calling it, end \
+             user can always write their own answer or decline, or skip a question \
+             (ANSWER: (skipped ...)): then decide yourself and say what you assumed. \
+             After calling it, end \
              your turn without writing more: the answer comes as the user's next message, \
              as QUESTION: ... ANSWER: .... {MIN_OPTIONS} to {MAX_OPTIONS} short options."
         )

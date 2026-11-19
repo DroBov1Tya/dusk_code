@@ -263,7 +263,7 @@ impl Workspace {
                         error_row(&key, text, again, cx)
                     }
                     Item::Suggestion(card) => {
-                        crate::pages::connectors::plugins::workshop::suggested::render(
+                        crate::pages::customize::plugins::workshop::suggested::render(
                             self, &key, card, cx,
                         )
                     }

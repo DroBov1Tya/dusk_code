@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Cover, Kind, Listing, Tier};
+use super::{Cover, Kind, Listing, Scope, Tier};
 
 /// The tool that finds listings for the model.
 pub const SEARCH_WORKSHOP_TOOL: &str = "search_workshop";
@@ -55,6 +55,19 @@ impl Suggested {
             skills: listing.skills.len(),
             cover: listing.cover.clone(),
         }
+    }
+
+    /// The shelf whose Workshop lists the row: Plugins for a plugin, even one that brings
+    /// a connector, since that is where it is installed and switched.
+    pub fn scope(&self) -> Scope {
+        let probe = Listing {
+            kind: self.kind,
+            ..Listing::default()
+        };
+        [Scope::Skills, Scope::Plugins, Scope::Agents]
+            .into_iter()
+            .find(|scope| scope.holds(&probe))
+            .unwrap_or_default()
     }
 
     /// The row's listing in a store list, by its source and name.
@@ -117,6 +130,18 @@ mod tests {
             label: "Animation skills".into(),
             listings: vec![Suggested::of(&listing)],
         }
+    }
+
+    #[test]
+    fn a_row_opens_on_the_shelf_of_its_kind() {
+        let row = |kind| Suggested {
+            kind,
+            ..card().listings[0].clone()
+        };
+        assert_eq!(row(Kind::Pack).scope(), Scope::Skills);
+        assert_eq!(row(Kind::Skill).scope(), Scope::Skills);
+        assert_eq!(row(Kind::Plugin).scope(), Scope::Plugins);
+        assert_eq!(row(Kind::Agent).scope(), Scope::Agents);
     }
 
     #[test]

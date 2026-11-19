@@ -20,12 +20,12 @@ use gpui_kit::*;
 
 use crate::{
     modal::Modal,
-    pages::connectors::{
+    pages::customize::{
         Shelf,
         plugins::{
-            Confirm, Scope, View,
+            Confirm, Scope,
             workshop::{
-                Shelf as StoreShelf,
+                Shelf as StoreShelf, View,
                 contents::{Loaded, Opened},
                 covers::{self, Cover as Drawn},
                 detail::Tab,
@@ -595,7 +595,8 @@ pub fn suggest(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     cx.notify();
 }
 
-/// `workshop`: the Workshop shown; `workshop=install:NAME|remove:NAME`: its window that
+/// `workshop`: the Plugins shelf's Workshop shown, `workshop=connectors|skills|agents`
+/// another shelf's, `workshop=installed:SHELF` a shelf's Installed list; `workshop=install:NAME|remove:NAME`: its window that
 /// asks first; `workshop=busy:NAME`: the capsule at work; `workshop=failed:NAME`: the
 /// capsule after a failure; `workshop=pack:NAME`: a pack's page; `workshop=open:NAME`: a
 /// listing's window, `workshop=gallery:N` its Nth picture, `workshop=tab:skills|contents|connectors`
@@ -605,23 +606,33 @@ pub fn suggest(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 /// `workshop=coming:NAME`: its cover still coming; `workshop=offline:`: the store could not
 /// be read again, so covers not here are drawn offline; `workshop=filters:`: the filter menu open; `workshop=scroll:PX`: the page that far down; `workshop=report`: what "Update all" did.
 pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Context<Workspace>) {
-    ws.center = Center::Connectors;
-    // `skills:` shows the Skills page's Workshop of single skills instead.
-    let skills = value == "skills";
-    ws.shelf = if skills {
-        Shelf::Skills
-    } else {
-        Shelf::Plugins
+    ws.center = Center::Customize;
+    let (what, name) = value.split_once(':').unwrap_or((value, ""));
+    // `connectors`, `skills`, `plugins` or `agents` shows that shelf's Discover;
+    // `installed:SHELF` its Installed list.
+    let named = |word: &str| Scope::ALL.into_iter().find(|scope| scope.noun() == word);
+    let (scope, view) = match (named(what), what) {
+        (Some(scope), _) => (scope, View::Discover),
+        (None, "installed") => (named(name).unwrap_or_default(), View::Installed),
+        // Packs are on the Skills shelf.
+        (None, "pack") => (Scope::Skills, View::Discover),
+        _ => (Scope::Plugins, View::Discover),
     };
-    ws.workshop.plugins_view = Some(View::Discover);
-    ws.workshop.skills_view = Some(View::Discover);
-    ws.workshop.scope = if skills {
-        Scope::Skills
-    } else {
-        Scope::Plugins
-    };
-    if skills {
-        let listings = skill_listings();
+    let was = ws.workshop.scope;
+    ws.shelf = Shelf::of(scope);
+    ws.workshop.views.insert(scope, view);
+    ws.workshop.scope = scope;
+    // Leaving the Skills shelf takes the made-up store back.
+    if was == Scope::Skills && scope != Scope::Skills && ws.workshop.listings.is_some() {
+        let listings = listings();
+        ws.workshop.picks = picks(&listings);
+        ws.workshop.listings = Some(listings);
+    } else if scope == Scope::Skills {
+        // The single skills, and the packs of the made-up store.
+        let listings: Vec<Listing> = skill_listings()
+            .into_iter()
+            .chain(listings().into_iter().filter(|l| l.kind == Kind::Pack))
+            .collect();
         ws.workshop.picks = picks(&listings);
         ws.workshop.listings = Some(listings);
     }
@@ -642,7 +653,6 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         cx.notify();
         return;
     }
-    let (what, name) = value.split_once(':').unwrap_or((value, ""));
     let listing = ws
         .workshop
         .listings
@@ -651,7 +661,8 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         .find(|listing| listing.name == name)
         .cloned();
     match (what, listing) {
-        ("", _) | ("skills", _) => {}
+        ("", _) | ("installed", _) => {}
+        (word, _) if named(word).is_some() => {}
         ("pack", _) => ws.workshop.pack = Some(name.into()),
         ("open", Some(listing)) => {
             ws.workshop.gallery = 0;

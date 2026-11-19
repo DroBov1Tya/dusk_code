@@ -108,6 +108,8 @@ pub struct App {
     pub undone: Option<String>,
     /// A question the agent asked, until it is answered or declined.
     pub poll: Option<Poll>,
+    /// The user's likely next message, as the model proposed it, greyed in the empty box.
+    pub suggestion: dusk_protocol::thread::Suggestion,
     /// Questions asked while one was on the screen, and the answers given so far: they
     /// go to the agent together, after the last one.
     pub polls_waiting: std::collections::VecDeque<dusk_protocol::tools::Question>,
@@ -270,6 +272,7 @@ impl App {
             goal_rounds: status.max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
+            suggestion: Default::default(),
             polls_waiting: Default::default(),
             poll_answers: Vec::new(),
             approvals: Vec::new(),
@@ -453,6 +456,7 @@ impl App {
         self.activity = Activity::Idle;
         self.turn_running = false;
         self.compacting = false;
+        self.transcript.stopped();
         self.turn_started_at = None;
         self.turn_spend = None;
         self.transcript.stop_running_tools();

@@ -201,7 +201,10 @@ impl Plugins {
             }
             let mut enabled = settings.enabled && missing_settings.is_empty() && allowed && here;
             let mut isolation = None;
-            if enabled && manifest.runs_programs() {
+            // A contract plugin runs nothing while the switch is off: no confinement is
+            // made, so no broker listens and no "cannot start here" shows.
+            let contract_off = manifest.provides.is_some() && !config.contracts_on();
+            if enabled && manifest.runs_programs() && !contract_off {
                 match self.isolate(&manifest, &folder, &values, &keys) {
                     Ok(made) => {
                         if !manifest.permissions.network.is_empty() {
@@ -463,7 +466,6 @@ pub(super) fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
         && within(&allowed.read, &wanted.read)
         && within(&allowed.sockets, &wanted.sockets)
         && (wanted.project == ProjectAccess::None || allowed.project == wanted.project)
-        && (!wanted.keychain || allowed.keychain)
         && wanted.keys.iter().all(|key| {
             allowed.keys.iter().any(|had| {
                 had.name == key.name
@@ -699,12 +701,8 @@ mod tests {
         assert!(!allowed(&agreed(&one), &two));
         assert!(allowed(&agreed(&two), &two));
         assert!(allowed(&agreed(&two), &one));
-        // Asking for the keychain or a project folder is asking for more, too.
+        // Asking for a project folder is asking for more, too.
         let without = agreed(&one);
-        assert!(!allowed(
-            &without,
-            &manifest("github.com", "keychain: true")
-        ));
         assert!(!allowed(&without, &manifest("github.com", "project: read")));
         // A plugin that provides and was never agreed to is off.
         assert!(!allowed(&PluginConfig::default(), &one));
@@ -732,22 +730,28 @@ mod tests {
         )
         .unwrap();
         std::fs::write(plugin.join("p"), "#!/bin/sh\n").unwrap();
-        let settings = format!(
-            "plugins:\n  g:\n    enabled: true\n    allowed: {permissions}\n    \
-             allowed_provides: {provides}\n"
-        );
-        let config = Arc::new(crate::testing::temp_live_config_with(
-            "catalog-contract",
-            &settings,
-        ));
-        let mcp = McpServers::start(&config.current(), paths.mcp_tokens_dir());
-        let plugins = Plugins::new(paths, config, mcp, Arc::default(), Arc::default());
-        plugins.scan();
-        let row = plugins
-            .list()
-            .into_iter()
-            .find(|row| row.name == "g")
-            .unwrap();
+        let row = |on: bool| {
+            let settings = format!(
+                "plugin_contracts: {on}\nplugins:\n  g:\n    enabled: true\n    allowed: \
+                 {permissions}\n    allowed_provides: {provides}\n"
+            );
+            let config = Arc::new(crate::testing::temp_live_config_with(
+                &format!("catalog-contract-{on}"),
+                &settings,
+            ));
+            let mcp = McpServers::start(&config.current(), paths.mcp_tokens_dir());
+            let plugins = Plugins::new(paths.clone(), config, mcp, Arc::default(), Arc::default());
+            plugins.scan();
+            plugins
+                .list()
+                .into_iter()
+                .find(|row| row.name == "g")
+                .unwrap()
+        };
+        // Off: nothing is confined or started, so nothing can fail to be.
+        let off = row(false);
+        assert!(off.problem.is_none(), "{off:?}");
+        let row = row(true);
         #[cfg(target_os = "linux")]
         if !crate::platform::netns::available() {
             let problem = row.problem.unwrap_or_default();
