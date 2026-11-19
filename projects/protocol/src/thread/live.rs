@@ -159,6 +159,11 @@ impl LiveTurn {
         self.questions = 0;
     }
 
+    /// A model call is being tried again.
+    pub fn retrying(&self) -> bool {
+        self.retry.is_some()
+    }
+
     /// The turn of this thread runs, whatever the agents below it do.
     pub fn running(&self) -> bool {
         self.running
@@ -180,7 +185,8 @@ impl LiveTurn {
 /// indicator shows and nothing moves.
 pub fn activity(live: &LiveTurn, now: i64) -> Option<Work> {
     let agents = live.agents();
-    if !live.running && !live.compacting && agents.is_none() {
+    // A call tried again is work, whether or not this client saw its turn start.
+    if !live.running && !live.compacting && live.retry.is_none() && agents.is_none() {
         return None;
     }
     let work = |kind, label: &str| {
@@ -590,6 +596,20 @@ mod tests {
         // The call answers: the first model event ends the hold.
         live.apply(&text(), 70_000);
         assert_eq!(kind(&live), Some(WorkKind::Writing));
+
+        // A client that never saw the turn start still shows the retry.
+        let mut joined = LiveTurn::default();
+        joined.apply(
+            &ThreadEvent::Retrying {
+                attempt: 2,
+                error: "timeout".into(),
+                kind: ProviderErrorKind::Overloaded,
+                wait_ms: 1_000,
+                max_attempts: None,
+            },
+            0,
+        );
+        assert_eq!(kind(&joined), Some(WorkKind::Held));
     }
 
     #[test]

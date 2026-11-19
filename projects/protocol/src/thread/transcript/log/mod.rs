@@ -15,8 +15,8 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{AgentState, Note, Retry, RetryRow, Tool, ToolState, TurnSpend};
-use super::{note, retry_row, turn_spend};
+use super::{AgentState, Note, Tool, ToolState, TurnSpend};
+use super::{note, turn_spend};
 use crate::{
     catalog::SkillChange,
     model::{ModelEvent, ToolCall},
@@ -200,9 +200,6 @@ pub struct ChatLog<L = Infallible> {
     pub waiting: Option<TurnWait>,
     /// What the running turn has used so far, as the core counted it.
     pub spend: Option<TurnSpend>,
-    /// The model call being tried again and when its event came, in Unix milliseconds of
-    /// the client's clock, for the countdown.
-    pub retry: Option<(Retry, i64)>,
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
     /// The token report as the core last sent it.
@@ -249,7 +246,6 @@ impl<L> Default for ChatLog<L> {
             turn_started: None,
             waiting: None,
             spend: None,
-            retry: None,
             tokens: None,
             usage: None,
             cost: None,
@@ -530,10 +526,12 @@ impl<L> ChatLog<L> {
     /// Folds one live event into the chat, at `now` in Unix milliseconds of the client's
     /// clock.
     pub fn apply(&mut self, event: ThreadEvent, now: i64) -> Applied {
+        // The piece that answers a call tried again changes what the indicator says.
+        let retried = self.live.retrying();
         self.live.apply(&event, now);
         // The hot path: a streamed piece of the answer that moves no row.
         if let ThreadEvent::Model(ModelEvent::Text(piece) | ModelEvent::Reasoning(piece)) = &event
-            && self.retry.is_none()
+            && !retried
             && !self.compacting
             && let Some(index) = self.answer_index()
         {
@@ -569,11 +567,6 @@ impl<L> ChatLog<L> {
     }
 
     fn apply_any(&mut self, event: ThreadEvent, now: i64) {
-        match retry_row(&event) {
-            Some(RetryRow::Show(retry)) => self.retry = Some((retry, now)),
-            Some(RetryRow::Clear) => self.retry = None,
-            None => {}
-        }
         if let Some(spend) = turn_spend(&event) {
             self.spend = spend;
         }
@@ -591,7 +584,7 @@ impl<L> ChatLog<L> {
             ThreadEvent::TurnFailed(_) => self.end_turn(),
             _ => {}
         }
-        // The row above is the whole of a retry: it leaves no notice.
+        // The indicator is the whole of a retry (`work`): it leaves no notice.
         if matches!(event, ThreadEvent::Retrying { .. }) {
             return;
         }

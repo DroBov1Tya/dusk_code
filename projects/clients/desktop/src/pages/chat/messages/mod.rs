@@ -379,11 +379,18 @@ mod tests {
 
         // No notice per attempt; the one row holds the newest.
         assert_eq!(layout(&chat), [(0, 1)]);
-        assert!(matches!(&chat.retry, Some((retry, _))
-            if retry.text() == "Provider overloaded: timeout; trying again, attempt 3 of 3"));
+        let held = chat.work(dusk_protocol::system::now_ms()).unwrap();
+        assert_eq!(held.kind, dusk_protocol::thread::WorkKind::Held);
+        assert!(
+            held.label
+                .starts_with("Provider overloaded: timeout; trying again, attempt 3 of 3"),
+            "{}",
+            held.label
+        );
 
         chat.apply(ThreadEvent::Model(ModelEvent::Text("hi".into())));
-        assert!(chat.retry.is_none());
+        let after = chat.work(dusk_protocol::system::now_ms()).unwrap();
+        assert_ne!(after.kind, dusk_protocol::thread::WorkKind::Held);
     }
 
     #[test]
