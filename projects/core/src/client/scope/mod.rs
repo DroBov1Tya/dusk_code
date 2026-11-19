@@ -123,8 +123,7 @@ impl Scope {
     /// Only these chats, and of the requests about them only those in `areas`. An area
     /// that is not about a thread gives nothing here.
     ///
-    /// Open before a remote client may be attached this way: a handler's error text can
-    /// hold paths; refusals are not rate-limited; `Approve { id }` names no thread; the
+    /// Open before a remote client may be attached this way: `Approve { id }` names no thread; the
     /// name given in `Hello.client` goes to the audit log as it is; the HTTP routes
     /// `/api/card` and `/api/output` are for the web scope and check no scope.
     pub fn threads(ids: impl IntoIterator<Item = String>, areas: &'static [Area]) -> Self {
@@ -175,6 +174,14 @@ impl Scope {
             true => HostFiles::Taken,
             false => HostFiles::Left,
         }
+    }
+
+    /// Whether the client reads the text of a handler's error as it is: the user's own
+    /// clients and the browser, which is the same person as the desktop. Any other gets
+    /// `Shown` sentences and references.
+    pub fn raw_errors(&self) -> bool {
+        matches!(&self.0, Kind::Full)
+            || matches!(&self.0, Kind::Areas(areas) if std::ptr::eq(*areas, WEB))
     }
 
     /// Whether the client gets the status: it is settings-level state, so only a scope

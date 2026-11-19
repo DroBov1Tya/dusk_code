@@ -71,13 +71,9 @@ impl Rig {
             scope: scope.clone(),
             queue,
         });
-        self.server.clients.insert(
-            client,
-            Attached {
-                source: "test".into(),
-                scope,
-            },
-        );
+        self.server
+            .clients
+            .insert(client, Attached::new("test".into(), scope));
         events
     }
 

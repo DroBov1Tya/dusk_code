@@ -199,9 +199,11 @@ async fn a_client_bound_to_a_chat_cannot_reach_hear_or_learn_of_another() {
         .into_iter()
         .zip(about("0190-not-a-thread", &core.folder))
     {
-        let refused = phone.request(theirs).await;
+        // One client for each pair: twenty refusals in a minute detach a client.
+        let probe = bound(&core, "probe", &mine);
+        let refused = probe.request(theirs).await;
         assert_eq!(refused, Response::Error(NO_THREAD.to_owned()));
-        assert_eq!(refused, phone.request(absent).await);
+        assert_eq!(refused, probe.request(absent).await);
     }
     let listed = owner.threads().list().await.unwrap();
     let title = |id: &str| {

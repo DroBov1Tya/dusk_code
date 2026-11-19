@@ -9,7 +9,8 @@ use dusk_protocol::client::Response;
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
 
-use super::{ClientId, Server};
+use super::{ClientId, Server, shown_text};
+use crate::client::Area;
 
 type Key = (ClientId, String, u64);
 
@@ -51,11 +52,14 @@ impl Server {
             tracing::debug!("run {run} of client {client} started again; the first is stopped");
         }
         let runtime = Arc::clone(&self.runtime);
+        let (raw, name) = self.error_view(client);
         tokio::spawn(async move {
             let response = tokio::select! {
                 result = runtime.run_for_user(&thread_id, &command) => match result {
                     Ok(output) => Response::Text(output),
-                    Err(error) => Response::Error(format!("{error:#}")),
+                    Err(error) => {
+                        Response::Error(shown_text(&error, raw, &name, Area::ThreadCommand))
+                    }
                 },
                 // Dropping the run kills its process group. A dropped sender (the client
                 // left, or the same number started again) stops it too.

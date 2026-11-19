@@ -31,6 +31,7 @@ pub use hub::Hub;
 pub use plugins::Plugins;
 pub use projects::Projects;
 pub use scope::{Area, Scope};
+pub use serve::Shown;
 pub use settings::Settings;
 pub use terminal::Terminal;
 pub use threads::Threads;
