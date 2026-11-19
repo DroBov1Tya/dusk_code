@@ -31,15 +31,23 @@ impl Runtime {
         )
     }
 
-    /// Every skill; one the Workshop installed is marked as from there, not the user's.
+    /// Every skill; one the Workshop installed is marked as from there, not the user's, and
+    /// one from an Unverified source by that source's name.
     pub fn skills(&self) -> Vec<SkillInfo> {
         let mut skills = skills::list(
             &self.launcher.paths.skills_dir(),
             &self.launcher.config.current(),
         );
         let installed = crate::plugins::store::installed_skills(&self.launcher.paths);
+        let unverified = crate::plugins::store::unverified_skills(&self.launcher.paths);
         for skill in &mut skills {
-            if skill.kind == skills::SkillKind::Own && installed.contains(&skill.name) {
+            // Marked whatever its front matter claims: nobody vouches for its source.
+            if let Some((_, source)) =
+                crate::plugins::store::unverified_source(&unverified, &skill.name)
+            {
+                skill.kind = skills::SkillKind::Other;
+                skill.source = Some(format!("{source}, unverified"));
+            } else if skill.kind == skills::SkillKind::Own && installed.contains(&skill.name) {
                 skill.kind = skills::SkillKind::Other;
                 skill.source = Some("Workshop".to_owned());
             }

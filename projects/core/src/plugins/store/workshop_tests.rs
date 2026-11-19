@@ -215,10 +215,11 @@ fn a_mirror_must_be_signed_by_its_pinned_key() {
     assert!(index::verify(json.as_bytes(), &signature, &other, now()).is_err());
     assert!(index::verify(json.as_bytes(), b"", &other, now()).is_err());
 
-    // In config.yml: no key, http, a reserved name, a short key or a twin are refused.
-    let missing: Result<Mirror, _> =
-        serde_json::from_str(r#"{"name": "m", "url": "https://m.example.com/i.json"}"#);
-    assert!(missing.is_err());
+    // In config.yml: http, a reserved name, a short key or a twin are refused. No key
+    // makes an Unverified source, whose list `guard_tests` holds to its own rules.
+    let keyless: Mirror =
+        serde_json::from_str(r#"{"name": "m", "url": "https://m.example.com/i.json"}"#).unwrap();
+    assert!(keyless.is_keyless());
     let good = mirror("m", index::PUBLIC_KEY);
     good.check().unwrap();
     for bad in [
@@ -429,6 +430,7 @@ fn an_install_needs_the_tier_the_user_saw() {
         name: "hello",
         version: "1.0.0",
         permissions: &[],
+        sha256: None,
     };
     let error = super::pick(&sources, &agreed).unwrap_err();
     assert!(error.to_string().contains("Community"), "{error}");

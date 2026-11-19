@@ -742,6 +742,7 @@ button.link, a.link { background: none; border: 0; padding: 0; color: var(--acce
 .tier-official { color: var(--accent); }
 .tier-verified { color: var(--info); }
 .tier-community { color: var(--muted); }
+.tier-unverified { color: var(--warn); }
 .tier-local { color: var(--fg2); }
 .facts { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); align-items: center; font-size: 12px; color: var(--muted); }
 .vendor { color: var(--muted); font-size: 12px; }

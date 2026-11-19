@@ -25,6 +25,10 @@ pub(super) fn render(card: &Suggestion, width: usize) -> Vec<Line<'static>> {
     for listing in &card.listings {
         let name = one_line(&listing.name);
         let mut about = format!("{} {DOT} {}", kind(listing.kind), tier(listing.tier));
+        // Nobody vouches for it, so where it comes from goes with it.
+        if listing.tier == Tier::Unverified {
+            about.push_str(&format!(" from {}", one_line(&listing.source)));
+        }
         if listing.skills > 0 {
             about.push_str(&format!(" {DOT} {} skills", listing.skills));
         }
@@ -54,6 +58,7 @@ fn tier(tier: Tier) -> &'static str {
         Tier::Official => "official",
         Tier::Verified => "verified",
         Tier::Community => "community",
+        Tier::Unverified => "unverified",
         Tier::Local => "local",
     }
 }

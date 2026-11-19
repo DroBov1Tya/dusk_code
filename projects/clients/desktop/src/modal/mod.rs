@@ -209,7 +209,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             (
                 confirm.title(),
                 480.,
-                crate::pages::customize::plugins::confirm(&confirm, &ws.confirm_focus, cx),
+                crate::pages::customize::plugins::confirm(
+                    &confirm,
+                    ws.workshop.review.as_ref(),
+                    &ws.confirm_focus,
+                    cx,
+                ),
             )
         }
         Modal::Listing { source, name } => {

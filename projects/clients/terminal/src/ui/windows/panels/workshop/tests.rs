@@ -155,6 +155,7 @@ fn confirm_lists_permissions_source_and_the_terminal_note() {
         confirm: Some(Confirm {
             listing: notes,
             focus: 0,
+            review: None,
         }),
         ..Workshop::default()
     };
@@ -175,6 +176,7 @@ fn confirm_lists_permissions_source_and_the_terminal_note() {
         confirm: Some(Confirm {
             listing: mirror,
             focus: 0,
+            review: None,
         }),
         ..Workshop::default()
     };
@@ -192,6 +194,7 @@ fn confirm_lists_permissions_source_and_the_terminal_note() {
         confirm: Some(Confirm {
             listing: weather.clone(),
             focus: 0,
+            review: None,
         }),
         ..Workshop::default()
     };
@@ -362,6 +365,7 @@ fn a_mirror_s_stars_show_in_its_window_with_their_repository() {
         confirm: Some(Confirm {
             listing: friends,
             focus: 0,
+            review: None,
         }),
         ..Workshop::default()
     };

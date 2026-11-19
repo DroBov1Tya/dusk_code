@@ -46,20 +46,50 @@ pub fn place(paths: &Paths, entry: &Entry, package: &[u8], owned: Option<&str>) 
         entry,
         &super::Package::Archive(package.to_vec()),
         owned,
+        false,
     )
 }
 
-/// As `place`, for a package or for files fetched from upstream and checked.
+/// As `place`, for a package or for files fetched from upstream and checked. What an
+/// `unverified` source brings must be files pinned upstream, text only.
 pub fn place_package(
     paths: &Paths,
     entry: &Entry,
     package: &super::Package,
     owned: Option<&str>,
+    unverified: bool,
 ) -> Result<String> {
+    let files = files_of(paths, entry, package, unverified)?;
+    let target = paths.rules_root().join(&files.folder);
+    if let Ok(metadata) = fs::symlink_metadata(&target) {
+        ensure!(
+            metadata.is_dir() && owned == Some(files.folder.as_str()),
+            "{} is already here and not from the store",
+            files.folder
+        );
+    }
+    install::write_wanted(paths, &record_file(paths, &entry.name), &files.wanted)?;
+    Ok(files.folder)
+}
+
+/// What `package` would write for `entry`, checked against it, without writing anything
+/// under the rules folder; it is laid out in the store's staging folder and removed.
+/// Called under `BUSY`.
+pub fn files_of(
+    paths: &Paths,
+    entry: &Entry,
+    package: &super::Package,
+    unverified: bool,
+) -> Result<Files> {
     ensure!(
         entry.consent().is_empty(),
         "a skill, pack or agent asks for no permissions; the list says it does"
     );
+    ensure!(
+        !unverified || matches!(package, super::Package::Files(_)),
+        "an unverified source brings only files pinned upstream"
+    );
+    crate::init::create_private_dir(&catalog::folder(paths))?;
     let staging = catalog::folder(paths).join(STAGING);
     // Under `BUSY`, so what is here was left by an install that stopped.
     if fs::symlink_metadata(&staging).is_ok() {
@@ -73,16 +103,10 @@ pub fn place_package(
             super::Package::Files(files) => write_files(entry, files, &unpacked)?,
         }
         let files = read(entry, &unpacked)?;
-        let target = paths.rules_root().join(&files.folder);
-        if let Ok(metadata) = fs::symlink_metadata(&target) {
-            ensure!(
-                metadata.is_dir() && owned == Some(files.folder.as_str()),
-                "{} is already here and not from the store",
-                files.folder
-            );
+        if unverified {
+            super::guard::check_files(&files.wanted)?;
         }
-        install::write_wanted(paths, &record_file(paths, &entry.name), &files.wanted)?;
-        Ok(files.folder)
+        Ok(files)
     })();
     let _ = fs::remove_dir_all(&staging);
     result

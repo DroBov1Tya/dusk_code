@@ -5,7 +5,7 @@
 //! read from the store now, not from the card, which only says what was suggested. A
 //! click on a row opens the listing's window over the Workshop of its own shelf.
 
-use dusk_protocol::plugin::{Listing, Order, Scope, Suggested, Suggestion};
+use dusk_protocol::plugin::{Listing, Order, Scope, Suggested, Suggestion, Tier};
 use gpui_kit::{
     component::{
         ActiveTheme,
@@ -133,6 +133,12 @@ fn render_row(
     // row has the kind's glyph on the name's gradient instead.
     let tile = placeholder::tile(&row.name, row.kind, TILE, cx);
     let about = match row.skills {
+        // Nobody vouches for it, so where it comes from goes before what it says it is.
+        _ if row.tier == Tier::Unverified => format!(
+            "from {} \u{b7} {}",
+            clip(&row.source, 32),
+            clip(&row.description, LINE_CHARS)
+        ),
         0 => clip(&row.description, LINE_CHARS),
         count => format!(
             "{} \u{b7} {}",

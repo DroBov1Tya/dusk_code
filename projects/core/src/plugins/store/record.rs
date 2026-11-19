@@ -43,7 +43,8 @@ pub struct Installed {
     /// The address of the source's list; empty for the official one, which may move.
     #[serde(default)]
     pub url: String,
-    /// The fingerprint of the key that signed the list it came from.
+    /// The fingerprint of the key that signed the list it came from; empty when nothing
+    /// signed it, from an Unverified source.
     #[serde(default = "official_key")]
     pub key: String,
     /// Records written before skills and packs installed are plugins.
@@ -93,13 +94,18 @@ impl Installed {
                 Tier::Official => String::new(),
                 _ => source.url.clone(),
             },
-            key: fingerprint(&source.key),
+            key: key_of(source),
             kind: Kind::Plugin,
             folder: String::new(),
             author: String::new(),
             license: String::new(),
             origin: String::new(),
         }
+    }
+
+    /// From a source without a key: nothing vouches for it.
+    pub fn unverified(&self) -> bool {
+        self.key.is_empty()
     }
 
     /// Its folder: in the plugins folder for a plugin, else where it was put.
@@ -115,7 +121,7 @@ impl Installed {
     /// changed its key or address, is not.
     pub fn is_from(&self, source: &Fetched) -> bool {
         self.source == source.name
-            && self.key == fingerprint(&source.key)
+            && self.key == key_of(source)
             && (source.tier == Tier::Official || self.url == source.url)
     }
 }
@@ -149,11 +155,13 @@ impl Record {
     }
 
     /// How far `name` is vouched for: a folder the store did not install is `Local`; one
-    /// signed by the key built in is `Official`; any other source is `Community`.
+    /// signed by the key built in is `Official`; one nothing signed is `Unverified`; any
+    /// other source is `Community`.
     pub fn tier(&self, paths: &Paths, name: &str) -> Tier {
         match self.present(paths, name) {
             None => Tier::Local,
             Some(item) if item.key == official_key() => Tier::Official,
+            Some(item) if item.unverified() => Tier::Unverified,
             Some(_) => Tier::Community,
         }
     }
@@ -167,6 +175,14 @@ impl Record {
     ) -> Option<&Installed> {
         self.present(paths, name)
             .filter(|item| item.is_from(source))
+    }
+}
+
+/// The fingerprint of the key that checked `source`'s list; empty when none did.
+fn key_of(source: &Fetched) -> String {
+    match source.key.is_empty() {
+        true => String::new(),
+        false => fingerprint(&source.key),
     }
 }
 

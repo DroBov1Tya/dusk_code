@@ -24,7 +24,8 @@ fn rank(tier: Tier) -> u8 {
         Tier::Official => 0,
         Tier::Verified => 1,
         Tier::Community => 2,
-        Tier::Local => 3,
+        Tier::Unverified => 3,
+        Tier::Local => 4,
     }
 }
 

@@ -490,6 +490,17 @@ pub fn skill_listings() -> Vec<Listing> {
             Tier::Community,
             "Explain a module in three short lines before the details.",
         ),
+        Listing {
+            source: "skill-hub".into(),
+            from: Some("hub.example.com".into()),
+            upstream: Some("github.com/someone/skills at 0123456".into()),
+            ..skill(
+                "pdf-forms",
+                "Anthropic",
+                Tier::Unverified,
+                "Fill PDF forms from a list of fields.",
+            )
+        },
     ]
 }
 
@@ -775,6 +786,7 @@ fn tier_named(name: &str) -> Option<Tier> {
         "official" => Some(Tier::Official),
         "verified" => Some(Tier::Verified),
         "community" => Some(Tier::Community),
+        "unverified" => Some(Tier::Unverified),
         "local" => Some(Tier::Local),
         _ => None,
     }

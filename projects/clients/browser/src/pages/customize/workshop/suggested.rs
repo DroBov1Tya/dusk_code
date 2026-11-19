@@ -5,7 +5,7 @@
 //! as on the Workshop page. Whether a row is installed is read from the store now; the
 //! card only says what was suggested. A click on a row opens the tab of its shelf. All listing text is drawn as text nodes.
 
-use dusk_protocol::plugin::{Listing, Order, Suggested, Suggestion};
+use dusk_protocol::plugin::{Listing, Order, Suggested, Suggestion, Tier};
 use leptos::prelude::*;
 
 use super::{
@@ -71,6 +71,9 @@ fn SuggestedRow(
                         on:click=move |_| state().show(View::Customize(tab))>{row.name.clone()}</button>
                     <span class="kind">{kind_word(row.kind)}</span>
                     {mark(row.tier)}
+                    {(row.tier == Tier::Unverified).then(|| view! {
+                        <span class="kind">{format!("from {}", row.source)}</span>
+                    })}
                 </div>
                 <p class="desc">{about}</p>
             </div>

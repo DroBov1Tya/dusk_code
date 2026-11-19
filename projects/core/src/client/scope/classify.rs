@@ -88,6 +88,7 @@ pub fn classify(request: &Request) -> Access<'_> {
         ) => apart(Area::Store),
         Request::Store(
             Store::Install { .. }
+            | Store::Review { .. }
             | Store::Remove { .. }
             | Store::UpdateAll
             | Store::Probe { .. }

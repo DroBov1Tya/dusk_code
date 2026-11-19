@@ -9,7 +9,7 @@ use dusk_protocol::{
 };
 use ratatui::DefaultTerminal;
 
-use crate::app::{App, Panel, Step, Workshop};
+use crate::app::{App, Panel, Reviewed, Step, Workshop};
 use crate::ui;
 
 pub async fn load(client: &Client, app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -27,16 +27,31 @@ pub async fn install(
     app: &mut App,
     terminal: &mut DefaultTerminal,
     listing: &Listing,
+    sha256: Option<&str>,
 ) -> Result<()> {
     let (name, version) = (&listing.name, &listing.version);
     working(app, format!("installing {name} {version}"));
     terminal.draw(|frame| ui::draw(frame, app))?;
-    let step = match client.plugins().install(listing).await {
+    let step = match client.plugins().install(listing, sha256).await {
         Ok(()) => Step::Done(format!("{name} {version} installed and switched on")),
         Err(error) => Step::Failed(format!("{name} not installed: {error:#}")),
     };
     finish(client, app, step).await;
     Ok(())
+}
+
+/// Reads the files an Unverified listing would write into its open question.
+pub async fn review(client: &Client, app: &mut App, source: &str, name: &str) {
+    let read = match client.plugins().review(source, name).await {
+        Ok(review) => Reviewed::Read(Box::new(review)),
+        Err(error) => Reviewed::Failed(format!("{error:#}")),
+    };
+    if let Some(confirm) = workshop(app).and_then(|view| view.confirm.as_mut())
+        && confirm.listing.source == source
+        && confirm.listing.name == name
+    {
+        confirm.review = Some(read);
+    }
 }
 
 pub async fn remove(

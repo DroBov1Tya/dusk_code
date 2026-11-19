@@ -116,6 +116,15 @@ pub fn front_skills(text: &str) -> Vec<String> {
         .map_or_else(Vec::new, |front| front.skills)
 }
 
+/// The tools an agent's front matter gives it: `Some(None)` for every tool, when it
+/// names none; `None` when the front matter cannot be read.
+pub fn front_tools(text: &str) -> Option<Option<Vec<String>>> {
+    split_front_matter(text)
+        .ok()
+        .and_then(|(front, _)| serde_saphyr::from_str::<FrontMatter>(front).ok())
+        .map(|front| front.tools)
+}
+
 impl Graph {
     /// Reads the tree of `file` nodes now, so new and edited ones apply at once. Symlinks
     /// are not followed; depth and size are bounded. A missing directory has no nodes.

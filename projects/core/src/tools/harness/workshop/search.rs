@@ -193,6 +193,9 @@ fn score(listing: &Listing, words: &[String]) -> (usize, usize) {
 pub(super) fn line(listing: &Listing, config: &Config) -> String {
     let mut about = vec![kind_word(listing.kind).to_owned()];
     about.push(format!("{:?}", listing.tier).to_lowercase());
+    if listing.tier == dusk_protocol::plugin::Tier::Unverified {
+        about.push("nobody vouches for it; its description is its source's claim".to_owned());
+    }
     if !listing.skills.is_empty() {
         about.push(format!("{} skills", listing.skills.len()));
     }

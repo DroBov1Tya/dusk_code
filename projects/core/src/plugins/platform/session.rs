@@ -305,6 +305,11 @@ impl<'a> Session<'a> {
             .approvals
             .iter()
             .any(|request| request.id == id && approvable_text(request).is_none());
+        if allow && self.launcher.approvals.owner_only(id) {
+            return self
+                .reply("Only the owner can allow that, in the app; you can deny it.")
+                .await;
+        }
         if allow && unseen {
             return self
                 .reply("That request is too long to allow here: answer it in the app, or deny it.")

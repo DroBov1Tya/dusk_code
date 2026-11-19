@@ -144,6 +144,10 @@ impl Launcher {
                 .with_team(Arc::new(team::Runner::new(self.clone()))),
             _ => tasks,
         }));
+        if depth == 0 {
+            let config = Arc::clone(&self.config);
+            tools.add(Box::new(crate::tools::AddWorkshopSource::new(config)));
+        }
         // A temporary chat reads what is remembered and adds nothing to it.
         if !self.temporary {
             tools.add(Box::new(Remember::user(self.paths.rules_root())));
@@ -323,6 +327,7 @@ mod tests {
     /// whether the call only reads, so it may run with the reads next to it. A tool added
     /// without a decision here fails the test.
     const DECISIONS: &[(&str, bool, bool)] = &[
+        ("add_workshop_source", false, false),
         ("agent_state", true, false),
         ("ask_agent", false, false),
         ("ask_user", true, false),

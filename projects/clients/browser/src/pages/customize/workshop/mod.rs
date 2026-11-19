@@ -34,7 +34,13 @@ use crate::{
 };
 use placeholder::Picture;
 
-pub const TIERS: [Tier; 4] = [Tier::Official, Tier::Verified, Tier::Community, Tier::Local];
+pub const TIERS: [Tier; 5] = [
+    Tier::Official,
+    Tier::Verified,
+    Tier::Community,
+    Tier::Unverified,
+    Tier::Local,
+];
 
 /// The grid, as the desktop's: cards at least this wide, gaps of 16, at most 4 columns
 /// (the page stops at 1184 px, where a fifth never fits).

@@ -5,8 +5,8 @@ use anyhow::{Result, bail};
 use dusk_protocol::{
     client::{PluginRequest, Request, Response},
     plugin::{
-        Contents, FilePreview, Kind, Listing, Order, Probe, SourceRow, StoreList, StoreRequest,
-        UiEvent, UpdateReport,
+        Contents, FilePreview, Kind, Listing, Order, Probe, Review, SourceRow, StoreList,
+        StoreRequest, UiEvent, UpdateReport,
     },
 };
 
@@ -192,16 +192,32 @@ impl Plugins<'_> {
     }
 
     /// Installs or updates the plugin of `listing`, as the user saw it, and switches it
-    /// on; refused when the store's listing changed since.
-    pub async fn install(&self, listing: &Listing) -> Result<()> {
+    /// on; refused when the store's listing changed since. `sha256` is the
+    /// `package_sha256` of the review the user saw, which an Unverified listing needs.
+    pub async fn install(&self, listing: &Listing, sha256: Option<&str>) -> Result<()> {
         let request = StoreRequest::Install {
             source: listing.source.clone(),
             tier: listing.tier,
             name: listing.name.clone(),
             version: listing.version.clone(),
             agreed: listing.permissions.clone(),
+            sha256: sha256.map(str::to_owned),
         };
         self.0.done(Request::Store(request)).await
+    }
+
+    /// What installing `name` from `source` would write and change, checked by the core
+    /// without writing it; shown before an Unverified listing is installed or updated.
+    pub async fn review(&self, source: &str, name: &str) -> Result<Review> {
+        let request = StoreRequest::Review {
+            source: source.to_owned(),
+            name: name.to_owned(),
+        };
+        match self.0.call(Request::Store(request)).await? {
+            Response::StoreReview(review) => Ok(review),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
     }
 
     pub async fn remove(&self, name: &str) -> Result<()> {

@@ -1,6 +1,6 @@
 //! Settings, Workshop: the repositories the user added beside the official store. The
-//! core reads each list with the key typed here and decides everything; this page only
-//! shows the rows and the result of a probe.
+//! core reads each list with the key typed here, or unsigned when none is, and decides
+//! everything; this page only shows the rows and the result of a probe.
 
 use dusk_protocol::plugin::{Probe, SourceRow};
 use gpui_kit::{
@@ -36,7 +36,10 @@ impl Repositories {
             url: cx.new(|cx| {
                 InputState::new(window, cx).placeholder("https://github.com/owner/repository")
             }),
-            key: cx.new(|cx| InputState::new(window, cx).placeholder("Its public key, base64")),
+            key: cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("Its public key, base64; leave empty for an unverified source")
+            }),
             probe: None,
             problem: None,
             rows: None,
@@ -64,7 +67,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let form = &ws.repositories;
     let mut add = section(
         "Add a repository",
-        "A signed list of skills and plugins. Its items are marked Community: added by you, no key of duskcode vouches for them. The repository sees your address each time the store is read.",
+        "A list of skills and plugins. With its key its items are marked Community: added by you, no key of duskcode vouches for them. Without a key the list is read unsigned and marked Unverified: only skills, packs and agents pinned to a GitHub commit are taken, never plugins. The repository sees your address each time the store is read.",
         cx,
     )
     .child(
@@ -85,12 +88,23 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .on_click(cx.listener(|ws, _, _, cx| ws.probe_repository(cx))),
     );
     if let Some(probe) = &form.probe {
-        add = add.child(div().small().text_color(warning).child(format!(
-            "Signed list of {} items, {} of them plugins, valid until {}. Nobody checked them.",
-            probe.entries,
-            probe.plugins,
-            probe.expires.get(..10).unwrap_or(&probe.expires)
-        )));
+        let until = probe.expires.get(..10).unwrap_or(&probe.expires);
+        let said = match probe.unverified {
+            true => format!(
+                "Unsigned list of {} items, valid until {until}. Unverified: nobody vouches for them.{}",
+                probe.entries,
+                probe
+                    .note
+                    .as_ref()
+                    .map(|note| format!(" {note}."))
+                    .unwrap_or_default()
+            ),
+            false => format!(
+                "Signed list of {} items, {} of them plugins, valid until {until}. Nobody checked them.",
+                probe.entries, probe.plugins
+            ),
+        };
+        add = add.child(div().small().text_color(warning).child(said));
         buttons = buttons.child(
             Button::new("repository-add")
                 .large()
@@ -122,28 +136,35 @@ fn source_row(row: &SourceRow, cx: &mut Context<Workspace>) -> Div {
         Some(why) => (format!("Refused: {why}"), theme.danger),
     };
     let name = row.name.clone();
-    super::line(
-        &row.name,
-        &format!("{}  ·  key {}", row.url, row.fingerprint),
-        cx,
-    )
-    .child(
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .max_w(px(260.))
-            .small()
-            .text_color(if row.error.is_some() { color } else { muted })
-            .child(div().size(px(6.)).flex_shrink_0().rounded_full().bg(color))
-            .child(state),
-    )
-    .child(
-        Button::new(SharedString::from(format!("repository-remove-{name}")))
-            .ghost()
-            .label("Remove")
-            .on_click(cx.listener(move |ws, _, _, cx| ws.remove_repository(&name, cx))),
-    )
+    let key = match row.fingerprint.as_str() {
+        "" => "no key".to_owned(),
+        fingerprint => format!("key {fingerprint}"),
+    };
+    let about = match &row.note {
+        Some(note) => format!("{}  ·  {key}  ·  {note}", row.url),
+        None => format!("{}  ·  {key}", row.url),
+    };
+    super::line(&row.name, &about, cx)
+        .child(crate::pages::customize::plugins::workshop::tier::mark(
+            row.tier, cx,
+        ))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .max_w(px(260.))
+                .small()
+                .text_color(if row.error.is_some() { color } else { muted })
+                .child(div().size(px(6.)).flex_shrink_0().rounded_full().bg(color))
+                .child(state),
+        )
+        .child(
+            Button::new(SharedString::from(format!("repository-remove-{name}")))
+                .ghost()
+                .label("Remove")
+                .on_click(cx.listener(move |ws, _, _, cx| ws.remove_repository(&name, cx))),
+        )
 }
 
 impl Workspace {

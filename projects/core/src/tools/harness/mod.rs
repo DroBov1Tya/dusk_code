@@ -1,7 +1,8 @@
 //! Tools about the thread itself: its history and tasks, skills, the user's memory,
-//! questions to the user, the images and blocks shown to them, and the Workshop's
-//! listings found for them.
+//! questions to the user, the images and blocks shown to them, the Workshop's listings
+//! found for them, and the Workshop sources it proposes to the owner.
 
+mod add_source;
 mod ask_user;
 mod display_audio;
 mod display_image;
@@ -17,6 +18,7 @@ mod suggest_next;
 mod tasks;
 mod workshop;
 
+pub use add_source::AddWorkshopSource;
 pub use ask_user::{AskUser, Question};
 pub use display_audio::{DisplayAudio, is_sound, save_sound};
 pub use display_image::{DisplayImage, picture_card};

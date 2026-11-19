@@ -91,6 +91,8 @@ pub enum Response {
     StoreUpdates(crate::plugin::UpdateReport),
     /// The files of a store listing.
     StoreContents(crate::plugin::Contents),
+    /// The answer to `StoreRequest::Review`.
+    StoreReview(crate::plugin::Review),
     /// One text file of a store listing.
     StoreFile(crate::plugin::FilePreview),
     /// What a repository's list holds, read without saving it.

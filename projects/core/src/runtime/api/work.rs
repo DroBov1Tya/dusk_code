@@ -267,6 +267,14 @@ impl Runtime {
 
     /// False when the request is no longer waiting, such as after its turn was stopped.
     ///
+    /// Whether only the owner may answer request `id`: a change of the settings a tool
+    /// proposed.
+    pub fn approval_owner_only(&self, id: u64) -> bool {
+        [&self.launcher, &self.temporary]
+            .iter()
+            .any(|launcher| launcher.approvals.owner_only(id))
+    }
+
     /// Only the chat it was asked in, or the chat above the agent thread that asked,
     /// may answer: a request asked elsewhere counts as unknown.
     pub async fn answer_approval(&self, thread_id: &str, id: u64, decision: Decision) -> bool {

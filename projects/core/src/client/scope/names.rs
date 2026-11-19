@@ -191,6 +191,7 @@ named! {
     R::Plugin(Pl::Event { .. }) => "plugin.event",
     R::Store(St::List { .. }) => "store.list",
     R::Store(St::Install { .. }) => "store.install",
+    R::Store(St::Review { .. }) => "store.review",
     R::Store(St::Remove { .. }) => "store.remove",
     R::Store(St::UpdateAll) => "store.update_all",
     R::Store(St::Cover { .. }) => "store.cover",

@@ -76,6 +76,8 @@ pub struct Index {
     pub plugins: Vec<Entry>,
     /// Mirrors this list vouches for. Only the official list's are believed.
     pub verified: Vec<Mirror>,
+    /// What was left out of `plugins` because its source may not bring it, one line.
+    pub left_out: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -140,7 +142,7 @@ pub struct Entry {
     /// hooks), sorted.
     #[serde(default)]
     pub programs: Vec<String>,
-    /// Format 3, a skill or pack: its files at a pinned commit of the author's
+    /// Format 3, a skill, pack or agent: its files at a pinned commit of the author's
     /// repository, instead of `downloads`.
     pub upstream: Option<super::upstream::Upstream>,
     /// The list's format, which says what its manifest is checked against.
@@ -241,6 +243,12 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
     UnparsedPublicKey::new(&ED25519, &key)
         .verify(json, &signature)
         .map_err(|_| anyhow::anyhow!("the list is not signed by its source's key"))?;
+    parse(json, now)
+}
+
+/// The list in `json` with every check but the signature's, for a source without a key:
+/// what it offers is Unverified, and `guard` keeps only what such a source may bring.
+pub fn parse(json: &[u8], now: DateTime<Utc>) -> Result<Index> {
     let raw: Raw = serde_json::from_slice(json).context("the list is not valid")?;
     ensure!(
         FORMATS.contains(&raw.format),
@@ -264,7 +272,9 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
         "a format 1 list names verified mirrors"
     );
     for mirror in &raw.verified {
-        mirror.check().context("a verified mirror of the list")?;
+        mirror
+            .check_signed()
+            .context("a verified mirror of the list")?;
     }
     let mut names = std::collections::BTreeSet::new();
     let mut plugins = Vec::new();
@@ -286,6 +296,7 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
         expires: raw.expires,
         plugins,
         verified: raw.verified,
+        left_out: None,
     })
 }
 
@@ -335,8 +346,8 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
     match &entry.upstream {
         Some(upstream) => {
             ensure!(
-                matches!(entry.kind, Kind::Skill | Kind::Pack) && entry.downloads.is_empty(),
-                "only a skill or a pack comes from upstream, and then without packages"
+                entry.kind != Kind::Plugin && entry.downloads.is_empty(),
+                "only a skill, pack or agent comes from upstream, and then without packages"
             );
             upstream.check()?;
         }

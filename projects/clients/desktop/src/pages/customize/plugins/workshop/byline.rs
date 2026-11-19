@@ -1,8 +1,9 @@
 //! A listing's byline, "by <author> · <version> · N skills", and on its page
 //! "· updated <date>" after it; a card has no room for the date. A part the list does not
-//! give is left out, never guessed.
+//! give is left out, never guessed. An Unverified listing starts with the source it
+//! comes from, and its author is only that source's claim.
 
-use dusk_protocol::plugin::{Kind, Listing};
+use dusk_protocol::plugin::{Kind, Listing, Tier};
 
 use super::capsule;
 use crate::ui::widgets;
@@ -26,11 +27,20 @@ pub fn dated_byline(listing: &Listing) -> String {
 
 fn parts(listing: &Listing) -> Vec<String> {
     let mut parts = Vec::new();
+    let unverified = listing.tier == Tier::Unverified;
+    if unverified {
+        let from = match &listing.from {
+            Some(host) => format!("from {} ({})", listing.source, capsule::clip(host, 64)),
+            None => format!("from {}", listing.source),
+        };
+        parts.push(from);
+    }
     if !listing.author.is_empty() {
-        parts.push(format!(
-            "by {}",
-            capsule::clip(&listing.author, AUTHOR_CHARS)
-        ));
+        let author = capsule::clip(&listing.author, AUTHOR_CHARS);
+        parts.push(match unverified {
+            true => format!("says by {author}"),
+            false => format!("by {author}"),
+        });
     }
     if !listing.version.is_empty() {
         parts.push(format!("v{}", capsule::clip(&listing.version, 40)));
@@ -102,5 +112,16 @@ mod tests {
             ..Listing::default()
         };
         assert_eq!(byline(&bare), "v0.1.0");
+        let loose = Listing {
+            tier: dusk_protocol::plugin::Tier::Unverified,
+            source: "hub".into(),
+            from: Some("hub.example.com".into()),
+            author: "Anthropic".into(),
+            ..bare
+        };
+        assert_eq!(
+            byline(&loose),
+            "from hub (hub.example.com) \u{b7} says by Anthropic \u{b7} v0.1.0"
+        );
     }
 }

@@ -14,8 +14,11 @@
 //! - `record` — what the store did here;
 //! - `unpack` — a package into a folder;
 //! - `content`, `pack` — skills, packs and agents, which are plain files;
-//! - `contents` — the files of a listing, for a client to look through.
+//! - `contents` — the files of a listing, for a client to look through;
+//! - `guard` — what a source without a key may bring, and what names it may not take;
+//! - `review` — what an install would write and change, asked before an Unverified one.
 
+pub mod add;
 #[cfg(test)]
 mod brings_tests;
 mod content;
@@ -27,6 +30,9 @@ mod contents_tests;
 #[cfg(test)]
 mod credit_tests;
 mod fetch;
+mod guard;
+#[cfg(test)]
+mod guard_tests;
 pub mod index;
 mod listing;
 mod pack;
@@ -36,6 +42,7 @@ mod picture_tests;
 mod record;
 #[cfg(test)]
 mod repositories_tests;
+pub mod review;
 mod source;
 #[cfg(test)]
 mod tests;
@@ -65,7 +72,7 @@ use source::Fetched;
 pub use listing::Here;
 pub use pack::{FILE as PACK_FILE, Pack};
 pub use picture::{cover, screenshot};
-pub use source::{name_for, probe, probed};
+pub use source::{probe, probed};
 
 /// Where the store keeps a package while it is checked, under the plugins folder; the
 /// leading dot keeps it out of the plugins found.
@@ -100,6 +107,15 @@ pub async fn list(
         .chain(listing::local(paths, &record, here))
         .collect();
     listing::mark_clashes(&mut listings);
+    let taken = fetched
+        .iter()
+        .filter(|source| source.tier == Tier::Unverified)
+        .map(|source| {
+            let names = listing::taken(paths, &record, &fetched, &source.name);
+            (source.name.clone(), names)
+        })
+        .collect();
+    listing::guard_names(&mut listings, &taken);
     listings.retain(|listing| {
         (kinds.is_empty() || kinds.contains(&listing.kind))
             && category.is_none_or(|category| {
@@ -129,6 +145,8 @@ pub struct Agreed<'a> {
     pub name: &'a str,
     pub version: &'a str,
     pub permissions: &'a [String],
+    /// The `package_sha256` of the review the user saw; an Unverified install needs it.
+    pub sha256: Option<&'a str>,
 }
 
 /// Installs or updates a plugin in the plugins folder, or a skill, pack or agent in the
@@ -143,6 +161,13 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
         return Err(anyhow!("{}: {}", failure.source, failure.error));
     }
     let (source, entry) = pick(&fetched, agreed)?;
+    if source.tier == Tier::Unverified {
+        let record = Record::load(paths)?;
+        let taken = listing::taken(paths, &record, &fetched, &source.name);
+        if let Some(why) = guard::shadow(&entry.name, taken.iter().map(String::as_str)) {
+            anyhow::bail!(why);
+        }
+    }
     put(paths, source, entry).await.map(|()| entry.kind)
 }
 
@@ -171,6 +196,15 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
         entry.version == agreed.version && entry.consent() == agreed.permissions,
         "the listing of {name} changed since you saw it; look at the list again"
     );
+    // Nothing signed an Unverified list, so the files the user looked at are what they
+    // agreed to, not the version: the list may name other files under the same one.
+    if tier == Tier::Unverified {
+        let pinned = entry.upstream.as_ref().map(upstream::Upstream::digest);
+        ensure!(
+            agreed.sha256.is_some() && agreed.sha256 == pinned.as_deref(),
+            "the files of {name} are not the ones you were shown; look at them again"
+        );
+    }
     Ok((source, entry))
 }
 
@@ -180,6 +214,16 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
 /// updates.
 pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateReport> {
     let (fetched, failed) = source::read(paths, mirrors).await;
+    update_from(paths, &fetched, &failed).await
+}
+
+/// `update_all` with the lists read. Nothing of an Unverified source is updated here:
+/// the user updates it by hand once they saw what changed (`review`).
+async fn update_from(
+    paths: &Paths,
+    fetched: &[Fetched],
+    failed: &[dusk_protocol::plugin::SourceFailure],
+) -> Result<UpdateReport> {
     let names: Vec<String> = Record::load(paths)?.installed.into_keys().collect();
     let mut report = UpdateReport::default();
     for name in names {
@@ -205,6 +249,11 @@ pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateRepor
         if listing::newer(&entry.version, &installed.version).is_none() {
             continue;
         }
+        if source.tier == Tier::Unverified {
+            let why = "from an unverified source; update it by hand once you saw what changed";
+            report.skipped.push((name.clone(), why.to_owned()));
+            continue;
+        }
         let folder = catalog::folder(paths).join(&name);
         // Skills, packs and agents ask for nothing; a list saying they do is refused.
         let more = match entry.kind {
@@ -225,6 +274,38 @@ pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateRepor
         }
     }
     Ok(report)
+}
+
+/// The folders under `skills/` an Unverified source installed, by their name there (`x`
+/// for `skills/x`), with the source's name.
+pub fn unverified_skills(paths: &Paths) -> std::collections::BTreeMap<String, String> {
+    let record = Record::load(paths).unwrap_or_default();
+    record
+        .installed
+        .iter()
+        .filter(|(name, item)| item.unverified() && record.present(paths, name).is_some())
+        .filter_map(|(_, item)| {
+            let folder = item.folder.strip_prefix("skills/")?;
+            Some((folder.to_owned(), item.source.clone()))
+        })
+        .collect()
+}
+
+/// The folder (in `unverified_skills`' terms) and the Unverified source `skill`, a name
+/// in the skill graph, came from, when one did.
+pub fn unverified_source<'a>(
+    unverified: &'a std::collections::BTreeMap<String, String>,
+    skill: &str,
+) -> Option<(&'a str, &'a str)> {
+    unverified
+        .iter()
+        .find(|(folder, _)| {
+            skill == folder.as_str()
+                || skill
+                    .strip_prefix(folder.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+        })
+        .map(|(folder, source)| (folder.as_str(), source.as_str()))
 }
 
 /// The single skills the store installed, by name: their folders are under `skills/` like
@@ -296,22 +377,7 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
             source.name
         );
     }
-    let (package, sha256) = match &entry.upstream {
-        Some(upstream) => {
-            let files = upstream::fetch_all(upstream)
-                .await
-                .with_context(|| format!("the files of {name}"))?;
-            (Package::Files(files), upstream.digest())
-        }
-        None => {
-            let download = entry.download_here().map_err(anyhow::Error::msg)?;
-            let bytes =
-                fetch::fetch_checked(&download.url, download.size, &download.sha256, Via::Package)
-                    .await
-                    .with_context(|| format!("the package of {name}"))?;
-            (Package::Archive(bytes), download.sha256.clone())
-        }
-    };
+    let (package, sha256) = fetch_package(entry).await?;
     let placed = entry.clone();
     let folder = match entry.kind {
         Kind::Plugin => {
@@ -329,9 +395,10 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
         _ => {
             let paths = paths.clone();
             let owned = owner.map(|owner| owner.folder);
+            let unverified = source.tier == Tier::Unverified;
             tokio::task::spawn_blocking(move || {
                 crate::init::create_private_dir(&catalog::folder(&paths))?;
-                content::place_package(&paths, &placed, &package, owned.as_deref())
+                content::place_package(&paths, &placed, &package, owned.as_deref(), unverified)
             })
             .await
             .context("the install stopped")?
@@ -353,6 +420,28 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
     Record::update(paths, |record| {
         record.installed.insert(name.clone(), installed);
         Ok(())
+    })
+}
+
+/// The package of `entry`, or its files pinned upstream, fetched and checked, with the
+/// hash the record keeps of it.
+async fn fetch_package(entry: &Entry) -> Result<(Package, String)> {
+    let name = &entry.name;
+    Ok(match &entry.upstream {
+        Some(upstream) => {
+            let files = upstream::fetch_all(upstream)
+                .await
+                .with_context(|| format!("the files of {name}"))?;
+            (Package::Files(files), upstream.digest())
+        }
+        None => {
+            let download = entry.download_here().map_err(anyhow::Error::msg)?;
+            let bytes =
+                fetch::fetch_checked(&download.url, download.size, &download.sha256, Via::Package)
+                    .await
+                    .with_context(|| format!("the package of {name}"))?;
+            (Package::Archive(bytes), download.sha256.clone())
+        }
     })
 }
 

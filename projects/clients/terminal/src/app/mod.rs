@@ -29,7 +29,7 @@ pub use panels::{
     McpRow, ModelList, OverviewView, Panel, PluginRow, Preset, Preview, SecretEntry,
     SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
-pub use panels::{Choice, Confirm, PackPage, Row, Step, Workshop, choices, order_word};
+pub use panels::{Choice, Confirm, PackPage, Reviewed, Row, Step, Workshop, choices, order_word};
 pub use state::{App, compact_number};
 #[cfg(test)]
 pub(crate) use tabs::tests::app as test_app;

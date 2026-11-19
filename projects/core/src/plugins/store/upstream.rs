@@ -1,4 +1,4 @@
-//! Skills and packs fetched straight from their author's repository instead of a package:
+//! Skills, packs and agents fetched straight from their author's repository instead of a package:
 //! the list pins a commit and the SHA-256 of every file, and the core fetches exactly
 //! those files at that commit from GitHub's raw host. Every file is checked before
 //! anything is written, and a missing, extra or changed file refuses the install.

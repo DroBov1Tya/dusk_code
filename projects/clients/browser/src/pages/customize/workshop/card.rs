@@ -29,6 +29,7 @@ pub fn word(tier: Tier) -> &'static str {
         Tier::Official => "Official",
         Tier::Verified => "Verified",
         Tier::Community => "Community",
+        Tier::Unverified => "Unverified",
         Tier::Local => "Local",
     }
 }
@@ -38,6 +39,7 @@ pub fn class(tier: Tier) -> &'static str {
         Tier::Official => "tier-official",
         Tier::Verified => "tier-verified",
         Tier::Community => "tier-community",
+        Tier::Unverified => "tier-unverified",
         Tier::Local => "tier-local",
     }
 }
@@ -46,7 +48,7 @@ pub fn icon(tier: Tier) -> IconName {
     match tier {
         Tier::Official => IconName::TierOfficial,
         Tier::Verified => IconName::TierVerified,
-        Tier::Community => IconName::TierCommunity,
+        Tier::Community | Tier::Unverified => IconName::TierCommunity,
         Tier::Local => IconName::TierLocal,
     }
 }
@@ -66,17 +68,27 @@ pub fn mark(tier: Tier) -> impl IntoView {
 
 /// The tier's mark, the kind (with a pack's skill count), who made it, the version, its
 /// license and categories, and for a mirror the user added, its repository's GitHub
-/// stars. A part the list does not give is left out. All plain text.
+/// stars; for an Unverified one, first the source it comes from. A part the list does not give is left out. All plain text.
 pub fn facts(listing: &Listing) -> AnyView {
     let kind = match (listing.kind, listing.skills.len()) {
         (Kind::Pack, count) if count > 0 => format!("Pack \u{b7} {count} skills"),
         (kind, _) => kind_word(kind).to_owned(),
     };
     let given = |text: String| (!text.is_empty()).then(|| view! { <span>{text}</span> });
-    let author = (!listing.author.is_empty()).then(|| format!("by {}", listing.author));
+    // An Unverified listing is known by its source; its author is only that source's claim.
+    let unverified = listing.tier == Tier::Unverified;
+    let author = (!listing.author.is_empty()).then(|| match unverified {
+        true => format!("says by {}", listing.author),
+        false => format!("by {}", listing.author),
+    });
+    let from = unverified.then(|| match &listing.from {
+        Some(host) => format!("from {} ({host})", listing.source),
+        None => format!("from {}", listing.source),
+    });
     view! {
         <span class="facts">
             {mark(listing.tier)}
+            {from.and_then(given)}
             <span>{kind}</span>
             {author.and_then(given)}
             <span>{format!("v{}", listing.version)}</span>

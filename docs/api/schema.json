@@ -3585,6 +3585,14 @@
         "description": {
           "type": "string"
         },
+        "from": {
+          "default": null,
+          "description": "For an Unverified listing: the host its source's list is read from. Its `author`\nand `description` are only that source's claims; `upstream` says where its files\ncome from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "homepage": {
           "description": "An `https` page about it.",
           "type": [
@@ -4295,7 +4303,7 @@
       "oneOf": [
         {
           "const": "trust",
-          "description": "Official, Verified, Community, Local, then by name.",
+          "description": "Official, Verified, Community, Unverified, Local, then by name.",
           "type": "string"
         },
         {
@@ -4918,6 +4926,14 @@
           "description": "RFC 3339.",
           "type": "string"
         },
+        "note": {
+          "default": null,
+          "description": "What the core left out of the list, as `SourceRow::note`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "plugins": {
           "format": "uint32",
           "minimum": 0,
@@ -4927,6 +4943,11 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "unverified": {
+          "default": false,
+          "description": "Read without a key: only its skills and packs pinned upstream are kept, and they\nare Unverified.",
+          "type": "boolean"
         },
         "url": {
           "description": "The list's address the probe read, after a repository's was turned into it.",
@@ -6586,6 +6607,27 @@
             "Keyboard"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Changing the settings, such as adding a Workshop source: asked every time, in\nevery mode, and answered only by a client that may change them itself.",
+          "properties": {
+            "Settings": {
+              "properties": {
+                "change": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "change"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Settings"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -7359,6 +7401,19 @@
         },
         {
           "additionalProperties": false,
+          "description": "The answer to `StoreRequest::Review`.",
+          "properties": {
+            "StoreReview": {
+              "$ref": "#/$defs/Review"
+            }
+          },
+          "required": [
+            "StoreReview"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "One text file of a store listing.",
           "properties": {
             "StoreFile": {
@@ -7493,6 +7548,101 @@
           "type": "object"
         }
       ]
+    },
+    "Review": {
+      "description": "The answer to `StoreRequest::Review`: the files an install would write, by their path\nin the item's folder, and how they differ from the copy installed here.",
+      "properties": {
+        "added": {
+          "description": "Against the copy installed here; all of `files` when none is.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "agent": {
+          "default": false,
+          "description": "It holds an agent, whose `AGENT.md` becomes a chat's instructions.",
+          "type": "boolean"
+        },
+        "agent_tools": {
+          "default": null,
+          "description": "The tools that agent gets; none here means every tool, as its front matter names\nnone.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "changed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "diff": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SkillDiffLine"
+          },
+          "type": "array"
+        },
+        "diff_cut": {
+          "default": false,
+          "description": "The diff was cut at its caps.",
+          "type": "boolean"
+        },
+        "diff_path": {
+          "default": null,
+          "description": "The lines that turn the installed `SKILL.md` or `AGENT.md` into the new one, when\nit changed, with its path.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "files": {
+          "description": "Sorted by path.",
+          "items": {
+            "$ref": "#/$defs/FileRef"
+          },
+          "type": "array"
+        },
+        "package_sha256": {
+          "description": "What `StoreRequest::Install` names as `sha256` to install exactly these files.",
+          "type": "string"
+        },
+        "refused": {
+          "default": null,
+          "description": "Why the install would be refused, when it would.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "removed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scripts": {
+          "default": [],
+          "description": "Of `files`, the scripts the agent may run: by their extension or a `#!` line.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "package_sha256",
+        "files",
+        "added",
+        "removed",
+        "changed"
+      ],
+      "type": "object"
     },
     "RowLayout": {
       "enum": [
@@ -8579,15 +8729,23 @@
           ]
         },
         "fingerprint": {
-          "description": "The first 16 hex digits of the SHA-256 of its key.",
+          "description": "The first 16 hex digits of the SHA-256 of its key; empty for a source without one.",
           "type": "string"
         },
         "name": {
           "type": "string"
         },
+        "note": {
+          "default": null,
+          "description": "What the core left out of a list it read, such as the plugins of an Unverified\nsource.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "tier": {
           "$ref": "#/$defs/Tier",
-          "description": "Community, or Verified when the official list vouches for it."
+          "description": "Community, Verified when the official list vouches for it, or Unverified without\na key."
         },
         "url": {
           "type": "string"
@@ -8852,7 +9010,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Installs or updates `name` at `version` from `source` and switches it on.\n`agreed` is the listing's `permissions` the user was shown; a listing that\nchanged since is refused.\n`tier` is the one the user was shown; the install is refused when the source\nearns another one now.",
+          "description": "Installs or updates `name` at `version` from `source` and switches it on.\n`agreed` is the listing's `permissions` the user was shown; a listing that\nchanged since is refused.\n`tier` is the one the user was shown; the install is refused when the source\nearns another one now.\n`sha256` is the `package_sha256` of the `Review` the user was shown; an\nUnverified listing is installed only with it, and only while it still holds.",
           "properties": {
             "Install": {
               "properties": {
@@ -8864,6 +9022,13 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "sha256": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "source": {
                   "type": "string"
@@ -9028,7 +9193,32 @@
         },
         {
           "additionalProperties": false,
-          "description": "Reads the signed list at `url` with the Ed25519 `key` (base64) without saving\nanything; answered with `Response::StoreProbe`. `url` is a list's `https` address\nor a GitHub repository's, whose list is then on its GitHub Pages site.",
+          "description": "What installing `name` from `source` would write, and what it changes in the copy\ninstalled here, fetched and checked like an install without writing anything;\nanswered with `Response::StoreReview`. Asked before an Unverified listing is\ninstalled or updated.",
+          "properties": {
+            "Review": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Review"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Reads the signed list at `url` with the Ed25519 `key` (base64) without saving\nanything; answered with `Response::StoreProbe`. `url` is a list's `https` address\nor a GitHub repository's, whose list is then on its GitHub Pages site. An empty\n`key` reads the list unsigned, as an Unverified source.",
           "properties": {
             "Probe": {
               "properties": {
@@ -9058,7 +9248,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Probes `url` with `key` again and, when it passes, saves it as a repository under a\nname the core gives it. Its items are Community.",
+          "description": "Probes `url` with `key` again and, when it passes, saves it as a repository under a\nname the core gives it. Its items are Community, or Unverified when `key` is empty.",
           "properties": {
             "AddSource": {
               "properties": {
@@ -11608,6 +11798,11 @@
         {
           "const": "community",
           "description": "From a mirror the user added.",
+          "type": "string"
+        },
+        {
+          "const": "unverified",
+          "description": "From a source the user added without a key: nobody signed its list, so it may\nbring only skills, packs and agents, and none of them is updated on its own.",
           "type": "string"
         },
         {

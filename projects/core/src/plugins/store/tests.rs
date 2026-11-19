@@ -183,6 +183,7 @@ async fn the_live_store_installs_a_plugin() {
         name: "telegram",
         version: &telegram.version,
         permissions: &telegram.permissions,
+        sha256: None,
     };
     install(&paths, &[], &agreed).await.unwrap();
     let changed = ["connect to https://evil.example.com".to_owned()];

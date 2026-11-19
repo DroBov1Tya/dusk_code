@@ -71,6 +71,7 @@ impl Runtime {
                 name,
                 version,
                 agreed,
+                sha256,
             } => {
                 let agreed = store::Agreed {
                     source: &source,
@@ -78,6 +79,7 @@ impl Runtime {
                     name: &name,
                     version: &version,
                     permissions: &agreed,
+                    sha256: sha256.as_deref(),
                 };
                 let kind = store::install(self.paths(), &mirrors, &agreed).await?;
                 tracing::info!("{kind:?} {name} {version} installed from {source}");
@@ -127,13 +129,17 @@ impl Runtime {
                     store::contents::contents(self.paths(), &mirrors, &source, &name).await?;
                 return Ok(Response::StoreContents(contents));
             }
+            StoreRequest::Review { source, name } => {
+                let review = store::review::review(self.paths(), &mirrors, &source, &name).await?;
+                return Ok(Response::StoreReview(review));
+            }
             StoreRequest::File { source, name, path } => {
                 let file = store::contents::file(&source, &name, &path).await?;
                 return Ok(Response::StoreFile(file));
             }
             StoreRequest::Probe { url, key } => {
                 let (mirror, index) = store::probe(&url, &key).await?;
-                return Ok(Response::StoreProbe(store::probed(&mirror.url, &index)));
+                return Ok(Response::StoreProbe(store::probed(&mirror, &index)));
             }
             StoreRequest::Sources => {
                 let rows = store::sources(self.paths(), &mirrors).await;
@@ -141,15 +147,8 @@ impl Runtime {
             }
             StoreRequest::AddSource { url, key } => {
                 // The client's probe is not trusted: the list is read again here.
-                let (mut mirror, _) = store::probe(&url, &key).await?;
-                anyhow::ensure!(
-                    !mirrors.iter().any(|item| item.url == mirror.url),
-                    "this repository is added already"
-                );
-                mirror.name = store::name_for(&mirror.url, &mirrors);
-                tracing::info!("workshop repository {} added", mirror.name);
-                self.config()
-                    .update(|config| config.workshop_mut().sources.push(mirror))?;
+                let mirror = store::add::proposed(self.config(), &url, &key, None)?;
+                store::add::add(self.config(), mirror).await?;
             }
             StoreRequest::RemoveSource { name } => {
                 anyhow::ensure!(

@@ -31,8 +31,14 @@ pub enum Action {
     },
     /// Reads the store and the skill packs into the Workshop.
     LoadStore,
-    /// Installs or updates a plugin from the store at the version the user saw.
-    InstallPlugin(Box<dusk_protocol::plugin::Listing>),
+    /// Installs or updates a plugin from the store at the version the user saw, with the
+    /// hash of the files shown for an Unverified one.
+    InstallPlugin(Box<dusk_protocol::plugin::Listing>, Option<String>),
+    /// Reads what installing an Unverified listing would write, for its question.
+    ReviewListing {
+        source: String,
+        name: String,
+    },
     /// Removes a plugin the store installed.
     RemovePlugin(String),
     /// Updates what asks for nothing more, and says what was done and left.

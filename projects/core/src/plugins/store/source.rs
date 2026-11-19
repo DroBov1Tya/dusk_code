@@ -4,7 +4,8 @@
 //!
 //! A listing's tier comes from the key that checked its bytes, never from what a list
 //! says: only the official list is Official, and a mirror is Verified only when the
-//! official list names it with the same address and key.
+//! official list names it with the same address and key. A mirror without a key is read
+//! unsigned and is Unverified whatever any list says; `guard` decides what it may bring.
 
 use std::{collections::BTreeMap, sync::LazyLock};
 
@@ -37,7 +38,7 @@ pub struct Fetched {
     pub name: String,
     /// The address its list came from; its pictures are beside it.
     pub url: String,
-    /// Base64 of the key that checked the list.
+    /// Base64 of the key that checked the list; empty for an Unverified source.
     pub key: String,
     pub tier: Tier,
     pub index: Index,
@@ -121,19 +122,24 @@ pub fn settle(
     }
     for (mirror, read) in mirrors {
         match read {
-            Ok(index) => {
+            Ok(mut index) => {
                 let vouched = verified
                     .iter()
                     .any(|item| item.url == mirror.url && item.key == mirror.key);
+                let tier = match (mirror.is_keyless(), vouched) {
+                    // Nothing signed its list, whatever the official one names.
+                    (true, _) => Tier::Unverified,
+                    (false, true) => Tier::Verified,
+                    (false, false) => Tier::Community,
+                };
+                if tier == Tier::Unverified {
+                    super::guard::admit(&mut index);
+                }
                 fetched.push(Fetched {
                     name: mirror.name,
                     url: mirror.url,
                     key: mirror.key,
-                    tier: if vouched {
-                        Tier::Verified
-                    } else {
-                        Tier::Community
-                    },
+                    tier,
                     index,
                 });
             }
@@ -153,6 +159,8 @@ pub fn seen(mirrors: &[Mirror], source: &str, name: &str) -> Result<Seen> {
         .ok_or_else(|| anyhow!("{source} did not list {name}; list the store again"))?;
     let current = match source {
         OFFICIAL_SOURCE => seen.key == index::PUBLIC_KEY,
+        // `remember` keeps no picture of an Unverified source, so its key, empty, only
+        // has to stay empty.
         _ => mirrors
             .iter()
             .any(|item| item.name == source && item.url == seen.url && item.key == seen.key),
@@ -185,7 +193,8 @@ async fn read_official() -> Result<(String, Index)> {
 }
 
 /// What the list at `url` holds, checked with `key` exactly as a mirror's is, without
-/// saving anything. A GitHub repository's address is read as its Pages site's list.
+/// saving anything; with no key, read unsigned and kept to what an Unverified source may
+/// bring. A GitHub repository's address is read as its Pages site's list.
 pub async fn probe(url: &str, key: &str) -> Result<(Mirror, Index)> {
     let mirror = Mirror {
         name: "probe".to_owned(),
@@ -193,23 +202,28 @@ pub async fn probe(url: &str, key: &str) -> Result<(Mirror, Index)> {
         key: key.trim().to_owned(),
     };
     mirror.check()?;
-    let index = read_mirror(&mirror).await?;
+    let mut index = read_mirror(&mirror).await?;
+    if mirror.is_keyless() {
+        super::guard::admit(&mut index);
+    }
     Ok((mirror, index))
 }
 
 /// What a probe tells the user before they add a repository.
-pub fn probed(url: &str, index: &Index) -> Probe {
+pub fn probed(mirror: &Mirror, index: &Index) -> Probe {
     let count = |kind: Option<Kind>| {
         let entries = index.plugins.iter();
         let n = entries.filter(|entry| kind.is_none_or(|kind| entry.kind == kind));
         u32::try_from(n.count()).unwrap_or(u32::MAX)
     };
     Probe {
-        url: url.to_owned(),
+        url: mirror.url.clone(),
         entries: count(None),
         plugins: count(Some(Kind::Plugin)),
         serial: index.serial,
         expires: index.expires.clone(),
+        unverified: mirror.is_keyless(),
+        note: index.left_out.clone(),
     }
 }
 
@@ -291,12 +305,20 @@ pub fn rows(mirrors: &[Mirror], fetched: &[Fetched], failed: &[SourceFailure]) -
             SourceRow {
                 name: mirror.name.clone(),
                 url: mirror.url.clone(),
-                fingerprint: fingerprint(&mirror.key),
-                tier: read.map_or(Tier::Community, |item| item.tier),
+                fingerprint: match mirror.is_keyless() {
+                    true => String::new(),
+                    false => fingerprint(&mirror.key),
+                },
+                tier: match (read, mirror.is_keyless()) {
+                    (Some(item), _) => item.tier,
+                    (None, true) => Tier::Unverified,
+                    (None, false) => Tier::Community,
+                },
                 entries: read.map_or(0, |item| {
                     u32::try_from(item.index.plugins.len()).unwrap_or(u32::MAX)
                 }),
                 error,
+                note: read.and_then(|item| item.index.left_out.clone()),
             }
         })
         .collect()
@@ -310,7 +332,15 @@ fn fingerprint(key: &str) -> String {
     hex
 }
 
+/// A mirror's list, checked with its key; without one it is read unsigned, and its
+/// signature is not even fetched.
 async fn read_mirror(mirror: &Mirror) -> Result<Index> {
+    if mirror.is_keyless() {
+        let json = fetch(&mirror.url, index::MAX_INDEX_BYTES, Via::Direct)
+            .await
+            .context("cannot fetch its list")?;
+        return index::parse(&json, Utc::now());
+    }
     let (json, signature) = fetch_signed(&mirror.url).await?;
     index::verify(&json, &signature, &mirror.key, Utc::now())
 }
@@ -331,8 +361,14 @@ async fn fetch_signed(url: &str) -> Result<(Vec<u8>, Vec<u8>)> {
     Ok((json, signature))
 }
 
-/// Refuses a list older than one accepted from its source, and keeps a newer serial.
-fn accept(paths: &Paths, fetched: &Fetched) -> Result<()> {
+/// Refuses a list older than one accepted from its source, and keeps a newer serial. An
+/// unsigned list is not held to it: whoever serves it can write any serial, so the rule
+/// would protect nothing and could lock the user out; the commit and file hashes the
+/// record keeps of what it installed are what holds.
+pub fn accept(paths: &Paths, fetched: &Fetched) -> Result<()> {
+    if fetched.tier == Tier::Unverified {
+        return Ok(());
+    }
     let serial = fetched.index.serial;
     Record::update(paths, |record| {
         let seen = match fetched.tier {

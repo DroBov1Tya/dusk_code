@@ -5,7 +5,7 @@
 use std::cmp::Reverse;
 
 use chrono::{DateTime, FixedOffset};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use dusk_protocol::plugin::{
     Connector, ConnectorState, Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, RepoStars, Runs,
@@ -105,10 +105,98 @@ pub fn listing(
         skills: entry.skills.clone(),
         author: entry.author.clone().unwrap_or_default(),
         license: entry.license.clone().unwrap_or_default(),
-        origin: entry.source.clone(),
+        origin: match source.tier {
+            // The list's `source` is only its claim; the pinned repository is not.
+            Tier::Unverified => entry.upstream.as_ref().map(|upstream| {
+                format!(
+                    "https://github.com/{}/tree/{}",
+                    upstream.repo, upstream.commit
+                )
+            }),
+            _ => entry.source.clone(),
+        },
         upstream: entry.upstream.as_ref().map(super::upstream::Upstream::line),
         categories: entry.categories.clone(),
         clash: false,
+        from: (source.tier == Tier::Unverified)
+            .then(|| {
+                reqwest::Url::parse(&source.url)
+                    .ok()?
+                    .host_str()
+                    .map(str::to_owned)
+            })
+            .flatten(),
+    }
+}
+
+/// The names an Unverified listing may not take, or come close to: every name an
+/// Official or Verified listing offers, everything installed here from another source,
+/// the built-in skills and their pack, and the folders under `skills/` and `agents/`
+/// that are not this source's own.
+pub fn taken(
+    paths: &Paths,
+    record: &Record,
+    fetched: &[Fetched],
+    source: &str,
+) -> BTreeSet<String> {
+    let mut names: BTreeSet<String> = fetched
+        .iter()
+        .flat_map(|item| {
+            item.index
+                .plugins
+                .iter()
+                .filter(move |entry| matches!(tier(item, entry), Tier::Official | Tier::Verified))
+                .map(|entry| entry.name.clone())
+        })
+        .collect();
+    let own: BTreeSet<&str> = record
+        .installed
+        .iter()
+        .filter(|(_, item)| item.source == source)
+        .map(|(_, item)| item.folder.as_str())
+        .collect();
+    names.extend(
+        record
+            .installed
+            .iter()
+            .filter(|(_, item)| item.source != source)
+            .map(|(name, _)| name.clone()),
+    );
+    names.insert(crate::catalog::skills::BUILTIN_PACK.to_owned());
+    let builtin = crate::catalog::skills::builtin_dir();
+    for (part, root) in [
+        ("skills", builtin.clone()),
+        ("skills", Some(paths.skills_dir())),
+        ("agents", Some(paths.agents_dir())),
+    ] {
+        let Some(entries) = root.and_then(|root| std::fs::read_dir(root).ok()) else {
+            continue;
+        };
+        for item in entries.flatten() {
+            let Some(name) = item.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if !name.starts_with('.') && !own.contains(format!("{part}/{name}").as_str()) {
+                names.insert(name);
+            }
+        }
+    }
+    names
+}
+
+/// Marks an Unverified listing whose name is, or is close to, one of `taken` as unfit:
+/// it may never pass for a trusted or installed one.
+pub fn guard_names(listings: &mut [Listing], taken: &BTreeMap<String, BTreeSet<String>>) {
+    for listing in listings
+        .iter_mut()
+        .filter(|listing| listing.tier == Tier::Unverified)
+    {
+        let Some(names) = taken.get(&listing.source) else {
+            continue;
+        };
+        if let Some(why) = super::guard::shadow(&listing.name, names.iter().map(String::as_str)) {
+            listing.unfit = Some(why);
+        }
     }
 }
 
@@ -232,7 +320,7 @@ pub fn newer(available: &str, installed: &str) -> Option<String> {
 }
 
 /// Sorts by `order`; ties, and listings without the date sorted on, keep the
-/// trust order: Official, Verified, Community, Local, then by name.
+/// trust order: Official, Verified, Community, Unverified, Local, then by name.
 pub fn sort(listings: &mut [Listing], order: Order) {
     let trust = |listing: &Listing| (listing.tier, listing.name.clone(), listing.source.clone());
     match order {

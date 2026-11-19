@@ -27,6 +27,7 @@ fn bridge_refused(request: &Request) -> bool {
             | Request::Plugin(_)
             | Request::Store(
                 StoreRequest::Install { .. }
+                    | StoreRequest::Review { .. }
                     | StoreRequest::Remove { .. }
                     | StoreRequest::UpdateAll
                     | StoreRequest::Probe { .. }
@@ -278,6 +279,7 @@ fn a_browser_is_refused_this_list_and_no_more() {
         "store.probe",
         "store.remove",
         "store.remove_source",
+        "store.review",
         "store.update_all",
         "terminal.close",
         "terminal.input",

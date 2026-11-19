@@ -633,6 +633,7 @@ can only lower it, never raise it:
 | Official | the official list, signed by the key built in, for the work of duskcode's maintainers |
 | Verified | the official list for somebody else's work (`badge: verified`, or an `author` who is not a maintainer), or a mirror you added whose address and key the official list names under `verified` |
 | Community | any other mirror you added |
+| Unverified | a source you added without a key: nobody signed its list, whatever any list says |
 | Local | a plugin in the plugins folder that no source installed; no key vouches for it |
 
 An install names the tier you were shown and is refused when the listing earns another
@@ -645,7 +646,7 @@ shows the same. Nothing is sorted or picked by stars: a mirror writes its own co
 
 ### Mirrors
 
-A mirror is added in Settings, Workshop, or in `config.yml`; its key is required and
+A mirror is added in Settings, Workshop, or in `config.yml`; its key, when given, is
 pinned, so a mirror signed by another key is refused, not asked about. In Settings you
 type the list's https address, or a GitHub repository's (`https://github.com/owner/name`,
 read as `https://owner.github.io/name/index.json`), and its key; Check reads the list
@@ -660,6 +661,8 @@ workshop:
     - name: friends                                   # a-z, 0-9 and -; not official or local
       url: https://friends.example.com/index.json     # https only
       key: BASE64-OF-ITS-ED25519-PUBLIC-KEY
+    - name: skill-hub                                 # no key: Unverified
+      url: https://hub.example.com/index.json
 ```
 
 At most 16 mirrors and 2000 entries per list; a list or a picture that takes over 20 s
@@ -672,6 +675,56 @@ metadata service is refused. Lists, covers and screenshots follow no redirect. A
 to three https redirects to the host it was asked from or to GitHub's asset hosts
 (`github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`),
 as release downloads need; its SHA-256 is checked either way.
+
+### Sources without a key
+
+A source added without a key (left empty in Settings, or no `key:` in `config.yml`) is
+read unsigned: its `.sig` is not fetched, and every other check of a list stands (https
+only, public addresses, no redirects, size and entry caps, format, expiry, names, paths,
+per-file SHA-256). Everything it offers is **Unverified**, even when the official list
+names its address: only a key vouches. What it may bring is held tighter
+(`plugins/store/guard.rs`):
+
+- only skills, packs and agents whose files are pinned upstream (a GitHub commit and the
+  SHA-256 of every file, UTF-8 text only); never a plugin (a program, or a connector that
+  runs one) and never a package. What is left out is said on the source's row
+  ("2 plugins ignored: an unverified source cannot bring programs");
+- no cover, screenshot or star count is read from its list; the name's gradient stands in;
+- its serial is not held to: whoever serves an unsigned list can write any serial, so the
+  rule would protect nothing and could lock you out. The commit and file hashes the
+  record keeps of what was installed are what holds;
+- its names never pass for a trusted or installed one: a name that is, or is one edit
+  from (dashes and case aside), a name an Official or Verified listing offers, anything
+  installed from another source, a built-in skill, the `duskcode` pack or a folder under
+  `skills/` or `agents/` is shown and refused as taken;
+- a listing shows its source and the host of its list, and its `author` as that source's
+  claim; its origin is the pinned repository, not what the list says.
+
+Installing or updating one first asks the core for a review (`StoreRequest::Review`): the
+files it writes, fetched and checked, with what an update adds, changes and removes
+against the copy on disk and the diff of its `SKILL.md` or `AGENT.md`, the scripts it
+carries, and for an agent the tools it gets (every tool when its `tools:` names none). The
+confirmation says plainly that nobody vouches for it. The install names the review's
+`package_sha256`, and the core refuses it when the files are no longer those. "Update all"
+never updates an Unverified item: it is left for you, with why.
+
+What an Unverified skill then asks of the agent is your call. `load_skill` gives its text
+after a line saying it comes from an unverified source and is data from a third party, not
+instructions from you; the skill list marks it with its source; its `links:` lead only to
+skills of its own folder, never to built-in skills such as `skill-evolve` or to your own.
+Its scripts are plain text, written readable and writable by you only, and run under the
+permission mode you chose, like any command.
+
+#### Adding a source from a chat
+
+When you ask the agent to connect a catalogue, it may find its list and call
+`add_workshop_source { name, url, key? }`. That only proposes it: you are asked every
+time, in every mode, full access included, with the name, the address, whether it is
+keyed or Unverified and what an Unverified source may bring. Only a client that could add
+the source itself may answer (the desktop app or the terminal; not a browser, not a chat
+shared through a scope bound to it, not a chat platform). The yes adds it the way
+Settings does, reading the list again, and the tool answers with how many listings it
+read. The address is refused before you are asked when it is not https or not public.
 
 ### index.json
 
@@ -808,7 +861,7 @@ skills:
 
 ### From upstream
 
-A format 3 entry of kind `skill` or `pack` may name, instead of `downloads`, the files
+A format 3 entry of kind `skill`, `pack` or `agent` may name, instead of `downloads`, the files
 of a commit of its author's GitHub repository:
 
 ```json

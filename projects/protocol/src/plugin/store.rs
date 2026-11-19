@@ -111,6 +111,11 @@ pub struct Listing {
     /// `github.com/owner/name at abc1234`.
     #[serde(default)]
     pub upstream: Option<String>,
+    /// For an Unverified listing: the host its source's list is read from. Its `author`
+    /// and `description` are only that source's claims; `upstream` says where its files
+    /// come from.
+    #[serde(default)]
+    pub from: Option<String>,
 }
 
 impl Listing {
@@ -170,6 +175,9 @@ pub enum Tier {
     Verified,
     /// From a mirror the user added.
     Community,
+    /// From a source the user added without a key: nobody signed its list, so it may
+    /// bring only skills, packs and agents, and none of them is updated on its own.
+    Unverified,
     /// Found in the plugins folder, not installed by any source: no key vouches for it.
     Local,
 }
@@ -229,7 +237,7 @@ pub struct ScreenshotRef {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Order {
-    /// Official, Verified, Community, Local, then by name.
+    /// Official, Verified, Community, Unverified, Local, then by name.
     #[default]
     Trust,
     /// Newest `created` first.
@@ -300,12 +308,16 @@ pub enum StoreRequest {
     /// changed since is refused.
     /// `tier` is the one the user was shown; the install is refused when the source
     /// earns another one now.
+    /// `sha256` is the `package_sha256` of the `Review` the user was shown; an
+    /// Unverified listing is installed only with it, and only while it still holds.
     Install {
         source: String,
         tier: Tier,
         name: String,
         version: String,
         agreed: Vec<String>,
+        #[serde(default)]
+        sha256: Option<String>,
     },
     /// Removes a plugin installed from the store.
     Remove { name: String },
@@ -333,15 +345,21 @@ pub enum StoreRequest {
         name: String,
         path: String,
     },
+    /// What installing `name` from `source` would write, and what it changes in the copy
+    /// installed here, fetched and checked like an install without writing anything;
+    /// answered with `Response::StoreReview`. Asked before an Unverified listing is
+    /// installed or updated.
+    Review { source: String, name: String },
     /// Reads the signed list at `url` with the Ed25519 `key` (base64) without saving
     /// anything; answered with `Response::StoreProbe`. `url` is a list's `https` address
-    /// or a GitHub repository's, whose list is then on its GitHub Pages site.
+    /// or a GitHub repository's, whose list is then on its GitHub Pages site. An empty
+    /// `key` reads the list unsigned, as an Unverified source.
     Probe { url: String, key: String },
     /// The repositories the user added, each read now; answered with
     /// `Response::StoreSources`.
     Sources,
     /// Probes `url` with `key` again and, when it passes, saves it as a repository under a
-    /// name the core gives it. Its items are Community.
+    /// name the core gives it. Its items are Community, or Unverified when `key` is empty.
     AddSource { url: String, key: String },
     /// Forgets a repository the user added; what it installed stays.
     RemoveSource { name: String },
@@ -358,6 +376,13 @@ pub struct Probe {
     pub serial: u64,
     /// RFC 3339.
     pub expires: String,
+    /// Read without a key: only its skills and packs pinned upstream are kept, and they
+    /// are Unverified.
+    #[serde(default)]
+    pub unverified: bool,
+    /// What the core left out of the list, as `SourceRow::note`.
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// A repository the user added, as `StoreRequest::Sources` read it.
@@ -366,13 +391,55 @@ pub struct Probe {
 pub struct SourceRow {
     pub name: String,
     pub url: String,
-    /// The first 16 hex digits of the SHA-256 of its key.
+    /// The first 16 hex digits of the SHA-256 of its key; empty for a source without one.
     pub fingerprint: String,
-    /// Community, or Verified when the official list vouches for it.
+    /// Community, Verified when the official list vouches for it, or Unverified without
+    /// a key.
     pub tier: Tier,
     pub entries: u32,
     /// Why its list was refused; none when it was read.
     pub error: Option<String>,
+    /// What the core left out of a list it read, such as the plugins of an Unverified
+    /// source.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// The answer to `StoreRequest::Review`: the files an install would write, by their path
+/// in the item's folder, and how they differ from the copy installed here.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Review {
+    /// What `StoreRequest::Install` names as `sha256` to install exactly these files.
+    pub package_sha256: String,
+    /// Sorted by path.
+    pub files: Vec<FileRef>,
+    /// Against the copy installed here; all of `files` when none is.
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub changed: Vec<String>,
+    /// The lines that turn the installed `SKILL.md` or `AGENT.md` into the new one, when
+    /// it changed, with its path.
+    #[serde(default)]
+    pub diff_path: Option<String>,
+    #[serde(default)]
+    pub diff: Vec<crate::catalog::DiffLine>,
+    /// The diff was cut at its caps.
+    #[serde(default)]
+    pub diff_cut: bool,
+    /// Why the install would be refused, when it would.
+    #[serde(default)]
+    pub refused: Option<String>,
+    /// Of `files`, the scripts the agent may run: by their extension or a `#!` line.
+    #[serde(default)]
+    pub scripts: Vec<String>,
+    /// It holds an agent, whose `AGENT.md` becomes a chat's instructions.
+    #[serde(default)]
+    pub agent: bool,
+    /// The tools that agent gets; none here means every tool, as its front matter names
+    /// none.
+    #[serde(default)]
+    pub agent_tools: Option<Vec<String>>,
 }
 
 /// The answer to `StoreRequest::Contents`.

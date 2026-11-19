@@ -51,6 +51,7 @@ fn nothing_a_plugin_brings_installs_until_it_is_agreed_to() {
         name: "bot",
         version: "1.0.0",
         permissions: &consent[2..],
+        sha256: None,
     };
     let error = pick(&fetched, &agreed).unwrap_err();
     assert!(format!("{error:#}").contains("changed"), "{error:#}");

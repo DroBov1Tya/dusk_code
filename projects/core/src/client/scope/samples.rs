@@ -457,6 +457,11 @@ fn rest() -> Vec<R> {
             name: word(),
             version: word(),
             agreed: Vec::new(),
+            sha256: None,
+        }),
+        R::Store(St::Review {
+            source: word(),
+            name: word(),
         }),
         R::Store(St::Remove { name: word() }),
         R::Store(St::UpdateAll),

@@ -85,7 +85,20 @@ impl App {
             let why = listing.unfit.as_deref().unwrap_or("already installed");
             self.flash = Some(format!("cannot install here: {why}"));
         } else {
-            view.confirm = Some(Confirm { listing, focus: 0 });
+            let unverified = listing.tier == dusk_protocol::plugin::Tier::Unverified;
+            let review = Action::ReviewListing {
+                source: listing.source.clone(),
+                name: listing.name.clone(),
+            };
+            view.confirm = Some(Confirm {
+                listing,
+                focus: 0,
+                review: unverified.then_some(crate::app::Reviewed::Reading),
+            });
+            // Nobody signed its list: its files are read and shown before the yes.
+            if unverified {
+                return review;
+            }
         }
         Action::None
     }
@@ -143,9 +156,11 @@ fn confirm_key(view: &mut Workshop, key: KeyEvent) -> Action {
         KeyCode::Enter => {
             let listing = &confirm.listing;
             let action = match offered.get(confirm.focus) {
-                Some(Choice::Install | Choice::Update) => {
-                    Action::InstallPlugin(Box::new(listing.clone()))
-                }
+                Some(Choice::Install | Choice::Update) => match confirm.agreed() {
+                    Some(sha256) => Action::InstallPlugin(Box::new(listing.clone()), sha256),
+                    // The files are not shown yet, or cannot be installed.
+                    None => return Action::None,
+                },
                 Some(Choice::Remove) => Action::RemovePlugin(listing.name.clone()),
                 Some(Choice::Cancel) | None => Action::None,
             };

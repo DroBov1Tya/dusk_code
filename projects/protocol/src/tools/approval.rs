@@ -26,6 +26,9 @@ pub enum Request {
     /// Typing or pressing keys, which can do anything a shell can: asked every time,
     /// with what it sends.
     Keyboard { action: String },
+    /// Changing the settings, such as adding a Workshop source: asked every time, in
+    /// every mode, and answered only by a client that may change them itself.
+    Settings { change: String },
 }
 
 impl Request {
@@ -43,6 +46,7 @@ impl Request {
             Self::Window { action, .. } => {
                 format!("{who} wants to use window tools: {action}")
             }
+            Self::Settings { change } => format!("{who} wants to change your settings: {change}"),
         }
     }
 
@@ -55,6 +59,7 @@ impl Request {
             Self::SystemPointer { action } => format!("controlling the system pointer: {action}"),
             Self::Keyboard { action } => format!("using the keyboard: {action}"),
             Self::Window { action, .. } => format!("using window tools: {action}"),
+            Self::Settings { change } => format!("changing your settings: {change}"),
         }
     }
 }

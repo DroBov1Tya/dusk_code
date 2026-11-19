@@ -108,6 +108,9 @@ pub struct Workshop {
     pub contents: Option<contents::Opened>,
     pub gallery: usize,
     pub strip: ScrollHandle,
+    /// What an install of the Unverified listing being confirmed would write, read by the
+    /// core before the yes is offered.
+    pub review: Option<Reviewed>,
     /// What the last "Update all" did, until it is closed.
     pub report: Option<UpdateReport>,
     pub updating: bool,
@@ -116,6 +119,13 @@ pub struct Workshop {
     /// Every listing of every kind, read for the cards the agent put in a chat: what
     /// their rows say of being installed, and what their Add installs.
     pub suggested: suggested::Read,
+}
+
+/// The review of an Unverified listing: being read, read, or why it could not be.
+pub enum Reviewed {
+    Reading,
+    Read(Box<dusk_protocol::plugin::Review>),
+    Failed(String),
 }
 
 pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
@@ -519,6 +529,26 @@ impl Workspace {
     /// Asks before installing or removing; nothing happens until the yes. The keyboard
     /// starts on Cancel, so Enter alone never installs or removes.
     pub fn confirm_store(&mut self, confirm: Confirm, window: &mut Window, cx: &mut Context<Self>) {
+        self.workshop.review = None;
+        if let Confirm::Install(listing) = &confirm
+            && listing.tier == Tier::Unverified
+        {
+            // Nobody signed its list: the files are shown before the yes, and the install
+            // names the ones shown.
+            self.workshop.review = Some(Reviewed::Reading);
+            let (source, name) = (listing.source.clone(), listing.name.clone());
+            self.core.call(
+                cx,
+                move |client| async move { client.plugins().review(&source, &name).await },
+                |ws, result, cx| {
+                    ws.workshop.review = Some(match result {
+                        Ok(review) => Reviewed::Read(Box::new(review)),
+                        Err(error) => Reviewed::Failed(format!("{error:#}")),
+                    });
+                    cx.notify();
+                },
+            );
+        }
         self.modal = Some(Modal::Workshop(confirm));
         self.confirm_focus.focus(window, cx);
         cx.notify();
@@ -532,11 +562,22 @@ impl Workspace {
         cx.notify();
         match confirm {
             Confirm::Install(listing) => {
+                let sha256 = match self.workshop.review.take() {
+                    Some(Reviewed::Read(review)) if review.refused.is_none() => {
+                        Some(review.package_sha256)
+                    }
+                    _ => None,
+                };
+                if listing.tier == Tier::Unverified && sha256.is_none() {
+                    return;
+                }
                 self.store_work(
                     listing.name.clone(),
                     "Installing...",
                     cx,
-                    move |client| async move { client.plugins().install(&listing).await },
+                    move |client| async move {
+                        client.plugins().install(&listing, sha256.as_deref()).await
+                    },
                 );
             }
             Confirm::Remove(name) => {

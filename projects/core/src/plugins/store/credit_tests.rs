@@ -103,6 +103,7 @@ fn an_install_is_checked_against_the_entrys_own_tier() {
         name: "theirs",
         version: "1.0.0",
         permissions: &[],
+        sha256: None,
     };
     assert!(pick(&fetched, &agreed(Tier::Verified)).is_ok());
     assert!(pick(&fetched, &agreed(Tier::Official)).is_err());

@@ -9,13 +9,20 @@ use gpui_kit::{
 
 use crate::ui::{Type, icons, size};
 
-pub const ALL: [Tier; 4] = [Tier::Official, Tier::Verified, Tier::Community, Tier::Local];
+pub const ALL: [Tier; 5] = [
+    Tier::Official,
+    Tier::Verified,
+    Tier::Community,
+    Tier::Unverified,
+    Tier::Local,
+];
 
 pub fn word(tier: Tier) -> &'static str {
     match tier {
         Tier::Official => "Official",
         Tier::Verified => "Verified",
         Tier::Community => "Community",
+        Tier::Unverified => "Unverified",
         Tier::Local => "Local",
     }
 }
@@ -26,17 +33,20 @@ pub fn about(tier: Tier) -> &'static str {
         Tier::Official => "Made by duskcode and signed by the key built into it.",
         Tier::Verified => "Checked and signed for duskcode; written by somebody else.",
         Tier::Community => "From mirrors you added; no key of duskcode vouches for them.",
+        Tier::Unverified => "From a source you added without a key; nobody vouches for them.",
         Tier::Local => "Found on this machine; no source installed them.",
     }
 }
 
-/// The accent for Official, the info blue for Verified, quiet for the rest.
+/// The accent for Official, the info blue for Verified, a quiet warning for Unverified,
+/// quiet for the rest.
 pub fn color(tier: Tier, cx: &App) -> Hsla {
     let theme = cx.theme();
     match tier {
         Tier::Official => theme.primary,
         Tier::Verified => theme.info,
         Tier::Community => theme.muted_foreground,
+        Tier::Unverified => theme.warning.opacity(0.85),
         Tier::Local => theme.foreground.opacity(0.72),
     }
 }
@@ -45,7 +55,7 @@ pub fn icon(tier: Tier, size: f32, cx: &App) -> Icon {
     let path = match tier {
         Tier::Official => icons::TIER_OFFICIAL,
         Tier::Verified => icons::TIER_VERIFIED,
-        Tier::Community => icons::TIER_COMMUNITY,
+        Tier::Community | Tier::Unverified => icons::TIER_COMMUNITY,
         Tier::Local => icons::TIER_LOCAL,
     };
     Icon::default()
