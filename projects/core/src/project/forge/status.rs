@@ -1,6 +1,7 @@
 //! A project's repository at a glance: the work tree's diff stat, the current branch,
 //! and the pull requests that matter to it with their checks counted. The forge's part
-//! says why it is missing where the forge cannot be asked (no plugin, `gh` unusable, another host).
+//! says why it is missing where the forge cannot be asked (no plugin, `gh` unusable,
+//! another host).
 
 use std::path::Path;
 
