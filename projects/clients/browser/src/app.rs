@@ -6,7 +6,7 @@ use crate::{
     columns::Workspace,
     pages::{
         artifacts::Artifacts,
-        connectors::Connectors,
+        customize::Customize,
         project::ProjectPage,
         settings::SettingsPage,
         welcome::{self, ChatOrWelcome, Step},
@@ -108,7 +108,7 @@ fn Shell(auth: RwSignal<Auth>) -> impl IntoView {
             <main class="main">{move || match state().view.get() {
                 View::Chat(id) => view! { <ChatOrWelcome id step=welcome /> }.into_any(),
                 View::Settings(page) => view! { <SettingsPage page /> }.into_any(),
-                View::Connectors(tab) => view! { <Connectors tab /> }.into_any(),
+                View::Customize(tab) => view! { <Customize tab /> }.into_any(),
                 View::Artifacts => view! { <Artifacts /> }.into_any(),
                 View::Schedules => view! { <crate::pages::schedules::Schedules /> }.into_any(),
                 View::Project(id) => view! { <ProjectPage id /> }.into_any(),

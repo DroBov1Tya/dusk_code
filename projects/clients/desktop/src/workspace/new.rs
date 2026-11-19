@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, watch};
 use super::{Center, Right, Workspace};
 use crate::{
     core::Core,
-    pages::{connectors::Shelf, settings::SettingsPage},
+    pages::{customize::Shelf, settings::SettingsPage},
 };
 
 impl Workspace {

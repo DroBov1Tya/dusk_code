@@ -116,7 +116,7 @@ Done = works in the browser and was checked against a real core. Computer use is
 - [x] Inspector: plan (edit), tasks, agents, changed files with diff, jobs with output, context
 - [x] Projects: add, edit, remove, git (branches, changes, review), files, environment names
 - [x] Artifacts gallery with picture previews, text viewer, delete
-- [x] Connectors: agents (edit), skills (edit), MCP (add, edit, restart, sign in), plugins
+- [x] Customize: agents (edit), skills (edit), connectors (MCP: add, edit, restart, sign in), plugins
       with secrets, tools, voice (models install, cancel, remove; other servers)
 - [x] Settings: appearance (5 themes), model and providers, chat, safety, secrets, about me,
       notifications, version control, memory and context, advanced, updates, usage

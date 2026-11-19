@@ -19,7 +19,7 @@ use gpui_kit::{
 
 use super::{Grid, capsule, filters, grid, tier};
 use crate::{
-    pages::connectors::matches,
+    pages::customize::matches,
     ui::{Type, size},
     workspace::Workspace,
 };
@@ -302,6 +302,7 @@ fn items<'a>(ws: &'a Workspace, shelf: Shelf, shown: &[&'a Listing], query: &str
         indices
             .iter()
             .filter_map(|&index| all.get(index))
+            .filter(|listing| shop.scope.holds(listing))
             .map(Item::Listing)
             .collect()
     };
@@ -333,7 +334,7 @@ fn local_packs<'a>(ws: &'a Workspace, query: &str) -> Vec<&'a SkillPack> {
             .flatten()
             .any(|listing| listing.kind == Kind::Pack && listing.name == name)
     };
-    let shown = shop.scope == super::Scope::Plugins
+    let shown = shop.scope.kinds().contains(&Kind::Pack)
         && (shop.tiers.is_empty() || shop.tiers.contains(&Tier::Local))
         && (shop.kinds.is_empty() || shop.kinds.contains(&Kind::Pack))
         && shop.category.is_none();
@@ -354,13 +355,23 @@ fn nothing(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         crate::ui::action("workshop-empty-again", "Read the store again")
             .on_click(cx.listener(|ws, _, _, cx| ws.load_store(cx)))
     };
-    let (line, action) = match shop.listings.as_ref().is_some_and(|all| all.is_empty()) {
-        true if !shop.failed_sources.is_empty() => {
-            ("No source of the store could be read.", again(cx))
-        }
-        true => ("The store offers nothing yet.", again(cx)),
+    // Nothing of the shelf's, whatever the search and filters.
+    let none = shop
+        .listings
+        .iter()
+        .flatten()
+        .all(|listing| !shop.scope.holds(listing));
+    let (line, action) = match none {
+        true if !shop.failed_sources.is_empty() => (
+            "No source of the store could be read.".to_owned(),
+            again(cx),
+        ),
+        true => (
+            format!("The store offers no {} yet.", shop.scope.noun()),
+            again(cx),
+        ),
         false => (
-            "Nothing matches that word and those filters.",
+            "Nothing matches that word and those filters.".to_owned(),
             crate::ui::action("workshop-empty-clear", "Clear the search and filters").on_click(
                 cx.listener(|ws, _, window, cx| {
                     ws.shelf_search
@@ -370,5 +381,5 @@ fn nothing(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             ),
         ),
     };
-    crate::ui::empty(IconName::Inbox, line, Some(action), cx)
+    crate::ui::empty(IconName::Inbox, &line, Some(action), cx)
 }

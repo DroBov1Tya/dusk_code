@@ -1,34 +1,20 @@
-//! Connectors: agents, skills, MCP servers, plugins, tools and voice.
+//! Customize: agents, skills, connectors (the MCP servers), plugins, tools and voice.
 
 use crate::{
     api,
     state::state,
     ui::{Switch, run},
 };
-use dusk_protocol::client::SettingsRequest;
+use dusk_protocol::{client::SettingsRequest, plugin::Scope};
 use leptos::prelude::*;
 
+/// The installed plugins; none, a way to their Workshop.
 #[component]
-pub fn Plugins() -> impl IntoView {
-    let workshop = RwSignal::new(false);
-    view! {
-        <div class="segmented" role="group" aria-label="Plugins view">
-            <button class:active=move || !workshop.get() on:click=move |_| workshop.set(false)>"Installed"</button>
-            <button class:active=move || workshop.get() on:click=move |_| workshop.set(true)>"Workshop"</button>
-        </div>
-        {move || match workshop.get() {
-            true => view! { <super::workshop::Workshop /> }.into_any(),
-            false => view! { <Installed /> }.into_any(),
-        }}
-    }
-}
-
-#[component]
-fn Installed() -> impl IntoView {
+pub fn Plugins(discover: RwSignal<bool>) -> impl IntoView {
     let app = state();
     view! {
         <Show when=move || app.status.with(|s| s.as_ref().is_some_and(|s| !s.plugins.is_empty()))
-            fallback=|| view! { <p class="muted">"No plugins are installed."</p> }>
+            fallback=move || super::workshop::nothing_installed(Scope::Plugins, discover)>
             <div class="cards">{move || app.status.get().map(|s| s.plugins).unwrap_or_default().into_iter().map(|plugin| {
                 let toggle = plugin.name.clone();
                 view! {

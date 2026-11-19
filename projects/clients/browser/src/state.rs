@@ -5,7 +5,7 @@ use crate::{
     api,
     chat::data::ChatData,
     link::{self, Conn, Handlers},
-    pages::{connectors::Tab, settings::Page},
+    pages::{customize::Tab, settings::Page},
     ui::theme,
 };
 use dusk_protocol::{
@@ -23,7 +23,7 @@ pub enum View {
     /// A chat; none is a draft whose thread is made with its first message.
     Chat(Option<String>),
     Settings(Page),
-    Connectors(Tab),
+    Customize(Tab),
     Artifacts,
     Schedules,
     Project(String),

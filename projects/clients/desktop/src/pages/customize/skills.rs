@@ -1,37 +1,17 @@
-//! Skills as rows of one card, with their source and switch, or the Workshop's single
-//! skills to install. A pack is never offered here: it lives under Plugins, and its
-//! skills show here once it is installed.
+//! Skills as rows of one card, with their source and switch. Its Workshop offers single
+//! skills and packs; a pack's skills show here once it is installed.
 
 use dusk_protocol::{catalog::SkillKind, client::Switch as CoreSwitch, config::Settings};
 use gpui_kit::{component::ActiveTheme, *};
 
 use super::{
     card, grid, matches,
-    plugins::{Scope, View, workshop},
+    plugins::{Scope, workshop},
     toggle,
 };
 use crate::{modal::detail::Detail, workspace::Workspace};
 
-pub fn render(
-    ws: &Workspace,
-    settings: &Settings,
-    query: &str,
-    window: &Window,
-    cx: &mut Context<Workspace>,
-) -> Div {
-    let body = match ws.view(Scope::Skills) {
-        View::Discover => workshop::render(ws, query, window, cx),
-        View::Installed => installed(settings, query, cx),
-    };
-    div()
-        .flex()
-        .flex_col()
-        .gap_4()
-        .child(workshop::switch(ws, Scope::Skills, cx))
-        .child(body)
-}
-
-fn installed(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
+pub fn installed(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
     let danger = cx.theme().danger;
     let mut cards = grid(cx);
     let mut any = false;
@@ -84,6 +64,8 @@ fn installed(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> D
     }
     if any {
         cards
+    } else if query.is_empty() {
+        div().child(workshop::nothing_installed(Scope::Skills, cx))
     } else {
         div().child(crate::ui::empty(
             gpui_kit::component::IconName::Search,

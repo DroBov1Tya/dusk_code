@@ -33,14 +33,14 @@ use crate::{
     columns::topbar,
     core::Core,
     modal::Modal,
-    pages::{chat, chat::transcript::Transcript, connectors::Shelf, settings::SettingsPage},
+    pages::{chat, chat::transcript::Transcript, customize::Shelf, settings::SettingsPage},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Center {
     Chat,
     Artifacts,
-    Connectors,
+    Customize,
     Settings,
     /// The project's changes, file by file.
     Review,
@@ -157,7 +157,7 @@ pub struct Workspace {
     pub center: Center,
     pub shelf: Shelf,
     pub shelf_search: Entity<InputState>,
-    /// Where the connectors page is scrolled to; a shelf shown whole starts at its top.
+    /// Where the Customize page is scrolled to; a shelf shown whole starts at its top.
     pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,
@@ -253,7 +253,7 @@ pub struct Workspace {
     pub web_global: bool,
     pub voice_form: crate::pages::settings::ai::voice::VoiceForm,
     /// The plugin store on the plugins shelf.
-    pub workshop: crate::pages::connectors::plugins::Workshop,
+    pub workshop: crate::pages::customize::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,
     /// Settings, Workshop: the repositories added and the Add form.
     pub repositories: crate::pages::settings::Repositories,
