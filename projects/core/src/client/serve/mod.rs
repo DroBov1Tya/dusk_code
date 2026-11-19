@@ -114,6 +114,9 @@ struct OpenThread {
     /// The turn running now, as the forwarding task sees it; a client that joins
     /// mid-turn is told so before any later event.
     running: Arc<Mutex<Option<Running>>>,
+    /// The user's likely next message the model proposed, until it goes stale
+    /// (`ThreadEvent::ends_suggestion`); a client that joins is told it.
+    suggested: Arc<Mutex<Option<String>>>,
 }
 
 /// A running turn as a client that joins is told of it.

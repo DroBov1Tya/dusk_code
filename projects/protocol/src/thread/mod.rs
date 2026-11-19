@@ -13,6 +13,7 @@ mod message;
 mod name;
 mod overview;
 mod pin;
+mod suggestion;
 mod summary;
 mod task;
 mod team;
@@ -41,6 +42,7 @@ pub use overview::{
     OVERVIEW_PATHS, OVERVIEW_TOOLS, Overview, ToolRuns,
 };
 pub use pin::{MAX_PINS, PIN_CHARS, Pin, excerpt};
+pub use suggestion::{SUGGEST_NEXT_TOOL, SUGGESTION_CHARS, SuggestNext, Suggestion};
 pub use summary::{Found, Thread};
 pub use task::{
     PLAN_PAGE_DONE, PlanCounts, PlanPage, Task, TaskItem, TaskOwner, TaskStatus, WaitsOn,
