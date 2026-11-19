@@ -801,3 +801,32 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .welcome-error .small { font-size: 12px; }
 button.link.quiet { color: var(--muted); }
 button.link.quiet:hover { color: var(--fg); }
+
+/* The plan strip above the composer: one line folded, numbered rows open. */
+.tone-muted { color: var(--muted); } .tone-info { color: var(--info); } .tone-accent { color: var(--accent); }
+.tone-warn { color: var(--warn); } .tone-good { color: var(--good); } .tone-bad { color: var(--bad); }
+.plan-strip { width: min(var(--chat-width), 100% - 2 * var(--chat-gutter, 16px)); margin: 0 auto var(--s2); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; flex: none; }
+.plan-line { width: 100%; display: flex; align-items: center; gap: var(--s2); height: var(--control); padding: 0 var(--s2); background: none; border: 0; text-align: left; font-size: 13px; }
+.plan-line:hover { background: var(--raised); }
+.plan-line .glyph { width: 14px; height: 14px; color: var(--muted); transform: rotate(-90deg); transition: transform var(--t-fold) var(--ease); }
+.plan-line[aria-expanded="true"] .glyph { transform: none; }
+.plan-label { color: var(--muted); font-weight: 500; }
+.plan-summary { white-space: nowrap; }
+.plan-placeholder { width: 120px; height: 8px; border-radius: 999px; background: var(--line); }
+.plan-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.plan-bar { flex: none; display: flex; width: 160px; height: 4px; border-radius: 999px; overflow: hidden; background: var(--line); }
+.plan-bar .tone-good { background: var(--good); } .plan-bar .tone-accent { background: var(--accent); }
+.plan-bar .tone-bad { background: var(--bad); } .plan-bar .tone-warn { background: var(--warn); }
+.plan-rows { list-style: none; margin: 0; padding: var(--s1) 0; border-top: 1px solid var(--line); max-height: calc(6 * 28px + 8px); overflow: auto; }
+.plan-row { display: flex; align-items: center; gap: var(--s2); height: 28px; padding: 0 var(--s2); font-size: 13px; }
+.plan-number { width: 24px; text-align: right; font-size: 12px; flex: none; }
+.plan-glyph { width: 14px; text-align: center; flex: none; }
+.plan-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-row.done .plan-text { color: var(--muted); }
+.plan-owner { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; flex: none; }
+.plan-word { width: 56px; text-align: right; font-size: 12px; flex: none; justify-content: flex-end; }
+@media (max-width: 640px) { .plan-bar { display: none; } }
+.done-fold { display: flex; align-items: center; gap: var(--s1); height: 24px; padding: 0 var(--s1); background: none; border: 0; border-radius: 6px; color: var(--muted); font-size: 12px; }
+.done-fold:hover { background: var(--raised); }
+.done-fold .glyph { width: 12px; height: 12px; transform: rotate(-90deg); transition: transform var(--t-fold) var(--ease); }
+.done-fold[aria-expanded="true"] .glyph { transform: none; }

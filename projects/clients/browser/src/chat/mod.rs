@@ -6,6 +6,7 @@ mod composer;
 mod controls;
 mod markdown;
 mod pictures;
+mod plan;
 mod shown;
 mod voice;
 mod working;
@@ -54,6 +55,7 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
             <Transcript chat thread=id.clone() />
             <approval::Approvals chat />
             <approval::AskUser chat id=id.clone() />
+            {id.clone().map(|id| view! { <plan::PlanStrip id chat /> })}
             <Composer id chat />
         </div>
     }

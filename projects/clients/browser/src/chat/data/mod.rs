@@ -328,6 +328,12 @@ impl ChatData {
                 self.tokens = Some((used, input_limit));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::TaskChanged(task) => {
+                match self.tasks.iter_mut().find(|t| t.task_id == task.task_id) {
+                    Some(known) => *known = task,
+                    None => self.tasks.push(task),
+                }
+            }
             ThreadEvent::SubagentStarted {
                 thread_id,
                 agent,
