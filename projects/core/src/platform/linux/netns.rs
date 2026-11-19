@@ -50,6 +50,9 @@ pub enum Missing {
     /// One can be made, but not set up: AppArmor's restriction on Ubuntu, or a seccomp
     /// filter of a container.
     Restricted,
+    /// The kernel cannot filter the sockets a program opens (no seccomp filters, or
+    /// none allowed here), so Unix sockets on disk would stay open to it.
+    NoFilter,
 }
 
 impl Missing {
@@ -61,6 +64,7 @@ impl Missing {
             Self::Restricted => {
                 "unprivileged user namespaces are restricted, as Ubuntu's AppArmor does"
             }
+            Self::NoFilter => "it cannot limit the sockets a program opens: no seccomp filter",
         }
     }
 }
@@ -89,6 +93,13 @@ pub fn missing() -> Option<Missing> {
         }) {
             debug!("no network namespace for plugins: {error:#}");
             return Some(Missing::Off);
+        }
+        if let Err(error) = run_true(|command| {
+            super::seccomp::confine(command)?;
+            Ok(None)
+        }) {
+            debug!("no socket filter for plugins: {error:#}");
+            return Some(Missing::NoFilter);
         }
         match run_true(|command| {
             let receiver = prepare(command)?;
@@ -357,6 +368,7 @@ mod tests {
         let mut command = tokio::process::Command::new("/bin/true");
         let entered = async {
             let receiver = enter(&mut command)?;
+            super::super::seccomp::confine(command.as_std_mut())?;
             let mut child = command.spawn()?;
             let inside = receiver.listener();
             ensure!(child.wait().await?.success());

@@ -55,16 +55,26 @@ pub fn command(program: &Path, arguments: &[String], confinement: &Confinement) 
 /// Applies the confinement to `command` just before it runs, after what it was given to
 /// do before.
 pub fn confine(command: &mut Command, confinement: &Confinement) -> Result<()> {
-    let mut rules = Some(rules(confinement)?);
+    // A file removed while the rules are made can fail them (some file systems fail
+    // fstat on its open descriptor then): once more.
+    let mut rules = Some(rules(confinement).or_else(|_| rules(confinement))?);
     // SAFETY: the closure runs in the forked child before exec and only makes the two
     // system calls that restrict it, on a ruleset made in the parent.
     unsafe {
         command.pre_exec(move || {
-            if let Some(rules) = rules.take() {
-                // The error of the failed system call; formatting one would allocate.
-                if rules.restrict_self().is_err() {
-                    return Err(std::io::Error::last_os_error());
-                }
+            if let Some(rules) = rules.take()
+                && let Err(error) = rules.restrict_self()
+            {
+                // errno of the failed call, read before anything else runs; a check
+                // of the crate's own sets none, so EPERM stands in. The error is
+                // leaked: freeing it in the forked child could deadlock, and the
+                // child ends here.
+                let code = std::io::Error::last_os_error()
+                    .raw_os_error()
+                    .filter(|code| *code != 0)
+                    .unwrap_or(nix::libc::EPERM);
+                std::mem::forget(error);
+                return Err(std::io::Error::from_raw_os_error(code));
             }
             Ok(())
         });

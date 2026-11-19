@@ -1016,10 +1016,8 @@ mod tests {
             )
             .unwrap_err();
             assert!(
-                format!("{refused:#}").starts_with(
-                    "this Linux does not let a program have a network of its own \
-                     (unprivileged user namespaces are "
-                ),
+                format!("{refused:#}")
+                    .starts_with("this Linux does not let a program have a network of its own ("),
                 "{refused:#}"
             );
             eprintln!("no user namespaces here; refused: {refused:#}");
@@ -1085,10 +1083,35 @@ mod tests {
         assert_eq!(confined(perl(unix)).await, Some(3));
         let pair = "socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, 0) or exit 3";
         assert_eq!(confined(perl(pair)).await, Some(3));
+        // vsock proves something only where the kernel has it.
         let vsock = "socket(my $s, 40, SOCK_STREAM, 0) or exit 3";
-        assert_eq!(confined(perl(vsock)).await, Some(3));
+        let line = perl(vsock);
+        let unconfined = std::process::Command::new(&line[0])
+            .args(&line[1..])
+            .status()
+            .unwrap();
+        if unconfined.success() {
+            assert_eq!(confined(perl(vsock)).await, Some(3));
+        } else {
+            eprintln!("no vsock in this kernel; its refusal not checked");
+        }
         drop(listener);
         let _ = std::fs::remove_file(&socket);
+        // A socket the core holds without close-on-exec does not reach the program.
+        let (inherited, other) = std::os::unix::net::UnixStream::pair().unwrap();
+        let fd = std::os::fd::AsRawFd::as_raw_fd(&inherited);
+        // SAFETY: clears the flag of a descriptor this test owns.
+        unsafe { nix::libc::fcntl(fd, nix::libc::F_SETFD, 0) };
+        let write = format!("echo leaked >&{fd}");
+        let unconfined = std::process::Command::new("bash")
+            .args(["-c", &write])
+            .status()
+            .unwrap();
+        assert!(unconfined.success(), "{unconfined}");
+        assert!(!run(&call, &["bash", "-c", &write]).await.status.success());
+        let mut seen = [0u8; 16];
+        let read = std::io::Read::read(&mut &other, &mut seen).unwrap();
+        assert_eq!(&seen[..read], b"leaked\n");
     }
 
     /// A temporary chat's folder sits in the temporary folders every plugin may use; a

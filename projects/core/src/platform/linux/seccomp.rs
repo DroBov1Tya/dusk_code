@@ -5,6 +5,11 @@
 //! machine's virtual machines; Landlock does not reach them either. A seccomp filter
 //! refuses those sockets before they exist.
 //!
+//! The filter gates making a socket, not using one already open, so every descriptor
+//! but stdin, stdout and stderr is first marked to close on exec: one the core holds
+//! without that mark (a leak of a library, one handed down by its own parent) does not
+//! reach the program. The netns step has already handed its sockets over and closed them.
+//!
 //! The filter is made in the parent; the child only installs it, last before exec.
 
 use std::{io, os::unix::process::CommandExt};
@@ -45,9 +50,10 @@ impl Filter {
             len: self.0.len() as libc::c_ushort,
             filter: self.0.as_ptr().cast_mut(),
         };
-        // SAFETY: `program` points at instructions that outlive the call; the kernel
-        // copies them.
+        // SAFETY: plain system calls; `program` points at instructions that outlive the
+        // call, and the kernel copies them.
         unsafe {
+            close_on_exec_from(3)?;
             if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == -1
                 || libc::prctl(
                     libc::PR_SET_SECCOMP,
@@ -60,6 +66,39 @@ impl Filter {
         }
         Ok(())
     }
+}
+
+/// Marks every descriptor from `first` up to close on exec, allocating nothing.
+unsafe fn close_on_exec_from(first: libc::c_int) -> io::Result<()> {
+    // SAFETY: system calls on descriptors only.
+    unsafe {
+        let all = libc::syscall(
+            libc::SYS_close_range,
+            first as libc::c_uint,
+            libc::c_uint::MAX,
+            libc::CLOSE_RANGE_CLOEXEC,
+        );
+        if all == 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        // Kernels before 5.11 have no close_range, 5.10 not its flag: one at a time.
+        if !matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL)) {
+            return Err(error);
+        }
+        let mut limit: libc::rlimit = std::mem::zeroed();
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        let last = limit.rlim_cur.min(libc::c_int::MAX as libc::rlim_t) as libc::c_int;
+        for fd in first..last {
+            let flags = libc::fcntl(fd, libc::F_GETFD);
+            if flags != -1 {
+                libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn statement(code: u32, k: u32) -> libc::sock_filter {
