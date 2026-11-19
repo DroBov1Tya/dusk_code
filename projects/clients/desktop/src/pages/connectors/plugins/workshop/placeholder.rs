@@ -117,6 +117,32 @@ fn made(
         )
 }
 
+/// A small square for a listing in a row, such as on a card in the chat: the name's
+/// gradient with the kind's glyph in the middle.
+pub fn tile(name: &str, kind: Kind, side: f32, cx: &App) -> Div {
+    let art = cover_art(name, cx.theme().is_dark());
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(side))
+        .rounded(px(size::GAP_S))
+        .bg(linear_gradient(
+            art.angle,
+            linear_color_stop(color(art.from), 0.),
+            linear_color_stop(color(art.to), 1.),
+        ))
+        .border_1()
+        .border_color(cx.theme().border)
+        .child(
+            Icon::default()
+                .path(glyph(kind))
+                .size(px(size::ICON_LARGE))
+                .text_color(color(art.ink)),
+        )
+}
+
 /// The box every look shares: the cover's size and corners, filled with `art`.
 fn frame(art: CoverArt, width: f32, corners: Corners<Pixels>, cx: &App) -> Div {
     capsule::rounded(div(), corners)

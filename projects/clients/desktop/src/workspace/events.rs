@@ -86,11 +86,19 @@ impl Workspace {
                     self.load_jobs(cx);
                     self.load_sources(cx);
                 }
+                let tool_done = matches!(
+                    *event,
+                    dusk_protocol::thread::ThreadEvent::ToolFinished { .. }
+                );
                 let mut finished = false;
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     let was_working = chat.working;
                     chat.apply(*event);
                     finished = was_working && !chat.working;
+                }
+                // A card of the Workshop shows what is installed now, read once it comes.
+                if tool_done && self.shown.as_deref() == Some(thread_id.as_str()) {
+                    self.ensure_suggested(cx);
                 }
                 if finished {
                     self.rates.remove(&thread_id);

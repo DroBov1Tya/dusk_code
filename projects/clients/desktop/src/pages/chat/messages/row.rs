@@ -262,7 +262,12 @@ impl Workspace {
                         let again = (last && chat.last_sent().is_some()).then(|| shown.clone());
                         error_row(&key, text, again, cx)
                     }
-                    Item::Tool(_) | Item::Suggestion(_) => div().into_any_element(),
+                    Item::Suggestion(card) => {
+                        crate::pages::connectors::plugins::workshop::suggested::render(
+                            self, &key, card, cx,
+                        )
+                    }
+                    Item::Tool(_) => div().into_any_element(),
                 }
             }
         };

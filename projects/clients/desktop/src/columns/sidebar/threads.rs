@@ -394,6 +394,7 @@ impl Workspace {
     pub fn show(&mut self, thread_id: String, cx: &mut Context<Self>) {
         self.history.moved();
         self.shown = Some(thread_id);
+        self.ensure_suggested(cx);
         self.center = Center::Chat;
         self.context = None;
         self.jobs.clear();
