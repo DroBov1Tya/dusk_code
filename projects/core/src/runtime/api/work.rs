@@ -151,7 +151,10 @@ impl Runtime {
             return Ok(None);
         }
         let store = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());
-        Ok(store.read_part(card_id, part).ok())
+        // A file read blocks; keep it off the loop's thread.
+        let (card_id, part) = (card_id.to_owned(), part.to_owned());
+        let bytes = tokio::task::spawn_blocking(move || store.read_part(&card_id, &part).ok());
+        Ok(bytes.await?)
     }
 
     pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
@@ -284,11 +287,15 @@ impl Runtime {
                 continue;
             };
             let state = &launcher.state;
-            let (Ok(asked_chat), Ok(named_chat)) = (
+            let (asked_chat, named_chat) = match (
                 state.root_thread(&asked).await,
                 state.root_thread(thread_id).await,
-            ) else {
-                return false;
+            ) {
+                (Ok(asked_chat), Ok(named_chat)) => (asked_chat, named_chat),
+                (Err(error), _) | (_, Err(error)) => {
+                    tracing::warn!("approval {id} not answered: {error:#}");
+                    return false;
+                }
             };
             return asked_chat == named_chat && launcher.approvals.answer(id, decision);
         }

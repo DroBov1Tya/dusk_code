@@ -157,8 +157,8 @@ impl State {
         .collect()
     }
 
-    /// Records which token owns a chat, once. Only the New, NewTemporary, Fork and ForkAt
-    /// handlers call it, for the chat they just created. It fails for an unknown thread, a
+    /// Records which token owns a chat, once. Nothing calls it yet: in phase 3 the New,
+    /// NewTemporary, Fork and ForkAt handlers will, for the chat they just created. It fails for an unknown thread, a
     /// subagent thread, and a chat another token owns; the same token again is a no-op.
     pub async fn set_thread_owner(&self, thread_id: &str, owner: &str) -> Result<()> {
         ensure!(!owner.trim().is_empty(), "thread owner is empty");
@@ -646,10 +646,6 @@ mod tests {
         assert!(state.set_thread_owner("agent", "t1").await.is_err());
         state.set_thread_owner("a", "t1").await.unwrap();
         assert!(state.set_thread_owner("a", "t2").await.is_err());
-        assert_eq!(
-            state.thread_owner("a").await.unwrap().as_deref(),
-            Some("t1")
-        );
         assert_eq!(
             state.thread_owner("a").await.unwrap().as_deref(),
             Some("t1")

@@ -126,8 +126,12 @@ impl Scope {
     /// Only these chats, and of the requests about them only those in `areas`. An area
     /// that is not about a thread gives nothing here.
     ///
-    /// Open before a remote client may be attached this way: the HTTP routes `/api/card`
-    /// and `/api/output` are for the web scope and check no scope.
+    /// Open before a remote client may be attached this way:
+    /// - the HTTP routes `/api/card` and `/api/output` are for the web scope and check no
+    ///   scope;
+    /// - event text, such as `TurnFailed.error_message` and tool output, reaches this
+    ///   scope as the core wrote it, not mapped like a handler's error;
+    /// - `Thread.owner` carries raw token ids.
     pub fn threads(ids: impl IntoIterator<Item = String>, areas: &'static [Area]) -> Self {
         Self(Kind::Threads {
             ids: Arc::new(ids.into_iter().collect()),

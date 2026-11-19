@@ -309,6 +309,8 @@ impl<'a> Session<'a> {
         } else {
             Decision::Deny
         };
+        // No thread check, unlike `answer_approval`: `id` was found above among the
+        // requests this chat's own events asked.
         self.launcher.approvals.answer(id, decision);
         Ok(())
     }
