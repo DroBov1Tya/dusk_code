@@ -31,7 +31,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "env-filter"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "macros", "migrate"] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 # The system keychain; exact, since it holds the keys of every provider.
 keyring = "=4.2.0"
 # The sounds a chat plays, and the microphone it dictates from.
