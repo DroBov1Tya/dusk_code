@@ -18,19 +18,19 @@ pub fn note(event: &ThreadEvent) -> Option<Note> {
         ThreadEvent::TurnFailed(failure) => Error(failure.text()),
         ThreadEvent::Failed(error) => Error(error.clone()),
         ThreadEvent::Rejected { reason } => Error(reason.clone()),
-        ThreadEvent::NoModel => {
-            Error("No model is chosen; connect a provider in the settings.".into())
-        }
+        ThreadEvent::NoModel => Error("No model is chosen; connect a provider.".into()),
         event @ ThreadEvent::Retrying { attempt: 1, .. } => match retry_row(event) {
             Some(RetryRow::Show(retry)) => Notice(retry.text()),
             _ => return None,
         },
-        ThreadEvent::AnswerCut { error } => Error(error.clone()),
+        ThreadEvent::AnswerCut { error } => Error(format!(
+            "The answer broke off ({error}); what it wrote is kept."
+        )),
         ThreadEvent::CompactionFailed { error } => Error(format!("Compaction failed: {error}")),
         ThreadEvent::OutputLimitReached => Notice("The answer reached the output limit.".into()),
-        ThreadEvent::PicturesRefused { model } => {
-            Notice(format!("{model} does not take pictures."))
-        }
+        ThreadEvent::PicturesRefused { model } => Notice(format!(
+            "{model} does not take pictures; it gets their paths instead."
+        )),
         ThreadEvent::CompactionStarted => Notice("Compacting the context...".into()),
         ThreadEvent::CompactionFinished(_) => Notice("The context was compacted.".into()),
         ThreadEvent::ContextTooLarge { tokens, limit } => Error(format!(
