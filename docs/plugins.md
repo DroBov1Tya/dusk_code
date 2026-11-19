@@ -730,7 +730,9 @@ time, in every mode, full access included, with the name, the address, whether i
 keyed or Unverified and what an Unverified source may bring. Only a client that could add
 the source itself may answer (the desktop app or the terminal; not a browser, not a chat
 shared through a scope bound to it, not a chat platform). The yes adds it the way
-Settings does, reading the list again, and the tool answers with how many listings it
+Settings does, reading the list again, under a name the core gives it from the address
+(the agent's name is kept only when it is made of the address's own words and claims no
+trust, such as `official`), and the tool answers with how many listings it
 read. The address is refused before you are asked when it is not https or not public. In a chat nobody who may answer is
 in (a scheduled run, a headless `duskcode run`, a chat an API token started) the call is
 refused at once, so a run never waits for an answer that cannot come.

@@ -29,7 +29,8 @@ pub struct AddWorkshopSource {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct AddSourceArguments {
-    /// a-z, 0-9 and -, at most 32; shown as the listings' source.
+    /// A short name for it, a-z, 0-9 and -, from words of its address; the core names it
+    /// after the address when this one does not fit.
     name: String,
     /// The https address of its index.json, or https://github.com/<owner>/<repository>.
     url: String,
@@ -203,8 +204,31 @@ mod tests {
             question.contains("Unverified") && question.contains("never a plugin"),
             "{question}"
         );
-        assert!(
-            add::proposed(&config, "https://far.example.com/i.json", "", Some("Far!")).is_err()
-        );
+        // The name is the core's: a suggestion that claims trust or is not the address's
+        // own words gives way to one from the address.
+        for suggested in [
+            "Far!",
+            "anthropic-official",
+            "official",
+            "far-verified",
+            "nearby",
+        ] {
+            let mirror = add::proposed(
+                &config,
+                "https://far.example.com/i.json",
+                "",
+                Some(suggested),
+            )
+            .unwrap();
+            assert_eq!(mirror.name, "far", "{suggested}");
+        }
+        let kept = add::proposed(
+            &config,
+            "https://far.example.com/i.json",
+            "",
+            Some("far-example"),
+        )
+        .unwrap();
+        assert_eq!(kept.name, "far-example");
     }
 }
