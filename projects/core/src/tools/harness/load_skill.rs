@@ -21,7 +21,10 @@ use crate::tools::{
 };
 use crate::{
     BoxFuture,
-    catalog::graph::{Graph, Node, SKILL_FILE},
+    catalog::{
+        graph::{Graph, Node, SKILL_FILE},
+        skills::{BUILTIN_PACK, pack_of},
+    },
     config::Config,
 };
 
@@ -31,6 +34,11 @@ const GRAPH_TTL: Duration = Duration::from_secs(5);
 /// Each skill listed costs tokens in every request.
 const MAX_LISTED: usize = 60;
 const MAX_LISTED_CHARS: usize = 400;
+
+/// The skill that edits skills; its name is all the reminder needs.
+const EVOLVE: &str = "skill-evolve";
+const REMINDER: &str = "If what worked in this task differs from these steps or beats them, \
+                        update this skill with skill-evolve before you answer.";
 
 pub struct LoadSkill {
     directory: PathBuf,
@@ -130,12 +138,26 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
     let folder = skill.file().parent().unwrap_or(directory).display();
     let instructions = format!("The files of this skill are in {folder}.\n\n{instructions}");
     let next = enabled(graph.links(skill), config);
-    if next.is_empty() {
-        return Ok(instructions);
+    let mut text = if next.is_empty() {
+        instructions
+    } else {
+        format!("{instructions}\n\nNext skills; load any of them with load_skill:\n{next}")
+    };
+    if wants_reminder(&graph, name, config) {
+        text.push_str("\n\n");
+        text.push_str(REMINDER);
     }
-    Ok(format!(
-        "{instructions}\n\nNext skills; load any of them with load_skill:\n{next}"
-    ))
+    Ok(text)
+}
+
+/// The reminder goes on a skill the user can edit: not the editing skills themselves,
+/// not a built-in one (a release replaces it), and only while skill-evolve is usable.
+fn wants_reminder(graph: &Graph, name: &str, config: &Config) -> bool {
+    name != EVOLVE
+        && name != "skill-creator"
+        && config.skill_enabled(EVOLVE)
+        && graph.get(EVOLVE).is_some()
+        && pack_of(name) != Some(BUILTIN_PACK.to_owned())
 }
 
 /// Switched-off skills are left out, wherever they would be shown.
@@ -155,4 +177,46 @@ fn enabled<'a>(skills: impl Iterator<Item = &'a Node>, config: &Config) -> Strin
         listed.push(format!("({} more not listed)", skills.len() - MAX_LISTED));
     }
     listed.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{temp_dir, tool_context};
+    use crate::tools::ToolScope;
+
+    fn skills_dir() -> PathBuf {
+        let dir = temp_dir("load_skill_reminder");
+        for name in [EVOLVE, "mine"] {
+            let folder = dir.join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(
+                folder.join(SKILL_FILE),
+                format!("---\nname: {name}\ndescription: d\n---\nSteps.\n"),
+            )
+            .unwrap();
+        }
+        dir
+    }
+
+    fn config(dir: &Path) -> Config {
+        let scope = ToolScope::new(dir, dir).unwrap();
+        (*tool_context(&scope).config).clone()
+    }
+
+    #[test]
+    fn reminder_ends_an_own_skill_only() {
+        let dir = skills_dir();
+        let config = config(&dir);
+        assert!(load(&dir, "mine", &config).unwrap().ends_with(REMINDER));
+        assert!(!load(&dir, EVOLVE, &config).unwrap().contains(REMINDER));
+    }
+
+    #[test]
+    fn no_reminder_when_skill_evolve_is_off() {
+        let dir = skills_dir();
+        let mut config = config(&dir);
+        config.set_skill_enabled(EVOLVE, false);
+        assert!(!load(&dir, "mine", &config).unwrap().contains(REMINDER));
+    }
 }
