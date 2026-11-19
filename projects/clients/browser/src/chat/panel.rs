@@ -1,5 +1,5 @@
 //! The composer's panel, as the desktop app has it: a small tab on the box's upper edge,
-//! in sight while the pointer is over the chat, opens a band glued on top of the box with
+//! in sight while the pointer is over the box or the tab, opens a band glued on top of the box with
 //! the chat's folder on the left and one ring for the plan's limits on the right; the
 //! ring's card lists every window. Open or closed is the page's, never the core's.
 

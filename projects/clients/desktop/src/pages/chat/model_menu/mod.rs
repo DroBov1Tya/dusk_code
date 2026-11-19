@@ -171,11 +171,14 @@ pub fn render(
         anchored()
             .anchor(Anchor::BottomRight)
             .snap_to_window_with_margin(Edges::all(px(8.)))
-            .child(popup.on_mouse_down_out(cx.listener(|ws, _, _, cx| {
-                ws.picker = None;
-                ws.picker_closed = Some(std::time::Instant::now());
-                cx.notify();
-            }))),
+            .child(crate::ui::widgets::appear(
+                "model-menu-open",
+                popup.on_mouse_down_out(cx.listener(|ws, _, _, cx| {
+                    ws.picker = None;
+                    ws.picker_closed = Some(std::time::Instant::now());
+                    cx.notify();
+                })),
+            )),
     )
 }
 

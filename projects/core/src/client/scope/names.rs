@@ -28,6 +28,7 @@ named! {
     R::Thread(T::NewTemporary { .. }) => "thread.new_temporary",
     R::Thread(T::Resume { .. }) => "thread.resume",
     R::Thread(T::Fork { .. }) => "thread.fork",
+    R::Thread(T::ForkAt { .. }) => "thread.fork_at",
     R::Thread(T::List) => "thread.list",
     R::Thread(T::Search { .. }) => "thread.search",
     R::Thread(T::Messages { .. }) => "thread.messages",

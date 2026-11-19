@@ -27,8 +27,8 @@ pub struct Dock {
     pub panel_open: bool,
     /// The panel's tab, a stop of the focus order.
     pub panel_focus: FocusHandle,
-    /// The pointer is over the chat: the panel's tab is in sight.
-    pub chat_hovered: bool,
+    /// The pointer is over the composer's box or its tab: the tab is in sight.
+    pub box_hovered: bool,
     /// The tab was in sight at least once, so it has something to fade from.
     pub tab_seen: bool,
 }
@@ -43,7 +43,7 @@ impl Dock {
             rows: UniformListScrollHandle::new(),
             panel_open: false,
             panel_focus: cx.focus_handle().tab_index(0).tab_stop(true),
-            chat_hovered: false,
+            box_hovered: false,
             tab_seen: false,
         }
     }

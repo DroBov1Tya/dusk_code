@@ -152,7 +152,10 @@ impl Render for Workspace {
                                     .h_full()
                                     .flex()
                                     .flex_col()
-                                    .child(div().flex_1().min_h_0().child(center))
+                                    .child(crate::ui::motion::switch(
+                                        ("center", self.center as usize),
+                                        div().flex_1().min_h_0().child(center),
+                                    ))
                                     .children(terminal)
                                     .children(bottom_dock),
                             )

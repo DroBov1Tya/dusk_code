@@ -166,6 +166,9 @@ pub struct Workspace {
     /// While a module's header is dragged: the module under the pointer, and whether the
     /// drop lands below it rather than above.
     pub module_drop: Option<(Right, bool)>,
+    /// The module moved last, the side it came from in pixels (negative: from above),
+    /// and when, so it settles into its place once.
+    pub module_moved: Option<(Right, f32, std::time::Instant)>,
     /// The todo module shows its finished tasks; they are folded away by default.
     pub todo_done_open: bool,
     pub modal: Option<Modal>,

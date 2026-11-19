@@ -1,0 +1,2 @@
+Added
+Fork from a message: every message of the user and the agent shows "Fork from here" on hover, in the desktop app and the browser. It opens a new chat in the same project and mode, titled "<title> (fork)", holding the history up to and including that message with its tool results and attached files. When the chat was compacted before that message, the new one starts from that summary and the messages after it. Nothing running comes along. Protocol 35: `ThreadRequest::ForkAt { thread_id, message_id, cwd }`.

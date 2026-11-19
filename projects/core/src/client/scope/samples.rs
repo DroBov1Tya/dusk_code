@@ -53,6 +53,11 @@ fn threads() -> Vec<T> {
             summary: word(),
             cwd: "/".into(),
         },
+        T::ForkAt {
+            thread_id: id(),
+            message_id: id(),
+            cwd: "/".into(),
+        },
         T::List,
         T::Search { text: word() },
         T::Messages { thread_id: id() },

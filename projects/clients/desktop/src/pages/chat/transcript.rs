@@ -287,6 +287,12 @@ pub struct Transcript {
     pub pins: Vec<Pin>,
     /// When the arbiter last answered, for its pulse.
     pub arbiter_at: Option<Instant>,
+    /// Items stored before the chat was opened: they are there at once, the later ones
+    /// arrive with a short fade.
+    pub loaded: usize,
+    /// When each later item was first drawn, so it fades in once and never again when
+    /// the list scrolls back to it.
+    pub arrived: BTreeMap<usize, Instant>,
 }
 
 impl Transcript {
@@ -350,6 +356,7 @@ impl Transcript {
                 }
             }
         }
+        transcript.loaded = transcript.items.len();
         transcript
     }
 
@@ -627,6 +634,7 @@ impl Transcript {
                     self.items.truncate(at);
                     self.answered.retain(|index, _| *index < at);
                     self.message_ids.retain(|index, _| *index < at);
+                    self.arrived.retain(|index, _| *index < at);
                     self.asked = Asked::default();
                     self.blocks.clear();
                     let kept = self

@@ -4,6 +4,7 @@
 //! undone to, the sources attached to it and the messages the user pinned.
 
 mod compactions;
+mod fork;
 mod local_unsent;
 pub mod messages;
 mod pending;

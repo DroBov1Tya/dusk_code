@@ -114,6 +114,7 @@ impl Workspace {
                 &crate::ui::theme::prefs(cx).right_order,
             ),
             module_drop: None,
+            module_moved: None,
             modal: None,
             settings_page: SettingsPage::Ai,
             ai_tab: crate::pages::settings::ai::Tab::Llm,

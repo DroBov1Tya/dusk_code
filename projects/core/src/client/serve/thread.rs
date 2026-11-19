@@ -96,6 +96,16 @@ impl Server {
                 let handle = runtime.fork_thread(self.source(), &summary, &cwd).await?;
                 self.open(handle)
             }
+            ThreadRequest::ForkAt {
+                thread_id,
+                message_id,
+                cwd,
+            } => {
+                let handle = runtime
+                    .fork_thread_at(self.source(), &thread_id, &message_id, &cwd)
+                    .await?;
+                self.open(handle)
+            }
             ThreadRequest::List => Response::Threads(runtime.list_threads().await?),
             ThreadRequest::Search { text } => {
                 let within = self.bound();

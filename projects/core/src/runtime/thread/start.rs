@@ -9,13 +9,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
     catalog::modes::Modes,
     init::create_private_dir,
     init::paths::Paths,
+    message::sources::FOLDER as SOURCES,
     state::{State, Thread},
 };
 
@@ -106,6 +108,68 @@ pub async fn start_thread(
         name: None,
         workspace,
     })
+}
+
+/// A chat that holds `from`'s history up to `message_id`, in its project and mode, with
+/// its own folder and a copy of the attached files the copied messages name.
+pub async fn start_fork(
+    state: &State,
+    paths: &Paths,
+    source: &str,
+    from: &str,
+    message_id: &str,
+) -> Result<StartedThread> {
+    let original = state
+        .load_thread(from)
+        .await?
+        .context("no such thread to fork")?;
+    let thread_id = Uuid::now_v7().to_string();
+    let (folder, workspace) = new_chat_folder(paths)?;
+    state.create_thread(&thread_id, source).await?;
+    state.set_thread_folder(&thread_id, &folder).await?;
+    if let Some(project) = &original.project {
+        state.set_thread_project(&thread_id, project).await?;
+    }
+    if let Some(mode) = state.chat_mode(from).await? {
+        state.set_chat_mode(&thread_id, &mode).await?;
+    }
+    state.copy_history(from, &thread_id, message_id).await?;
+    let title = original.title.as_deref().unwrap_or("Chat");
+    state
+        .set_title(&thread_id, &format!("{title} (fork)"))
+        .await?;
+    if let Some(from_folder) = state.thread_folder(from).await? {
+        copy_sources(&paths.workspace_folder(&from_folder)?, &workspace);
+    }
+    Ok(StartedThread {
+        thread_id,
+        name: None,
+        workspace,
+    })
+}
+
+/// The attached files go along; one that cannot be copied is logged, not fatal, since
+/// the history is already stored.
+fn copy_sources(from: &Path, to: &Path) {
+    let (from, to) = (from.join(SOURCES), to.join(SOURCES));
+    let Ok(entries) = fs::read_dir(&from) else {
+        return;
+    };
+    if let Err(error) = fs::create_dir_all(&to) {
+        warn!("fork: cannot create the sources folder: {error}");
+        return;
+    }
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        // Plain files only: a link could reach outside the chat's folder.
+        if kind.is_file()
+            && let Err(error) = fs::copy(entry.path(), to.join(entry.file_name()))
+        {
+            warn!("fork: cannot copy a source: {error}");
+        }
+    }
 }
 
 /// A thread for `agent` under the thread that asks it, with `prompt` as its system prompt.

@@ -93,7 +93,7 @@ impl Workspace {
     pub fn drop_module(&mut self, dragged: &Dragged, cx: &mut Context<Self>) {
         if let Some((over, below)) = self.module_drop.take() {
             let order = moved(&self.right_order, dragged.module, over, below);
-            self.keep_order(order, cx);
+            self.keep_order(order, dragged.module, cx);
         }
         cx.notify();
     }
@@ -116,18 +116,40 @@ impl Workspace {
         };
         if let Some(neighbour) = neighbour {
             let order = moved(&self.right_order, module, neighbour, !up);
-            self.keep_order(order, cx);
+            self.keep_order(order, module, cx);
         }
     }
 
-    fn keep_order(&mut self, order: Vec<Right>, cx: &mut Context<Self>) {
+    fn keep_order(&mut self, order: Vec<Right>, module: Right, cx: &mut Context<Self>) {
         if order == self.right_order {
             return;
         }
+        let at = |order: &[Right]| order.iter().position(|m| *m == module);
+        let from = if at(&order) > at(&self.right_order) {
+            -SETTLE_FROM
+        } else {
+            SETTLE_FROM
+        };
+        self.module_moved = Some((module, from, std::time::Instant::now()));
         let keys = order.iter().map(|module| module.key().to_owned()).collect();
         self.right_order = order;
         crate::ui::theme::change(cx, |prefs| prefs.right_order = keys);
         cx.notify();
+    }
+}
+
+/// How far a moved module slides into its place.
+const SETTLE_FROM: f32 = 12.;
+
+/// The module just moved slides the last pixels into its place, from the side it came.
+/// A style on the section itself, so its header keeps the focus it had.
+pub fn settle(ws: &Workspace, module: Right, section: Div, window: &Window, cx: &App) -> Div {
+    let Some((moved, from, since)) = ws.module_moved else {
+        return section;
+    };
+    match crate::ui::motion::progress(since, crate::ui::motion::SETTLE, window, cx) {
+        Some(t) if moved == module => section.opacity(0.6 + 0.4 * t).top(px((1. - t) * from)),
+        _ => section,
     }
 }
 

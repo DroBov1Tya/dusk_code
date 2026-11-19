@@ -105,6 +105,8 @@ fn thread(request: &Thread) -> Access<'_> {
         Thread::New { .. } | Thread::NewTemporary { .. } | Thread::Fork { .. } => {
             apart(Area::ThreadCreate)
         }
+        // A new thread, but with what one thread said: only from a thread in reach.
+        Thread::ForkAt { thread_id, .. } => of(Area::ThreadCreate, thread_id),
         Thread::List | Thread::Search { .. } => all(Area::ThreadRead),
         Thread::Messages { thread_id }
         | Thread::Tasks { thread_id }
