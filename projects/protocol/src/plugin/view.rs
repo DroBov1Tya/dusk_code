@@ -129,10 +129,49 @@ pub enum Widget {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UiEvent {
     Click,
-    Input { value: String },
-    Select { item: String },
-    Tap { x: u32, y: u32 },
-    Swipe { from: (u32, u32), to: (u32, u32) },
+    Input {
+        value: String,
+    },
+    Select {
+        item: String,
+    },
+    Tap {
+        x: u32,
+        y: u32,
+    },
+    Swipe {
+        from: (u32, u32),
+        to: (u32, u32),
+    },
+    /// One phase of a press on a screen, for drags and long presses.
+    Touch {
+        phase: TouchPhase,
+        x: u32,
+        y: u32,
+    },
+    /// A key pressed while a screen has focus, by name, such as `return`.
+    Key {
+        key: String,
+    },
+    /// Text typed while a screen has focus.
+    Text {
+        text: String,
+    },
+    /// A wheel turned over a screen at `x`, `y`; the finger moves by `dx`, `dy` units.
+    Scroll {
+        x: u32,
+        y: u32,
+        dx: i32,
+        dy: i32,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TouchPhase {
+    Down,
+    Move,
+    Up,
 }
 
 /// Whether a view is small enough to draw: few widgets, shallow, short texts and finite

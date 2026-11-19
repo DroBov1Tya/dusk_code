@@ -1,6 +1,6 @@
 //! A phone drawn around a live screen: a thin black bezel in a light metal rim, side
-//! buttons of the same metal, the island over the screen. A click on the screen comes back as a tap, a drag as a swipe,
-//! in the screen's own units. Plugin screens with `phone` draw with it.
+//! buttons of the same metal, the island over the screen. Presses, drags and the wheel on the screen
+//! come back in the screen's own units. Plugin screens with `phone` draw with it.
 
 use std::{cell::Cell, rc::Rc};
 
@@ -15,17 +15,9 @@ pub const CORNER: f32 = 0.13;
 const RIM: f32 = 2.;
 /// The rim and the side buttons: a light metal that reads on dark and light themes.
 const METAL: u32 = 0x8e8e93;
-/// Below this many units a press that moved is still a tap.
-const SLOP: f32 = 8.;
 
 /// Where the screen was drawn last, to turn a click into units.
 pub type Drawn = Rc<Cell<Option<Bounds<Pixels>>>>;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Gesture {
-    Tap(u32, u32),
-    Swipe((u32, u32), (u32, u32)),
-}
 
 /// The bezel of a body this wide.
 pub fn bezel(body: f32) -> f32 {
@@ -147,28 +139,90 @@ fn side_buttons(height: f32) -> Vec<Div> {
     ]
 }
 
-/// What a click on a screen drawn at `drawn` did, in its `units`: the same place is a
-/// tap, a move a swipe. None when it was not a mouse's or began or ended off the screen.
-pub fn gesture(event: &ClickEvent, drawn: &Drawn, units: (f32, f32)) -> Option<Gesture> {
-    let ClickEvent::Mouse(click) = event else {
-        return None;
-    };
+/// The place of `at` on a screen drawn at `drawn`, in its `units`; `None` off the screen.
+pub fn units_at(drawn: &Drawn, at: Point<Pixels>, units: (f32, f32)) -> Option<(u32, u32)> {
     let bounds = drawn.get()?;
-    let from = to_units(bounds, click.down.position, units)?;
-    let to = to_units(bounds, click.up.position, units)?;
-    let moved = (from.0 as f32 - to.0 as f32).hypot(from.1 as f32 - to.1 as f32);
-    Some(if moved < SLOP {
-        Gesture::Tap(from.0, from.1)
-    } else {
-        Gesture::Swipe(from, to)
+    bounds
+        .contains(&at)
+        .then(|| clamped(bounds, at, units))
+        .flatten()
+}
+
+/// The place of `at` held to the screen drawn at `drawn`, for a drag that left it.
+pub fn units_held(drawn: &Drawn, at: Point<Pixels>, units: (f32, f32)) -> Option<(u32, u32)> {
+    clamped(drawn.get()?, at, units)
+}
+
+/// A distance of `by` pixels on a screen drawn at `drawn`, in its `units`.
+pub fn units_by(drawn: &Drawn, by: Point<Pixels>, units: (f32, f32)) -> Option<(i32, i32)> {
+    let bounds = drawn.get()?;
+    let (width, height) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+    (width > 0. && height > 0.).then(|| {
+        (
+            (f32::from(by.x) / width * units.0).round() as i32,
+            (f32::from(by.y) / height * units.1).round() as i32,
+        )
     })
 }
 
-fn to_units(bounds: Bounds<Pixels>, at: Point<Pixels>, units: (f32, f32)) -> Option<(u32, u32)> {
-    if !bounds.contains(&at) {
+/// Window points to screen units: the picture fills its bounds exactly, so the scale is
+/// the same on both axes and Retina pixels never enter (gpui works in points).
+fn clamped(bounds: Bounds<Pixels>, at: Point<Pixels>, units: (f32, f32)) -> Option<(u32, u32)> {
+    let (width, height) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+    if width <= 0. || height <= 0. {
         return None;
     }
-    let x = (at.x - bounds.origin.x) / bounds.size.width * units.0;
-    let y = (at.y - bounds.origin.y) / bounds.size.height * units.1;
-    Some((x.max(0.).round() as u32, y.max(0.).round() as u32))
+    let x = f32::from(at.x - bounds.origin.x) / width * units.0;
+    let y = f32::from(at.y - bounds.origin.y) / height * units.1;
+    // The last unit is the far edge: a click on the border still lands on the screen.
+    let hold = |value: f32, most: f32| value.round().clamp(0., (most - 1.).max(0.)) as u32;
+    Some((hold(x, units.0), hold(y, units.1)))
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::{Bounds, point, px, size};
+
+    use super::{Drawn, units_at, units_by, units_held};
+
+    fn drawn_at(x: f32, y: f32, width: f32, height: f32) -> Drawn {
+        let drawn = Drawn::default();
+        drawn.set(Some(Bounds::new(
+            point(px(x), px(y)),
+            size(px(width), px(height)),
+        )));
+        drawn
+    }
+
+    #[test]
+    fn window_points_become_screen_units() {
+        // A 402x874 screen drawn at half size, 100,50 from the window's corner.
+        let drawn = drawn_at(100., 50., 201., 437.);
+        let units = (402., 874.);
+        assert_eq!(
+            units_at(&drawn, point(px(100.), px(50.)), units),
+            Some((0, 0))
+        );
+        assert_eq!(
+            units_at(&drawn, point(px(200.5), px(268.5)), units),
+            Some((201, 437))
+        );
+        assert_eq!(
+            units_at(&drawn, point(px(300.9), px(486.9)), units),
+            Some((401, 873))
+        );
+        assert_eq!(units_at(&drawn, point(px(99.), px(60.)), units), None);
+        assert_eq!(
+            units_held(&drawn, point(px(500.), px(-20.)), units),
+            Some((401, 0))
+        );
+        assert_eq!(
+            units_by(&drawn, point(px(0.), px(-10.)), units),
+            Some((0, -20))
+        );
+        assert_eq!(
+            units_at(&Drawn::default(), point(px(1.), px(1.)), units),
+            None
+        );
+    }
 }

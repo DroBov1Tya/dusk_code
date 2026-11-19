@@ -87,12 +87,12 @@ impl Tool for McpTool {
         self.read_only
     }
 
-    fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             Ok(self
                 .server
                 .client
-                .call_tool(&self.remote, arguments)
+                .call_tool(&self.remote, arguments, Some(context.scope.cwd()))
                 .await?
                 .text)
         })
@@ -102,13 +102,13 @@ impl Tool for McpTool {
     fn call_result<'a>(
         &'a self,
         arguments: Value,
-        _context: ToolContext,
+        context: ToolContext,
     ) -> BoxFuture<'a, ToolResult> {
         Box::pin(async move {
             let output = self
                 .server
                 .client
-                .call_tool(&self.remote, arguments)
+                .call_tool(&self.remote, arguments, Some(context.scope.cwd()))
                 .await?;
             let mut result = ToolResult::text(output.text);
             for bytes in output.images {

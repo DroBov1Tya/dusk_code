@@ -181,7 +181,8 @@ permissions:
 ```
 
 A picture an MCP tool returns (PNG or JPEG) reaches the model as an image, checked like
-any other: at most 4 per result and 4 megapixels each.
+any other: at most 4 per result and 4 megapixels each. Each tool call carries the chat's
+project folder in `_meta` under `dev.duskcode/project`, so a tool can keep to it.
 
 ### Talking to the network
 
@@ -250,8 +251,12 @@ From the core:
 | `{"type": "close", "part": "simulator"}` | it closed; stop its work |
 | `{"type": "event", "part": "…", "widget": "boot", "event": {"kind": "click"}}` | a widget was used |
 
-Events are `click`, `input` (`value`), `select` (`item`), `tap` (`x`, `y`) and
-`swipe` (`from`, `to`), places in the screen widget's own units.
+Events are `click`, `input` (`value`), `select` (`item`), `tap` (`x`, `y`),
+`swipe` (`from`, `to`), and from a screen the desktop now sends: `touch` (`phase`
+`down`/`move`/`up`, `x`, `y`) as the press goes, so a held press is a long press and a
+drag follows the pointer; `scroll` (`x`, `y`, `dx`, `dy`) for the wheel; `key` (`key`,
+such as `return`, `delete`, `left`, `select_all`, `undo`) and `text` (`text`) typed
+while the screen has focus. Places are in the screen widget's own units.
 
 To the core:
 
