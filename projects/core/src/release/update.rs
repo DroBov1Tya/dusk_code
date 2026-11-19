@@ -243,7 +243,7 @@ pub async fn install_with_progress(
     })?;
     let name = format!("duskcode-{TARGET}");
     let base = format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}.tar.gz");
-    let archive = download(&client, &base, &progress).await.with_context(|| {
+    let archive = fetch(&client, &base, &progress).await.with_context(|| {
         format!(
             "cannot download the {tag} build for {TARGET}; right after a release is \
              tagged its builds take a few minutes on GitHub, so try again later"
@@ -350,15 +350,6 @@ pub(super) fn asset_url(tag: &str, name: &str) -> String {
     format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}")
 }
 
-/// Downloads `url`, reporting how far it got.
-pub(super) async fn fetch(
-    client: &Client,
-    url: &str,
-    progress: &watch::Sender<InstallProgress>,
-) -> Result<Vec<u8>> {
-    download(client, url, progress).await
-}
-
 pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     hex(&Sha256::digest(bytes))
 }
@@ -380,7 +371,8 @@ async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -
         .context("unexpected answer from GitHub")
 }
 
-async fn download(
+/// Downloads `url`, reporting how far it got.
+pub(super) async fn fetch(
     client: &Client,
     url: &str,
     progress: &watch::Sender<InstallProgress>,
