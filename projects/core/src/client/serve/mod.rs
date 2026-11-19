@@ -17,6 +17,7 @@ mod terminal;
 #[cfg(test)]
 mod tests;
 mod thread;
+mod user_runs;
 mod voice;
 mod work;
 
@@ -30,7 +31,7 @@ use crate::{
     terminal::Terminals,
 };
 use anyhow::{Result, anyhow};
-use dusk_protocol::client::{Event, ProjectRequest, Request, Response, Status};
+use dusk_protocol::client::{Event, ProjectRequest, Request, Response, Status, ThreadRequest};
 use dusk_protocol::thread::Turn;
 use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
@@ -133,6 +134,8 @@ pub struct Server {
     terminals: Terminals,
     /// The repository status of the projects clients watch.
     pulls: crate::project::forge::Tracker,
+    /// Commands users run from code blocks, under way.
+    user_runs: user_runs::UserRuns,
 }
 
 impl Server {
@@ -148,6 +151,7 @@ impl Server {
             threads: HashMap::new(),
             terminals: Terminals::new(crate::terminal::login_shell()),
             pulls: crate::project::forge::Tracker::default(),
+            user_runs: user_runs::UserRuns::default(),
         };
         (server, receiver)
     }
@@ -212,6 +216,16 @@ impl Server {
                             }
                             Request::Project(ProjectRequest::PullStatus { id, number }) => {
                                 self.pull_status(id, number, reply)
+                            }
+                            Request::Thread(ThreadRequest::RunCommand { thread_id, command, run }) => {
+                                self.run_command(client, thread_id, command, run, reply)
+                            }
+                            Request::Thread(ThreadRequest::StopRun { thread_id, run }) => {
+                                let response = match self.stop_run(client, thread_id, run) {
+                                    true => Response::Done,
+                                    false => Response::Error("the command is not running".into()),
+                                };
+                                let _ = reply.send(response);
                             }
                             request => {
                                 self.caller = client;
