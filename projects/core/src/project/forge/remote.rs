@@ -65,6 +65,9 @@ mod tests {
             Some("a/b/c/d".to_owned())
         );
         for bad in [
+            // An `@` in the path never changes the host.
+            "https://evil.com/a@github.com/o/r",
+            "ssh://evil.com/a@github.com/o/r",
             "https://gitlab.com/a/b/c/d/e",
             "https://localhost/o/r",
             "https://10.0.0.1/o/r",

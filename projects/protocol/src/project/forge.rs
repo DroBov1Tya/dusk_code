@@ -34,17 +34,17 @@ impl CheckStage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     pub name: String,
-    /// The workflow it runs in; empty when GitHub names none.
+    /// The workflow it runs in; empty when the forge names none.
     pub workflow: String,
     pub stage: CheckStage,
-    /// Its page, https only; empty when GitHub gave none that is safe.
+    /// Its page, https only; empty when the forge gave none that is safe.
     pub url: String,
     /// Unix seconds; `None` when not known.
     pub started: Option<i64>,
     pub finished: Option<i64>,
 }
 
-/// Where a pull request stands on GitHub.
+/// Where a pull request stands on the forge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PullState {
     Open,
@@ -75,7 +75,7 @@ pub struct PullStatus {
     pub state: PullState,
     /// The head branch.
     pub branch: String,
-    /// The author's login; empty when GitHub gave none.
+    /// The author's login; empty when the forge gave none.
     pub author: String,
     /// Unix seconds; `None` when not known.
     pub created: Option<i64>,
@@ -84,7 +84,7 @@ pub struct PullStatus {
     pub removed: u64,
     /// How many files it changes; `None` when not known.
     pub files: Option<u64>,
-    /// The page on GitHub, https only; empty when GitHub gave none that is safe.
+    /// The page on the forge, https only; empty when the forge gave none that is safe.
     pub url: String,
     /// The page of all its checks, https only; empty when the forge gave none that is safe.
     pub checks_url: String,

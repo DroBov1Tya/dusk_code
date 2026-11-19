@@ -112,8 +112,8 @@ or unstage a file, stage all, commit, discard a file's changes (after a yes), ma
 branch, fetch, pull (fast-forward only) and push (after a yes, to the upstream or to
 `origin` as a new one). The core also merges with a list of conflicts, aborts a merge,
 adds and removes worktrees beside the repository, and reads and opens pull requests
-through the GitHub CLI when `gh` is installed and signed in; the clients do not show
-these yet. Git runs with an argument vector and never a shell, with your own hooks,
+through the GitHub CLI when `gh` is installed and signed in; the clients show them
+in the Changes module and as chips on pull request links in chat. Git runs with an argument vector and never a shell, with your own hooks,
 config and credential helper; the app never reads a token.
 
 It never forces a push, amends a commit, prunes worktrees or removes a worktree that has

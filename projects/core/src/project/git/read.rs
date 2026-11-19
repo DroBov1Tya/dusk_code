@@ -92,8 +92,12 @@ pub(in crate::project) fn web_page(remote: &str) -> Option<String> {
         .or_else(|| remote.strip_prefix("ssh://"));
     let (host, path) = match rest {
         Some(rest) => {
-            let rest = rest.rsplit_once('@').map_or(rest, |(_, after)| after);
-            let (host, path) = rest.split_once('/')?;
+            // Userinfo belongs to the authority only: an `@` in the path never
+            // changes the host.
+            let (authority, path) = rest.split_once('/')?;
+            let host = authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, after)| after);
             // An ssh port is not the web server's.
             (host.split(':').next()?, path)
         }

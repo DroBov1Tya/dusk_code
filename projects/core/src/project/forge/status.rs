@@ -1,6 +1,6 @@
 //! A project's repository at a glance: the work tree's diff stat, the current branch,
 //! and the pull requests that matter to it with their checks counted. The forge's part
-//! says why it is missing where `gh` cannot be used or the remote is not GitHub's.
+//! says why it is missing where the forge cannot be asked (no plugin, `gh` unusable, another host).
 
 use std::path::Path;
 
@@ -38,7 +38,7 @@ pub struct Reading {
     pub status: RepositoryStatus,
     /// The first `mine` pull requests are the current branch's.
     pub mine: usize,
-    /// GitHub was asked and did not answer usably: worth asking again later, and the
+    /// The forge was asked and did not answer usably: worth asking again later, and the
     /// pull requests known before are better than none.
     pub trouble: bool,
 }
