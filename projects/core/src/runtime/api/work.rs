@@ -135,19 +135,7 @@ impl Runtime {
             return Ok(None);
         }
         let launcher = self.of(thread_id).await;
-        let mut threads = vec![thread_id.to_owned()];
-        threads.extend(launcher.state.descendant_threads(thread_id).await?);
-        let mut carried = false;
-        for thread in &threads {
-            let messages = launcher.state.list_messages(thread).await?;
-            carried = messages
-                .iter()
-                .any(|m| m.artifacts.iter().any(|card| card.id == card_id));
-            if carried {
-                break;
-            }
-        }
-        if !carried {
+        if !launcher.state.carries_card(thread_id, card_id).await? {
             return Ok(None);
         }
         let store = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());

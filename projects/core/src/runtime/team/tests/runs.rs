@@ -318,7 +318,7 @@ async fn a_card_delivered_again_is_dropped() {
         .filter(|message| message.from_thread_id.is_some())
         .collect();
     assert_eq!(cards.len(), 1);
-    let id = crate::tools::short_task_id(&ids[0]);
+    let id = crate::state::short_task_id(&ids[0]);
     let head = format!(
         "Task #{id}: write (it)\nAccept: the test passes\nGate: the user confirms it\n\
          Yours: no file; change nothing\nRules: "
