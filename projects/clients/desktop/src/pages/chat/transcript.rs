@@ -6,9 +6,9 @@ use std::{collections::BTreeMap, time::Instant};
 use dusk_protocol::{
     model::ModelEvent,
     thread::{
-        AgentState, Block, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Pin, Retry,
-        RetryRow, Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, clip,
-        note, retry_row, turn_spend,
+        AgentState, Block, DETAIL_KEYS, JobResult, LiveTurn, Message, MessageRole, Note, Pin,
+        Retry, RetryRow, Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait,
+        Work, WorkKind, activity, clip, note, retry_row, turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, Question},
 };
@@ -243,6 +243,8 @@ pub struct Transcript {
     /// When the last turn seen live ended, for the header's star.
     pub finished_at: Option<Instant>,
     pub working: bool,
+    /// The live signals the working row's kind is chosen from.
+    pub live: LiveTurn,
     /// Agents below the chat are at work, as the core says; the sidebar shows it working.
     pub agents_working: bool,
     /// The model call being tried again and when its event came, for the countdown.
@@ -313,11 +315,26 @@ impl Transcript {
             .is_some_and(|id| self.pins.iter().any(|pin| pin.message_id == *id))
     }
 
+    /// What the chat does at `now`, as the protocol tells the kinds apart; none when
+    /// nothing runs. A chat marked as working before its turn's first event thinks.
+    pub fn work(&self, now: i64) -> Option<Work> {
+        activity(&self.live, now).or_else(|| {
+            self.working.then(|| Work {
+                kind: WorkKind::Thinking,
+                label: "Thinking".to_owned(),
+                stalled: false,
+            })
+        })
+    }
+
     /// Answers the question shown. Gives the message for the agent once every question
     /// asked has its answer: a second question must not take the place of the first.
     pub fn answer(&mut self, chosen: &[usize], own: &str) -> Option<String> {
         let question = self.questions.pop_front()?;
         self.answers.push(question.answer(chosen, own));
+        if self.questions.is_empty() {
+            self.live.answered();
+        }
         self.questions
             .is_empty()
             .then(|| std::mem::take(&mut self.answers).join("\n\n"))
@@ -431,6 +448,7 @@ impl Transcript {
     }
 
     pub fn apply(&mut self, event: ThreadEvent) {
+        self.live.apply(&event, dusk_protocol::system::now_ms());
         let changed = match &event {
             ThreadEvent::Model(ModelEvent::Text(_) | ModelEvent::Reasoning(_)) => {
                 self.items.len().checked_sub(1)

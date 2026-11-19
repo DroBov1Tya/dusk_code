@@ -8,12 +8,15 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use gpui_kit::{
-    component::text::{TextView, TextViewState},
+    component::text::{TextView, TextViewMotion, TextViewState},
     *,
 };
 
 use super::Row;
 use crate::{pages::chat::links, workspace::Workspace};
+
+/// How long the words an answer just grew by take to reach their colour.
+const TAIL_FADE: std::time::Duration = std::time::Duration::from_millis(220);
 
 /// Kept behind a cell so rows drawn from a shared `Workspace`, such as an agent's report
 /// inside an unfolded activity, keep their texts too.
@@ -73,7 +76,15 @@ impl Texts {
             return state;
         }
         let source = links::linkify(text, marked);
-        let state = cx.new(|cx| TextViewState::markdown(&source, cx));
+        let state = cx.new(|cx| {
+            let state = TextViewState::markdown(&source, cx);
+            // An answer's words come in softly at its growing end: the text arriving is
+            // the sign that the agent writes. Words that are there from the start stand.
+            match marked {
+                true => state.motion(TextViewMotion::default().with_stream_fade(TAIL_FADE)),
+                false => state,
+            }
+        });
         let changed = cx.observe(&state, move |ws, _, cx| ws.text_changed(item, cx));
         self.kept.borrow_mut().insert(
             key,

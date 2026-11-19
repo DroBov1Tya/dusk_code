@@ -161,7 +161,8 @@ fn transcript_rows(chat: &Transcript) -> Vec<Row> {
         }
         start = end;
     }
-    if chat.working {
+    // Agents below the chat may work on after its own turn: the row stays for them.
+    if chat.work(dusk_protocol::system::now_ms()).is_some() {
         rows.push(Row::Working);
     }
     rows

@@ -385,7 +385,7 @@ fn tasks(now: i64) -> Vec<Task> {
 pub fn state(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     use dusk_protocol::{
         model::{PlanWindow, ProviderErrorKind, RateLimits},
-        thread::{Retry, ThreadEvent, Turn, TurnStatus, TurnWait},
+        thread::{ThreadEvent, Turn, TurnStatus, TurnWait},
     };
     let turn = |thread: &str, waiting| Turn {
         turn_id: "polish".into(),
@@ -407,16 +407,13 @@ pub fn state(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         "retry" => {
             if let Some(chat) = ws.chats.get_mut(&shown) {
                 chat.apply(ThreadEvent::TurnStarted(turn(&shown, None)));
-                chat.retry = Some((
-                    Retry {
-                        attempt: 2,
-                        max_attempts: Some(6),
-                        kind: ProviderErrorKind::Overloaded,
-                        wait_ms: 8_000,
-                        message: "529 overloaded".into(),
-                    },
-                    std::time::Instant::now(),
-                ));
+                chat.apply(ThreadEvent::Retrying {
+                    attempt: 2,
+                    error: "529 overloaded".into(),
+                    kind: ProviderErrorKind::Overloaded,
+                    wait_ms: 8_000,
+                    max_attempts: Some(6),
+                });
             }
         }
         // The turn waits for a provider that does not answer.
@@ -463,9 +460,141 @@ pub fn state(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         }
         // A tree of agents with levels, links both ways, and what could not be read.
         "agent-tree" => agent_tree(ws),
+        kind if kind.starts_with("activity-") => {
+            activity(ws, &shown, &kind["activity-".len()..], turn(&shown, None));
+        }
         other => eprintln!("no such state: {other}"),
     }
     cx.notify();
+}
+
+/// `fake=activity-thinking|stalled|writing|planning|steps|agents|waiting|compacting`: a
+/// turn of the shown chat in each kind of work the working row tells apart (`fake=retry`
+/// and `fake=unreachable` are the held one).
+fn activity(ws: &mut Workspace, shown: &str, kind: &str, turn: dusk_protocol::thread::Turn) {
+    use dusk_protocol::{
+        model::{ModelEvent, ToolCall},
+        thread::{LiveTurn, ThreadEvent},
+        tools::{ApprovalRequest, Request, ToolResult},
+    };
+    let Some(chat) = ws.chats.get_mut(shown) else {
+        return;
+    };
+    let call = |id: &str, name: &str, arguments: serde_json::Value| {
+        ThreadEvent::ToolStarted(ToolCall {
+            id: id.into(),
+            name: name.into(),
+            arguments,
+        })
+    };
+    let done = |id: &str, failed: bool| {
+        let mut result = ToolResult::text(if failed { "exit 1" } else { "ok" }.into());
+        result.is_error = failed;
+        ThreadEvent::ToolFinished {
+            call_id: id.into(),
+            result,
+        }
+    };
+    let started = ThreadEvent::TurnStarted(turn);
+    chat.apply(started.clone());
+    let steps = chat.items.len();
+    let events = match kind {
+        "thinking" => vec![ThreadEvent::Model(ModelEvent::Reasoning(
+            "Let me look.".into(),
+        ))],
+        "stalled" => Vec::new(),
+        "writing" => vec![ThreadEvent::Model(ModelEvent::Text(
+            "The list measures a row again whenever its text grows, and a reader inside \
+             that row is sent back to its top. Keeping the scroll anchor through the measure"
+                .into(),
+        ))],
+        "planning" => vec![
+            ThreadEvent::Tasks(tasks(now_ms())),
+            call("plan", "tasks", serde_json::json!({ "action": "add" })),
+        ],
+        "steps" => vec![
+            call(
+                "read",
+                "read_file",
+                serde_json::json!({ "path": "src/cache.rs" }),
+            ),
+            done("read", false),
+            call(
+                "test",
+                "run_command",
+                serde_json::json!({ "command": "cargo test -p cache" }),
+            ),
+            done("test", true),
+            call(
+                "find",
+                "search_files",
+                serde_json::json!({ "query": "deadline" }),
+            ),
+        ],
+        "agents" => {
+            let mut events = Vec::new();
+            for agent in ["a", "b", "c"] {
+                let id = format!("ask-{agent}");
+                events.push(call(
+                    &id,
+                    "ask_agent",
+                    serde_json::json!({ "task": "Review" }),
+                ));
+                events.push(ThreadEvent::SubagentStarted {
+                    call_id: id,
+                    thread_id: format!("agent-{agent}"),
+                    agent: "general".into(),
+                    task: "Review the change".into(),
+                    effort: None,
+                    model: None,
+                });
+            }
+            events.push(ThreadEvent::AgentsWorking(true));
+            events.push(ThreadEvent::Subagent {
+                thread_id: "agent-b".into(),
+                event: Box::new(ThreadEvent::Idle),
+            });
+            events
+        }
+        "waiting" => vec![
+            call(
+                "publish",
+                "run_command",
+                serde_json::json!({ "command": "cargo publish" }),
+            ),
+            ThreadEvent::Approval(ApprovalRequest {
+                id: 91,
+                request: Request::Command {
+                    command: "cargo publish -p cache".into(),
+                },
+                session: None,
+                steps: Vec::new(),
+            }),
+        ],
+        "compacting" => vec![ThreadEvent::CompactionStarted],
+        other => {
+            eprintln!("no such activity: {other}");
+            Vec::new()
+        }
+    };
+    for event in events {
+        chat.apply(event);
+    }
+    match kind {
+        // Nothing came for a long while: the turn's only event is forty seconds old.
+        "stalled" => {
+            chat.live = LiveTurn::default();
+            chat.live.apply(&started, now_ms() - 40_000);
+        }
+        // The steps unfolded, so each state's mark is in sight.
+        "steps" => {
+            ws.unfolded.insert((
+                shown.to_owned(),
+                steps | crate::pages::chat::messages::ACTIVITY,
+            ));
+        }
+        _ => {}
+    }
 }
 
 fn agent_tree(ws: &mut Workspace) {

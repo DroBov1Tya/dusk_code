@@ -140,7 +140,8 @@ pub fn step(
     // The icon says what the step is; its color, how it stands.
     let icon = step_icon(&tool.name);
     let (color, status) = match tool.state {
-        ToolState::Running => (theme.warning, "Running"),
+        // A running step is told by the live mark at its end, not by its icon.
+        ToolState::Running => (muted, "Running"),
         ToolState::Done => (muted, "Completed"),
         ToolState::Failed => (theme.danger, "Failed"),
     };
@@ -203,6 +204,11 @@ pub fn step(
     .when(tool.state == ToolState::Failed, |row| {
         row.child(div().meta().text_color(color).child(status))
     })
+    .child(crate::pages::chat::activity::step_mark(
+        tool.state,
+        ws.chats.get(shown).is_some_and(|chat| chat.working),
+        cx,
+    ))
     .child(disclosure_icon(open, muted))
     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx)));
     let mut row = div().flex().items_center().gap_2().child(button);
