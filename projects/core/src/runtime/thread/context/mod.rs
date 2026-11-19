@@ -305,12 +305,7 @@ impl ContextSource {
 
     /// The largest request under the selected model policy and its known window.
     pub fn limit(&self) -> u64 {
-        let config = self.config.current();
-        self.model
-            .current()
-            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
-                choice.input_limit(&config)
-            })
+        self.model.current_input_limit(&self.config.current())
     }
 }
 
