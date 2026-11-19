@@ -75,7 +75,7 @@ impl Workspace {
         let composer = cx.new(|cx| {
             let mut state = TextareaState::new(window, cx)
                 .auto_grow(2, 10)
-                .placeholder("Ask anything. Enter sends, Shift+Enter starts a new line.");
+                .placeholder(crate::pages::chat::composer::PLACEHOLDER);
             state.set_submit_on_enter(true, cx);
             state
         });
@@ -138,6 +138,8 @@ impl Workspace {
             toast: None,
             pending: Vec::new(),
             rates: HashMap::new(),
+            suggestions: HashMap::new(),
+            placeholder_shown: crate::pages::chat::composer::PLACEHOLDER.to_owned(),
             git: None,
             repository: None,
             pulls: HashMap::new(),

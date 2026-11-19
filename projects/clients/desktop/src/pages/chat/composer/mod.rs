@@ -7,10 +7,12 @@ mod drafts;
 mod marks;
 mod mention;
 mod send;
+mod suggest;
 
 pub use attach::paste_label;
 pub use drafts::{Change, Draft, Drafts, Edit};
 pub use marks::{AGENTS_BUTTON, SIDE_MARK, agents_button, mic_button};
+pub use suggest::{PLACEHOLDER, show_suggestion};
 
 use crate::ui::Type;
 use crate::ui::elevation::{Elevation, Level, shadows};
@@ -122,6 +124,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     let writing = gpui_kit::Focusable::focus_handle(ws.composer.read(cx), cx).is_focused(window);
     let mentions = mention_menu(ws, cx).or_else(|| super::commands::menu(ws, cx));
     let chips = strip(ws, cx);
+    let hint = suggest::tab_hint(ws, cx);
     let edge = if writing {
         accent.opacity(0.5)
     } else {
@@ -160,10 +163,14 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
         .children(chips)
         .child(
             div()
+                .relative()
                 .w_full()
                 .px_2()
                 .pt_1()
-                .child(Textarea::new(&ws.composer).appearance(false)),
+                // The suggestion's line stops short of the Tab hint at its end.
+                .when(hint.is_some(), |row| row.pr(px(44.)))
+                .child(Textarea::new(&ws.composer).appearance(false))
+                .children(hint),
         )
         .child(
             div()
@@ -281,8 +288,11 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
             let keys = &event.keystroke;
             if keys.key == "tab" && !keys.modifiers.shift && !keys.modifiers.control {
                 cx.stop_propagation();
-                // Over a mention or a command, Tab completes it, as in the TUI.
-                if let Some(name) = ws.mention_matches(cx).first().cloned() {
+                // Over a mention or a command, Tab completes it, as in the TUI; over the
+                // empty box it takes in the suggestion shown there.
+                if ws.accept_suggestion(window, cx) {
+                    // Taken in.
+                } else if let Some(name) = ws.mention_matches(cx).first().cloned() {
                     ws.complete_mention(name, cx);
                 } else if let Some((name, _)) = ws.command_matches(cx).first().copied() {
                     ws.complete_command(name, window, cx);

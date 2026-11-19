@@ -312,6 +312,10 @@ pub struct Workspace {
     pub pending: Vec<chat::queue::Pending>,
     /// Output tokens per second by thread, from the core's rate events.
     pub rates: HashMap<String, u64>,
+    /// The user's likely next message by chat, as the model proposed it.
+    pub suggestions: HashMap<String, dusk_protocol::thread::Suggestion>,
+    /// What the composer's empty box says now: the placeholder or a suggestion.
+    pub placeholder_shown: String,
     /// The shown chat's sent messages, by transcript row, for the navigator.
     pub sent_rows: Vec<(usize, String)>,
     pub navigator_open: bool,
