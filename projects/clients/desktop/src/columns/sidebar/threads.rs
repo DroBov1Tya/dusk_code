@@ -10,6 +10,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::ui::looping::Loop;
 use crate::{
     pages::chat::transcript::Transcript,
     ui::{Type, widgets},
@@ -102,11 +103,9 @@ pub fn chat_row(
             Icon::new(IconName::LoaderCircle)
                 .size(px(MARK))
                 .text_color(accent)
-                .with_animation(
-                    SharedString::from(format!("{prefix}-working-{id}")),
-                    Animation::new(std::time::Duration::from_millis(900)).repeat(),
-                    |icon, delta| icon.rotate(percentage(delta)),
-                ),
+                .looping(std::time::Duration::from_millis(900), |icon, delta| {
+                    icon.rotate(percentage(delta))
+                }),
         )
     } else {
         mark.child(div().size_1p5().rounded_full().bg(muted.opacity(0.4)))

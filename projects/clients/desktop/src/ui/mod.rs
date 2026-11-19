@@ -17,6 +17,7 @@ pub mod controls;
 pub mod elevation;
 pub mod icons;
 pub mod layout;
+pub mod looping;
 pub mod motion;
 pub mod phone;
 pub mod press;
@@ -29,6 +30,8 @@ use gpui_kit::{
     component::{ActiveTheme, Icon, IconName, Sizable, button::Button},
     *,
 };
+
+use self::looping::Loop;
 
 /// How long a menu takes to appear.
 pub const OPEN: Duration = Duration::from_millis(160);
@@ -124,11 +127,9 @@ pub fn spinner(cx: &App) -> impl IntoElement {
     Icon::new(IconName::LoaderCircle)
         .small()
         .text_color(cx.theme().muted_foreground)
-        .with_animation(
-            "spinner",
-            Animation::new(Duration::from_millis(900)).repeat(),
-            |icon, delta| icon.rotate(percentage(delta)),
-        )
+        .looping(Duration::from_millis(900), |icon, delta| {
+            icon.rotate(percentage(delta))
+        })
 }
 
 /// "Reading..." with the ring: a wait that shows it is under way.

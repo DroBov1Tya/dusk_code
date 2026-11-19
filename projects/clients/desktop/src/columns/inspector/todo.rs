@@ -13,6 +13,7 @@ use gpui_kit::{
 
 use dusk_protocol::thread::{Task, TaskItem};
 
+use crate::ui::looping::Loop;
 use crate::{ui::widgets, workspace::Workspace};
 
 /// The marker of an item, and the line that joins it to the next.
@@ -91,7 +92,7 @@ fn card(task: &Task, cx: &App) -> Div {
     let fill = if finished { theme.success } else { accent };
     let mut list = div().flex().flex_col();
     for (index, item) in task.items.iter().enumerate() {
-        list = list.child(row(task, item, index + 1 == all, cx));
+        list = list.child(row(item, index + 1 == all, cx));
     }
     div()
         .flex()
@@ -144,7 +145,7 @@ fn card(task: &Task, cx: &App) -> Div {
 
 /// One item: its marker on the line, then its words. Done reads struck and quiet; the
 /// one in work is the only thing in the card that moves.
-fn row(task: &Task, item: &TaskItem, last: bool, cx: &App) -> Div {
+fn row(item: &TaskItem, last: bool, cx: &App) -> Div {
     let theme = cx.theme();
     let (accent, success, muted, line) = (
         theme.primary,
@@ -177,13 +178,10 @@ fn row(task: &Task, item: &TaskItem, last: bool, cx: &App) -> Div {
             .border_1()
             .border_color(accent)
             .child(div().size(px(6.)).rounded_full().bg(accent))
-            .with_animation(
-                SharedString::from(format!("todo-now-{}-{}", task.task_id, item.item_id)),
-                Animation::new(Duration::from_millis(1800))
-                    .repeat()
-                    .with_easing(ease_in_out),
-                |mark, at| mark.opacity(0.55 + 0.45 * (1. - (2. * at - 1.).abs())),
-            )
+            .looping(Duration::from_millis(1800), |mark, at| {
+                let at = ease_in_out(at);
+                mark.opacity(0.55 + 0.45 * (1. - (2. * at - 1.).abs()))
+            })
             .into_any_element()
     } else {
         div()
