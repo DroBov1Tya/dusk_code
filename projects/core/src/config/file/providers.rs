@@ -83,6 +83,11 @@ impl Config {
         self.plugin_contracts
     }
 
+    /// The plugins the user chose, by contract and host.
+    pub fn contracts(&self) -> &crate::config::Contracts {
+        &self.contracts
+    }
+
     /// The plugin the user chose for `host` of `contract`, if any.
     pub fn chosen(&self, contract: &str, host: &str) -> Option<&str> {
         match contract {

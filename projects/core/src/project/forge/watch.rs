@@ -11,7 +11,7 @@ use std::{
 };
 
 use dusk_protocol::project::{
-    CheckState, Forge, PullState, PullStatus, PullSummary, RepositoryStatus,
+    CheckState, Forge, ForgeStatus, PullState, PullStatus, PullSummary, RepositoryStatus,
 };
 use parking_lot::Mutex;
 
@@ -108,6 +108,19 @@ impl Tracker {
         inner.lookups.done(project_id, number, pull, Instant::now());
     }
 
+    /// The pull prefix of the project's last status, when a forge named one.
+    pub fn prefix(&self, project_id: &str) -> Option<String> {
+        let inner = self.0.lock();
+        let served = inner
+            .projects
+            .get(project_id)?
+            .status
+            .as_ref()?
+            .forge
+            .served()?;
+        Some(served.pull_prefix.clone()).filter(|prefix| !prefix.is_empty())
+    }
+
     /// The client is gone; what it watched is no longer read for it.
     pub fn forget(&self, client: u64) {
         self.0.lock().watchers.remove(&client);
@@ -178,6 +191,10 @@ impl Tracker {
             mut mine,
             trouble,
         } = reading;
+        let old = tracked.status.as_ref().and_then(|old| old.forge.served());
+        if let (Some(old), Forge::Served(served)) = (old, &mut status.forge) {
+            keep_names(old, served);
+        }
         if trouble {
             tracked.failures = tracked.failures.saturating_add(1);
             tracked.due = now + backoff(tracked.failures);
@@ -250,6 +267,21 @@ impl Tracker {
     }
 }
 
+/// A plugin's error names no prefix: the last one of the same plugin still names its
+/// pulls, and its name the forge, in the note too.
+fn keep_names(old: &ForgeStatus, new: &mut ForgeStatus) {
+    if !new.pull_prefix.is_empty() || old.plugin != new.plugin || old.pull_prefix.is_empty() {
+        return;
+    }
+    if let Some(note) = &mut new.unavailable
+        && let Some(rest) = note.strip_prefix(new.name.as_str())
+    {
+        *note = format!("{}{rest}", old.name);
+    }
+    new.name = old.name.clone();
+    new.pull_prefix = old.pull_prefix.clone();
+}
+
 /// An unwatched project is read for the summaries when it was never read or its status
 /// is older than a settled one would be.
 fn summary_wants(tracked: &Tracked, now: Instant) -> bool {
@@ -274,7 +306,7 @@ fn backoff(failures: u32) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dusk_protocol::project::{Checks, ForgeStatus, PullStatus};
+    use dusk_protocol::project::{Checks, PullStatus};
 
     fn pull(number: u64, running: u32, state: Option<CheckState>) -> PullStatus {
         PullStatus {

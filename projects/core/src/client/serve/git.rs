@@ -75,8 +75,9 @@ async fn answer(runtime: &Runtime, id: &str, request: GitRequest) -> Result<Resp
             )));
         }
         GitRequest::CreatePullRequest { title, body, base } => {
+            let forges = super::pulls::forges(runtime, id).await?;
             return Ok(Response::PullRequest(Box::new(
-                forge::create(project, &title, &body, base.as_deref()).await?,
+                forge::create(project, &title, &body, base.as_deref(), &forges).await?,
             )));
         }
     }))
