@@ -21,7 +21,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 pub use team::{GatesYes, Started, TeamRunner};
-pub use text::short as short_task_id;
 
 use lead::Lead;
 use team::NoTeam;
@@ -31,11 +30,8 @@ use crate::{
     BoxFuture,
     catalog::{agents::Agents, modes::TEAM},
     runtime::ThreadEvent,
-    state::{PlanError, PlanStatus, State, Task},
+    state::{PlanError, PlanStatus, State, Task, short_task_id},
 };
-
-/// IDs are shown by their last characters, which are random; the agent may use those.
-const SHORT_ID: usize = 8;
 
 pub struct Tasks {
     state: Arc<State>,
@@ -164,7 +160,7 @@ impl Tasks {
         ensure!(
             !given_out,
             "task #{} is {} in the team's plan; the board cannot change it",
-            text::short(&task.task_id),
+            short_task_id(&task.task_id),
             task.status.as_str()
         );
         Ok(())
@@ -328,7 +324,7 @@ pub fn board(tasks: &[Task]) -> String {
                 "  {} {} #{} ({finished}/{})\n",
                 mark(task.done),
                 task.description,
-                short(&task.task_id),
+                short_task_id(&task.task_id),
                 task.items.len()
             ));
             for item in &task.items {
@@ -344,7 +340,7 @@ pub fn board(tasks: &[Task]) -> String {
                 text.push_str(&format!(
                     "      {mark} {} #{}{took}\n",
                     item.description,
-                    short(&item.item_id)
+                    short_task_id(&item.item_id)
                 ));
             }
         }
@@ -354,10 +350,6 @@ pub fn board(tasks: &[Task]) -> String {
 
 fn mark(done: bool) -> &'static str {
     if done { "[x]" } else { "[ ]" }
-}
-
-fn short(id: &str) -> &str {
-    &id[id.len().saturating_sub(SHORT_ID)..]
 }
 
 #[cfg(test)]

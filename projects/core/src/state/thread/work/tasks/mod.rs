@@ -26,7 +26,7 @@ use super::{State, timestamp_ms};
 
 pub use claims::{Claim, PassedBy};
 pub use dusk_protocol::thread::Task;
-pub use error::{PlanError, Unclaimable};
+pub use error::{PlanError, Unclaimable, short_task_id};
 pub use files::{TaskFiles, overlaps};
 pub(super) use graph::root_of;
 pub use plan::{

@@ -34,8 +34,11 @@ use crate::{
         model_choice::Choice,
         thread::start::{read_prompt, start_member_thread},
     },
-    state::{Claim, MAX_REWORKS, MEMBER_SOURCE, PlanError, PlanTask, State, TeamRun, Thread},
-    tools::{ToolRegistry, short_task_id},
+    state::{
+        Claim, MAX_REWORKS, MEMBER_SOURCE, PlanError, PlanTask, State, TeamRun, Thread,
+        short_task_id,
+    },
+    tools::ToolRegistry,
 };
 
 /// Every tool a member may have: what it takes to read the project, change its files

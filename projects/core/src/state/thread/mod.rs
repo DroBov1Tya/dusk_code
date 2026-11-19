@@ -29,7 +29,7 @@ pub use work::{
 pub use work::{
     BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_NOTE,
     MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
-    PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, overlaps,
+    PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, overlaps, short_task_id,
 };
 pub use work::{
     BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamCounts, TeamError, TeamRun,
