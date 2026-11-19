@@ -57,6 +57,21 @@ fn Installed() -> impl IntoView {
                                 </div>
                             }
                         }).collect_view()}
+                        {plugin.choose.clone().into_iter().map(|host| {
+                            let (name, chosen) = (plugin.name.clone(), host.clone());
+                            view! {
+                                <div class="row-actions">
+                                    <button class="ghost" on:click=move |_| {
+                                        let request = SettingsRequest::SetContractPlugin {
+                                            contract: "forge".to_owned(),
+                                            host: chosen.clone(),
+                                            plugin: name.clone(),
+                                        };
+                                        run(api::set(request), |()| ());
+                                    }>{format!("Use for {host}")}</button>
+                                </div>
+                            }
+                        }).collect_view()}
                         <Switch on=plugin.enabled label="Enabled" change=move |on| {
                             let request = SettingsRequest::PluginEnabled { name: toggle.clone(), enabled: on };
                             run(api::set(request), |()| ());

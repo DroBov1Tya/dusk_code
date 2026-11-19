@@ -1,9 +1,12 @@
-//! A cover's frame when there is no picture to put in it: the kind's glyph on the raised
-//! surface, quieter than any real cover. Drawn here as inline SVG, so it needs no file
-//! and no network. One frame stands for a listing without a cover, a cover that failed,
-//! one still coming (a shimmer, no glyph) and one that could not be fetched offline.
+//! A cover's frame when there is no picture to put in it: a gradient picked from the
+//! plugin's name with the kind's glyph on top. The colours come from
+//! `dusk_protocol::plugin::cover_art`, the same the desktop app draws, set inline as
+//! custom properties so the stylesheet picks the light or dark pair by theme; the glyphs
+//! are inline SVG, so it needs no file and no network. One frame stands for a listing
+//! without a cover, a cover that failed, one still coming (hushed, a shimmer, no glyph)
+//! and one that could not be fetched offline (hushed).
 
-use dusk_protocol::plugin::Kind;
+use dusk_protocol::plugin::{CoverArt, Hsl, Kind, cover_art};
 use leptos::prelude::*;
 
 /// What a cover's frame holds.
@@ -19,25 +22,56 @@ pub enum Picture {
     Offline,
 }
 
-/// The frame for every state but `Shown`.
-pub fn placeholder(kind: Kind, picture: &Picture) -> AnyView {
+/// The frame for every state but `Shown`, coloured for the plugin called `name`.
+pub fn placeholder(kind: Kind, name: &str, picture: &Picture) -> AnyView {
+    let style = colours(
+        name,
+        !matches!(picture, Picture::Missing | Picture::Shown(_)),
+    );
     match picture {
-        Picture::Loading => {
-            view! { <div class="ph loading" role="img" aria-label="Cover loading"></div> }
-                .into_any()
+        Picture::Loading => view! {
+            <div class="ph loading" style=style role="img" aria-label="Cover loading"></div>
         }
+        .into_any(),
         Picture::Offline => view! {
-            <div class="ph" role="img" aria-label="No cover (offline)">
+            <div class="ph quiet" style=style role="img" aria-label="No cover (offline)">
                 {glyph(kind_paths(kind))}
                 <span class="off" aria-hidden="true">{glyph(CLOUD_OFF)}"Offline"</span>
             </div>
         }
         .into_any(),
-        Picture::Missing | Picture::Shown(_) => {
-            view! { <div class="ph" role="img" aria-label="No cover">{glyph(kind_paths(kind))}</div> }
-                .into_any()
+        Picture::Missing | Picture::Shown(_) => view! {
+            <div class="ph" style=style role="img" aria-label="No cover">{glyph(kind_paths(kind))}</div>
         }
+        .into_any(),
     }
+}
+
+/// The inline custom properties `.ph` paints with: the dark pair and ink, then the light.
+fn colours(name: &str, quiet: bool) -> String {
+    let art = |dark| {
+        let art = cover_art(name, dark);
+        if quiet { art.quiet(dark) } else { art }
+    };
+    let (dark, light) = (art(true), art(false));
+    let props = |suffix: &str, art: &CoverArt| {
+        format!(
+            "--ph-from{suffix}:{};--ph-to{suffix}:{};--ph-ink{suffix}:{};",
+            css(art.from),
+            css(art.to),
+            css(art.ink)
+        )
+    };
+    format!(
+        "--ph-angle:{}deg;{}{}",
+        dark.angle,
+        props("", &dark),
+        props("-l", &light)
+    )
+}
+
+fn css(c: Hsl) -> String {
+    format!("hsl({:.1} {:.1}% {:.1}%)", c.h, c.s * 100., c.l * 100.)
 }
 
 fn glyph(paths: &'static [&'static str]) -> impl IntoView {

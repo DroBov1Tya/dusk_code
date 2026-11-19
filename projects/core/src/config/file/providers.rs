@@ -66,11 +66,44 @@ impl Config {
     pub fn set_plugin_enabled(
         &mut self,
         name: &str,
-        allowed: Option<dusk_protocol::plugin::Permissions>,
+        allowed: Option<(
+            dusk_protocol::plugin::Permissions,
+            Option<dusk_protocol::plugin::Provides>,
+        )>,
     ) {
         let plugin = self.plugins.entry(name.to_owned()).or_default();
         plugin.enabled = allowed.is_some();
-        plugin.allowed = allowed;
+        let (permissions, provides) = allowed.unzip();
+        plugin.allowed = permissions;
+        plugin.allowed_provides = provides.flatten();
+    }
+
+    /// Whether contract programs of plugins are asked at all.
+    pub fn contracts_on(&self) -> bool {
+        self.plugin_contracts
+    }
+
+    /// The plugins the user chose, by contract and host.
+    pub fn contracts(&self) -> &crate::config::Contracts {
+        &self.contracts
+    }
+
+    /// The plugin the user chose for `host` of `contract`, if any.
+    pub fn chosen(&self, contract: &str, host: &str) -> Option<&str> {
+        match contract {
+            "forge" => self.contracts.forge.get(host).map(String::as_str),
+            _ => None,
+        }
+    }
+
+    /// Chooses `plugin` for `host` of `contract`; a contract this core does not know
+    /// keeps nothing.
+    pub fn set_contract_plugin(&mut self, contract: &str, host: &str, plugin: &str) {
+        if contract == "forge" {
+            self.contracts
+                .forge
+                .insert(host.to_owned(), plugin.to_owned());
+        }
     }
 
     pub fn set_plugged(&mut self, plugged: Plugged) {

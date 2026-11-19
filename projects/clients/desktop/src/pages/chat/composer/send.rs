@@ -157,7 +157,7 @@ impl Workspace {
             let agents = chat
                 .agents
                 .iter()
-                .filter(|(_, agent)| agent.working)
+                .filter(|(_, agent)| agent.working())
                 .map(|(id, _)| id.clone())
                 .collect();
             (chat.working, agents)
@@ -181,7 +181,7 @@ impl Workspace {
                     if let Some(chat) = ws.chats.get_mut(&chat_id) {
                         for id in &stopped {
                             if let Some(agent) = chat.agents.get_mut(id) {
-                                agent.stop();
+                                agent.stop(dusk_protocol::system::now_ms());
                             }
                         }
                     }

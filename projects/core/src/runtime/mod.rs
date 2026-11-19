@@ -18,4 +18,5 @@ pub mod thread;
 
 pub use dusk_protocol::thread::ThreadEvent;
 pub use start::{Runtime, ThreadHandle};
+pub use temporary::folders as temporary_folders;
 pub use thread::{Launcher, ThreadInput, ThreadLock, ThreadOutput, ThreadRunner, ThreadSetup};

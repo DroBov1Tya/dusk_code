@@ -18,7 +18,7 @@ pub use db::State;
 pub use project::{Episode, Recall};
 pub use project::{EpisodeKind, NewEpisode};
 pub use skill_changes::{NewSkillChange, StoredSkillChange};
-pub use thread::MEMBER_SOURCE;
+pub(crate) use thread::below;
 pub use thread::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Delivery,
     Ended, Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt,
@@ -26,6 +26,7 @@ pub use thread::{
     ShapedResult, Source, Stub, Task, Thread, Turn, TurnAnswer, TurnFailure, TurnOutcome,
     TurnStatus, UndoPoint, Unfinished, calls_of, estimate_tokens, saved_tokens,
 };
+pub use thread::{MEMBER_SOURCE, short_task_id};
 // The plan's store. Its callers are the team's runtime (T1) and the plan form of the
 // `tasks` tool (L1); until they land only its tests use these.
 #[allow(unused_imports)]

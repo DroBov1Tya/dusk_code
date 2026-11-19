@@ -317,7 +317,10 @@ pub struct Workspace {
     /// What the composer's empty box says now: the placeholder or a suggestion.
     pub placeholder_shown: String,
     /// The shown chat's sent messages, by transcript row, for the navigator.
-    pub sent_rows: Vec<(usize, String)>,
+    /// The rows of the user's sent messages: their row and their item.
+    pub sent_rows: Vec<(usize, usize)>,
+    /// What `rows` were built from: the chat, its shape and whether a turn ran.
+    pub rows_key: Option<(String, u64, bool)>,
     pub navigator_open: bool,
     /// Fields for the settings a plugin lacks, in its detail window.
     pub secret_inputs: Vec<(String, Entity<InputState>)>,

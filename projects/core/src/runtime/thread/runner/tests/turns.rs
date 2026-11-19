@@ -354,11 +354,28 @@ async fn an_agent_message_joins_the_running_turn_and_starts_no_other() {
         vec![Step::Text("it found it"), Step::Done],
     ]);
     let tool = Box::new(WriteBack(Arc::clone(&state)));
-    let (runner, input, _output) = runner_with(&state, &provider, &config, model(None), tool);
+    let (runner, input, mut output) = runner_with(&state, &provider, &config, model(None), tool);
     input.send("ask the child").await.unwrap();
     drop(input);
 
     runner.run().await;
+
+    // Mid-turn the message is the agent's: it names nothing and is no user message.
+    let events = drain(&mut output).await;
+    let titles: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            ThreadEvent::TitleChanged { title } => Some(title.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(titles, ["ask the child"]);
+    assert!(events.iter().any(
+        |event| matches!(event, ThreadEvent::FromAgent(message) if message.content == "found it")
+    ));
+    assert!(!events.iter().any(
+        |event| matches!(event, ThreadEvent::UserMessage(message) if message.content == "found it")
+    ));
 
     let second_step = provider.requests.lock().unwrap()[1].clone();
     let header = "[message from Ember-0c, thread child]\nfound it".to_owned();
@@ -373,6 +390,40 @@ async fn an_agent_message_joins_the_running_turn_and_starts_no_other() {
         1,
         "no second turn"
     );
+}
+
+/// Between turns the user's message names the thread, reaches the clients as theirs and
+/// ends the goal's wait for them.
+#[tokio::test]
+async fn a_message_between_turns_names_the_thread_and_ends_the_goals_wait() {
+    let state = thread_state("between_turns").await;
+    state.set_goal("thread", "build it").await.unwrap();
+    sqlx::query("UPDATE goals SET awaiting_user = 1")
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let config = live_config("runner_config");
+    let answer = vec![Step::Text("ok"), Step::Done];
+    let provider = provider(vec![answer.clone(), answer]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    input.send("hello there").await.unwrap();
+    drop(input);
+
+    runner.run().await;
+
+    let events = drain(&mut output).await;
+    assert!(events.iter().any(
+        |event| matches!(event, ThreadEvent::TitleChanged { title } if title == "hello there")
+    ));
+    assert!(events.iter().any(
+        |event| matches!(event, ThreadEvent::UserMessage(message) if message.content == "hello there")
+    ));
+    let waiting: bool =
+        sqlx::query_scalar("SELECT awaiting_user FROM goals WHERE thread_id = 'thread'")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert!(!waiting);
 }
 
 #[tokio::test]

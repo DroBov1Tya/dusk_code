@@ -28,7 +28,7 @@ use crate::tools::{
     tool::{Tool, ToolContext, ToolKind},
 };
 
-use super::process::{CommandEnv, Running};
+use super::process::{CommandEnv, Running, exit_line, report};
 use super::shape::Shaped;
 use crate::runtime::jobs::Launch;
 
@@ -336,19 +336,12 @@ async fn run(
         () = detached => return Ok(Ran::Detached(running)),
     };
     let (stdout, stderr, failure) = running.collect().await;
-    let code = match status.code() {
-        Some(code) => code.to_string(),
-        None => "none (terminated by a signal)".into(),
-    };
-    let mut output = format!("exit code: {code}");
-    for (name, text) in [("stdout", stdout), ("stderr", stderr)] {
-        if !text.is_empty() {
-            output.push_str(&format!("\n{name}:\n{text}"));
-        }
-    }
-    if let Some(failure) = failure {
-        output.push_str(&format!("\n{failure}"));
-    }
+    let output = report(
+        exit_line(status.code()),
+        &stdout,
+        &stderr,
+        failure.as_deref(),
+    );
     Ok(Ran::Done(crate::tools::ToolResult {
         content: output,
         is_error: !status.success(),

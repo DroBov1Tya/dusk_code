@@ -120,7 +120,7 @@ pub(super) async fn send(
         .send()
         .await;
     // The error of reqwest names the URL, which may hold a key: it is not passed on.
-    let mut response = match sent {
+    let response = match sent {
         Ok(response) => response,
         Err(error) if error.is_timeout() => {
             return Err(refuse(stream, 504, "the origin did not answer in time".into()).await);
@@ -128,19 +128,12 @@ pub(super) async fn send(
         Err(_) => return Err(refuse(stream, 502, "the origin could not be reached".into()).await),
     };
     let status = response.status();
-    let mut answer = Vec::new();
-    loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) if answer.len() + chunk.len() <= MAX_BODY => {
-                answer.extend_from_slice(&chunk)
-            }
-            Ok(Some(_)) => {
-                return Err(refuse(stream, 502, "the answer is too large".into()).await);
-            }
-            Ok(None) => break,
-            Err(_) => return Err(refuse(stream, 502, "the answer broke off".into()).await),
-        }
-    }
+    let headers = response.headers().clone();
+    let answer = match crate::net::read_limited(response, MAX_BODY).await {
+        Ok(answer) => answer,
+        // The two errors say "the answer is too large" and "the answer broke off".
+        Err(error) => return Err(refuse(stream, 502, error.to_string()).await),
+    };
     let secrets: Vec<&[u8]> = used.iter().map(|key| key.0.as_bytes()).collect();
     let mut out = format!(
         "HTTP/1.1 {} {}\r\n",
@@ -148,7 +141,7 @@ pub(super) async fn send(
         status.canonical_reason().unwrap_or("")
     )
     .into_bytes();
-    for (name, value) in response.headers() {
+    for (name, value) in &headers {
         if HOP_BY_HOP.contains(&name.as_str()) {
             continue;
         }

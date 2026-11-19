@@ -61,7 +61,7 @@ fn place(
 fn send(ws: &Workspace, cx: &mut Context<Workspace>) -> AnyElement {
     let working = ws
         .shown_chat()
-        .is_some_and(|chat| chat.working || chat.agents.values().any(|agent| agent.working));
+        .is_some_and(|chat| chat.working || chat.agents.values().any(|agent| agent.working()));
     let send = Button::new("send")
         .primary()
         .rounded(ButtonRounded::Size(px(999.)))

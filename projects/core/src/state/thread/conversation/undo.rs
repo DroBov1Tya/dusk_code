@@ -1,28 +1,32 @@
 //! Taking a thread back to before one of the user's messages: that message and all
 //! after it go, with the turns that answered them, the compactions that summed them up,
-//! and the usage of the model calls that read them. The search index is kept in step,
-//! since it reads its text from the messages.
+//! and the usage of the model calls that read them. The search index follows the
+//! messages by a trigger.
 
 use anyhow::{Context, Result, ensure};
 use sqlx::Row;
 
 use super::State;
-use crate::state::MessageRole;
 
 pub use dusk_protocol::thread::UndoPoint;
 
 impl State {
     /// The user's own messages, oldest first; messages from agents are not points.
     pub async fn undo_points(&self, thread_id: &str) -> Result<Vec<UndoPoint>> {
-        let messages = self.list_messages(thread_id).await?;
-        Ok(messages
-            .into_iter()
-            .filter(|message| message.role == MessageRole::User && message.from_thread_id.is_none())
-            .map(|message| UndoPoint {
-                sequence: message.sequence,
-                text: message.content,
+        let rows: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT sequence, content FROM messages
+             WHERE thread_id = ? AND role = 'user' AND from_thread_id IS NULL ORDER BY sequence",
+        )
+        .bind(thread_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("list the undo points")?;
+        rows.into_iter()
+            .map(|(sequence, text)| {
+                let sequence = sequence.try_into().context("negative message sequence")?;
+                Ok(UndoPoint { sequence, text })
             })
-            .collect())
+            .collect()
     }
 
     /// Removes the user message at `sequence` and everything after it; returns its text.
@@ -61,9 +65,6 @@ impl State {
                 OR response_message_id IN
                     (SELECT message_id FROM messages WHERE thread_id = ?1 AND sequence >= ?2))",
             "DELETE FROM compactions WHERE thread_id = ?1 AND through_sequence >= ?2",
-            "INSERT INTO messages_search (messages_search, rowid, content, tool_calls_json)
-             SELECT 'delete', rowid, content, tool_calls_json FROM messages
-             WHERE thread_id = ?1 AND sequence >= ?2",
             "DELETE FROM messages WHERE thread_id = ?1 AND sequence >= ?2",
         ];
         for step in steps {
@@ -184,6 +185,10 @@ mod tests {
         assert_eq!(left.len(), 2);
         let found = state.search_messages("thread", "second", 10).await.unwrap();
         assert!(found.is_empty(), "the index forgot them");
+        sqlx::query("INSERT INTO messages_search (messages_search) VALUES ('integrity-check')")
+            .execute(&state.pool)
+            .await
+            .expect("the index holds no deleted message");
         assert!(state.latest_compaction("thread").await.unwrap().is_none());
         // The thread goes on as before.
         exchange(&state, "third question", "third answer").await;

@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, time::Duration};
 
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use reqwest::{
     Client, RequestBuilder, Response, Url,
     header::{ACCEPT, AUTHORIZATION, HeaderValue},
@@ -23,7 +23,10 @@ use crate::{
 
 use dusk_protocol::model::CheckFailure;
 
-use super::{request::CompletionRequest, stream::CompletionStream};
+use super::{
+    request::CompletionRequest,
+    stream::{self, CompletionStream},
+};
 
 const MAX_ERROR_BYTES: usize = 64 * 1024;
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -62,14 +65,7 @@ fn positive_output_limit<'de, D: Deserializer<'de>>(value: D) -> Result<Option<u
 impl OpenAiCompatible {
     pub fn new(config: &ProviderConfig) -> Result<Self> {
         let base_url = http::base_url(&config.base_url, config.allow_http)?;
-        let authorization = if config.api_key.0.is_empty() {
-            None
-        } else {
-            let mut value = HeaderValue::from_str(&format!("Bearer {}", config.api_key.0))
-                .map_err(|_| anyhow!("invalid provider API key"))?;
-            value.set_sensitive(true);
-            Some(value)
-        };
+        let authorization = http::sensitive_header(&config.api_key.0, "Bearer ")?;
         let client = http::client()?;
         Ok(Self {
             client,
@@ -84,7 +80,7 @@ impl OpenAiCompatible {
     pub async fn list_models(&self) -> Result<Vec<Model>> {
         // Do not retain reqwest errors or response bodies in error chains: either
         // can contain endpoint input or values echoed by an upstream server.
-        let mut response = self
+        let response = self
             .with_authorization(self.client.get(self.models_url.clone()))
             .header(ACCEPT, "application/json")
             .timeout(CATALOGUE_TIMEOUT)
@@ -97,24 +93,9 @@ impl OpenAiCompatible {
         if !response.status().is_success() {
             return Err(http::catalogue_refused(response.status()));
         }
-        ensure!(
-            response
-                .content_length()
-                .is_none_or(|length| length <= MAX_CATALOGUE_BYTES as u64),
-            "provider model catalogue is too large"
-        );
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
+        let bytes = crate::net::read_limited(response, MAX_CATALOGUE_BYTES)
             .await
-            .map_err(|_| anyhow!("cannot read provider model catalogue"))?
-        {
-            ensure!(
-                chunk.len() <= MAX_CATALOGUE_BYTES - bytes.len(),
-                "provider model catalogue is too large"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
+            .map_err(|error| error.about("provider model catalogue"))?;
         let catalogue: ModelCatalogue = serde_json::from_slice(&bytes).map_err(|_| {
             http::check_failed(
                 CheckFailure::NotCompatible,
@@ -123,20 +104,10 @@ impl OpenAiCompatible {
         })?;
         let mut models = BTreeMap::new();
         for model in catalogue.data {
-            ensure!(
-                !model.id.trim().is_empty() && !model.id.chars().any(char::is_control),
-                "provider returned an empty or invalid model ID"
-            );
+            http::check_model_id(&model.id)?;
             models.insert(model.id, (model.max_input_tokens, model.max_output_tokens));
         }
-        Ok(models
-            .into_iter()
-            .map(|(id, (context_window, max_output))| Model {
-                id,
-                context_window,
-                max_output,
-            })
-            .collect())
+        Ok(http::models(models))
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
@@ -178,7 +149,7 @@ impl OpenAiCompatible {
             http::is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(CompletionStream::new(response, effort_off))
+        Ok(stream::stream(response, effort_off))
     }
 
     fn with_authorization(&self, request: RequestBuilder) -> RequestBuilder {
@@ -189,23 +160,10 @@ impl OpenAiCompatible {
     }
 }
 
-async fn rejects_effort_off(mut response: Response) -> bool {
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_ERROR_BYTES as u64)
-    {
+async fn rejects_effort_off(response: Response) -> bool {
+    let Ok(bytes) = crate::net::read_limited(response, MAX_ERROR_BYTES).await else {
         return false;
-    }
-    let mut bytes = Vec::new();
-    loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) if chunk.len() <= MAX_ERROR_BYTES - bytes.len() => {
-                bytes.extend_from_slice(&chunk);
-            }
-            Ok(None) => break,
-            _ => return false,
-        }
-    }
+    };
     serde_json::from_slice::<Value>(&bytes)
         .ok()
         .and_then(|body| body.get("error").cloned())

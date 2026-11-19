@@ -25,10 +25,11 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         reasoning: String::new(),
     };
     let mut chat = Transcript::default();
-    chat.items = vec![
+    chat.extend(vec![
         Item::User {
             text: "How does a request travel through the importer, and is it safe to ship?".into(),
             sequence: Some(1),
+            answered: Vec::new(),
         },
         said("The importer has three layers."),
         block(serde_json::json!({ "flow": { "layers": [
@@ -65,7 +66,7 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         ),
         block(serde_json::json!({ "choices": {
             "labels": ["Fix the writer", "Show the test", "Not now"] } })),
-    ];
+    ], 0);
     let turn = |waiting| Turn {
         turn_id: "turn".into(),
         thread_id: "shot".into(),

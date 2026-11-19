@@ -516,6 +516,15 @@ mod tests {
     use super::*;
     use crate::{state::MessageRole, testing::temp_state};
 
+    #[tokio::test]
+    async fn a_turn_reads_its_spend_by_the_turn_index() {
+        let state = temp_state("turn_spend_plan").await;
+        let sql = concat!("EXPLAIN QUERY PLAN SELECT ", turn_row!(), " FROM turns");
+        let plan = crate::testing::query_plan(&state, sql).await;
+        assert!(!plan.contains("SCAN u"), "{plan}");
+        assert!(plan.contains("model_usage_turn"), "{plan}");
+    }
+
     async fn thread(name: &str) -> State {
         let state = temp_state(name).await;
         state.create_thread("thread", "test").await.unwrap();

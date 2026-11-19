@@ -469,34 +469,30 @@ impl App {
         if self.local_unsent.iter().any(|item| item.id == message.id) {
             return;
         }
-        self.transcript.push(Entry::Notice {
-            local_id: Some(message.id.clone()),
-            text: format!(
+        self.transcript.local(
+            Some(message.id.clone()),
+            format!(
                 "Saved locally \u{00B7} not sent \u{00B7} /resend\n{}",
                 message.content
             ),
-            tone: Tone::Info,
-        });
+            Tone::Info,
+        );
         self.local_unsent.push(message);
     }
 
     pub fn mark_local_sent(&mut self, id: &str) {
         self.local_unsent.retain(|item| item.id != id);
-        for entry in self.transcript.entries_mut() {
-            if let Entry::Notice {
-                local_id: Some(local_id),
-                text,
-                ..
-            } = entry
-                && local_id == id
-            {
-                *text = text.replacen(
+        self.transcript.change_locals(|local| {
+            let mine = local.local_id.as_deref() == Some(id);
+            if mine {
+                local.text = local.text.replacen(
                     "Saved locally \u{00B7} not sent \u{00B7} /resend",
                     "Queued by explicit resend",
                     1,
                 );
             }
-        }
+            mine
+        });
         if let Some(Panel::Unsent { selected }) = &mut self.panel {
             *selected = (*selected).min(self.local_unsent.len().saturating_sub(1));
         }
@@ -507,7 +503,7 @@ impl App {
         if let Some(Entry::User { text: shown, .. }) = self.transcript.entries.last()
             && *shown == text
         {
-            self.transcript.entries_mut().pop();
+            self.transcript.remove(self.transcript.entries.len() - 1);
         }
         if self.input.is_empty() {
             self.input.set(text);

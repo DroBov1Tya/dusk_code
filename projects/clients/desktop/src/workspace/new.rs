@@ -203,6 +203,7 @@ impl Workspace {
             attachments: Vec::new(),
             pastes: Vec::new(),
             sent_rows: Vec::new(),
+            rows_key: None,
             navigator_open: false,
             secret_inputs: Vec::new(),
             agent_path: Vec::new(),

@@ -23,6 +23,22 @@ pub struct Permissions {
     pub sockets: Vec<String>,
     /// Keys of its own the user gives it, and where each may be sent.
     pub keys: Vec<KeyUse>,
+    /// Only for a plugin that provides a contract: the folder of the project a call is
+    /// about, for that call only.
+    pub project: ProjectAccess,
+    /// Only for a plugin that provides a contract (macOS): the login keychain, for an
+    /// item a tool of the user's keeps there.
+    pub keychain: bool,
+}
+
+/// How much of the project a contract call is about the plugin may reach.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectAccess {
+    #[default]
+    None,
+    Read,
 }
 
 /// One of the plugin's own keys. The user's provider keys are never among them.
@@ -67,6 +83,29 @@ impl Permissions {
                 ),
             });
         }
+        if self.keychain {
+            lines.push(
+                "read items of your login keychain that macOS lets it read (gh keeps its token there)"
+                    .into(),
+            );
+        }
+        if self.project == ProjectAccess::Read {
+            lines.push("read the folder of the project it is asked about, while it answers".into());
+        }
         lines
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_and_keychain_have_their_lines_and_default_off() {
+        assert!(Permissions::default().lines().is_empty());
+        let read: Permissions =
+            serde_json::from_str(r#"{"project":"read","keychain":true}"#).unwrap();
+        assert_eq!(read.lines().len(), 2);
+        assert!(serde_json::from_str::<Permissions>(r#"{"project":"write"}"#).is_err());
     }
 }

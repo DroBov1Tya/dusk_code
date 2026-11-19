@@ -115,6 +115,29 @@ impl Running {
     }
 }
 
+/// The first line of a finished command's report.
+pub fn exit_line(code: Option<i32>) -> String {
+    match code {
+        Some(code) => format!("exit code: {code}"),
+        None => "exit code: none (terminated by a signal)".into(),
+    }
+}
+
+/// A command's result as the model reads it: `first`, then each stream that has text
+/// and the read failure. The repeat detector and the terminal's jobs panel parse this.
+pub fn report(first: String, stdout: &str, stderr: &str, failure: Option<&str>) -> String {
+    let mut output = first;
+    for (name, text) in [("stdout", stdout), ("stderr", stderr)] {
+        if !text.is_empty() {
+            output.push_str(&format!("\n{name}:\n{text}"));
+        }
+    }
+    if let Some(failure) = failure {
+        output.push_str(&format!("\n{failure}"));
+    }
+    output
+}
+
 /// Keeps reading past the cap so a chatty child never blocks on a full pipe. A child
 /// that left the group can inherit a pipe; it cannot hold the reader past the reaping.
 async fn read(
@@ -260,6 +283,19 @@ impl HeadTail {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The repeat detector and the terminal's jobs panel parse this text.
+    #[test]
+    fn a_report_frames_each_stream_and_the_failure() {
+        assert_eq!(
+            report(exit_line(Some(2)), "out", "", Some("stderr reader stopped")),
+            "exit code: 2\nstdout:\nout\nstderr reader stopped"
+        );
+        assert_eq!(
+            report(exit_line(None), "", "err", None),
+            "exit code: none (terminated by a signal)\nstderr:\nerr"
+        );
+    }
 
     #[test]
     fn a_long_stream_keeps_its_start_and_end() {

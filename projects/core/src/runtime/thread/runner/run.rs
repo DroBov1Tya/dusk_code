@@ -284,8 +284,8 @@ impl ThreadRunner {
                 // It goes on as it stood: a compaction would cut its step in two.
                 Some(turn) => Ok(Some((turn, true))),
                 None => match self.agent.compact_if_needed(None, &mut self.inbox).await {
-                    Some(stop) => Err(stop),
-                    None => Ok(self.agent.start_turn().await?.map(|turn| (turn, false))),
+                    Err(stop) => Err(stop),
+                    Ok(_) => Ok(self.agent.start_turn().await?.map(|turn| (turn, false))),
                 },
             };
             let stop = match turn {

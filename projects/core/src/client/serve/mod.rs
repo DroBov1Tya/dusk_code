@@ -213,6 +213,7 @@ impl Server {
         timetable.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut repositories = tokio::time::interval(crate::project::forge::TRACK_PERIOD);
         repositories.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut routed = self.runtime.contracts().revision();
         let last = loop {
             tokio::select! {
                 call = calls.recv() => match call {
@@ -286,7 +287,14 @@ impl Server {
                     self.close_orphans().await;
                 }
                 _ = timetable.tick() => self.run_due_schedules().await,
-                _ = repositories.tick() => self.track_repositories(),
+                _ = repositories.tick() => {
+                    let revision = self.runtime.contracts().revision();
+                    if revision != routed {
+                        routed = revision;
+                        self.pulls.all_due();
+                    }
+                    self.track_repositories();
+                }
             }
         };
         self.terminals.close_all();
