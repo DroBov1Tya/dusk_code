@@ -1,2 +1,0 @@
-Fixed
-Clicks on a plugin's phone screen did nothing: the overlay that records where the screen is drawn sat below the picture, so no press fell inside it. It is pinned over the screen now, and the screen sends touches by phase as they happen (`touch`, `scroll`, `key`, `text` events, in order), so a press, a long press, a drag, the wheel, keys and typed text reach the iOS Simulator. MCP tool calls tell the server the chat's project folder in `_meta`, so the simulator installs only apps built there.

@@ -1,2 +1,0 @@
-Changed
-The desktop app moves with a little more care, briefly (120-250 ms, eased out) and only once, never while idle or on scroll, and not at all with reduced motion: a page switch (chat, settings, Workshop and the rest) fades in, new messages and blocks fade and rise in (not the ones already stored when a chat opens), a module of the right column dragged or moved with Alt+Up/Down slides into its new place, and the model, mode and plugin list menus open like the other menus.

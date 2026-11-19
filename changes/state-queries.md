@@ -1,2 +1,0 @@
-Fixed
-The chat list, every turn loaded, the plan view, picture cards, agent answers and deleting a chat no longer read whole threads or whole tables: new indexes and single-row queries find what they need. The token panel and the goal checks now end on a damaged database whose agent threads point at each other, as the other walks of the thread tree already did, and the task board takes `#id` as printed and prefers an exact id.

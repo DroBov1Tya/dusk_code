@@ -6,6 +6,155 @@ branches after end-to-end testing. Entries of unreleased changes live in `change
 
 ## Unreleased
 
+## 0.76.0 - 2026-11-19
+
+### Added
+
+- Settings > Safety configures auto mode's arbiter: the model it judges on (empty uses the chat's) and its review prompt, shown in full with "Reset to default" and capped at 8000 characters. The prompt only guides: the answer format is fixed in code, an unclear or failed answer (or `ASK`) now goes to the user instead of denying, and the arbiter is still only asked about what the approval mode leaves to it.
+
+- A chat can be linked from another one: "Copy link" in the desktop sidebar menu and the web chat menu, or `/link` in the terminal, copies `dusk://thread/<id>`; pasted into a message, it lets the agent read that chat's messages, and only a chat whose link the user wrote, through `read_history` with `thread`, read-only and paged as before.
+
+- Every connector row now has a letter avatar: the first letter of its name on a tile whose color the name picks from eight theme colors, the same on every run, in the desktop connector cards and the web MCP list. A bundled icon slot is ready for icons from the signed catalog.
+
+- Plugins can serve pull requests and CI for a host (switch plugin_contracts, off by default).
+
+- Fork from a message: every message of the user and the agent shows "Fork from here" on hover, in the desktop app and the browser. It opens a new chat in the same project and mode, titled "<title> (fork)", holding the history up to and including that message with its tool results and attached files. When the chat was compacted before that message, the new one starts from that summary and the messages after it. Nothing running comes along. Protocol 35: `ThreadRequest::ForkAt { thread_id, message_id, cwd }`.
+
+- At the end of a turn the agent can propose your likely next message, such as a yes to its question or "run the tests". It shows greyed in the empty message box of the desktop app, the browser and the terminal; Tab fills it in, typing hides it, Esc puts it away. It is never sent on its own and goes stale as soon as you send something or a new turn starts.
+
+- The protocol is published as a JSON Schema in `docs/api/schema.json`, generated from the wire types, with the handshake types first. CI regenerates it and fails when it differs, and, while `OLDEST_PROTOCOL` is unchanged, when a property or variant was removed or a property became required, so the schema can only grow.
+
+- Pull requests in more detail. A link in a chat to a pull request of the project's own GitHub repository is drawn in the desktop app as a chip with its state and title; under the pointer a card shows the author, when it was opened, the lines and files it changes and its state. A pull request in Changes unfolds to every one of its checks, failed first, with its workflow and time; a line opens the check's page, and the web client lists them under the row too. The core reads one pull request by number only from the project's own repository, keeps the answer a few minutes and reads each at most once at a time.
+
+- Pull requests and their CI in the desktop's Changes module: the work tree's line with the repository name and its added and removed lines, then one row per pull request of the current branch and the project's other open ones, with its state (open, draft, merged, closed), title, number and lines, and a dot for its checks (passed, running, failed). A click opens the pull request on GitHub. The web client's project page shows the same list.
+  A chat in the desktop sidebar shows a pull request icon with a count when its project's branch has pull requests, tinted by their worst checks; its tooltip names them.
+  The core reads this through the GitHub CLI and keeps it fresh while a window shows the project: every 30 seconds while a check runs, every 5 minutes otherwise, at once after a change made through the app, and later after each failure. Without `gh`, signed out, or off GitHub, the list is left out with a quiet note.
+
+- A question the agent asks has a Skip button in the desktop, browser and terminal (Ctrl+S): it skips only that question, the next one shows, and the agent is told to decide that one itself and say what it assumed. Esc and Decline work as before.
+
+- A shell code block's Run button turns while its command runs; under the pointer it becomes an X that stops the command and everything it started, and the command card says it was stopped. A command run from a code block no longer holds up the app's other requests to the core while it runs.
+
+- Skills now improve in practice: one built-in skill, skill-evolve, replaces skill-improve and skill-from-practice; loading a skill reminds the agent to update it when what worked differs; every skill change a tool makes, a deletion included, is shown in the chat with its diff and can be undone.
+
+- TEAM mode: the chat writes a plan and the core runs it with a team. Each task goes to a member with a card, an allowlist of tools and the chat's approval mode; a command gate is run by the core and sends a failed task back twice at most; a task waiting for your confirmation no longer stalls the team and can be confirmed from the desktop plan row; a role can answer on its own model (`team.models`); what members and gates print is cleared of secrets before the lead reads it; and a team goes on after a restart. Other modes keep classic subagents; `limits.plan_graph: false` switches teams off.
+
+- The web client catches up with the desktop: a clean install greets you with one "connect my own AI" button and a short form; a plan strip sits above the composer with a confirm for tasks waiting on you, and finished tasks fold under "Done (N)"; pinned messages show in a drawer at the top of the chat; the composer has a panel tab with the folder and one ring for the plan's usage limits; links to the project's own pull requests become chips with a card; a failed turn says so quietly with "Send again"; choice buttons are square; pull request rows show a passed/total CI count that lists the checks on a click.
+
+- The desktop app greets a clean install, one with no provider connected, with one large "I want to connect my own AI" button; it opens a form with a name, an address and a token, which the core checks and saves as an OpenAI-compatible provider under the name typed (the address's host when it is left empty), the token going to the keychain, and the new chat starts on the server's first model. A failed check says plainly whether the address cannot be reached, the token was refused or the server is not OpenAI-compatible: a provider check now carries that kind as `failure` next to its error text. "Not now" hides the screen until the next start, and it does not come back once a provider is connected.
+
+- The agent can suggest from the Workshop: `search_workshop` finds plugins, skills, packs, agents and connectors in the store, and `suggest_from_workshop` puts a card of up to six of them in the chat, when the user asks or a listing clearly helps. The rows are the store's own listings, never the model's text, and show whether each is installed now. In the desktop app a row's Add opens the Workshop's install with its confirmation, and a click on a row opens the listing; the browser shows the card with each listing's state, and the terminal lists it with `/plugins store <name>`, which now opens the Workshop narrowed to that name. Neither tool installs or switches on anything.
+
+- Settings, Workshop lists the repositories you added beside the official store: add one by its signed list's https address or a GitHub repository with its key (checked first, then read again by the core), see whether each list was read or why it was refused, and remove it. Their items are Community whatever the list claims; lists are capped at 2000 entries and 20 s.
+
+- The Workshop's listing page has a Contents tab: the file tree of the copy installed here or of the checked package, with a read-only preview of a text file (Markdown drawn, front matter apart; programs show their size only), answered by the core only for a path it listed, escaped and capped at 256 KiB. Single skills are offered on the Skills page under its own Discover | Installed switch (`StoreRequest::List` takes `kinds`), while packs and plugins stay under Plugins; a skill the Workshop installed is marked as from there. A format 3 plugin entry names the MCP servers (`mcp`), programs and skills it brings; they are lines of what the user agrees to, checked against its `plugin.yml`, shown on a Connectors tab with "Not added", "Added" or "Yours is used", and grouped in the install window as what runs on this computer or sends data elsewhere. A card's byline no longer carries the updated date, and each page opens on Discover while nothing is installed there.
+
+- The Workshop reads list format 3, which says who made each entry (author, license, origin, categories), and still reads format 2. In the official list, work by somebody else than duskcode is marked Verified instead of Official; a list can only lower a tier, never raise it. Covers and screenshots whose header declares more pixels than 2400x1260 (3200x2000 for a screenshot), or an animated WebP, are refused before anything decodes them. The desktop Workshop shows "by author · version · N skills · updated date" on each card and page, categories as chips, the license and origin, a "Workshop  Discover | Installed" switch, and Overview and Skills tabs on a pack's page; the web client shows the author, license and categories.
+
+- A skill or pack may come straight from its author's GitHub repository: the list pins a commit and the SHA-256 of every file, "Install from source" fetches exactly those files and refuses any changed, extra or missing one before writing anything, and the install keeps its author, license and source.
+
+### Changed
+
+- While the agent works, the chat shows what kind of work it is, each with its own quiet look: a spark that changes shape beside a shimmering word while it thinks, nothing but the growing text while it writes, three lines being written while it plans, a small live mark on the running step, a dot for each agent at work, a steady ring while it waits for you, and lines drawn together while it compacts. The desktop app, the browser and the terminal choose the kind the same way, and everything stands still under reduced motion.
+
+- A pull request's CI in Changes is a small pill with a dot and "passed/total" on the row's second line, with a tooltip saying whether checks are in progress, passed or failed. Its window, "CI monitoring", groups the checks by state (Failed, In progress, Queued, Passed, Skipped) with a count each; a group unfolds to its checks, and Failed starts open.
+
+- The three-dot pill over the message box is now a small tab on the box's top edge; it opens a panel attached to the box with the chat's project folder (a click opens it in the file manager) and small rings for the context and each rate limit window the provider reports (5 hours, week, requests and tokens per minute), their numbers on hover. Cmd+E (Ctrl+E) opens and closes it.
+  The context ring no longer stands beside the box; it lives in that panel.
+  Pinned messages moved to a thin "N pinned" handle at the top of the chat; a click pulls their list down over the chat, a second click or Escape folds it.
+  The once/every-time button of a source now says that unpinning stops sending it with every request.
+  The tab on the box's top edge shows only while the pointer is over the box or the tab itself, not anywhere over the chat; it stays while the panel is open or the tab has the keyboard.
+
+- The real mouse is its own tool, `physical_input` (click, double, right click, scroll), off until switched on under Tools and asked for each use; `click` only presses through Accessibility on macOS, `scroll` is gone, and an old click asking for the pointer is refused with a message naming the new tool.
+  The agent cursor glides to each Accessibility press (250 to 400 ms by distance, eased out), ripples where it lands and fades after three idle seconds; a missing Accessibility permission and a control that cannot be pressed now say what to do next.
+
+- The page of connectors, skills, plugins, tools and agents is called Customize in the desktop app and on the web; Connectors is the name of its shelf of MCP servers only (the web's MCP tab is called Connectors too). A `gui.json` whose rail still names `connectors` opens Customize. Every shelf with something in the store has its own "Workshop  Discover | Installed": Connectors offers the plugins that bring an MCP server, Skills single skills and packs, Plugins plugins and Agents agents (`dusk_protocol::plugin::Scope` says which listings each shelf holds); Tools has none, since the store lists no tools. Discover on the Connectors shelf stays there instead of jumping to the Plugins Workshop, and an empty Installed list says "Nothing installed yet" with a button to that shelf's Discover.
+
+- `project_graph` is now a file map, not a code graph: it answers what lies where in the project by file and folder names, as an indented tree that folds deeper folders to `name/ (N files)` to stay under 300 lines and 12 KiB, one folder of it on `path`, or the paths matching `find` (a part of a path or a glob). It walks the folder on each call as the change ledger does and stores nothing; the agent reads files itself. The tree-sitter parsers, the background indexer and its tables are gone: migration 0039 drops `graph_files`, `graph_symbols` and `graph_refs`, and the `tree-sitter` and `tree-sitter-rust` dependencies are removed. The tool name and `limits.project_graph` stay, so saved configs still apply.
+
+- Pull requests and CI read through a neutral forge type. A project with no remote shows nothing; a project on another host shows "Pull requests on {host} come from a plugin."; a signed-out or missing gh shows a copyable `gh auth login` hint instead of "GitHub CLI is not installed or signed in".
+
+- The desktop app's surfaces now stand at three heights drawn by one rule: the page, a raised card (a hairline, with a soft shadow on a light theme and a lit top edge on a dark one) and a floating menu or window with a deep shadow. Cards, the message box, menus and windows look the same on every page.
+  A provider error in a chat is a quiet row with a thin red edge instead of a red slab across the column, and the error a chat ends with has a Send again button that sends your last message once more. A message that opens a turn has more air above it, and what a turn spent is on the line of "Worked for".
+  The side panel lists every chat once. A switch at its top, "By project | Recent", chooses between the chats under their projects (those of no project after them) and one list by last activity; the choice is remembered. A chat at work shows a small turning ring instead of a dot.
+  Every empty page says in one line what goes there and offers one button for the next step: a new chat, a new task, the Workshop, clearing the search, adding a project.
+  A Workshop listing without a cover gets one made from its name, two theme colors run into each other with the first letter large and faint, the same on every machine, instead of a grey box.
+  Rows, cards and tiles answer a press: the fill dips and the top edge sinks by a pixel until release.
+  On macOS the app reads the system's "Reduce motion" setting at start and then draws its animations at rest.
+
+- Desktop: a pull request in Changes shows its checks as a dot and a "passed/total" count; a click opens a window over the column with every check, kept live, in place of the list that unfolded under the row and the hover card. The right column's modules can be reordered by the grip that shows on a header under the pointer, or with Alt+Up and Alt+Down on a focused header; the order is kept in `gui.json`.
+
+- The logo is the new violet icosahedron mark: the app icon on macOS and Linux (all icns and theme sizes), the title bar and welcome mark, the README, and the browser client favicon (16 and 32 px) and touch icon (180 px).
+
+- The subagents' mascot is Sundown, a small sun half set on its horizon, in place of the pixel fox, in Desktop and the browser. Each activity has its own calm rhythm (thinking breathes under orbiting motes, writing bobs, searching darts its eyes under a turning light, reading traces a line, planning shuts its eyes under three stars, running rises with turning rays); a change of activity blends over 280 ms, done hops clear of the horizon once and failed sets below it and greys, and both then hold still. Mascots side by side blink and glance on their own.
+
+- The desktop app moves with a little more care, briefly (120-250 ms, eased out) and only once, never while idle or on scroll, and not at all with reduced motion: a page switch (chat, settings, Workshop and the rest) fades in, new messages and blocks fade and rise in (not the ones already stored when a chat opens), a module of the right column dragged or moved with Alt+Up/Down slides into its new place, and the model, mode and plugin list menus open like the other menus.
+
+- A nightly pre-release builds and publishes only the programs whose code changed since the previous tag, and its notes say which and where the rest are; full releases still build everything.
+
+- The approval mode once shown as arbiter is called auto in every client; saved settings and chats keep working, and the terminal still takes `arbiter`.
+  The plan strip in the desktop chat keeps each task's status in one column at the right edge.
+  The desktop Todo panel shows open tasks first and folds finished ones under "Done (N)", closed until clicked.
+  A chat shows it is at work in the desktop and web sidebars while its subagents or team members work, even after its own turn has ended.
+  On the desktop Advanced page, clicking a limit's number lets you type it: Enter or leaving the box sets it within the limit's bounds, Escape keeps the old one.
+  A picture in the desktop chat opens over the whole window: wheel, pinch or + and - to zoom, 0 to fit, drag to move, Escape or a click beside it to close.
+
+- A step reuses the context the size check after the previous step just read, instead of loading the whole thread again, unless a message joined in between.
+
+- System usage counts the processes the app started (MCP servers, plugin programs, commands, terminals) along with its own: memory and CPU show the total, and the desktop names each part.
+
+- TEAM mode: when the lead runs the plan in a chat whose approval mode asks, the user is asked once, in the usual approval card, to let the plan's gate commands run unasked; the yes covers exactly the listed lines for that team, a gate added or changed later waits for the lead until the next run asks again, and a no leaves gated tasks to the lead's review as before.
+  A chat keeps the mode the user last wrote to it in: switching the mode for another chat no longer pauses a team, and a lead woken by its team keeps TEAM mode.
+  A member's hand-in that changed files outside its task's `files` waits for the lead with the paths named, and its gate does not run; ignored paths such as build output never count.
+  Stopping a team kills the gate commands it is running. A gate runs at most `limits.team_gate_seconds` (300 by default) and a team at most `limits.team_max_gate_runs` gates (128 by default).
+  Desktop: a long agent report in the chat list no longer makes the list jump when it scrolls back into sight.
+
+- The desktop window had a second pass for evenness. The context ring is back beside the message box, with its percent inside; the panel over the box shows one ring for the plan's limits, the fuller of its windows, and a card under the pointer with a row and a bar for each window. The row "Using ChatGPT plan" over the box is gone: the card has the way to the plan's page. A request for approval has one filled button, the yes; Deny is an outline. The working row's counts stand at even distances and do not step as they tick. A terminal's sixteen colors, its selection and the panel's shade come from the theme, each theme its own; selected text in fields and messages is lighter again. The review page's buttons are the size of its fields. An agent's card shows two lines of what it is for, all cards one height, and what the tree could not read is a quiet group under it. Connectors' states stand in one column. Text sizes that stood beside the type scale now use it.
+
+- The desktop window had a pass for evenness. The plan strip, a request for approval and a question now stand at the message box's own edges at every window width; the plan's rows have air under the last one and approval buttons are the size of the other controls. The panel's rings have a track that can be seen, so they read as meters. Reply options under an agent's question have a button's corners instead of a pill's. The tab on the message box's upper edge is out of sight until the pointer is over the chat (it stays while the panel is open or the keyboard is on it) and has the panel's color. The dot of a pull request's checks opens a "CI monitoring" card under the pointer: how many passed, run and failed, and a way to the checks' page. Selected text is easier to see, in the terminal too; the terminal's text starts where its tabs do. Pictures in the chat have round corners, the chevrons of a turn's rows stand in one column, a task without items draws no empty bar in the Todo, and the Connectors, AI and settings pages start and align alike.
+
+- The default Dusk theme has softer, warmer off-white text and slightly warmer surfaces.
+
+### Fixed
+
+- Taking in a message and its effect on the goal (another agent's message makes proofs stale, the user's ends a wait for them) now happen together, so a crash between them no longer loses or repeats the goal change.
+
+- An approval card no longer grows past the window with a long command: the command shows three lines and scrolls inside its box (lines wrap), "Show all" opens it up to the room the dock has, and the dock takes at most half the window, so Allow and Deny stay in view. Each command of a plan's gate approval gets the same box.
+
+- A pending commit status of a pull request is listed with the queued checks, as the GitHub plugin lists it, not with the running ones.
+
+- A long first line in a chat code block now wraps before the Copy and Run icons in the corner instead of running under them.
+
+- A pull request a plugin may have made is never reported as "could not be read": the plugin's own words are shown, or that it may have been made and to check the forge. Its page must be on the forge's host.
+
+- With plugin_contracts off a contract plugin is not confined at all, so no broker listens for it and no "cannot start here" shows.
+
+- Scrolling up through a chat with long answers no longer throws the view to another message: the desktop keeps each message's parsed text while the chat is shown, so a long answer scrolled back into sight comes at its real height instead of empty for a frame.
+  In the desktop terminal, Tab and Shift+Tab go to the shell (completion works) instead of moving the focus, and away from a Mac Control+C and the window's other Control shortcuts reach the shell while it has the keyboard.
+  The desktop terminal selects text with the mouse: drag for cells, double-click for a word, triple-click for a line, Shift-click to extend; Cmd+C (Ctrl+Shift+C) copies it.
+
+- Clicks on a plugin's phone screen did nothing: the overlay that records where the screen is drawn sat below the picture, so no press fell inside it. It is pinned over the screen now, and the screen sends touches by phase as they happen (`touch`, `scroll`, `key`, `text` events, in order), so a press, a long press, a drag, the wheel, keys and typed text reach the iOS Simulator. MCP tool calls tell the server the chat's project folder in `_meta`, so the simulator installs only apps built there.
+
+- The mode list shows the summary of a built-in mode whose prompt file is missing or blank, from the prompt the chat actually uses.
+
+- A source sent once goes to the model in full with one request only; later steps of the same turn name it by its path instead of sending it again.
+
+- The Agents page no longer lists a warning for every agent of a Workshop pack that is not installed.
+
+- "New branch" on the review page switches to the new branch, carrying the work tree's changes along.
+  A failed commit keeps the typed message.
+
+- The chat list, every turn loaded, the plan view, picture cards, agent answers and deleting a chat no longer read whole threads or whole tables: new indexes and single-row queries find what they need. The token panel and the goal checks now end on a damaged database whose agent threads point at each other, as the other walks of the thread tree already did, and the task board takes `#id` as printed and prefers an exact id.
+
+- A team no longer believes its chat is in TEAM mode when the chat's stored mode is one that no longer exists; the chat runs in the setting's mode, and the team follows it.
+
+### Security
+
+- A contract plugin call runs in a session of its own, with no controlling terminal of the core's to push keystrokes into.
+
+- On Linux a contract plugin call handles every file right the kernel's Landlock knows, truncation and device ioctls among them, so it can no longer empty a file in your home or the project it may only read; where Landlock is older than Linux 6.2 such a plugin does not start and says why.
+
+- No plugin opens the keychain: a manifest that asks for `keychain` is refused, and a plugin that may connect and read is shown that it can send what it reads to the addresses it may reach.
+
 ## 0.75.0 - 2026-11-18
 
 ### Added

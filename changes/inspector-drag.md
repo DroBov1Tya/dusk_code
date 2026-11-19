@@ -1,2 +1,0 @@
-Changed
-Desktop: a pull request in Changes shows its checks as a dot and a "passed/total" count; a click opens a window over the column with every check, kept live, in place of the list that unfolded under the row and the hover card. The right column's modules can be reordered by the grip that shows on a header under the pointer, or with Alt+Up and Alt+Down on a focused header; the order is kept in `gui.json`.
