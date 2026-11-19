@@ -280,6 +280,7 @@ async fn create_refused_and_lookups_by_the_prefix() {
     for amiss in [
         json!({"pull": null}),
         json!({"pull": {"number": 4}}),
+        json!({"pull": {"number": 4, "url": "https://evil.example/o/a/pull/4"}}),
         json!({}),
     ] {
         setup.answer("create_pull", json!({ "ok": amiss }));
@@ -290,6 +291,29 @@ async fn create_refused_and_lookups_by_the_prefix() {
             error.to_string().contains("it may have been made"),
             "{error}"
         );
+    }
+    // A failure is never "could not be read": the program's words when it gave some,
+    // else that the pull request may exist.
+    let said = "a pull request for branch \"x\" already exists (the pull request may have \
+                been made, check GitHub)";
+    for (answer, shown) in [
+        (json!({"kind": "failed", "message": said}), said.to_owned()),
+        (
+            json!({"kind": "failed"}),
+            "github did not confirm the pull request; it may have been made, check github"
+                .to_owned(),
+        ),
+        (
+            json!({"kind": "unavailable"}),
+            "github did not answer in time; it may still have made the pull request, check github"
+                .to_owned(),
+        ),
+    ] {
+        setup.answer("create_pull", json!({ "error": answer }));
+        let error = create(&setup.project, "Fix", "", None, &setup.forges)
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), shown);
     }
     setup.answer(
         "pull",

@@ -188,19 +188,24 @@ impl Contracts {
             args,
         };
         let answer = call::run(served, &call, &folder, others).await;
-        let mut error = match answer {
+        let (mut error, said) = match answer {
             Ok(answer) => match (answer.ok, answer.error) {
                 (Some(ok), None) => return Ok(ok),
-                (None, Some(error)) => error,
-                _ => {
-                    return Err(failed(
-                        "its result held neither or both of ok and error".into(),
-                    ));
-                }
+                (None, Some(error)) => (error, true),
+                _ => (
+                    failed("its result held neither or both of ok and error".into()),
+                    false,
+                ),
             },
-            Err(error) => error,
+            Err(error) => (error, false),
         };
         error.message = untrusted::line(&error.message, 200);
+        if op == "create_pull" && !said {
+            // Its message is shown to the user, so it is only ever the program's own;
+            // the core's reason goes to the debug log.
+            debug!("{} {op}: {}", served.plugin, error.message);
+            error.message.clear();
+        }
         let hint = untrusted::line(&error.hint, 120);
         if hint != error.hint {
             // A hint is shown as a command to type: a cut one would mislead.

@@ -33,8 +33,8 @@ pub fn status(
     if !has("pull_prefix") {
         return Err(failed("the status answer has no pull_prefix".into()));
     }
-    let answer: StatusAnswer = serde_json::from_value(ok)
-        .map_err(|error| failed(format!("the status answer is not one: {error}")))?;
+    let answer: StatusAnswer =
+        serde_json::from_value(ok).map_err(|error| shape_error("status", &error))?;
     if !is_prefix(&answer.pull_prefix, remote) {
         return Err(failed(format!(
             "the pull prefix is not on {}/{}",
@@ -83,16 +83,16 @@ pub fn status(
 }
 
 /// The `ok` of `create_pull`: the pull made, in the shape of a pull, its text plain and
-/// capped and its links safe; only the shape is checked, not whose page it is.
+/// capped and its links safe and on the host; not whose page it is.
 pub fn made(ok: serde_json::Value, host: &str) -> Result<Pull, ContractError> {
-    let answer: PullAnswer = serde_json::from_value(ok)
-        .map_err(|error| failed(format!("the create_pull answer is not one: {error}")))?;
+    let answer: PullAnswer =
+        serde_json::from_value(ok).map_err(|error| shape_error("create_pull", &error))?;
     let Some(pull) = answer.pull.filter(|pull| pull.number > 0) else {
         return Err(failed("the create_pull answer has no pull".into()));
     };
     let page = untrusted::link(&pull.url);
-    if page.is_empty() {
-        return Err(failed("the pull made has no safe page".into()));
+    if !on_host(&page, host) {
+        return Err(failed("the pull made has no safe page on its host".into()));
     }
     Ok(cleaned(pull, page, host))
 }
@@ -108,8 +108,8 @@ pub fn pull(
     if ok.get("pull").is_none() {
         return Err(failed("the pull answer has no pull".into()));
     }
-    let answer: PullAnswer = serde_json::from_value(ok)
-        .map_err(|error| failed(format!("the pull answer is not one: {error}")))?;
+    let answer: PullAnswer =
+        serde_json::from_value(ok).map_err(|error| shape_error("pull", &error))?;
     Ok(answer
         .pull
         .filter(|pull| number.is_none_or(|number| pull.number == number))
@@ -145,11 +145,10 @@ fn checked(pull: Pull, prefix: &str, host: &str) -> Option<Pull> {
 
 /// `pull` with its text plain and capped, its page `page`, and links only on `host`.
 fn cleaned(pull: Pull, page: String, host: &str) -> Pull {
-    let on_host = format!("https://{host}/");
     let checks_url = untrusted::link(&pull.checks_url);
-    let checks_url = match checks_url.get(..on_host.len()) {
-        Some(start) if start.eq_ignore_ascii_case(&on_host) => checks_url,
-        _ => String::new(),
+    let checks_url = match on_host(&checks_url, host) {
+        true => checks_url,
+        false => String::new(),
     };
     Pull {
         number: pull.number,
@@ -180,6 +179,22 @@ fn cleaned(pull: Pull, page: String, host: &str) -> Pull {
             })
             .collect(),
     }
+}
+
+/// `link` is a page on `host` (ASCII case-insensitive).
+fn on_host(link: &str, host: &str) -> bool {
+    let start = format!("https://{host}/");
+    link.get(..start.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(&start))
+}
+
+/// Why an answer is not of its operation's shape. serde quotes the program's words (an
+/// unknown variant), so they are made plain before they reach the debug log.
+fn shape_error(op: &str, error: &serde_json::Error) -> ContractError {
+    failed(untrusted::line(
+        &format!("the {op} answer is not one: {error}"),
+        300,
+    ))
 }
 
 fn seconds(time: Option<i64>) -> Option<i64> {

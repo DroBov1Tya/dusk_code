@@ -419,6 +419,14 @@ Error kinds:
 | `unsupported` | The operation is not known to this program. | As `failed`; the core does not ask again for this operation during the run. |
 | `failed` | Anything else, and an unknown kind. | "{name} could not be read"; `message` goes to the debug log only. |
 
+For `create_pull` the core never says "could not be read": the request may have gone
+through before the failure. Any kind but `signed_out` with a `message` shows that
+message (plain, at most 200 characters), so a program says what happened in its tool's
+words and that the pull request may have been made. Without one, `unavailable` reads
+"{name} did not answer in time; it may still have made the pull request, check {name}"
+and anything else "{name} did not confirm the pull request; it may have been made,
+check {name}"; so does a call that times out or an answer that is not a pull.
+
 ### What a call may reach
 
 The program runs confined for this one call. It cannot widen this by any message.

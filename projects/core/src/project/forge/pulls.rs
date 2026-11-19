@@ -86,21 +86,29 @@ async fn ask(
             error.message
         );
         // It may well have been made: the user is told to look rather than to try again.
-        anyhow!("{name} answered with no pull request; it may have been made, check {name}")
+        anyhow!("{name} did not confirm the pull request; it may have been made, check {name}")
     })
 }
 
-/// What the user reads when the plugin `name` did not make it: a refusal says why in the
-/// forge's words; anything else as the status would say it.
+/// What the user reads when the plugin `name` did not confirm a pull request: the
+/// program's own words when it gave some (its message reaches here only from it), else
+/// that it may have been made, since the request may have gone through before the
+/// failure. Never "could not be read": that would invite a second pull request.
 fn refusal(error: &ContractError, name: &str) -> anyhow::Error {
     match error.kind {
-        ErrorKind::Refused if !error.message.is_empty() => anyhow!("{}", error.message),
-        ErrorKind::Refused => anyhow!("{name} refused it"),
         ErrorKind::SignedOut if !error.hint.is_empty() => {
             anyhow!("{name} is not signed in: {}", error.hint)
         }
         ErrorKind::SignedOut => anyhow!("{name} is not signed in"),
-        _ => anyhow!("{}", checked::note(error, name).0),
+        _ if !error.message.is_empty() => anyhow!("{}", error.message),
+        ErrorKind::Refused => anyhow!("{name} refused it"),
+        ErrorKind::Unavailable => anyhow!(
+            "{name} did not answer in time; it may still have made the pull request, \
+             check {name}"
+        ),
+        _ => {
+            anyhow!("{name} did not confirm the pull request; it may have been made, check {name}")
+        }
     }
 }
 
