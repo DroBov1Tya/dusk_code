@@ -24,7 +24,11 @@ use crate::{
     },
 };
 
-use super::{request::GenerateRequest, signatures::Signatures, stream::GenerateStream};
+use super::{
+    request::GenerateRequest,
+    signatures::Signatures,
+    stream::{self, GenerateStream},
+};
 
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_CATALOGUE_BYTES: usize = 4 * 1024 * 1024;
@@ -192,7 +196,7 @@ impl Google {
             http::is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(GenerateStream::new(response, Arc::clone(&self.signatures)))
+        Ok(stream::stream(response, Arc::clone(&self.signatures)))
     }
 
     fn with_key(&self, request: RequestBuilder) -> RequestBuilder {

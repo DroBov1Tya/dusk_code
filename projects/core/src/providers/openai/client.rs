@@ -23,7 +23,10 @@ use crate::{
 
 use dusk_protocol::model::CheckFailure;
 
-use super::{request::CompletionRequest, stream::CompletionStream};
+use super::{
+    request::CompletionRequest,
+    stream::{self, CompletionStream},
+};
 
 const MAX_ERROR_BYTES: usize = 64 * 1024;
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -163,7 +166,7 @@ impl OpenAiCompatible {
             http::is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(CompletionStream::new(response, effort_off))
+        Ok(stream::stream(response, effort_off))
     }
 
     fn with_authorization(&self, request: RequestBuilder) -> RequestBuilder {

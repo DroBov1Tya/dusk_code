@@ -20,7 +20,10 @@ use crate::{
     },
 };
 
-use super::{request::MessagesRequest, stream::MessageStream};
+use super::{
+    request::MessagesRequest,
+    stream::{self, MessageStream},
+};
 
 const API_VERSION: &str = "2023-06-01";
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -167,7 +170,7 @@ impl Anthropic {
             http::is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(MessageStream::new(response))
+        Ok(stream::stream(response))
     }
 
     fn with_headers(&self, request: RequestBuilder) -> RequestBuilder {

@@ -4,7 +4,7 @@
 //! and system messages; the system prompt goes as `instructions`.
 
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap},
     sync::Arc,
     time::Duration,
 };
@@ -26,7 +26,10 @@ use crate::{
         output::{FinishReason, ModelEvent, Usage},
         registry::Model,
         request::{ChatMessage, ChatRequest, Picture},
-        transport::{http, sse::SseDecoder},
+        transport::{
+            http,
+            sse::{EventParser, SseDecoder, SseStream},
+        },
     },
 };
 
@@ -208,13 +211,11 @@ impl ChatGpt {
                 bail!(refusal(response, "completion").await);
             }
         }
-        Ok(ResponseStream {
-            response,
-            account: self.account,
-            parser: Parser::default(),
-            pending: VecDeque::new(),
-            finished: false,
-        })
+        let parser = Parser {
+            account: Some(self.account),
+            ..Parser::default()
+        };
+        Ok(SseStream::new(response, parser))
     }
 }
 
@@ -395,43 +396,13 @@ fn spoken(role: &str, text: &str, pictures: &[Picture]) -> Value {
     json!({ "role": role, "content": content })
 }
 
-pub struct ResponseStream {
-    /// Where the plan's windows the stream reports are kept.
-    account: Account,
-    response: Response,
-    parser: Parser,
-    pending: VecDeque<ModelEvent>,
-    finished: bool,
-}
-
-impl ResponseStream {
-    pub async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
-        loop {
-            if let Some(event) = self.pending.pop_front() {
-                return Ok(Some(event));
-            }
-            if self.finished {
-                return Ok(None);
-            }
-            // Mark first so an error also ends the stream.
-            self.finished = true;
-            let chunk = self.response.chunk().await.map_err(http::cut)?;
-            match chunk {
-                Some(bytes) => {
-                    let parsed = self.parser.feed(&bytes);
-                    self.parser.note_plan(self.account);
-                    self.pending.extend(parsed?);
-                    self.finished = self.parser.done;
-                }
-                None => bail!(ended_early()),
-            }
-        }
-    }
-}
+pub type ResponseStream = SseStream<Parser>;
 
 #[derive(Default)]
-struct Parser {
+pub struct Parser {
     decoder: SseDecoder,
+    /// Where the plan's windows the stream reports are kept.
+    account: Option<Account>,
     /// The tool calls so far, by the place of their item in the output: the number the
     /// agent knows them by, and whether their arguments came in pieces.
     calls: HashMap<u64, (u32, bool)>,
@@ -514,27 +485,43 @@ struct OutputDetails {
     reasoning_tokens: Option<u64>,
 }
 
-impl Parser {
-    fn note_plan(&mut self, account: Account) {
+impl EventParser for Parser {
+    fn decoder(&mut self) -> &mut SseDecoder {
+        &mut self.decoder
+    }
+
+    fn parse(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
+        // Upstream payloads can echo input; never copy them into errors.
+        let event: Event = serde_json::from_str(data)
+            .map_err(|_| anyhow!("invalid provider stream event JSON"))?;
+        let mut events = Vec::new();
+        self.take(event, &mut events)?;
+        Ok(events)
+    }
+
+    fn done(&self) -> bool {
+        self.done
+    }
+
+    /// The stream ends with `response.completed` or another closing event; EOF before
+    /// one is a cut stream.
+    fn finish(&mut self) -> Result<()> {
+        bail!(ended_early())
+    }
+
+    /// The plan's windows are kept after every chunk, even one whose events failed:
+    /// a spent plan reports its windows beside the error.
+    fn fed(&mut self) {
+        let Some(account) = self.account else {
+            return;
+        };
         for windows in self.plan.drain(..) {
             account.note_plan(windows);
         }
     }
+}
 
-    fn feed(&mut self, bytes: &[u8]) -> Result<Vec<ModelEvent>> {
-        let mut events = Vec::new();
-        for data in self.decoder.feed(bytes)? {
-            if self.done {
-                break;
-            }
-            // Upstream payloads can echo input; never copy them into errors.
-            let event: Event = serde_json::from_str(&data)
-                .map_err(|_| anyhow!("invalid provider stream event JSON"))?;
-            self.take(event, &mut events)?;
-        }
-        Ok(events)
-    }
-
+impl Parser {
     fn take(&mut self, event: Event, events: &mut Vec<ModelEvent>) -> Result<()> {
         let text = |delta: Option<String>| delta.filter(|delta| !delta.is_empty());
         match event.r#type.as_str() {
@@ -587,7 +574,7 @@ impl Parser {
                     true => FinishReason::Stop,
                     false => FinishReason::ToolCalls,
                 };
-                self.finish(event.response, reason, events);
+                self.complete(event.response, reason, events);
             }
             "response.incomplete" => {
                 let why = event
@@ -600,7 +587,7 @@ impl Parser {
                     "content_filter" => FinishReason::ContentFilter,
                     _ => FinishReason::Length,
                 };
-                self.finish(event.response, reason, events);
+                self.complete(event.response, reason, events);
             }
             // ChatGPT says how much of the plan is used as an event of its own.
             "codex.rate_limits" => {
@@ -648,7 +635,7 @@ impl Parser {
         Ok(())
     }
 
-    fn finish(
+    fn complete(
         &mut self,
         response: Option<Finished>,
         reason: FinishReason,

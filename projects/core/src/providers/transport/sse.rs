@@ -1,7 +1,15 @@
 //! Incremental Server-Sent Events decoder (`text/event-stream`), limited to `data` fields.
 //! Lines end in `\n` or `\r\n`; a lone `\r` terminator is not supported.
+//!
+//! `SseStream` reads a provider's answer with it, chunk by chunk, and hands each event's
+//! data to the provider's `EventParser`.
+
+use std::collections::VecDeque;
 
 use anyhow::{Result, anyhow, ensure};
+use reqwest::Response;
+
+use crate::providers::{output::ModelEvent, transport::http};
 
 const MAX_LINE_BYTES: usize = 1024 * 1024;
 const MAX_EVENT_BYTES: usize = 4 * 1024 * 1024;
@@ -69,6 +77,84 @@ impl SseDecoder {
             None => self.data = Some(value.to_owned()),
         }
         Ok(())
+    }
+}
+
+/// A provider's own reading of its events: what each `data` payload means, and when
+/// the answer is whole. Network-independent, so a protocol can be tested from raw bytes.
+pub trait EventParser: Send {
+    fn decoder(&mut self) -> &mut SseDecoder;
+
+    /// The model events of one event's `data`.
+    fn parse(&mut self, data: &str) -> Result<Vec<ModelEvent>>;
+
+    /// Whether the answer is whole; later events are not read.
+    fn done(&self) -> bool;
+
+    /// The stream ended: an error when the answer was not whole.
+    fn finish(&mut self) -> Result<()>;
+
+    /// Runs after every chunk was fed, also when feeding it failed.
+    fn fed(&mut self) {}
+
+    /// The model events in `bytes`, up to the one that makes the answer whole.
+    fn feed(&mut self, bytes: &[u8]) -> Result<Vec<ModelEvent>> {
+        let mut events = Vec::new();
+        for data in self.decoder().feed(bytes)? {
+            if self.done() {
+                break;
+            }
+            events.extend(self.parse(&data)?);
+        }
+        Ok(events)
+    }
+}
+
+/// Events of one streamed answer, read lazily from the network.
+pub struct SseStream<P> {
+    response: Response,
+    parser: P,
+    pending: VecDeque<ModelEvent>,
+    finished: bool,
+}
+
+impl<P: EventParser> SseStream<P> {
+    pub fn new(response: Response, parser: P) -> Self {
+        Self {
+            response,
+            parser,
+            pending: VecDeque::new(),
+            finished: false,
+        }
+    }
+
+    pub async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
+        loop {
+            if let Some(event) = self.pending.pop_front() {
+                return Ok(Some(event));
+            }
+            if self.finished {
+                return Ok(None);
+            }
+            // Mark first so an error also ends the stream.
+            self.finished = true;
+            let chunk = self.response.chunk().await.map_err(http::cut)?;
+            match chunk {
+                Some(bytes) => {
+                    let parsed = self.parser.feed(&bytes);
+                    self.parser.fed();
+                    self.pending.extend(parsed?);
+                    self.finished = self.parser.done();
+                }
+                None => self.parser.finish()?,
+            }
+        }
+    }
+}
+
+impl<P: EventParser> super::super::output::ChatStream for SseStream<P> {
+    fn next_event(&mut self) -> crate::BoxFuture<'_, Option<ModelEvent>> {
+        Box::pin(SseStream::next_event(self))
     }
 }
 
