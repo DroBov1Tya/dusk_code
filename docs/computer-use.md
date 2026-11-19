@@ -32,15 +32,21 @@ coordinates and leaves its own cursor there for ten seconds. The overlay passes
 mouse input through and works in a selected window session too. If another window
 covers the target, the ring marks the point over the visible window.
 
-## The real pointer
+## The real pointer: `physical_input`
 
-`mode: "system"` clicks with the user's pointer, right and double clicks included;
-`scroll` always does. Taking the pointer has a yes of its own: allowing the screen for
-the session does not allow it.
+Clicks and scrolls that move the user's own mouse are one tool of their own,
+`physical_input`, with `action` one of `click`, `double_click`, `right_click` or
+`scroll`. It is off until the user switches it on under Tools (one switch for every
+mode), and each use is asked for under the chat's approval mode; allowing the screen
+does not allow it.
 
 ```json
-{"x": 320, "y": 180, "mode": "system", "right": true}
+{"action": "right_click", "x": 320, "y": 180}
+{"action": "scroll", "x": 320, "y": 180, "down": 400}
 ```
+
+The old `mode`, `right` and `double` of `click` are gone; a saved call that still asks
+for the pointer through them is refused with a message that names `physical_input`.
 
 `type_text` and `press_keys` go to whatever has the keyboard focus and ask every time.
 Keys are a key name with modifiers joined by `+`; only plain spaces may pad them, and
@@ -48,8 +54,8 @@ the request shows them by their normal names, such as `cmd+shift+t`.
 
 ## Several actions in one call
 
-`computer_actions` runs up to 20 steps of `click`, `type_text`, `press_keys`, `scroll`
-and `screenshot` in order, each with the arguments it takes alone, at most four
+`computer_actions` runs up to 20 steps of `click`, `type_text`, `press_keys` and
+`screenshot` in order, each with the arguments it takes alone, at most four
 screenshots among them:
 
 ```json
@@ -85,8 +91,8 @@ step and says which ran.
 
 ## Linux
 
-Linux has no press without the pointer: a click always moves it, so it asks like
-`mode: "system"` does on macOS, and no cursor of duskcode's own is drawn. The tools
+Linux has no press without the pointer: a `click` always moves it, so it asks like
+`physical_input` does on macOS, and no cursor of duskcode's own is drawn. The tools
 drive the desktop through programs it has:
 
 | Session | Clicks, keys, typing | Screenshots |

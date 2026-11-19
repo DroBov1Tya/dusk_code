@@ -10,7 +10,7 @@ use serde_json::Value;
 
 #[cfg(test)]
 use super::Desktop;
-use super::{screen::Screen, step::Step};
+use super::{physical_input::USE_PHYSICAL_INPUT, screen::Screen, step::Step};
 use crate::{
     BoxFuture,
     platform::Needs,
@@ -39,8 +39,8 @@ impl PointerMode {
         ensure!((1..=2).contains(&count), "a click count must be one or two");
         ensure!(
             self == Self::System || (!right && count == 1),
-            "a click without the pointer is a single left one; right and double clicks \
-             need mode system, which moves the user's pointer"
+            "a press through Accessibility is a single left one; {}",
+            super::physical_input::USE_PHYSICAL_INPUT
         );
         Ok(())
     }
@@ -53,30 +53,33 @@ pub struct Click(pub Arc<Screen>);
 struct ClickArguments {
     x: f64,
     y: f64,
-    /// The right button instead of the left.
+    /// Fields of the old click, read only to refuse them with the way forward.
     #[serde(default)]
+    #[schemars(skip)]
     right: bool,
-    /// A double click.
     #[serde(default)]
+    #[schemars(skip)]
     double: bool,
-    /// Independent (default) activates an accessible control with AXPress without
-    /// moving the pointer. System posts a real click and moves the user's pointer.
     #[serde(default)]
-    mode: PointerMode,
+    #[schemars(skip)]
+    mode: Option<PointerMode>,
 }
 
 impl ClickArguments {
-    /// Bounded before anything is asked or done.
+    /// Bounded before anything is asked or done. A saved call of the old click that asked
+    /// for the real pointer is refused with where that went.
     fn parse(arguments: Value) -> Result<Self> {
         let arguments: Self = parse_arguments(arguments)?;
-        arguments
-            .mode
-            .validate_click(arguments.right, arguments.count())?;
+        let pointer =
+            arguments.right || arguments.double || arguments.mode == Some(PointerMode::System);
+        ensure!(!pointer, USE_PHYSICAL_INPUT);
         Ok(arguments)
     }
 
-    fn count(&self) -> i64 {
-        if self.double { 2 } else { 1 }
+    /// The one way this desktop clicks: through Accessibility on macOS, the pointer on
+    /// Linux, which has no press without it.
+    fn mode(&self) -> PointerMode {
+        PointerMode::default()
     }
 }
 
@@ -84,7 +87,7 @@ impl Click {
     /// Checked before anything is asked or done, so a batch can check every step first.
     pub(super) fn step(screen: &Arc<Screen>, arguments: Value) -> Result<Step> {
         let arguments = ClickArguments::parse(arguments)?;
-        let (x, y, mode) = (arguments.x, arguments.y, arguments.mode);
+        let (x, y, mode) = (arguments.x, arguments.y, arguments.mode());
         let action = match mode {
             PointerMode::Independent => {
                 format!("activate the control at {x}, {y} without moving the pointer")
@@ -105,9 +108,8 @@ impl Click {
         };
         let screen = Arc::clone(screen);
         Ok(Step::new(request, move || {
-            let count = arguments.count();
             let expected = scope.as_ref().map(|(id, _)| id.as_str());
-            screen.click(x, y, arguments.right, count, mode, expected)?;
+            screen.click(x, y, false, 1, mode, expected)?;
             Ok(ToolResult::text(match mode {
                 PointerMode::Independent => format!(
                     "pressed the control at {x}, {y}; the keyboard focus may not have moved"
@@ -123,19 +125,14 @@ impl Tool for Click {
 
     fn description(&self, _: &ToolContext) -> String {
         if cfg!(target_os = "macos") {
-            "Click at x, y of the newest screenshot. A selected window session uses app-scoped \
-             Accessibility, even when another app covers the window. AXPress can bring the target \
-             app to the foreground. By default it presses the control there \
-             through Accessibility and leaves the user's pointer alone: a single left click \
-             on a button, link or checkbox, which may not focus a field or the app. A control \
-             that cannot be pressed so, a window that moved since the screenshot, or an \
-             ambiguous window match is an error. Mode system takes the user's own pointer, \
-             for right and double clicks outside a window session: use it only when the user \
-             asked in so many words to use their mouse; it asks them first."
+            "Press the control at x, y of the newest screenshot through Accessibility; the \
+             user's pointer stays put. A single left press on a button, link, checkbox or \
+             menu item; it may not focus a text field, and may bring the app forward. A \
+             control that cannot be pressed, or a window that moved since the screenshot, \
+             is an error."
         } else {
-            "Click at x, y of the newest screenshot, left by default, right or double when \
-             asked. It moves the user's pointer there, so use it only when the user asked for \
-             a click, and it asks them first."
+            "Left click at x, y of the newest screenshot. It moves the user's pointer there \
+             and asks them first."
         }
         .into()
     }
@@ -157,16 +154,34 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    #[cfg(target_os = "macos")]
     #[test]
-    fn existing_click_arguments_default_to_independent_activation() {
-        let args: ClickArguments = parse_arguments(json!({"x": 12, "y": 34})).unwrap();
-        assert_eq!(args.mode, PointerMode::Independent);
-        assert!(!args.right && !args.double);
-        assert!(args.mode.validate_click(args.right, 1).is_ok());
+    fn a_plain_click_parses() {
+        let args = ClickArguments::parse(json!({"x": 12, "y": 34})).unwrap();
+        assert_eq!((args.x, args.y), (12.0, 34.0));
+        assert!(ClickArguments::parse(json!({"x": 1, "y": 1, "mode": "independent"})).is_ok());
     }
+
+    /// Saved calls of the old click that took the real pointer are refused, naming the tool.
     #[test]
-    fn pointer_movement_requires_explicit_system_mode() {
+    fn the_old_pointer_parameter_is_refused_with_the_way_forward() {
+        for old in [
+            json!({"x": 1, "y": 1, "mode": "system"}),
+            json!({"x": 1, "y": 1, "right": true}),
+            json!({"x": 1, "y": 1, "double": true}),
+        ] {
+            let Err(error) = ClickArguments::parse(old) else {
+                panic!("an old pointer call must be refused");
+            };
+            let error = error.to_string();
+            assert!(error.contains("physical_input"), "{error}");
+        }
+        assert!(ClickArguments::parse(json!({"x": 1, "y": 1, "mode": "auto"})).is_err());
+        let schema = schema::of::<ClickArguments>();
+        assert!(schema["properties"].get("mode").is_none(), "{schema}");
+    }
+
+    #[test]
+    fn pointer_movement_requires_system_mode() {
         for (right, count) in [(true, 1), (false, 2), (true, 2)] {
             assert!(
                 PointerMode::Independent
@@ -178,15 +193,6 @@ mod tests {
         for count in [0, 3, -1] {
             assert!(PointerMode::System.validate_click(false, count).is_err());
         }
-        let args: ClickArguments = parse_arguments(
-            json!({"x": 12, "y": 34, "right": true, "double": true, "mode": "system"}),
-        )
-        .unwrap();
-        assert_eq!(args.mode, PointerMode::System);
-        assert!(args.right && args.double);
-        assert!(
-            parse_arguments::<ClickArguments>(json!({"x": 12, "y": 34, "mode": "auto"})).is_err()
-        );
     }
 
     #[test]
@@ -198,11 +204,6 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("single left")
-        );
-        assert!(
-            Desktop
-                .click(at, false, 2, PointerMode::Independent, None)
-                .is_err()
         );
     }
 }

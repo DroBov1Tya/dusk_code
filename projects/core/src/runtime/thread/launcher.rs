@@ -150,12 +150,12 @@ impl Launcher {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             use crate::tools::{
-                Click, ComputerActions, PressKeys, Screen, Screenshot, Scroll, TypeText,
+                Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
             };
             let screen = Arc::new(Screen::new(ArtifactStore::new(self.paths.artifacts_dir())));
             tools.add(Box::new(Screenshot(Arc::clone(&screen))));
             tools.add(Box::new(Click(Arc::clone(&screen))));
-            tools.add(Box::new(Scroll(Arc::clone(&screen))));
+            tools.add(Box::new(PhysicalInput(Arc::clone(&screen))));
             tools.add(Box::new(TypeText(Arc::clone(&screen))));
             tools.add(Box::new(PressKeys(Arc::clone(&screen))));
             tools.add(Box::new(ComputerActions(Arc::clone(&screen))));
@@ -329,6 +329,7 @@ mod tests {
         ("message_parent", false, false),
         ("plan_edit", true, false),
         ("project_graph", true, true),
+        ("physical_input", false, false),
         ("press_keys", false, false),
         ("read_file", true, true),
         ("read_history", true, true),
@@ -337,7 +338,6 @@ mod tests {
         ("remember_project", true, false),
         ("run_command", false, false),
         ("screenshot", true, false),
-        ("scroll", false, false),
         ("search_files", true, true),
         ("show", true, false),
         ("tasks", false, false),

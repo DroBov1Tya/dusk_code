@@ -467,6 +467,35 @@ mod tests {
         assert!(asked.try_recv().is_err(), "nothing may be asked");
     }
 
+    /// The real pointer is never offered until the user switches it on, in any mode.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn physical_input_is_offered_only_when_switched_on() {
+        use crate::tools::{PhysicalInput, Screen};
+        let dir = temp_dir("registry_physical");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = Arc::new(ToolScope::new(&dir, &dir).unwrap());
+        let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
+        let mut registry = ToolRegistry {
+            root: true,
+            ..ToolRegistry::default()
+        };
+        registry.platform.gui = true;
+        registry.add(Box::new(PhysicalInput(screen)));
+        let mut config = (*crate::testing::tool_context(&scope).config).clone();
+        let offered = |config: &crate::config::Config| {
+            registry
+                .specs(&scope, &Arc::new(config.clone()))
+                .iter()
+                .any(|spec| spec.name == "physical_input")
+        };
+        assert!(!offered(&config), "off by default");
+        config.set_mode_tool_enabled("plan", "physical_input", true);
+        assert!(offered(&config), "the switch is one for every mode");
+        config.set_tool_enabled("physical_input", false);
+        assert!(!offered(&config));
+    }
+
     /// Providers reject a schema that is not one plain object at the top.
     #[tokio::test]
     async fn every_schema_is_one_object_providers_accept() {
@@ -485,12 +514,12 @@ mod tests {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             use crate::tools::{
-                Click, ComputerActions, PressKeys, Screen, Screenshot, Scroll, TypeText,
+                Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
             };
             let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
             tools.push(Box::new(Screenshot(Arc::clone(&screen))));
             tools.push(Box::new(Click(Arc::clone(&screen))));
-            tools.push(Box::new(Scroll(Arc::clone(&screen))));
+            tools.push(Box::new(PhysicalInput(Arc::clone(&screen))));
             tools.push(Box::new(TypeText(Arc::clone(&screen))));
             tools.push(Box::new(PressKeys(Arc::clone(&screen))));
             tools.push(Box::new(ComputerActions(Arc::clone(&screen))));
