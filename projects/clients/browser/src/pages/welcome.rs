@@ -26,15 +26,23 @@ struct Failed {
     said: String,
 }
 
-/// Asks the core for its providers once; none means a clean install.
+/// Asks the core for its providers once the link is up (the first status says so); none
+/// means a clean install.
 pub fn ask(step: RwSignal<Step>) {
-    spawn_local(async move {
-        if let Ok(Answer::Providers { providers, .. }) =
-            api::command(Command::Provider { name: None }).await
-            && providers.is_empty()
-        {
-            step.set(Step::Intro);
+    let asked = StoredValue::new(false);
+    Effect::new(move |_| {
+        if state().status.with(Option::is_none) || asked.get_value() {
+            return;
         }
+        asked.set_value(true);
+        spawn_local(async move {
+            if let Ok(Answer::Providers { providers, .. }) =
+                api::command(Command::Provider { name: None }).await
+                && providers.is_empty()
+            {
+                step.set(Step::Intro);
+            }
+        });
     });
 }
 
