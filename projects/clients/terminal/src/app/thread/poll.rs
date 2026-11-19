@@ -206,14 +206,20 @@ impl App {
         Action::Send(label)
     }
 
+    /// Shows a question the agent asked; a second one waits behind the first instead of
+    /// taking its place.
+    pub fn ask_question(&mut self, question: Question) {
+        if self.questions.ask(question) {
+            self.poll = self.questions.shown().cloned().map(Poll::new);
+        }
+    }
+
     /// Keeps the answer to the question shown and shows the next one. The message for
     /// the agent once every question asked has its answer.
     pub fn answered(&mut self, text: String) -> Option<String> {
-        self.poll_answers.push(text);
-        self.poll = self.polls_waiting.pop_front().map(Poll::new);
-        self.poll
-            .is_none()
-            .then(|| std::mem::take(&mut self.poll_answers).join("\n\n"))
+        let sent = self.questions.reply(text);
+        self.poll = self.questions.shown().cloned().map(Poll::new);
+        sent
     }
 
     /// The answer goes at once, even while the thread works: the core lets it join the
@@ -271,7 +277,7 @@ mod tests {
     fn alt_number_answers_a_light_question_as_its_card_would() {
         let asked = question(&["Yes", "No", "Later"], false);
         let mut app = test_app();
-        app.poll = Some(Poll::new(asked.clone()));
+        app.ask_question(asked.clone());
         assert_eq!(app.reply_labels(), ["Yes", "No", "Later"]);
         let action = press(&mut app, KeyCode::Char('2'), KeyModifiers::ALT);
         assert!(matches!(action, Action::Send(text) if text == asked.answer(&[1], "")));
@@ -282,11 +288,11 @@ mod tests {
     fn a_plain_number_answers_a_light_question_too() {
         let asked = question(&["Yes", "No"], false);
         let mut app = test_app();
-        app.poll = Some(Poll::new(asked.clone()));
+        app.ask_question(asked.clone());
         let action = press(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
         assert!(matches!(action, Action::Send(text) if text == asked.answer(&[0], "")));
         // A number past the last label is nothing, and Enter still sends the row under the cursor.
-        app.poll = Some(Poll::new(asked.clone()));
+        app.ask_question(asked.clone());
         assert!(matches!(
             press(&mut app, KeyCode::Char('3'), KeyModifiers::NONE),
             Action::None
@@ -301,12 +307,12 @@ mod tests {
     fn ctrl_s_skips_one_question_and_the_last_sends_every_answer() {
         let (first, second) = (question(&["a", "b"], true), question(&["c", "d"], true));
         let mut app = test_app();
-        app.poll = Some(Poll::new(first.clone()));
-        app.polls_waiting.push_back(second.clone());
+        app.ask_question(first.clone());
+        app.ask_question(second.clone());
         let action = press(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
         assert!(matches!(action, Action::None));
         assert_eq!(app.poll.as_ref().map(|poll| &poll.question), Some(&second));
-        assert_eq!(app.poll_answers, [first.skipped()]);
+        assert_eq!(app.questions.place(), (2, 2));
         // Esc still declines, and the plain letter is the own answer's text, not a skip.
         press(&mut app, KeyCode::Down, KeyModifiers::NONE);
         press(&mut app, KeyCode::Down, KeyModifiers::NONE);
@@ -318,7 +324,7 @@ mod tests {
         let action = press(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
         let want = [first.skipped(), second.skipped()].join("\n\n");
         assert!(matches!(action, Action::Send(text) if text == want));
-        assert!(app.poll.is_none() && app.poll_answers.is_empty());
+        assert!(app.poll.is_none() && app.questions.is_empty());
     }
 
     #[test]
@@ -329,7 +335,7 @@ mod tests {
             question(&["a", &"b".repeat(25)], false),
         ] {
             let mut app = test_app();
-            app.poll = Some(Poll::new(asked));
+            app.ask_question(asked);
             assert!(app.reply_labels().is_empty());
             let action = press(&mut app, KeyCode::Char('1'), KeyModifiers::ALT);
             assert!(matches!(action, Action::Tab(TabMove::Go(0))));

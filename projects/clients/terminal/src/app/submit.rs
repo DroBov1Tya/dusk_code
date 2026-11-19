@@ -119,11 +119,7 @@ impl App {
         // A message written instead of answering the question declines it.
         let text = match self.poll.take() {
             // The questions behind it go unasked: the message is what the user wants now.
-            Some(poll) if command.is_none() => {
-                self.polls_waiting.clear();
-                self.poll_answers.push(poll.question.declined(&text));
-                std::mem::take(&mut self.poll_answers).join("\n\n")
-            }
+            Some(_) if command.is_none() => self.questions.decline(&text).unwrap_or(text),
             poll => {
                 self.poll = poll;
                 text

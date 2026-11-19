@@ -7,7 +7,7 @@ use dusk_protocol::{
 
 use std::time::Instant;
 
-use super::{Activity, App, Entry, Focus, Poll, Tone};
+use super::{Activity, App, Entry, Focus, Tone};
 
 impl App {
     pub fn apply(&mut self, event: ThreadEvent) {
@@ -167,11 +167,7 @@ impl App {
                 note,
                 started,
             } => self.goal_changed(goal, note, started),
-            // A second question waits behind the first instead of taking its place.
-            ThreadEvent::Question(question) if self.poll.is_some() => {
-                self.polls_waiting.push_back(question)
-            }
-            ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
+            ThreadEvent::Question(question) => self.ask_question(question),
             ThreadEvent::Approval(request) => self.ask_approval(request, None),
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
             ThreadEvent::ArbiterDecided {

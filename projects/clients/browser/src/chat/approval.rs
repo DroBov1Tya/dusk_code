@@ -6,7 +6,7 @@ use crate::{
     state::{Chat, state},
     ui::run,
 };
-use dusk_protocol::tools::{ApprovalRequest, Decision, Question};
+use dusk_protocol::tools::{ApprovalRequest, Decision, QuestionQueue};
 use leptos::prelude::*;
 
 #[component]
@@ -54,26 +54,11 @@ fn ApprovalCard(request: ApprovalRequest, thread: String) -> impl IntoView {
     }
 }
 
-/// Records the answer to the question on the page: the next question shows, and the
+/// Answers the question on the page through `act`: the next question shows, and the
 /// answers go to the agent together after the last one.
-fn answer_question(
-    chat: Chat,
-    id: Option<String>,
-    question: &Question,
-    chosen: &[usize],
-    own: &str,
-) {
-    record(chat, id, question.answer(chosen, own));
-}
-
-/// Skips the question on the page and only that one: the agent decides it itself.
-fn skip_question(chat: Chat, id: Option<String>, question: &Question) {
-    record(chat, id, question.skipped());
-}
-
-fn record(chat: Chat, id: Option<String>, reply: String) {
+fn record(chat: Chat, id: Option<String>, act: impl FnOnce(&mut QuestionQueue) -> Option<String>) {
     let mut all = None;
-    chat.update(|c| all = c.record_answer(reply));
+    chat.update(|c| all = c.answer_questions(act));
     if let Some(all) = all {
         state().send(id, all, false, Vec::new());
     }
@@ -83,22 +68,21 @@ fn record(chat: Chat, id: Option<String>, reply: String) {
 /// reply buttons; "Other..." opens the card for words of your own or a decline.
 #[component]
 pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
-    let app = state();
     let chosen = RwSignal::new(Vec::<usize>::new());
     let own = RwSignal::new(String::new());
     let card = RwSignal::new(false);
     move || {
-        let question = chat.with(|c| c.question.clone())?;
+        let question = chat.with(|c| c.questions.shown().cloned())?;
         if !card.get()
             && let Some(labels) = question_labels(&question)
         {
             let skip = {
-                let (asked, id) = (question.clone(), id.clone());
-                move |_| skip_question(chat, id.clone(), &asked)
+                let id = id.clone();
+                move |_| record(chat, id.clone(), QuestionQueue::skip)
             };
-            let (asked, id) = (question.clone(), id.clone());
+            let id = id.clone();
             let pick = Callback::new(move |at: usize| {
-                answer_question(chat, id.clone(), &asked, &[at], "");
+                record(chat, id.clone(), |questions| questions.answer(&[at], ""));
             });
             let other = Callback::new(move |()| card.set(true));
             return Some(
@@ -115,40 +99,30 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
             );
         }
         let multiple = question.multiple;
-        let (for_answer, for_decline, id) = (question.clone(), question.clone(), id.clone());
-        let id_decline = id.clone();
+        let (id, id_decline) = (id.clone(), id.clone());
         let skip = {
-            let (asked, id) = (question.clone(), id.clone());
+            let id = id.clone();
             move |_| {
-                skip_question(chat, id.clone(), &asked);
+                record(chat, id.clone(), QuestionQueue::skip);
                 chosen.set(Vec::new());
                 own.set(String::new());
                 card.set(false);
             }
         };
         let submit = move |_| {
-            answer_question(
-                chat,
-                id.clone(),
-                &for_answer,
-                &chosen.get_untracked(),
-                &own.get_untracked(),
-            );
+            let (picked, words) = (chosen.get_untracked(), own.get_untracked());
+            record(chat, id.clone(), |questions| {
+                questions.answer(&picked, &words)
+            });
             chosen.set(Vec::new());
             own.set(String::new());
             card.set(false);
         };
         let decline = move |_| {
-            let reply = for_decline.declined(&own.get_untracked());
-            let mut all = String::new();
-            chat.update(|c| {
-                c.answers.push(reply);
-                c.questions_waiting.clear();
-                c.question = None;
-                c.live.answered();
-                all = std::mem::take(&mut c.answers).join("\n\n");
+            let words = own.get_untracked();
+            record(chat, id_decline.clone(), |questions| {
+                questions.decline(&words)
             });
-            app.send(id_decline.clone(), all, false, Vec::new());
             card.set(false);
         };
         Some(

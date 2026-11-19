@@ -207,7 +207,7 @@ impl InputView<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{Poll, test_app};
+    use crate::app::test_app;
     use dusk_protocol::tools::Question;
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -223,11 +223,11 @@ mod tests {
 
     fn light(options: &[&str]) -> App {
         let mut app = test_app();
-        app.poll = Some(Poll::new(Question {
+        app.ask_question(Question {
             question: "Which?".into(),
             options: options.iter().map(|option| option.to_string()).collect(),
             multiple: false,
-        }));
+        });
         app
     }
 
