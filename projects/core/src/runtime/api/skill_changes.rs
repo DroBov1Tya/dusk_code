@@ -14,8 +14,8 @@ const CHANGED_SINCE: &str = "the skill changed since; open it in the settings to
 impl Runtime {
     /// The changes a thread's agents made, oldest first.
     pub async fn skill_changes(&self, thread_id: &str) -> Result<Vec<SkillChange>> {
-        let launcher = self.of(thread_id).await;
-        let changes = launcher.state.skill_changes(thread_id).await?;
+        // Always the main state: every change is kept there, also a temporary chat's.
+        let changes = self.launcher.state.skill_changes(thread_id).await?;
         Ok(changes.iter().map(|change| change.info()).collect())
     }
 
@@ -38,7 +38,8 @@ impl Runtime {
             change.undone_at_ms.is_none(),
             "the change was undone already"
         );
-        // Agents never edit built-in skills, so none is recorded; refuse one all the same.
+        // Agents are not meant to edit built-in skills; a change recorded anyway is shown
+        // but cannot be undone.
         ensure!(
             pack_of(&change.skill).as_deref() != Some(BUILTIN_PACK),
             "built-in skills are not changed by agents"

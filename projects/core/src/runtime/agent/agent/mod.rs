@@ -87,6 +87,11 @@ pub struct Agent {
     pub hooks: Arc<Hooks>,
     /// How each provider's calls go, shared by every thread.
     pub health: Arc<crate::providers::Health>,
+    /// Notices the skills a writing call changed.
+    pub skill_watch: Arc<crate::catalog::history::Watch>,
+    /// Where those changes are kept: the main state, also for a temporary chat, because
+    /// a skill's history belongs to the skill and not to the thread.
+    pub skill_state: Arc<crate::state::State>,
 }
 
 /// How one step ended.

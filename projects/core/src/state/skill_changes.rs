@@ -55,7 +55,10 @@ impl StoredSkillChange {
             reason: self.reason.clone(),
             changed_at_ms: self.changed_at_ms,
             undone: self.undone_at_ms.is_some(),
-            can_undo: self.undone_at_ms.is_none() && (self.created || self.before.is_some()),
+            can_undo: self.undone_at_ms.is_none()
+                && (self.created || self.before.is_some())
+                && crate::catalog::skills::pack_of(&self.skill).as_deref()
+                    != Some(crate::catalog::skills::BUILTIN_PACK),
         }
     }
 }

@@ -35,13 +35,11 @@ pub use thread::{
 };
 // The team's store. Its callers are the team's runtime (T1), serving (P1) and recovery
 // (R1); until they land only its tests use these.
+pub use skill_changes::{NewSkillChange, StoredSkillChange};
 #[allow(unused_imports)]
 pub use thread::{
     BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamCounts, TeamError, TeamRun,
 };
-// Callers are the skill-evolve tool and the undo request (Tasks 4 and 5).
-#[allow(unused_imports)]
-pub use skill_changes::{MAX_KEPT_PER_SKILL, MAX_TEXT_BYTES, NewSkillChange, StoredSkillChange};
 pub use usage::{ItemUsage, KIND_MCP_TOOL, KIND_SKILL};
 
 pub use db::timestamp_ms;

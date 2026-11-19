@@ -1,13 +1,10 @@
 //! Model text shown as a single plain line.
 
 /// Longest reason kept, in characters.
-// Used by the skill-evolve tool (Task 5); until then only tests call it.
-#[allow(dead_code)]
 pub const MAX_REASON_CHARS: usize = 200;
 
 /// The first line of `text` as plain data: control characters and bidi marks (which can
 /// reorder what a reader sees) removed, trimmed, cut at `max_chars`.
-#[allow(dead_code)]
 pub fn plain_line(text: &str, max_chars: usize) -> String {
     let first = text.split(['\n', '\r']).next().unwrap_or("");
     let clean: String = first.chars().filter(|c| plain_char(*c, false)).collect();

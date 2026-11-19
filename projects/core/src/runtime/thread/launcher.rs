@@ -53,6 +53,10 @@ pub struct Launcher {
     pub hooks: Arc<crate::plugins::Hooks>,
     /// How each provider's calls go, learned by every thread's calls.
     pub health: Arc<crate::providers::Health>,
+    /// Notices skill changes for every thread, temporary ones too.
+    pub skill_watch: Arc<crate::catalog::history::Watch>,
+    /// The main state, where skill changes are kept even for a temporary chat.
+    pub skill_state: Arc<State>,
     /// What the teams that run plans keep in memory: a lock and caches.
     pub(crate) team: Arc<crate::runtime::team::Teams>,
     /// Its chats leave nothing behind: the database is in memory, their files are in the
@@ -67,7 +71,6 @@ impl Launcher {
         Ok(ToolScope::new(cwd, workspace)?
             .protect(self.paths.config_root())
             .share(&self.paths.skills_dir())
-            .with_skills(&self.paths.skills_dir())
             .share(&self.paths.agents_dir()))
     }
 
@@ -100,6 +103,8 @@ impl Launcher {
             lock: ThreadLock::take(workspace)?,
             hooks: Arc::clone(&self.hooks),
             health: Arc::clone(&self.health),
+            skill_watch: Arc::clone(&self.skill_watch),
+            skill_state: Arc::clone(&self.skill_state),
         })
     }
 

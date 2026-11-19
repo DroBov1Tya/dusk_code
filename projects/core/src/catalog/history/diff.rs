@@ -10,6 +10,19 @@ const MAX_LINES: usize = 400;
 /// Most text bytes a diff holds.
 const MAX_BYTES: usize = 64 * 1024;
 
+/// How many lines `after` adds and removes against `before`, without the diff's caps.
+pub fn counts(before: &str, after: &str) -> (usize, usize) {
+    let mut counts = (0, 0);
+    for change in TextDiff::from_lines(before, after).iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Insert => counts.0 += 1,
+            ChangeTag::Delete => counts.1 += 1,
+            ChangeTag::Equal => {}
+        }
+    }
+    counts
+}
+
 /// The lines that turn `before` into `after`, each as plain text; `true` when it was
 /// cut at the caps and more lines followed.
 pub fn diff(before: &str, after: &str) -> (Vec<DiffLine>, bool) {
