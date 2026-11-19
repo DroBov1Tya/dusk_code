@@ -1,8 +1,8 @@
 //! Requests about one thread: opening, sending, pinning, closing.
 
-use super::ClientId;
 use super::publish::{publish, send_to};
 use super::{CLOSE_TIMEOUT, OpenThread, Running, Server};
+use super::{ClientId, Shown};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
@@ -345,7 +345,7 @@ impl Server {
         stored
             .and_then(|thread| thread.project)
             .map(PathBuf::from)
-            .context(NO_FOLDER)
+            .ok_or_else(|| Shown::new(NO_FOLDER).into())
     }
 
     pub(super) fn open_thread(&self, thread_id: &str) -> Result<&OpenThread> {

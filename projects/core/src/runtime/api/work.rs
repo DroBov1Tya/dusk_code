@@ -173,7 +173,7 @@ impl Runtime {
             .state
             .load_thread(thread_id)
             .await?
-            .context("no such thread")?;
+            .ok_or_else(|| crate::client::Shown::new("no such thread"))?;
         let dir = thread.project.context("the thread has no folder")?;
         crate::project::diff(std::path::Path::new(&dir), path).await
     }

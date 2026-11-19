@@ -102,8 +102,8 @@ pub struct Scope(Kind);
 #[derive(Debug, Clone)]
 enum Kind {
     Full,
-    /// Every thread, these areas.
-    Areas(&'static [Area]),
+    /// A signed-in browser: the areas of `WEB`.
+    Web,
     /// These chats and the agent threads below them, and only requests about them.
     Threads {
         ids: Arc<HashSet<String>>,
@@ -120,16 +120,14 @@ impl Scope {
 
     /// A signed-in browser.
     pub fn web() -> Self {
-        Self(Kind::Areas(WEB))
+        Self(Kind::Web)
     }
 
     /// Only these chats, and of the requests about them only those in `areas`. An area
     /// that is not about a thread gives nothing here.
     ///
-    /// Open before a remote client may be attached this way: a handler's error text can
-    /// hold paths; refusals are not rate-limited; the
-    /// name given in `Hello.client` goes to the audit log as it is; the HTTP routes
-    /// `/api/card` and `/api/output` are for the web scope and check no scope.
+    /// Open before a remote client may be attached this way: the HTTP routes `/api/card`
+    /// and `/api/output` are for the web scope and check no scope.
     pub fn threads(ids: impl IntoIterator<Item = String>, areas: &'static [Area]) -> Self {
         Self(Kind::Threads {
             ids: Arc::new(ids.into_iter().collect()),
@@ -146,7 +144,7 @@ impl Scope {
     pub(super) fn takes(&self, access: &Access<'_>) -> bool {
         match &self.0 {
             Kind::Full => true,
-            Kind::Areas(areas) => areas.contains(&access.area),
+            Kind::Web => WEB.contains(&access.area),
             Kind::Threads { areas, .. } => {
                 access.subject != Subject::None && areas.contains(&access.area)
             }
@@ -156,7 +154,7 @@ impl Scope {
     /// The chats the scope is bound to, or none when it sees every thread.
     pub(super) fn bound(&self) -> Option<&Arc<HashSet<String>>> {
         match &self.0 {
-            Kind::Full | Kind::Areas(_) => None,
+            Kind::Full | Kind::Web => None,
             Kind::Threads { ids, .. } => Some(ids),
         }
     }
@@ -172,7 +170,8 @@ impl Scope {
     pub(super) fn host_files(&self) -> HostFiles {
         let held = match &self.0 {
             Kind::Full => true,
-            Kind::Areas(areas) | Kind::Threads { areas, .. } => areas.contains(&Area::Command),
+            Kind::Web => WEB.contains(&Area::Command),
+            Kind::Threads { areas, .. } => areas.contains(&Area::Command),
         };
         match held {
             true => HostFiles::Taken,
@@ -180,12 +179,19 @@ impl Scope {
         }
     }
 
+    /// Whether the client reads the text of a handler's error as it is: the user's own
+    /// clients and the browser, which is the same person as the desktop. Any other gets
+    /// `Shown` sentences and references.
+    pub fn raw_errors(&self) -> bool {
+        matches!(&self.0, Kind::Full | Kind::Web)
+    }
+
     /// Whether the client gets the status: it is settings-level state, so only a scope
     /// that may read the settings anyway has it.
     pub(super) fn reads_status(&self) -> bool {
         match &self.0 {
             Kind::Full => true,
-            Kind::Areas(areas) => areas.contains(&Area::Settings),
+            Kind::Web => WEB.contains(&Area::Settings),
             Kind::Threads { .. } => false,
         }
     }

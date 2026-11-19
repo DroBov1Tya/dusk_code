@@ -80,7 +80,12 @@ pub fn blank_status() -> Status {
 impl Server {
     /// Installs a release in the background; the reply comes once it is done, and the
     /// status shows how far it got meanwhile.
-    pub(super) fn install_update(&self, tag: String, reply: oneshot::Sender<Response>) {
+    pub(super) fn install_update(
+        &self,
+        tag: String,
+        view: super::ErrorView,
+        reply: oneshot::Sender<Response>,
+    ) {
         let runtime = Arc::clone(&self.runtime);
         let status = Arc::clone(&self.status);
         status.send_modify(|status| status.install = Some(InstallProgress::default()));
@@ -103,7 +108,7 @@ impl Server {
             status.send_modify(|status| status.install = result.is_ok().then_some(now));
             let response = match result {
                 Ok(path) => Response::Path(path),
-                Err(error) => Response::Error(format!("{error:#}")),
+                Err(error) => Response::Error(view.text(&error)),
             };
             let _ = reply.send(response);
         });
