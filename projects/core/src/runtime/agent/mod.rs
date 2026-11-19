@@ -16,7 +16,7 @@ mod vision;
 
 pub(crate) use agent::Admit;
 pub use agent::{Agent, Decision, Recovered};
-pub use compaction::Keep;
+pub use compaction::{Keep, Loaded};
 pub use inbox::{Inbox, Input, Stop};
 pub(crate) use mail::MAX_AGENT_MESSAGES;
 pub use mailboxes::{Mailbox, Mailboxes};

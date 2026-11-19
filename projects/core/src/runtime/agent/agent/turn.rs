@@ -96,13 +96,15 @@ impl Agent {
         };
         // Compactions of a context too large for the step at hand.
         let mut shrunk = 0;
+        // The context the size check after the last step read, while nothing changed it.
+        let mut loaded = None;
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
             let step = match first.take() {
                 Some(end) => Ok(end),
                 None => {
                     let waited = waiting_since.is_some();
-                    self.step(turn, inbox, waited).await
+                    self.step(turn, inbox, waited, loaded.take()).await
                 }
             };
             let end = match step {
@@ -133,14 +135,18 @@ impl Agent {
             match end {
                 // Tool results are what fills the context, so it is checked after each.
                 StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {
-                    None => {
-                        if let Err(error) = self.take_agent_messages().await {
+                    Ok(checked) => match self.take_agent_messages().await {
+                        // A message taken in changed the context: the step loads it.
+                        Ok(admitted) => {
+                            loaded = checked.filter(|_| !admitted);
+                            continue;
+                        }
+                        Err(error) => {
                             outcome = TurnOutcome::failed(format!("{error:#}"));
                             break;
                         }
-                        continue;
-                    }
-                    Some(reason) => {
+                    },
+                    Err(reason) => {
                         stop = Some(reason);
                         outcome = TurnOutcome::Interrupted(None);
                     }
@@ -245,18 +251,21 @@ impl Agent {
 
     /// Messages from other agents join the running turn, so the next step reads them,
     /// and so does the answer to the question on the user's screen. Anything else the
-    /// user sent waits for the next turn.
-    pub(super) async fn take_agent_messages(&self) -> Result<()> {
+    /// user sent waits for the next turn. Says whether anything joined.
+    pub(super) async fn take_agent_messages(&self) -> Result<bool> {
+        let mut admitted = false;
         for pending in self.state.pending_messages(&self.thread_id).await? {
             if pending.from_thread_id.is_none() && pending.from_job_id.is_none() {
                 if self.answers_question(&pending.content) {
                     self.take_answer(&pending).await?;
+                    admitted = true;
                 }
                 continue;
             }
             self.admit(&pending, Admit::MID_TURN).await?;
+            admitted = true;
         }
-        Ok(())
+        Ok(admitted)
     }
 
     /// Adds a sent message to the thread, with its effect on the goal, and tells the
