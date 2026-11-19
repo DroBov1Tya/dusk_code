@@ -16,7 +16,7 @@ use crate::{
     pages::chat::{
         links,
         messages::{activity_text, agent_report, notice, run, steps},
-        transcript::{Item, Transcript},
+        transcript::{Item, Log},
     },
     ui::{Type, widgets},
     workspace::Workspace,
@@ -80,7 +80,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 ))
                 .child(copy(text, cx))
                 .into_any_element(),
-            Item::Agent { from, text } => {
+            Item::Agent { from, text, .. } => {
                 // A modal's column is drawn whole, so its texts keep their parse.
                 agent_report(ws, agent, at, (from, text), false, cx).into_any_element()
             }
@@ -111,17 +111,17 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
             Item::Job(result) => {
                 crate::pages::chat::messages::job(ws, agent, at, result, cx).into_any_element()
             }
-            Item::Command(run) => div()
+            Item::Local(run) => div()
                 .meta()
                 .text_color(muted)
                 .child(format!("$ {}", run.command))
                 .into_any_element(),
-            Item::Audio(clip) => div()
+            Item::Audio(card) => div()
                 .meta()
                 .text_color(muted)
-                .child(clip.title.clone().unwrap_or_else(|| "A sound".to_owned()))
+                .child(card.title.clone().unwrap_or_else(|| "A sound".to_owned()))
                 .into_any_element(),
-            Item::Image(picture) => div()
+            Item::Image { card: picture, .. } => div()
                 .meta()
                 .text_color(muted)
                 .child(
@@ -131,7 +131,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                         .unwrap_or_else(|| "A picture".to_owned()),
                 )
                 .into_any_element(),
-            Item::Notice(text) => {
+            Item::Notice(text) | Item::Summary(text) => {
                 notice(&key("notice"), div().meta().text_color(muted), text, cx).into_any_element()
             }
             // What went wrong must not read as one more quiet note.
@@ -186,7 +186,7 @@ fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div>
         AgentState::Failed => "Failed".to_owned(),
     };
     let id = agent.to_owned();
-    let action = if seen.working {
+    let action = if seen.working() {
         Button::new("agent-chat-stop")
             .danger()
             .small()
@@ -231,7 +231,9 @@ fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div>
                     )
                     .child(div().small().text_color(color).truncate().child(format!(
                         "{status} \u{00B7} {}",
-                        dusk_protocol::thread::duration_words(seen.run_time().as_millis() as i64)
+                        dusk_protocol::thread::duration_words(
+                            seen.run_ms(dusk_protocol::system::now_ms())
+                        )
                     ))),
             )
             .child(action),
@@ -268,10 +270,9 @@ impl Workspace {
                 Ok(history) => {
                     if let Some(chat) = ws.chats.get_mut(&parent) {
                         let live = chat.agent_chats.remove(&agent).unwrap_or_default();
-                        let mut read = Transcript::from_history(&history);
+                        let mut read = Log::from_history(&history);
                         // Events that came while the history loaded stay on top of it.
-                        read.items.extend(live.items);
-                        read.working = live.working;
+                        read.append_live(live);
                         chat.agent_chats.insert(agent.clone(), read);
                     }
                     cx.notify();
@@ -298,7 +299,7 @@ impl Workspace {
                         .get_mut(&parent)
                         .and_then(|chat| chat.agents.get_mut(&stopped))
                     {
-                        seen.stop();
+                        seen.stop(dusk_protocol::system::now_ms());
                     }
                     cx.notify();
                 }
@@ -316,7 +317,7 @@ impl Workspace {
         let gone: Vec<String> = chat
             .agents
             .iter()
-            .filter(|(id, agent)| !agent.working && only.is_none_or(|only| only == id.as_str()))
+            .filter(|(id, agent)| !agent.working() && only.is_none_or(|only| only == id.as_str()))
             .map(|(id, _)| id.clone())
             .collect();
         for id in &gone {

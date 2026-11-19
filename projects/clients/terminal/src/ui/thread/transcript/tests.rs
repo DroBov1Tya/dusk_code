@@ -2,7 +2,10 @@ use super::thread_lines;
 use crate::app::Transcript;
 use dusk_protocol::{
     model::ToolCall,
-    thread::{Block, CARD_LINE_CHARS, CARD_TITLE_CHARS, LAYER_SUBTITLE_CHARS, LAYER_TITLE_CHARS},
+    thread::{
+        Block, CARD_LINE_CHARS, CARD_TITLE_CHARS, LAYER_SUBTITLE_CHARS, LAYER_TITLE_CHARS,
+        ThreadEvent,
+    },
     thread::{MAX_CARDS, MAX_LAYERS},
     tools::ToolResult,
 };
@@ -19,16 +22,16 @@ fn shown(arguments: Value) -> Transcript {
     let content = Block::asked(&call).map_or("error: refused".into(), |block| block.text());
     let mut transcript = Transcript::default();
     transcript.add_user("go");
-    transcript.start_tool(call);
-    transcript.finish_tool(
-        "a",
-        ToolResult {
+    transcript.apply(ThreadEvent::ToolStarted(call));
+    transcript.apply(ThreadEvent::ToolFinished {
+        call_id: "a".into(),
+        result: ToolResult {
             is_error: content.starts_with("error:"),
             content,
             exit_code: None,
             artifacts: Vec::new(),
         },
-    );
+    });
     transcript
 }
 

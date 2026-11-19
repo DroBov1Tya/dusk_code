@@ -89,7 +89,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     // Subagents may go on after the chat's own turn is over; Stop ends them too.
     let working = ws
         .shown_chat()
-        .is_some_and(|chat| chat.working || chat.agents.values().any(|agent| agent.working));
+        .is_some_and(|chat| chat.working || chat.agents.values().any(|agent| agent.working()));
     let attach = ws.attach_open.then(|| attach_menu(ws.shown.is_some(), cx));
     let queued = super::queue::render(ws, cx);
     // Output speed while the agent writes, from the core's rate events.

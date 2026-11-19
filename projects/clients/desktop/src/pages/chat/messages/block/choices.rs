@@ -209,6 +209,7 @@ mod tests {
         Item::User {
             text: "ok".into(),
             sequence: Some(1),
+            answered: Vec::new(),
         }
     }
 

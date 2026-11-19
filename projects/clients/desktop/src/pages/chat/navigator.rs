@@ -24,7 +24,7 @@ const GAP: f32 = 2.;
 
 pub fn render(
     ws: &Workspace,
-    sent: &[(usize, String)],
+    sent: &[(usize, usize)],
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
@@ -72,8 +72,14 @@ pub fn render(
             .flex()
             .flex_col()
             .gap(px(GAP));
-        for (number, (row, text)) in sent.iter().enumerate() {
-            let row = *row;
+        let items = ws
+            .shown_chat()
+            .map_or(&[][..], |chat| chat.items.as_slice());
+        for (number, &(row, item)) in sent.iter().enumerate() {
+            let text = match items.get(item) {
+                Some(crate::pages::chat::transcript::Item::User { text, .. }) => text.as_str(),
+                _ => "",
+            };
             let words = super::messages::label(text);
             let preview = if words.is_empty() {
                 "Message".to_owned()

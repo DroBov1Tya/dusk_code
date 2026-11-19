@@ -71,9 +71,8 @@ fn steady(time: &str) -> String {
     out
 }
 
-pub fn render(shown: &str, chat: &Transcript, cx: &App) -> AnyElement {
+pub fn render(chat: &Transcript, cx: &App) -> AnyElement {
     let theme = cx.theme();
-    let id = SharedString::from(format!("working-{shown}"));
     let row = div()
         .h(px(HEIGHT))
         .flex()
@@ -83,15 +82,10 @@ pub fn render(shown: &str, chat: &Transcript, cx: &App) -> AnyElement {
         .meta()
         .text_color(theme.muted_foreground);
     if let Some((retry, arrived)) = &chat.retry {
-        let waited = u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let waited =
+            u64::try_from(dusk_protocol::system::now_ms().saturating_sub(*arrived)).unwrap_or(0);
         return row
-            .child(working::figure(
-                id,
-                theme.primary,
-                theme.foreground,
-                false,
-                cx,
-            ))
+            .child(working::figure(theme.primary, theme.foreground, false, cx))
             .child(div().min_w_0().truncate().child(retry.line(waited)))
             .into_any_element();
     }
@@ -115,7 +109,6 @@ pub fn render(shown: &str, chat: &Transcript, cx: &App) -> AnyElement {
         counts = counts.child(dot()).child(div().flex_none().child(text));
     }
     row.child(working::figure(
-        id,
         theme.primary,
         theme.foreground,
         status.still,

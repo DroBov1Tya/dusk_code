@@ -130,12 +130,13 @@ pub fn turn_activity(
                         cx,
                     ))
                 }
-                Item::Agent { from, text } => {
+                Item::Agent { from, text, .. } => {
                     detail.child(agent_report(ws, shown, index, (from, text), true, cx))
                 }
                 Item::User {
                     text,
                     sequence: None,
+                    ..
                 } => detail.child(activity_text(
                     ws,
                     shown,

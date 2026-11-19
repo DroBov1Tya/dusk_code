@@ -12,7 +12,7 @@ use gpui_kit::*;
 use crate::{
     pages::chat::{
         messages::STEP,
-        transcript::{Item, Picture, Transcript},
+        transcript::{Item, Transcript},
     },
     workspace::{Center, Workspace},
 };
@@ -111,43 +111,57 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         reasoning: reasoning.into(),
     };
     let mut chat = Transcript::default();
-    chat.items = vec![
-        Item::User {
-            text: "Add expiry to the cache: an entry should be gone after `ttl`, and `get()` \
+    chat.extend(
+        vec![
+            Item::User {
+                text: "Add expiry to the cache: an entry should be gone after `ttl`, and `get()` \
                    must never return a stale value."
-                .into(),
-            sequence: Some(1),
-        },
-        said(
-            "",
-            "The cache keeps values in a map; a deadline per entry is the smallest change.",
-        ),
-        tool("a1", "read_file", "src/lib.rs", ToolState::Done),
-        tool("a2", "search_files", "ttl", ToolState::Done),
-        tool("a3", "edit_file", "src/lib.rs", ToolState::Done),
-        tool(
-            "a4",
-            "run_command",
-            "cargo test -p cache",
-            ToolState::Failed,
-        ),
-        tool("a5", "edit_file", "src/lib.rs", ToolState::Done),
-        tool("a6", "run_command", "cargo test -p cache", ToolState::Done),
-        said(ANSWER, ""),
-        Item::User {
-            text: "Can `ttl` be changed while the cache runs?".into(),
-            sequence: Some(2),
-        },
-        tool("b1", "read_file", "src/config.rs", ToolState::Done),
-        said(SECOND, ""),
-        Item::Image(Picture {
-            id: "0000-face".into(),
-            title: Some("Entry lifetime".into()),
-            description: Some("Stored at t0, readable until `t0 + ttl`, swept after.".into()),
-        }),
-        Item::Notice("The context was compacted: 41.2k tokens summed up into 3.8k.".into()),
-        Item::Error("The provider closed the stream: 529 overloaded. Send again to go on.".into()),
-    ];
+                    .into(),
+                sequence: Some(1),
+                answered: Vec::new(),
+            },
+            said(
+                "",
+                "The cache keeps values in a map; a deadline per entry is the smallest change.",
+            ),
+            tool("a1", "read_file", "src/lib.rs", ToolState::Done),
+            tool("a2", "search_files", "ttl", ToolState::Done),
+            tool("a3", "edit_file", "src/lib.rs", ToolState::Done),
+            tool(
+                "a4",
+                "run_command",
+                "cargo test -p cache",
+                ToolState::Failed,
+            ),
+            tool("a5", "edit_file", "src/lib.rs", ToolState::Done),
+            tool("a6", "run_command", "cargo test -p cache", ToolState::Done),
+            said(ANSWER, ""),
+            Item::User {
+                text: "Can `ttl` be changed while the cache runs?".into(),
+                sequence: Some(2),
+                answered: Vec::new(),
+            },
+            tool("b1", "read_file", "src/config.rs", ToolState::Done),
+            said(SECOND, ""),
+            Item::Image {
+                card: dusk_protocol::tools::Card {
+                    id: "0000-face".into(),
+                    title: Some("Entry lifetime".into()),
+                    description: Some(
+                        "Stored at t0, readable until `t0 + ttl`, swept after.".into(),
+                    ),
+                    ..Default::default()
+                },
+                call_id: None,
+                aside: false,
+            },
+            Item::Notice("The context was compacted: 41.2k tokens summed up into 3.8k.".into()),
+            Item::Error(
+                "The provider closed the stream: 529 overloaded. Send again to go on.".into(),
+            ),
+        ],
+        0,
+    );
     let now = now_ms();
     chat.activity_boundaries = vec![0, 9, chat.items.len()];
     chat.boundary_times = vec![now - 600_000, now - 466_000, now - 430_000];
@@ -155,7 +169,7 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     chat.tokens = Some((58_400, 128_000));
     chat.cost = Some("$0.24".into());
     for (at, id) in [(0, "m1"), (8, "m2"), (9, "m3"), (11, "m4")] {
-        chat.message_ids.insert(at, id.into());
+        chat.set_message_id(at, id.into());
     }
     chat.pins = pins(now);
     chat.tasks = tasks(now);
@@ -204,18 +218,22 @@ fn skill(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         })
     };
     let mut chat = Transcript::default();
-    chat.items = vec![
-        Item::User {
-            text: "Cut the release.".into(),
-            sequence: Some(1),
-        },
-        step("s1"),
-        step("s2"),
-        Item::Assistant {
-            text: "Released 1.4.0.".into(),
-            reasoning: String::new(),
-        },
-    ];
+    chat.extend(
+        vec![
+            Item::User {
+                text: "Cut the release.".into(),
+                sequence: Some(1),
+                answered: Vec::new(),
+            },
+            step("s1"),
+            step("s2"),
+            Item::Assistant {
+                text: "Released 1.4.0.".into(),
+                reasoning: String::new(),
+            },
+        ],
+        0,
+    );
     chat.activity_boundaries = vec![0, 4];
     chat.boundary_times = vec![now_ms() - 90_000, now_ms()];
     chat.boundary_spend = vec![None, None];
@@ -233,34 +251,38 @@ fn skill(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         kind,
         text: text.into(),
     };
-    let mut first = SkillRow::new(change(
+    let first_change = change(
         1,
         "s1",
         SkillSaveAction::Updated,
         "tag after the changelog is committed, not before",
         false,
-    ));
-    first.diff = Some(SkillDiff {
-        change: first.change.clone(),
-        lines: vec![
-            line(DiffKind::Same, "## Release"),
-            line(DiffKind::Same, ""),
-            line(DiffKind::Removed, "1. Tag the commit."),
-            line(DiffKind::Removed, "2. Update CHANGELOG.md."),
-            line(DiffKind::Added, "1. Update CHANGELOG.md and commit it."),
-            line(DiffKind::Added, "2. Tag that commit."),
-            line(DiffKind::Same, "3. Push the tag."),
-        ],
-        cut: false,
-    });
-    let second = SkillRow::new(change(
+    );
+    let first = SkillRow {
+        diff: Some(SkillDiff {
+            change: first_change.clone(),
+            lines: vec![
+                line(DiffKind::Same, "## Release"),
+                line(DiffKind::Same, ""),
+                line(DiffKind::Removed, "1. Tag the commit."),
+                line(DiffKind::Removed, "2. Update CHANGELOG.md."),
+                line(DiffKind::Added, "1. Update CHANGELOG.md and commit it."),
+                line(DiffKind::Added, "2. Tag that commit."),
+                line(DiffKind::Same, "3. Push the tag."),
+            ],
+            cut: false,
+        }),
+        ..SkillRow::default()
+    };
+    let second = change(
         2,
         "s2",
         SkillSaveAction::Updated,
         "run the dry run first",
         true,
-    ));
-    chat.skills = vec![first, second];
+    );
+    chat.skills_loaded(vec![first_change, second]);
+    chat.skill_rows.insert(1, first);
     let thread_id = ws.shown.clone().unwrap_or_else(|| "shot".to_owned());
     ws.unfolded.insert((thread_id.clone(), 1 | ACTIVITY));
     ws.unfolded.insert((
@@ -415,7 +437,7 @@ pub fn state(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
                         wait_ms: 8_000,
                         message: "529 overloaded".into(),
                     },
-                    std::time::Instant::now(),
+                    dusk_protocol::system::now_ms(),
                 ));
             }
         }
