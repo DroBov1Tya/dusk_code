@@ -64,6 +64,8 @@ mod tools;
 mod voice;
 mod workshop;
 
+pub use workshop::SuggestedCard;
+
 use agents::Agents;
 use mcp::Mcp;
 use plugins::Plugins;

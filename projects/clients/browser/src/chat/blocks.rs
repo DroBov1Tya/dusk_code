@@ -126,12 +126,12 @@ fn opens_turn(item: &Item) -> bool {
     matches!(item, Item::User { .. } | Item::Job(_))
 }
 
-/// What a finished turn folds away: all but its answer, the user's words, the blocks the
-/// agent showed and errors.
+/// What a finished turn folds away: all but its answer, the user's words, the blocks and
+/// Workshop cards the agent showed, and errors.
 fn folds(item: &Item) -> bool {
     !matches!(
         item,
-        Item::User { .. } | Item::Job(_) | Item::Block(_) | Item::Error(_)
+        Item::User { .. } | Item::Job(_) | Item::Block(_) | Item::Suggestion(_) | Item::Error(_)
     )
 }
 
@@ -429,7 +429,9 @@ fn item_view(
             view! { <div class="msg assistant"><Markdown text=text /></div> }.into_any()
         }
         Item::Block(block) => view! { <ShownBlock block id chat thread read_only /> }.into_any(),
-        Item::Suggestion(_) => ().into_any(),
+        Item::Suggestion(card) => {
+            view! { <crate::pages::connectors::SuggestedCard card /> }.into_any()
+        }
         Item::Image { card, .. } => view! { <ImageCard card /> }.into_any(),
         Item::Audio(card) => view! { <AudioCard card /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),
@@ -931,6 +933,42 @@ mod tests {
                 .iter()
                 .any(|block| matches!(block, Block::Turn { .. }))
         );
+    }
+
+    /// A Workshop card is what the agent showed too: a finished turn keeps it in sight,
+    /// where its rows can still be read and opened.
+    #[test]
+    fn a_finished_turn_keeps_its_workshop_card_in_sight() {
+        use dusk_protocol::plugin::{Listing, SUGGEST_TOOL, Suggested, Suggestion};
+        let card = Suggestion {
+            label: "Design skills".into(),
+            listings: vec![Suggested::of(&Listing {
+                source: "official".into(),
+                name: "motion".into(),
+                ..Listing::default()
+            })],
+        };
+        let call = ToolCall {
+            id: "card".into(),
+            name: SUGGEST_TOOL.into(),
+            arguments: serde_json::json!({ "ids": ["official/motion"], "label": "x" }),
+        };
+        let mut chat = ChatLog::default();
+        chat.add_user("go".into(), Some(1), 0);
+        chat.apply(ThreadEvent::TurnStarted(running_turn()), 0);
+        chat.apply(ThreadEvent::ToolStarted(call), 0);
+        chat.apply(
+            ThreadEvent::ToolFinished {
+                call_id: "card".into(),
+                result: dusk_protocol::tools::ToolResult::text(card.result()),
+            },
+            0,
+        );
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("Here".into())), 0);
+        chat.apply(ThreadEvent::Idle, 0);
+        let blocks = blocks(&chat);
+        assert!(blocks.iter().any(|block| matches!(block, Block::One(id, _)
+            if matches!(&chat.items[chat.index_of(*id).unwrap()], Item::Suggestion(shown) if *shown == card))));
     }
 
     /// Streamed text changes no block, so the running turn's fold is not drawn again and

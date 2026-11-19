@@ -13,6 +13,9 @@ mod filters;
 mod hero;
 mod pack;
 mod placeholder;
+mod suggested;
+
+pub use suggested::SuggestedCard;
 
 use std::collections::{BTreeSet, HashMap};
 
