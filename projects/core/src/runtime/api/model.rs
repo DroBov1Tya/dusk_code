@@ -37,11 +37,9 @@ impl Runtime {
     }
 
     pub fn input_limit(&self) -> u64 {
-        let config = self.config().current();
-        self.model()
-            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
-                choice.input_limit(&config)
-            })
+        self.launcher
+            .model
+            .current_input_limit(&self.config().current())
     }
 
     /// Whether the start is still looking for a model in the background.

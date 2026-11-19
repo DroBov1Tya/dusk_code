@@ -7,7 +7,13 @@ use std::sync::Arc;
 use tracing::warn;
 
 use super::Agent;
-use crate::{catalog::modes::Modes, config::Config, runtime::thread::Conversation};
+use anyhow::Result;
+
+use crate::{
+    catalog::modes::Modes,
+    config::Config,
+    runtime::thread::{Conversation, start::NO_PROMPT},
+};
 
 impl Agent {
     /// The settings for this thread's next step, with the chat's own mode laid over the
@@ -17,21 +23,28 @@ impl Agent {
         if self.depth != 0 {
             return config;
         }
-        let mode = match self.state.chat_mode(&self.thread_id).await {
-            Ok(Some(mode)) => mode,
-            Ok(None) => return config,
+        let stored = match self.state.chat_mode(&self.thread_id).await {
+            Ok(stored) => stored,
             Err(error) => {
                 warn!("thread {}: {error:#}", self.thread_id);
                 return config;
             }
         };
-        let known = Modes::new(&self.modes_dir).list().contains(&mode);
-        if mode == config.mode() || !known {
+        let mode = Modes::new(&self.modes_dir).effective(stored, config.mode());
+        if mode == config.mode() {
             return config;
         }
         let mut own = (*config).clone();
         own.set_mode(mode);
         Arc::new(own)
+    }
+
+    /// The prompt of the mode this thread's next step runs in, as its system message.
+    pub(crate) async fn mode_prompt(&self) -> Result<(String, String)> {
+        let mode = self.config_now().await.mode().to_owned();
+        let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
+        let prompt = prompt.unwrap_or_else(|| NO_PROMPT.to_owned());
+        Ok((mode, prompt))
     }
 
     /// A turn about to start in a chat: when the user wrote to it, the chat takes up the

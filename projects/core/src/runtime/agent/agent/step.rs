@@ -3,8 +3,8 @@
 use super::calls::Called;
 use super::wait::waits_out;
 use super::{Agent, StepEnd, insert_project, interrupted, missing_tools, recorded_reasoning};
-use crate::runtime::agent::Inbox;
-use crate::runtime::{ThreadEvent, thread::Conversation};
+use crate::runtime::ThreadEvent;
+use crate::runtime::agent::{Inbox, Loaded};
 use crate::{
     message::sources::{SourceBlock, ThreadSources},
     providers::{
@@ -29,14 +29,14 @@ impl Agent {
         turn: &Turn,
         inbox: &mut Inbox,
         waited: bool,
+        loaded: Option<Loaded>,
     ) -> Result<StepEnd> {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config_now().await;
         // A team's member steps only while it holds its task and the team has budget.
         crate::runtime::team::may_step(&self.state, &config, &self.thread_id, self.depth).await?;
         let stub_results = config.limits().stub_results;
-        let mut conversation =
-            Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        let mut conversation = Loaded::take(loaded, self, stub_results).await?;
         self.put_away_old_results(&mut conversation, &config).await;
         // Messages that joined between steps are answered by this turn, not a next one.
         let newest_user = conversation
