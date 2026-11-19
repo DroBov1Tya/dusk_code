@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::client::Command;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Request {
     Thread(ThreadRequest),

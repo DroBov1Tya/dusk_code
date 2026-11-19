@@ -15,5 +15,13 @@ serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
 
+[features]
+# Derives `JsonSchema` on the wire types, for `docs/api/schema.json`.
+schema = []
+
+[[example]]
+name = "schema"
+required-features = ["schema"]
+
 [dev-dependencies]
 proptest.workspace = true

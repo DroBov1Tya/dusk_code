@@ -14,6 +14,7 @@ use crate::system::SystemReport;
 use crate::thread::{
     Found, JobInfo, LocalUnsent, LogEntry, Message, Overview, Pin, PlanPage, Task, Team, Thread,
 };
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,

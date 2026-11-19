@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const SAVE_MARKER: &str = "[dusk_skill_saved] ";
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SkillKind {
     Builtin,
@@ -21,6 +22,7 @@ impl SkillKind {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillInfo {
     pub name: String,
@@ -37,6 +39,7 @@ pub struct SkillInfo {
 /// Skills as they came, switched on or off together: the built-in skills as the pack
 /// `duskcode`, and every folder under `skills/` that holds skills, such as a pack from
 /// the store or a plugin's skills. A skill of the user's own at the top is in none.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillPack {
     pub name: String,
@@ -49,6 +52,7 @@ pub struct SkillPack {
     pub skills: Vec<PackSkill>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackSkill {
     /// The skill's full name, such as `engineering/spike`.
@@ -59,6 +63,7 @@ pub struct PackSkill {
 
 /// A successful file-tool save. Kept in its stored result so replay needs no filesystem
 /// inspection and cannot mistake a loaded skill for an updated one.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SkillSave {
@@ -66,6 +71,7 @@ pub struct SkillSave {
     pub action: SkillSaveAction,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillSaveAction {

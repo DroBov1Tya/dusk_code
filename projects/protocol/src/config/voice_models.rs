@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Which way a model works.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpeechKind {
     /// Speech into text: the microphone.
@@ -12,6 +13,7 @@ pub enum SpeechKind {
 }
 
 /// Where a model is on this machine.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LocalState {
     NotInstalled,
@@ -24,6 +26,7 @@ pub enum LocalState {
     Failed(String),
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoiceModel {
     pub id: String,
@@ -39,6 +42,7 @@ pub struct VoiceModel {
 }
 
 /// The models, and whether `uv`, which installs them, is on this machine.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoiceModels {
     pub uv_found: bool,

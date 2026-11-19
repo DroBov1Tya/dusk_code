@@ -8,6 +8,7 @@ use crate::config::Settings;
 use crate::model::{Effort, ProviderStatus};
 use crate::release::UpdateInfo;
 use crate::thread::{ContextReport, JobInfo, Source, Thread, UndoPoint};
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Command {
     /// Writes a portable archive of config and chat data; never sends it anywhere.
@@ -72,6 +73,7 @@ impl Command {
 }
 
 /// What a client command answers.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Answer {
     /// The archive contains config secrets as well as chat history.

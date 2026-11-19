@@ -10,6 +10,7 @@ pub const MAX_PICTURE_UPLOAD: usize = 6 * 1024 * 1024;
 
 /// A thread's background jobs, sources, plan, team and changes. The plan and team
 /// requests name the root thread, which leads the team.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WorkRequest {
     Jobs {

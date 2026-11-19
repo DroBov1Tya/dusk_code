@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Profile;
 /// The files the user edits through the settings, and the MCP servers.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CatalogRequest {
     Skill {

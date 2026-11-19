@@ -11,6 +11,7 @@ pub const PLAN_PAGE_DONE: u32 = 100;
 
 /// A task. Every field after `items` came with the plan graph and has a default, so a
 /// task written before it still reads; such a task's status follows its `done`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "TaskFields")]
 pub struct Task {
@@ -57,6 +58,7 @@ pub struct Task {
 
 /// The fields of a `Task` as they arrive. `status` is optional only so a task written
 /// before the plan graph takes it from `done`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Deserialize)]
 struct TaskFields {
     task_id: String,
@@ -141,6 +143,7 @@ impl TryFrom<TaskFields> for Task {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskItem {
     pub item_id: String,
@@ -155,6 +158,7 @@ pub struct TaskItem {
 }
 
 /// Where a task is. Only the core moves a task from one to another.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
@@ -204,6 +208,7 @@ impl TaskStatus {
 }
 
 /// The member thread that holds a task.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskOwner {
     pub thread_id: String,
@@ -211,6 +216,7 @@ pub struct TaskOwner {
 }
 
 /// What a blocked task waits for.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WaitsOn {
@@ -223,6 +229,7 @@ pub enum WaitsOn {
 }
 
 /// One page of a plan, for the strip: every task not done, then done ones, newest first.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanPage {
     pub tasks: Vec<Task>,
@@ -233,6 +240,7 @@ pub struct PlanPage {
 }
 
 /// How many tasks of a plan are in each status.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanCounts {
     pub open: u32,

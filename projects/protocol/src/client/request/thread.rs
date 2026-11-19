@@ -7,6 +7,7 @@ use crate::config::ApprovalPolicy;
 use crate::tools::Decision;
 /// Opening, feeding and closing threads. Events of an open thread arrive as
 /// `Event::Thread` until `Event::Ended`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadRequest {
     New {

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// A durable card reference, carried separately from model-visible text. IDs are generated
 /// locally; neither a URL nor a caller-supplied path is used as a storage filename.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Card {
     pub id: String,
@@ -26,6 +27,7 @@ pub struct Card {
     pub duration_ms: u64,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CardKind {

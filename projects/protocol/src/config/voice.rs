@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// One server and the model to ask of it. The key is kept apart, in the keychain.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoiceEndpoint {
     pub base_url: String,
@@ -16,6 +17,7 @@ pub struct VoiceEndpoint {
 }
 
 /// What is set up: recognition and synthesis are independent, and either may be missing.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoiceSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// What went wrong with a provider call, coarse enough for a client to draw and for the
 /// retry loop to decide on.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderErrorKind {
     /// No response at all: the name did not resolve, the connection or TLS failed, or it
@@ -64,6 +65,7 @@ impl ProviderErrorKind {
 /// A provider failure a turn may wait out because it passes by itself: the provider is
 /// limited, spent or out of reach for now, not refusing this request. Named on the wire
 /// as the `ProviderErrorKind` it stands for.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderWaitKind {
     RateLimited,
@@ -105,6 +107,7 @@ impl TryFrom<ProviderErrorKind> for ProviderWaitKind {
 }
 
 /// A model call that failed for good: why, and how many times it was sent.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderFailure {
     pub kind: ProviderErrorKind,

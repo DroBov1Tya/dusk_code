@@ -7,6 +7,7 @@ use crate::client::{GitRequest, Secret};
 use crate::project::{FileStamp, ScheduleDraft};
 /// Projects, and the git state and files of one. Git and files are read only inside
 /// a saved project's folder.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProjectRequest {
     List,

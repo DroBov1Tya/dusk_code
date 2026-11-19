@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecretsInfo {
     /// The system keychain holds the secrets; without one, provider keys stay in the
@@ -12,6 +13,7 @@ pub struct SecretsInfo {
     pub entries: Vec<SecretInfo>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecretInfo {
     pub name: String,

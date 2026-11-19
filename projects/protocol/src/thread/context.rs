@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextReport {
     /// The size of the next request, as the sidebar counts it.
@@ -15,6 +16,7 @@ pub struct ContextReport {
 }
 
 /// One source category's share of the request; only categories with tokens are listed.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextSource {
     pub category: String,
@@ -22,6 +24,7 @@ pub struct ContextSource {
 }
 
 /// A part of the request; its tokens are estimated, the total may be the provider's.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextSection {
     pub name: String,
@@ -38,6 +41,7 @@ pub struct ContextSection {
 }
 
 /// One item's share and how often it is used, so clients can show both.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextItemDetail {
     pub name: String,

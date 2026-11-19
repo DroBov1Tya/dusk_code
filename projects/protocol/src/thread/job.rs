@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A job as a client lists it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobInfo {
     pub job_id: String,

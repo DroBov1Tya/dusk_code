@@ -16,6 +16,7 @@ pub const MAX_LINE: usize = 4 * 1024 * 1024;
 pub const MAX_FRAME: usize = 3 * 1024 * 1024;
 
 /// From the core to the plugin.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToPlugin {
@@ -32,6 +33,7 @@ pub enum ToPlugin {
 }
 
 /// From the plugin to the core.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FromPlugin {
