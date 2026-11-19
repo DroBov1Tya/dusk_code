@@ -23,7 +23,7 @@ pub(super) const LIMIT: Duration = Duration::from_secs(45);
 const MAX_LOG: usize = 500;
 const MAX_LOGS: usize = 20;
 const MAX_STDERR: u64 = 4096;
-/// A `result` line larger than this fails: parsed, a 4 MiB line of empty items could grow
+/// A line larger than this fails: parsed, a 4 MiB line of empty items could grow
 /// to some hundred MB. A real answer is a few dozen KiB.
 const MAX_RESULT: usize = 512 * 1024;
 /// How long the output is still read after the program exited, for what it wrote last
@@ -103,7 +103,9 @@ async fn talk(
         let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
         if !kept.is_empty() {
             // Line by line, so the program cannot write a line that reads as the core's.
-            for text in String::from_utf8_lossy(&kept).lines() {
+            let text = String::from_utf8_lossy(&kept);
+            let lines = text.lines().filter(|line| !line.trim().is_empty());
+            for text in lines.take(MAX_LOGS) {
                 let text = untrusted::line(text, MAX_LOG);
                 debug!("contract program of {plugin_name}, stderr: {text}");
             }
@@ -124,15 +126,48 @@ async fn talk(
     tokio::select! {
         answer = &mut read => answer,
         // Gone without a result: whatever it left running holds the pipe, so the group
-        // is killed (the leader is reaped, but its group lives while any member does)
-        // and the rest is read only for a short while.
-        _ = child.wait() => {
+        // is killed (the leader is a zombie still, so its group id is pinned) and the
+        // rest is read only for a short while. `run` reaps it afterwards.
+        () = exited(child.id()) => {
             group.kill();
             match tokio::time::timeout(GRACE, &mut read).await {
                 Ok(answer) => answer,
                 Err(_) => Err(failed("it ended without a result".into())),
             }
         }
+    }
+}
+
+/// Resolves once the process has exited, without reaping it.
+async fn exited(pid: Option<u32>) {
+    let Some(pid) = pid else {
+        return std::future::pending().await;
+    };
+    let mut tick = tokio::time::interval(Duration::from_millis(25));
+    loop {
+        tick.tick().await;
+        if has_exited(pid) {
+            return;
+        }
+    }
+}
+
+/// `waitid` with `WNOWAIT`: tells of an exit and leaves the zombie to be reaped later.
+fn has_exited(pid: u32) -> bool {
+    // SAFETY: `info` is plain data the call fills in; the pid is our own child's.
+    unsafe {
+        let mut info: libc::siginfo_t = std::mem::zeroed();
+        let done = libc::waitid(
+            libc::P_PID,
+            pid as libc::id_t,
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        );
+        #[cfg(target_os = "linux")]
+        let who = info.si_pid();
+        #[cfg(not(target_os = "linux"))]
+        let who = info.si_pid;
+        done == 0 && who != 0
     }
 }
 
@@ -152,8 +187,8 @@ pub(super) async fn read_answer(
             Err(why) => return Err(failed(format!("its output {why}"))),
         }
         let taken = std::mem::take(&mut line);
-        if taken.len() > MAX_RESULT && is_result(&taken) {
-            return Err(failed("its result is too large".into()));
+        if taken.len() > MAX_RESULT {
+            return Err(failed("its line is too large".into()));
         }
         match serde_json::from_slice::<FromProgram>(&taken) {
             Ok(FromProgram::Result(answer)) => return Ok(answer),
@@ -171,14 +206,4 @@ pub(super) async fn read_answer(
             }
         }
     }
-}
-
-/// Whether a line is a `result`, read without building its values.
-fn is_result(line: &[u8]) -> bool {
-    #[derive(serde::Deserialize)]
-    struct Kind {
-        #[serde(rename = "type")]
-        kind: String,
-    }
-    serde_json::from_slice::<Kind>(line).is_ok_and(|kind| kind.kind == "result")
 }

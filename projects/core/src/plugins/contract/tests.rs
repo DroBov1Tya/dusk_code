@@ -201,7 +201,7 @@ async fn an_exit_without_a_result_does_not_wait_for_a_grandchild() {
     assert!(gone(&setup.data.join("pid")));
 }
 
-/// A `result` line that would inflate when parsed fails; a log line of that size does not.
+/// A line that would inflate when parsed fails.
 #[tokio::test]
 async fn a_large_many_item_result_fails() {
     let items = "{},".repeat(1_000_000);
