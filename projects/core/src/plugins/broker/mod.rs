@@ -149,13 +149,19 @@ pub fn new_token() -> Result<Secret> {
     ))
 }
 
+/// Accepts until dropped; the connections it serves, tunnels among them, end with it.
 async fn accept(listener: TcpListener, policy: Arc<RwLock<Arc<Policy>>>) {
+    let mut connections = tokio::task::JoinSet::new();
     loop {
-        let Ok((stream, _)) = listener.accept().await else {
+        let accepted = tokio::select! {
+            accepted = listener.accept() => accepted,
+            Some(_) = connections.join_next(), if !connections.is_empty() => continue,
+        };
+        let Ok((stream, _)) = accepted else {
             continue;
         };
         let policy = Arc::clone(&policy.read());
-        tokio::spawn(async move {
+        connections.spawn(async move {
             if let Err(error) = serve(stream, &policy).await {
                 // The error names no key or URL with one in it.
                 debug!("plugin proxy: {error:#}");

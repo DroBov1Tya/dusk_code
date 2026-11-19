@@ -61,9 +61,10 @@ pub fn confine(command: &mut Command, confinement: &Confinement) -> Result<()> {
     unsafe {
         command.pre_exec(move || {
             if let Some(rules) = rules.take() {
-                rules
-                    .restrict_self()
-                    .map_err(|error| std::io::Error::other(error.to_string()))?;
+                // The error of the failed system call; formatting one would allocate.
+                if rules.restrict_self().is_err() {
+                    return Err(std::io::Error::last_os_error());
+                }
             }
             Ok(())
         });

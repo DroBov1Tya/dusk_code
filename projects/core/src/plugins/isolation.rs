@@ -155,12 +155,13 @@ impl Isolation {
         let (network, gate) = match (network, broker) {
             (Network::Closed, _) => (Network::Closed, None),
             (_, Some(broker)) if contract => {
-                ensure!(
-                    platform::netns::available(),
-                    "this Linux does not let a program have a network of its own \
-                     (unprivileged user namespaces are off), so a plugin that serves a \
-                     contract cannot start here"
-                );
+                if let Some(missing) = platform::netns::missing() {
+                    anyhow::bail!(
+                        "this Linux does not let a program have a network of its own ({}), \
+                         so a plugin that serves a contract cannot start here",
+                        missing.reason()
+                    );
+                }
                 (Network::Namespace, Some(broker.gate()))
             }
             _ => anyhow::bail!(
@@ -213,6 +214,12 @@ impl Isolation {
 
     /// `line`, its program first, confined in the plugin's folder with a bare
     /// environment. Its own program may always start.
+    ///
+    /// On Linux a contract plugin's program gets its broker only if it is spawned
+    /// within five seconds: build the command once the call holds its slot, spawn it at
+    /// once and drop it, which closes the core's copy of the program's end of the pair,
+    /// so a program that dies before it hands its socket over is seen at once
+    /// (`contract::call` does so).
     pub fn command(&self, line: &[String]) -> Result<Command> {
         let (program, arguments) = line.split_first().context("no command")?;
         let found = locate(program);
@@ -1009,10 +1016,13 @@ mod tests {
             )
             .unwrap_err();
             assert!(
-                format!("{refused:#}").contains("unprivileged user namespaces are off"),
+                format!("{refused:#}").starts_with(
+                    "this Linux does not let a program have a network of its own \
+                     (unprivileged user namespaces are "
+                ),
                 "{refused:#}"
             );
-            eprintln!("no user namespaces here; the refusal checked");
+            eprintln!("no user namespaces here; refused: {refused:#}");
             return;
         }
         let Some(setup) = call_setup("call-netns", permissions, Some(&broker)) else {
@@ -1042,6 +1052,43 @@ mod tests {
         assert!(ok && answer.starts_with("HTTP/1.1 200"), "{answer}");
         let (_, answer) = bash(connect("other.example:443")).await;
         assert!(answer.starts_with("HTTP/1.1 403"), "{answer}");
+        // No Unix socket on disk (the session bus, an agent), no pair, no vsock, though
+        // the core's own listener is reachable unconfined.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let socket = PathBuf::from(format!("/tmp/dusk-call-{}-{id}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&socket);
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let unix = "socket(my $s, AF_UNIX, SOCK_STREAM, 0) or exit 3; \
+                    connect($s, pack_sockaddr_un($ARGV[0])) or exit 4";
+        let perl = |script: &str| {
+            [
+                "perl",
+                "-MSocket",
+                "-e",
+                script,
+                socket.display().to_string().as_str(),
+            ]
+            .map(str::to_owned)
+            .to_vec()
+        };
+        let line = perl(unix);
+        let unconfined = std::process::Command::new(&line[0])
+            .args(&line[1..])
+            .status()
+            .unwrap();
+        assert!(unconfined.success(), "{unconfined}");
+        let confined = async |line: Vec<String>| {
+            let line: Vec<&str> = line.iter().map(String::as_str).collect();
+            run(&call, &line).await.status.code()
+        };
+        assert_eq!(confined(perl(unix)).await, Some(3));
+        let pair = "socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, 0) or exit 3";
+        assert_eq!(confined(perl(pair)).await, Some(3));
+        let vsock = "socket(my $s, 40, SOCK_STREAM, 0) or exit 3";
+        assert_eq!(confined(perl(vsock)).await, Some(3));
+        drop(listener);
+        let _ = std::fs::remove_file(&socket);
     }
 
     /// A temporary chat's folder sits in the temporary folders every plugin may use; a

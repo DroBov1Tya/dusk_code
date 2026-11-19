@@ -9,9 +9,12 @@
 //! socket pair, and closes its copies. The core accepts on it as the broker, until the
 //! process ends.
 //!
+//! The namespace does not close Unix sockets on disk nor vsock: `seccomp` refuses them,
+//! last before exec.
+//!
 //! Where unprivileged user namespaces are off, or the kernel lets a program make one but
-//! not bring its loopback up (Ubuntu's AppArmor), `available` says so: it runs the whole
-//! setup once.
+//! not bring its loopback up (Ubuntu's AppArmor), `missing` says so: it runs the whole
+//! setup once, the socket filter too.
 
 use std::{
     ffi::CStr,
@@ -39,32 +42,84 @@ pub const PROXY_PORT: u16 = 3128;
 /// How long the core waits for the started program's socket.
 const RECEIVE_TIME: Duration = Duration::from_secs(5);
 
-/// Whether this Linux lets a program have a network of its own; asked once.
+/// Why a program cannot have a network of its own here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Missing {
+    /// No user and network namespace can be made at all.
+    Off,
+    /// One can be made, but not set up: AppArmor's restriction on Ubuntu, or a seccomp
+    /// filter of a container.
+    Restricted,
+}
+
+impl Missing {
+    /// Said in brackets after "this Linux does not let a program have a network of its
+    /// own".
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::Off => "unprivileged user namespaces are off",
+            Self::Restricted => {
+                "unprivileged user namespaces are restricted, as Ubuntu's AppArmor does"
+            }
+        }
+    }
+}
+
+/// Whether this Linux lets a program have a network of its own; asked once. It starts
+/// a program, so async callers ask it through `spawn_blocking` or after `warm`.
 pub fn available() -> bool {
-    static PROBE: OnceLock<bool> = OnceLock::new();
-    *PROBE.get_or_init(|| match probe() {
-        Ok(()) => true,
-        Err(error) => {
+    missing().is_none()
+}
+
+/// Why it does not, if it does not.
+pub fn missing() -> Option<Missing> {
+    static PROBE: OnceLock<Option<Missing>> = OnceLock::new();
+    *PROBE.get_or_init(|| {
+        if let Err(error) = run_true(|command| {
+            // SAFETY: one system call in the forked child.
+            unsafe {
+                std::os::unix::process::CommandExt::pre_exec(command, || {
+                    match libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNET) {
+                        -1 => Err(io::Error::last_os_error()),
+                        _ => Ok(()),
+                    }
+                });
+            }
+            Ok(None)
+        }) {
             debug!("no network namespace for plugins: {error:#}");
-            false
+            return Some(Missing::Off);
+        }
+        match run_true(|command| {
+            let receiver = prepare(command)?;
+            super::seccomp::confine(command)?;
+            Ok(Some(receiver))
+        }) {
+            Ok(()) => None,
+            Err(error) => {
+                debug!("a network namespace cannot be set up for plugins: {error:#}");
+                Some(Missing::Restricted)
+            }
         }
     })
 }
 
-/// Runs `/bin/true` through the same setup a program gets.
-fn probe() -> Result<()> {
+/// Runs `/bin/true` as `setup` prepares it, and takes the socket when it hands one over.
+fn run_true(
+    setup: impl FnOnce(&mut std::process::Command) -> Result<Option<Receiver>>,
+) -> Result<()> {
     let mut command = std::process::Command::new("/bin/true");
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let receiver = prepare(&mut command)?;
+    let receiver = setup(&mut command)?;
     let mut child = command
         .spawn()
         .context("cannot start a program in a namespace")?;
     // Drops the child's end of the pair, so a failed start is seen at once.
     drop(command);
-    let inside = receiver.listener();
+    let inside = receiver.map(Receiver::listener).transpose();
     let status = child.wait()?;
     inside?;
     ensure!(status.success(), "the probe failed: {status}");
@@ -209,9 +264,13 @@ fn inside(prepared: &Prepared) -> io::Result<()> {
             libc::SOCK_DGRAM | libc::SOCK_CLOEXEC,
             0,
         ))?;
-        let up = libc::ioctl(control, libc::SIOCSIFFLAGS as _, &prepared.loopback);
+        let up = check(libc::ioctl(
+            control,
+            libc::SIOCSIFFLAGS as _,
+            &prepared.loopback,
+        ));
         libc::close(control);
-        check(up)?;
+        up?;
         let listener = check(libc::socket(
             libc::AF_INET,
             libc::SOCK_STREAM | libc::SOCK_CLOEXEC,

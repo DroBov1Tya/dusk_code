@@ -703,7 +703,10 @@ mod tests {
             let problem = row.problem.unwrap_or_default();
             assert!(!row.enabled);
             assert!(
-                problem.starts_with("this Linux does not let a program have a network"),
+                problem.starts_with(
+                    "this Linux does not let a program have a network of its own \
+                     (unprivileged user namespaces are "
+                ),
                 "{problem}"
             );
             return;

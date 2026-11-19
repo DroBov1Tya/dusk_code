@@ -3,3 +3,4 @@
 
 pub mod netns;
 pub mod sandbox;
+pub mod seccomp;

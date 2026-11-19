@@ -179,7 +179,8 @@ pub fn confined_program(
 
 /// `program` with `arguments`, no shell, confined, in a user and network namespace of
 /// its own whose only socket is the one the receiver hands over once it has started:
-/// the broker's. Fails where this Linux cannot make one.
+/// the broker's. It may open no Unix or vsock socket. Fails where this Linux cannot
+/// make one.
 #[cfg(target_os = "linux")]
 pub fn namespaced_program(
     program: &Path,
@@ -195,6 +196,8 @@ pub fn namespaced_program(
     // First: Landlock, applied after it, would close /proc to the namespace's maps.
     let receiver = super::linux::netns::enter(&mut command)?;
     super::linux::sandbox::confine(&mut command, confinement)?;
+    // Last: no Unix or vsock socket, which the namespace does not close.
+    super::linux::seccomp::confine(command.as_std_mut())?;
     Ok((command, receiver))
 }
 
