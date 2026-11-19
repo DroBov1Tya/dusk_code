@@ -157,17 +157,23 @@ impl State {
         .collect()
     }
 
-    /// Records which token owns a chat.
+    /// Records which token owns a chat, once. Only the New, NewTemporary, Fork and ForkAt
+    /// handlers call it, for the chat they just created. It fails for an unknown thread, a
+    /// subagent thread, and a chat another token owns; the same token again is a no-op.
     pub async fn set_thread_owner(&self, thread_id: &str, owner: &str) -> Result<()> {
         ensure!(!owner.trim().is_empty(), "thread owner is empty");
-        let changed = sqlx::query("UPDATE threads SET owner = ? WHERE id = ?")
-            .bind(owner)
-            .bind(thread_id)
-            .execute(&self.pool)
-            .await
-            .context("store the thread's owner")?
-            .rows_affected();
-        ensure!(changed == 1, "thread not found");
+        let changed = sqlx::query(
+            "UPDATE threads SET owner = ?
+             WHERE id = ? AND parent_thread_id IS NULL AND (owner IS NULL OR owner = ?)",
+        )
+        .bind(owner)
+        .bind(thread_id)
+        .bind(owner)
+        .execute(&self.pool)
+        .await
+        .context("store the thread's owner")?
+        .rows_affected();
+        ensure!(changed == 1, "thread cannot take this owner");
         Ok(())
     }
 
@@ -637,11 +643,18 @@ mod tests {
             .await
             .unwrap();
         state.set_thread_owner("a", "t1").await.unwrap();
-        state.set_thread_owner("agent", "t1").await.unwrap();
+        assert!(state.set_thread_owner("agent", "t1").await.is_err());
+        state.set_thread_owner("a", "t1").await.unwrap();
+        assert!(state.set_thread_owner("a", "t2").await.is_err());
         assert_eq!(
             state.thread_owner("a").await.unwrap().as_deref(),
             Some("t1")
         );
+        assert_eq!(
+            state.thread_owner("a").await.unwrap().as_deref(),
+            Some("t1")
+        );
+        assert_eq!(state.thread_owner("agent").await.unwrap(), None);
         assert_eq!(state.thread_owner("b").await.unwrap(), None);
         assert_eq!(state.threads_owned_by("t1").await.unwrap(), ["a"]);
         assert!(state.threads_owned_by("t2").await.unwrap().is_empty());
