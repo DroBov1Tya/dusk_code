@@ -9,11 +9,14 @@ use dusk_protocol::{
     system::SystemReport,
     thread::ContextReport,
 };
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::{
+    io::{AsyncBufRead, AsyncWrite},
+    sync::{mpsc, oneshot, watch},
+};
 
 use super::{
-    Catalog, ClientId, Hub, Plugins, Projects, Settings, Terminal, Threads, Work,
-    serve::{Call, Message},
+    Catalog, ClientId, Hub, Plugins, Projects, Settings, Terminal, Threads, Work, remote,
+    serve::{Call, Message, blank_status},
 };
 
 pub struct Client {
@@ -24,20 +27,54 @@ pub struct Client {
     /// Whether `status` is the core's: false when the scope may not read it, and the
     /// status is then a blank that never changes.
     pub(super) reads_status: bool,
-    pub(super) id: ClientId,
-    pub(super) hub: Arc<Hub>,
+    pub(super) link: Link,
+}
+
+/// Where the calls of a client go: into the hub of this process, or over a socket.
+pub(super) enum Link {
+    Local { id: ClientId, hub: Arc<Hub> },
+    Remote(remote::Link),
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
-        let _ = self.hub.calls.send(Message::Detach(self.id));
+        // A remote client leaves by closing the socket, which its link does on drop.
+        if let Link::Local { id, hub } = &self.link {
+            let _ = hub.calls.send(Message::Detach(*id));
+        }
     }
 }
 
 impl Client {
+    /// A client of a core on the other end of a socket, after the handshake succeeded.
+    /// It lives on its own tasks; they end with the socket or when the client drops.
+    pub async fn over(
+        read: impl AsyncBufRead + Unpin + Send + 'static,
+        write: impl AsyncWrite + Unpin + Send + 'static,
+    ) -> Client {
+        let (events_in, events) = mpsc::unbounded_channel();
+        let (status_in, status) = watch::channel(blank_status());
+        let link = remote::Link::start(read, write, events_in, status_in);
+        Client {
+            events,
+            status,
+            // An app attaches with the full scope, and the core sends it every status.
+            reads_status: true,
+            link: Link::Remote(link),
+        }
+    }
+
     /// Whether `status` is the core's; false when it is a blank that never changes.
     pub fn reads_status(&self) -> bool {
         self.reads_status
+    }
+
+    /// The hub of this process; none for a client over a socket.
+    pub fn hub(&self) -> Option<Arc<Hub>> {
+        match &self.link {
+            Link::Local { hub, .. } => Some(Arc::clone(hub)),
+            Link::Remote(_) => None,
+        }
     }
 
     pub fn threads(&self) -> Threads<'_> {
@@ -205,15 +242,20 @@ impl Client {
     }
 
     fn send(&self, request: Request) -> oneshot::Receiver<Response> {
-        let (reply, answer) = oneshot::channel();
-        // A stopped core drops the call, and the receiver says so.
-        let call = Call {
-            client: self.id,
-            request,
-            reply,
-        };
-        let _ = self.hub.calls.send(Message::Call(call));
-        answer
+        match &self.link {
+            Link::Local { id, hub } => {
+                let (reply, answer) = oneshot::channel();
+                // A stopped core drops the call, and the receiver says so.
+                let call = Call {
+                    client: *id,
+                    request,
+                    reply,
+                };
+                let _ = hub.calls.send(Message::Call(call));
+                answer
+            }
+            Link::Remote(link) => link.send(request),
+        }
     }
 }
 

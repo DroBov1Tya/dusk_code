@@ -14,6 +14,7 @@ mod connection;
 mod hub;
 mod plugins;
 mod projects;
+mod remote;
 mod scope;
 mod serve;
 mod settings;

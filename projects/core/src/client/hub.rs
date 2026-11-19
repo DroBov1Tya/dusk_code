@@ -11,6 +11,7 @@ use tokio::sync::{mpsc, watch};
 
 use super::{
     Client, Scope,
+    connection::Link,
     serve::{Message, Server, Subscriber, Subscribers, blank_status},
 };
 use crate::runtime::Runtime;
@@ -81,8 +82,10 @@ impl Hub {
             events,
             status,
             reads_status,
-            id,
-            hub: Arc::clone(self),
+            link: Link::Local {
+                id,
+                hub: Arc::clone(self),
+            },
         })
     }
 }
