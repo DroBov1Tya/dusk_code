@@ -30,6 +30,7 @@ impl OpenThread {
             .and_then(|thread| thread.title);
         let thread_id = threads.resume(thread_id, env::current_dir()?).await?;
         app.open(Some(thread_id.clone()), title, &history);
+        show_skill_changes(client, app, &thread_id).await;
         app.tasks = threads.tasks(&thread_id).await?;
         app.pins = threads.pins(&thread_id).await?;
         for message in threads.local_unsent(&thread_id).await? {
@@ -153,6 +154,15 @@ pub async fn ensure_open(
         }
     }
     Ok(())
+}
+
+/// The skill changes the thread made, one line each. A failed read is shown, not fatal:
+/// the thread still opens.
+pub async fn show_skill_changes(client: &Client, app: &mut App, thread_id: &str) {
+    match client.threads().skill_changes(thread_id).await {
+        Ok(changes) => app.transcript.add_skill_changes(&changes),
+        Err(error) => app.error(format!("cannot read skill changes: {error:#}")),
+    }
 }
 
 /// Stops the thread's turn and waits for its task to end, so it can be opened again.
