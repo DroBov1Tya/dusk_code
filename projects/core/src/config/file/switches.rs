@@ -1,5 +1,7 @@
 //! What is switched on or off: tools, modes, agents and skills.
 
+use std::path::Path;
+
 use super::Config;
 use crate::{
     catalog::{
@@ -71,9 +73,17 @@ impl Config {
         self.agents.insert(name.to_owned(), enabled);
     }
 
-    /// Whether a skill may be loaded: its own switch and its pack's are on.
+    /// Whether a skill may be loaded: its own switch and its pack's are on. For one skill;
+    /// a caller asking about many resolves the built-in folder once for `skill_enabled_in`.
     pub fn skill_enabled(&self, name: &str) -> bool {
-        self.skill_switch(name) && skills::pack_of(name).is_none_or(|pack| self.pack_enabled(&pack))
+        self.skill_enabled_in(name, skills::builtin_dir().as_deref())
+    }
+
+    /// `skill_enabled` with the built-in skills' folder already resolved: resolving it
+    /// validates the release resources, so a caller asking about many skills does it once.
+    pub(crate) fn skill_enabled_in(&self, name: &str, builtin: Option<&Path>) -> bool {
+        self.skill_switch(name)
+            && skills::pack_in(name, builtin).is_none_or(|pack| self.pack_enabled(&pack))
     }
 
     /// The skill's own switch, whatever its pack's.

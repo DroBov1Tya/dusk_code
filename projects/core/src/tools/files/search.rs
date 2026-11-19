@@ -1,6 +1,7 @@
 //! `search_files`: finds files by name and text in them, the way ripgrep does: ignored
 //! and binary files are skipped. Each file passes the scope check, so what the file tools
-//! may not touch is not found either.
+//! may not touch is not found either. The walk follows no link, so a file's path needs no
+//! resolving before the check.
 
 use std::{
     path::Path,
@@ -103,8 +104,9 @@ fn search(arguments: &SearchArguments, root: &Path, scope: &ToolScope) -> Result
         .transpose()
         .context("invalid regular expression")?;
     let mut walk = WalkBuilder::new(root);
-    // Hidden files are searched, such as .github; git's own folder never is.
-    walk.hidden(false).require_git(false);
+    // Hidden files are searched, such as .github; git's own folder never is. Links are
+    // not followed, so a walked path under the resolved root is resolved too.
+    walk.hidden(false).require_git(false).follow_links(false);
     let mut overrides = OverrideBuilder::new(root);
     overrides.add("!.git/").context("cannot skip .git")?;
     if let Some(name) = &arguments.name {
@@ -120,15 +122,16 @@ fn search(arguments: &SearchArguments, root: &Path, scope: &ToolScope) -> Result
             stopped = Some("the search ran out of time");
             break;
         }
+        // A link is not a file here, so nothing found leads elsewhere.
         if !entry.file_type().is_some_and(|kind| kind.is_file()) {
             continue;
         }
-        let Some(path) = entry.path().to_str() else {
+        if entry.path().to_str().is_none() {
             continue;
-        };
-        let open = match scope.locate(path) {
-            Ok((_, Place::Inside)) => true,
-            Ok((resolved, Place::Outside)) => resolved.starts_with(root),
+        }
+        let open = match scope.place(entry.path()) {
+            Ok(Place::Inside) => true,
+            Ok(Place::Outside) => entry.path().starts_with(root),
             Err(_) => false,
         };
         if !open {
@@ -247,5 +250,44 @@ mod tests {
         let scope = scope.clone().protect(&secret);
         let found = run(&scope, json!({ "pattern": "alpha" })).await.unwrap();
         assert!(!found.contains("src/a.rs"), "{found}");
+    }
+
+    /// The check reads walked paths as they are, so a link must never lead it past the
+    /// protected folder or out of the root.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn links_to_protected_or_outside_files_are_not_followed() {
+        let scope = scope("search_links");
+        let root = scope.cwd().parent().unwrap().to_owned();
+        let secret = root.join("config");
+        fs::create_dir_all(&secret).unwrap();
+        fs::write(secret.join("keys.yml"), "alpha key\n").unwrap();
+        fs::write(root.join("outside.txt"), "alpha outside\n").unwrap();
+        let scope = scope.clone().protect(&secret);
+        let cwd = scope.cwd();
+        std::os::unix::fs::symlink(secret.join("keys.yml"), cwd.join("keys.yml")).unwrap();
+        std::os::unix::fs::symlink(&secret, cwd.join("config")).unwrap();
+        std::os::unix::fs::symlink(root.join("outside.txt"), cwd.join("out.txt")).unwrap();
+        let found = run(&scope, json!({ "pattern": "alpha" })).await.unwrap();
+        for left_out in ["key", "outside"] {
+            assert!(!found.contains(left_out), "{found}");
+        }
+        assert!(found.contains("src/a.rs:1:"), "{found}");
+        let named = run(&scope, json!({ "name": "*.yml" })).await.unwrap();
+        assert_eq!(named, "nothing found");
+    }
+
+    /// A protected folder inside the searched one is skipped though no path is resolved.
+    #[tokio::test]
+    async fn a_protected_folder_inside_the_root_is_skipped_but_a_shared_one_inside_it_is_not() {
+        let scope = scope("search_protected_inside");
+        let config = scope.cwd().join("config");
+        fs::create_dir_all(config.join("skills")).unwrap();
+        fs::write(config.join("keys.yml"), "alpha key\n").unwrap();
+        fs::write(config.join("skills/SKILL.md"), "alpha skill\n").unwrap();
+        let scope = scope.clone().protect(&config).share(&config.join("skills"));
+        let found = run(&scope, json!({ "pattern": "alpha" })).await.unwrap();
+        assert!(!found.contains("keys.yml"), "{found}");
+        assert!(found.contains("config/skills/SKILL.md:1:"), "{found}");
     }
 }

@@ -13,7 +13,10 @@ use parking_lot::Mutex;
 use anyhow::{Context, Result, bail};
 use tokio::sync::{mpsc, oneshot};
 
-use super::tool::Progress;
+use super::{
+    console::command_line::{WRAPPERS, program_name},
+    tool::Progress,
+};
 use crate::{config::ApprovalPolicy, runtime::ThreadEvent};
 
 pub use dusk_protocol::tools::{ApprovalRequest, ApprovalStep, Request, WindowAccess};
@@ -406,10 +409,14 @@ const SHELL_SYNTAX: &[char] = &[
 ];
 
 /// Programs that run their arguments as another command; allowing one would allow all.
+/// The wrappers a command line is read through (`WRAPPERS`) are runners too.
 const RUNNERS: &[&str] = &[
-    "sudo", "doas", "env", "xargs", "exec", "eval", "command", "builtin", "nohup", "nice",
-    "timeout", "time", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
+    "xargs", "eval", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
 ];
+
+fn is_runner(name: &str) -> bool {
+    RUNNERS.contains(&name) || WRAPPERS.contains(&name)
+}
 
 /// The folder a yes for a path opens: the path itself when it is one.
 fn folder_of(path: &std::path::Path) -> PathBuf {
@@ -428,7 +435,7 @@ fn program(command: &str) -> Option<&str> {
     let plain = name
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "-_./+".contains(c));
-    (plain && !RUNNERS.contains(&name.rsplit('/').next().unwrap_or(name))).then_some(name)
+    (plain && !is_runner(program_name(name))).then_some(name)
 }
 
 #[cfg(test)]
@@ -707,6 +714,29 @@ mod tests {
         for line in ["sudo rm", "env rm", "/bin/sh x", "xargs rm"] {
             assert_eq!(session_grant(&command(line)), None, "{line:?}");
         }
+    }
+
+    /// The runners stay refused now that the wrappers come from the command-line reader.
+    #[test]
+    fn no_runner_is_ever_allowed_for_the_session() {
+        for runner in [
+            "sudo", "doas", "env", "xargs", "exec", "eval", "command", "builtin", "nohup", "nice",
+            "timeout", "time", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
+        ] {
+            for line in [
+                format!("{runner} cargo test"),
+                format!("/usr/bin/{runner} ls"),
+            ] {
+                assert_eq!(session_grant(&command(&line)), None, "{line:?}");
+            }
+        }
+        for wrapper in WRAPPERS {
+            assert_eq!(session_grant(&command(&format!("{wrapper} ls"))), None);
+        }
+        assert_eq!(
+            session_grant(&command("cargo test")).as_deref(),
+            Some("cargo")
+        );
     }
 
     #[test]

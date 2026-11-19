@@ -1,6 +1,9 @@
 //! Which program a command line runs, read from the line as `sh` would split it. Only a
 //! plain command, or one after `cd` steps joined by `&&`, names a program: behind a pipe,
-//! a list or a background job the output is not that program's alone.
+//! a list or a background job the output is not that program's alone. Wrappers such as
+//! `timeout 60` or `env X=1` leave the output the program's.
+
+use super::super::command_line::{Reading, program_name, run_words, split};
 
 /// What a command's output is, as far as the rules for it go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +28,7 @@ pub enum Program {
 /// The program `line` runs. A line with a substitution or a quote left open is not
 /// followed, so it is `Other`.
 pub fn program(line: &str) -> Program {
-    let Some(split) = split(line) else {
+    let Some(split) = split(line, Reading::Strict) else {
         return Program::Other;
     };
     match split.commands.split_last() {
@@ -36,120 +39,21 @@ pub fn program(line: &str) -> Program {
     }
 }
 
-/// A line's commands, each as its words, and whether only `&&` joined them.
-struct Split {
-    commands: Vec<Vec<String>>,
-    only_and: bool,
-}
-
-/// The words of each command of `line`, quotes taken off. `None` for a substitution, a
-/// subshell or a quote that does not close.
-fn split(line: &str) -> Option<Split> {
-    let mut split = Split {
-        commands: vec![Vec::new()],
-        only_and: true,
-    };
-    let mut word = String::new();
-    // A word can be empty yet present, as `''` is.
-    let mut in_word = false;
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '\'' => {
-                in_word = true;
-                loop {
-                    match chars.next()? {
-                        '\'' => break,
-                        c => word.push(c),
-                    }
-                }
-            }
-            '"' => {
-                in_word = true;
-                loop {
-                    match chars.next()? {
-                        '"' => break,
-                        '`' => return None,
-                        '$' if chars.peek() == Some(&'(') => return None,
-                        '\\' => word.push(chars.next()?),
-                        c => word.push(c),
-                    }
-                }
-            }
-            '\\' => match chars.next() {
-                // A line continuation joins the lines.
-                Some('\n') | None => {}
-                Some(c) => {
-                    in_word = true;
-                    word.push(c);
-                }
-            },
-            '`' | '(' | ')' => return None,
-            '$' if chars.peek() == Some(&'(') => return None,
-            '#' if !in_word => while chars.next_if(|&c| c != '\n').is_some() {},
-            '&' if chars.peek() == Some(&'&') => {
-                chars.next();
-                split.end_command(&mut word, &mut in_word, true);
-            }
-            // `2>&1` and `&>file` redirect; a lone `&` sends a job to the background.
-            '&' if word.ends_with('>') || chars.peek() == Some(&'>') => {
-                in_word = true;
-                word.push(c);
-            }
-            '&' | ';' | '\n' => split.end_command(&mut word, &mut in_word, false),
-            '|' => {
-                chars.next_if(|&c| c == '|' || c == '&');
-                split.end_command(&mut word, &mut in_word, false);
-            }
-            c if c.is_whitespace() => split.end_word(&mut word, &mut in_word),
-            c => {
-                in_word = true;
-                word.push(c);
-            }
-        }
-    }
-    split.end_word(&mut word, &mut in_word);
-    split.commands.retain(|words| !words.is_empty());
-    Some(split)
-}
-
-impl Split {
-    fn end_word(&mut self, word: &mut String, in_word: &mut bool) {
-        if std::mem::take(in_word)
-            && let Some(command) = self.commands.last_mut()
-        {
-            command.push(std::mem::take(word));
-        }
-    }
-
-    fn end_command(&mut self, word: &mut String, in_word: &mut bool, and: bool) {
-        self.end_word(word, in_word);
-        self.only_and &= and;
-        self.commands.push(Vec::new());
-    }
-}
-
 fn is_cd(words: &[String]) -> bool {
     words.first().is_some_and(|word| word == "cd")
 }
 
-/// The program of one command: what runs after its variable assignments, with its
-/// redirections left out.
+/// The program of one command: what runs after its variable assignments and wrappers,
+/// with its redirections left out.
 fn of(words: &[String]) -> Program {
-    let words: Vec<&str> = words
-        .iter()
-        .map(String::as_str)
-        .skip_while(|word| is_assignment(word))
-        .filter(|word| !is_redirection(word))
-        .collect();
-    of_words(&words)
+    match run_words(words) {
+        Some((program, rest)) => of_words(program, &rest),
+        None => Program::Other,
+    }
 }
 
-fn of_words(words: &[&str]) -> Program {
-    let Some((first, rest)) = words.split_first() else {
-        return Program::Other;
-    };
-    let name = first.rsplit('/').next().unwrap_or(first);
+fn of_words(program: &str, rest: &[&str]) -> Program {
+    let name = program_name(program);
     match name {
         "cargo" => cargo(rest),
         "pytest" | "py.test" => Program::Pytest,
@@ -161,7 +65,7 @@ fn of_words(words: &[&str]) -> Program {
             _ => Program::Other,
         },
         "uv" => match rest {
-            ["run", program @ ..] => of_words(program),
+            ["run", program, rest @ ..] => of_words(program, rest),
             _ => Program::Other,
         },
         python if is_python(python) => match rest {
@@ -217,23 +121,6 @@ fn is_python(name: &str) -> bool {
     name == "python" || name == "python3" || name.starts_with("python3.")
 }
 
-/// `NAME=value`, as before a command.
-fn is_assignment(word: &str) -> bool {
-    word.split_once('=').is_some_and(|(name, _)| {
-        let mut chars = name.chars();
-        chars
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-    })
-}
-
-/// `>file`, `2>&1`, `<input`, `&>log`.
-fn is_redirection(word: &str) -> bool {
-    word.trim_start_matches(|c: char| c.is_ascii_digit() || c == '&')
-        .starts_with(['>', '<'])
-}
-
 #[cfg(test)]
 mod tests {
     use super::{Program, program};
@@ -265,6 +152,11 @@ mod tests {
             ("tsc --noEmit", Program::Tsc),
             ("npx tsc --noEmit", Program::Tsc),
             ("node_modules/.bin/tsc -p .", Program::Tsc),
+            // A wrapper leaves the output the program's.
+            ("timeout 60 cargo test", cargo_tests),
+            ("env RUST_BACKTRACE=1 cargo test", cargo_tests),
+            ("time nice -n 5 pytest -q", Program::Pytest),
+            ("cd web && sudo -E npm ci", Program::Npm),
         ] {
             assert_eq!(program(line), expected, "{line}");
         }
@@ -305,6 +197,12 @@ mod tests {
             "sort words.txt",
             "xxd image.png",
             "base64 key.bin",
+            // A wrapper with nothing to run, or one whose output is a screen.
+            "env",
+            "timeout 60",
+            "watch cargo test",
+            "xargs cargo test",
+            "timeout 60 cargo test | tail",
         ] {
             assert_eq!(program(line), Program::Other, "{line}");
         }

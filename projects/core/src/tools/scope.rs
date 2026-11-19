@@ -79,12 +79,20 @@ impl ToolScope {
     pub fn locate(&self, path: &str) -> Result<(PathBuf, Place)> {
         ensure!(!path.trim().is_empty(), "path is empty");
         let resolved = resolve_existing_prefix(&self.cwd.join(path))?;
+        let place = self.place(&resolved)?;
+        Ok((resolved, place))
+    }
+
+    /// Where a path already resolved lies, as `locate` says it: with no `..` and no link
+    /// left in it, such as one under a resolved folder found by a walk that does not
+    /// follow links. The config folder is an error.
+    pub fn place(&self, resolved: &Path) -> Result<Place> {
         if self
             .shared
             .iter()
             .any(|shared| resolved.starts_with(shared))
         {
-            return Ok((resolved, Place::Inside));
+            return Ok(Place::Inside);
         }
         ensure!(
             !self
@@ -93,11 +101,12 @@ impl ToolScope {
                 .is_some_and(|protected| resolved.starts_with(protected)),
             "path is inside the dusk config folder, which tools may not touch"
         );
-        let place = match resolved.starts_with(&self.cwd) || resolved.starts_with(&self.workspace) {
-            true => Place::Inside,
-            false => Place::Outside,
-        };
-        Ok((resolved, place))
+        Ok(
+            match resolved.starts_with(&self.cwd) || resolved.starts_with(&self.workspace) {
+                true => Place::Inside,
+                false => Place::Outside,
+            },
+        )
     }
 }
 

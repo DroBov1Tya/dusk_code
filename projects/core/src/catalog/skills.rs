@@ -19,9 +19,8 @@ pub use dusk_protocol::catalog::{SkillInfo, SkillKind, SkillSave, SkillSaveActio
 /// Every skill, the ones that cannot be read included, by name.
 pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
     let graph = Graph::load(directory, SKILL_FILE);
-    let builtin = crate::release::resources::root()
-        .ok()
-        .map(|root| root.join("skills"));
+    // Resolved once: resolving it validates the release resources.
+    let builtin = builtin_dir();
     let mut skills: Vec<SkillInfo> = graph
         .nodes()
         .map(|node| SkillInfo {
@@ -30,7 +29,7 @@ pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
             kind: kind(&node.name, node.source.is_some(), builtin.as_deref()),
             source: node.source.clone(),
             tags: node.tags.clone(),
-            enabled: config.skill_enabled(&node.name),
+            enabled: config.skill_enabled_in(&node.name, builtin.as_deref()),
             problem: None,
         })
         .collect();
@@ -42,7 +41,7 @@ pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
                 kind: kind(&problem.node, false, builtin.as_deref()),
                 source: None,
                 tags: Vec::new(),
-                enabled: config.skill_enabled(&problem.node),
+                enabled: config.skill_enabled_in(&problem.node, builtin.as_deref()),
                 problem: Some(problem.reason.clone()),
             });
         }

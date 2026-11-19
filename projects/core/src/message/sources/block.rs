@@ -7,7 +7,7 @@ use crate::{
     state::{Source, estimate_tokens},
 };
 
-use super::picture::{is_picture, picture};
+use super::picture::{KEPT, PictureKey, is_picture, picture};
 
 /// What of one source a request carries; the agent can read the rest from its file.
 const MAX_ATTACHED_BYTES: usize = 256 * 1024;
@@ -46,6 +46,17 @@ pub(super) async fn attach(
     with_pictures: bool,
 ) {
     let (name, shown) = (&source.name, path.display());
+    // A pinned picture goes with every step; it is made smaller once.
+    let key = match with_pictures {
+        true => PictureKey::of(path).await,
+        false => None,
+    };
+    if let Some(picture) = key.as_ref().and_then(|key| KEPT.get(key)) {
+        block.pictures.push(picture);
+        let said = format!("{name} ({shown}): a picture, attached to this message\n");
+        block.text.push_str(&said);
+        return;
+    }
     let Ok(bytes) = tokio::fs::read(path).await else {
         block.text.push_str(&format!("{name}: the file is gone\n"));
         return;
@@ -61,6 +72,12 @@ pub(super) async fn attach(
         };
         let said = match picture {
             Some(picture) => {
+                // Kept only when the file did not change while it was read.
+                if let Some(key) = key
+                    && PictureKey::of(path).await.as_ref() == Some(&key)
+                {
+                    KEPT.put(key, picture.clone());
+                }
                 block.pictures.push(picture);
                 format!("{name} ({shown}): a picture, attached to this message\n")
             }
