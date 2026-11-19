@@ -1,6 +1,6 @@
 //! Sending a request and reading its answer within bounds.
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail};
 use std::time::Duration;
 
 pub(super) const TIMEOUT: Duration = Duration::from_secs(120);
@@ -23,19 +23,14 @@ pub(super) async fn send(
         Some(key) => request.bearer_auth(key),
         None => request,
     };
-    let mut response = request.send().await.map_err(|error| {
+    let response = request.send().await.map_err(|error| {
         // The address may carry a secret in a query; the error is cut to its kind.
         anyhow::anyhow!("cannot reach the speech server: {}", error.without_url())
     })?;
     let status = response.status();
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.context("the answer broke off")? {
-        bytes.extend_from_slice(&chunk);
-        ensure!(
-            bytes.len() <= limit,
-            "the speech server's answer is too large"
-        );
-    }
+    let bytes = crate::net::read_limited(response, limit)
+        .await
+        .map_err(|error| error.about("the speech server's answer"))?;
     if !status.is_success() {
         let complaint: String = String::from_utf8_lossy(&bytes)
             .chars()

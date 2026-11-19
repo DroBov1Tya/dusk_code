@@ -23,7 +23,7 @@ pub fn render(ws: &Workspace, cx: &App) -> Option<impl IntoElement + use<>> {
         .shown_chat()?
         .agents
         .values()
-        .filter(|agent| agent.working)
+        .filter(|agent| agent.working())
         .count()
         .min(MOST);
     if working == 0 {

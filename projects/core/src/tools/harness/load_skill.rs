@@ -23,7 +23,7 @@ use crate::{
     BoxFuture,
     catalog::{
         graph::{Graph, Node, SKILL_FILE},
-        skills::{BUILTIN_PACK, builtin_dir, is_builtin, pack_in},
+        skills::{BUILTIN_PACK, builtin_dir, is_builtin},
     },
     config::Config,
 };
@@ -95,9 +95,12 @@ impl Tool for LoadSkill {
     }
 
     fn available(&self, context: &ToolContext) -> bool {
-        self.graph()
-            .entries()
-            .any(|skill| context.config.skill_enabled(&skill.name))
+        let builtin = builtin_dir();
+        self.graph().entries().any(|skill| {
+            context
+                .config
+                .skill_enabled_in(&skill.name, builtin.as_deref())
+        })
     }
 
     fn repeatable(&self, _arguments: &Value) -> bool {
@@ -127,7 +130,7 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
     let builtin = builtin.as_deref();
     let skill = graph
         .get(name)
-        .filter(|skill| skill_on(config, &skill.name, builtin))
+        .filter(|skill| config.skill_enabled_in(&skill.name, builtin))
         .with_context(|| {
             format!(
                 "no skill named {name} in {}; only the skills listed in this tool's \
@@ -151,12 +154,6 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
         text.push_str(REMINDER);
     }
     Ok(text)
-}
-
-/// `Config::skill_enabled` with the built-in folder already resolved.
-fn skill_on(config: &Config, name: &str, builtin: Option<&Path>) -> bool {
-    config.skill_switch(name)
-        && pack_in(name, builtin).is_none_or(|pack| config.pack_enabled(&pack))
 }
 
 /// The reminder goes on a skill the user can edit: not the editing skills themselves,
@@ -186,7 +183,7 @@ fn enabled<'a>(
     builtin: Option<&Path>,
 ) -> String {
     let skills: Vec<&Node> = skills
-        .filter(|skill| skill_on(config, &skill.name, builtin))
+        .filter(|skill| config.skill_enabled_in(&skill.name, builtin))
         .collect();
     let mut listed: Vec<String> = skills
         .iter()

@@ -16,13 +16,16 @@ use dusk_protocol::{
 };
 use parking_lot::Mutex;
 use tokio::{
-    io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufRead, AsyncWriteExt, BufReader},
     sync::mpsc,
     task::JoinHandle,
 };
 use tracing::warn;
 
-use super::host::{ClientId, Running, UiSpec};
+use super::{
+    super::lines::{Line, Lines},
+    host::{ClientId, Running, UiSpec},
+};
 
 /// The clients that opened each part, with their queues.
 pub(super) type Owners = BTreeMap<String, Vec<(ClientId, mpsc::UnboundedSender<Event>)>>;
@@ -110,20 +113,23 @@ async fn serve(
     reader: &mut (impl AsyncBufRead + Unpin),
     owners: &Mutex<Owners>,
 ) -> Option<String> {
-    let mut line = Vec::new();
+    let mut lines = Lines::new(MAX_LINE);
     let mut frames: BTreeMap<(String, String), Vec<u8>> = BTreeMap::new();
     let mut ticks = tokio::time::interval(FRAME_PERIOD);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut idle_since: Option<Instant> = None;
     loop {
         tokio::select! {
-            read = read_line(reader, &mut line) => match read {
-                Ok(true) => {
-                    let taken = std::mem::take(&mut line);
-                    take(plugin, parts, &taken, owners, &mut frames);
+            read = lines.next(reader) => match read {
+                Ok(Line::Full(line)) => take(plugin, parts, &line, owners, &mut frames),
+                Ok(Line::End) => return Some("its interface stopped".into()),
+                Ok(Line::TooLong) => {
+                    return Some(format!(
+                        "its interface sent a line over {} MiB and was stopped",
+                        MAX_LINE / (1024 * 1024)
+                    ));
                 }
-                Ok(false) => return Some("its interface stopped".into()),
-                Err(why) => return Some(why),
+                Err(error) => return Some(format!("cannot read its interface: {error}")),
             },
             _ = ticks.tick() => {
                 for ((part, widget), jpeg) in std::mem::take(&mut frames) {
@@ -214,39 +220,6 @@ fn decode_frame(base64: &str) -> Result<Vec<u8>, String> {
         return Err("it is not a JPEG".into());
     }
     Ok(jpeg)
-}
-
-/// Reads up to the end of a line into `line`, which keeps what came across a cancel.
-/// False at the end of the stream; the reason when a line grows past `MAX_LINE`.
-async fn read_line(
-    reader: &mut (impl AsyncBufRead + Unpin),
-    line: &mut Vec<u8>,
-) -> Result<bool, String> {
-    loop {
-        let buffer = reader
-            .fill_buf()
-            .await
-            .map_err(|error| format!("cannot read its interface: {error}"))?;
-        if buffer.is_empty() {
-            return Ok(false);
-        }
-        let (used, done) = match buffer.iter().position(|byte| *byte == b'\n') {
-            Some(end) => (end + 1, true),
-            None => (buffer.len(), false),
-        };
-        let content = if done { used - 1 } else { used };
-        if line.len() + content > MAX_LINE {
-            return Err(format!(
-                "its interface sent a line over {} MiB and was stopped",
-                MAX_LINE / (1024 * 1024)
-            ));
-        }
-        line.extend_from_slice(&buffer[..content]);
-        reader.consume(used);
-        if done {
-            return Ok(true);
-        }
-    }
 }
 
 /// Sends what `event` makes of the part's name to each client that opened it.

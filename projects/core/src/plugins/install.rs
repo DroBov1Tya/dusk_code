@@ -47,17 +47,22 @@ pub fn write_wanted(
     record_file: &Path,
     wanted: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<()> {
-    let mut record = read_record(record_file);
+    let before = read_record(record_file);
+    let mut record = before.clone();
     let root = paths.rules_root();
     for (relative, bytes) in wanted {
         let target = root.join(relative);
         let on_disk = fs::read(&target).ok().map(|disk| hash(&disk));
         let ours = record.get(relative);
-        // Missing, or still as the plugin wrote it: the plugin's version goes in.
+        // Missing, or still as the plugin wrote it: the plugin's version goes in, unless
+        // the file already holds it, as on every scan when nothing changed.
         if on_disk.is_none() || on_disk.as_ref() == ours {
-            crate::init::create_private_dir(target.parent().context("no folder")?)?;
-            crate::init::files::write_private(&target, bytes)?;
-            record.insert(relative.clone(), hash(bytes));
+            let new = hash(bytes);
+            if on_disk.as_ref() != Some(&new) {
+                crate::init::create_private_dir(target.parent().context("no folder")?)?;
+                crate::init::files::write_private(&target, bytes)?;
+            }
+            record.insert(relative.clone(), new);
         }
     }
     let gone: Vec<PathBuf> = record
@@ -73,6 +78,9 @@ pub fn write_wanted(
             remove_empty_parents(&root, &target);
         }
         record.remove(&relative);
+    }
+    if record == before {
+        return Ok(());
     }
     write_record(record_file, &record)
 }
@@ -131,4 +139,41 @@ fn hash(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_already_as_wanted_is_not_written_again() {
+        let paths = crate::testing::temp_paths("install-unchanged");
+        let record = paths.rules_root().join(".installed-test");
+        let relative = PathBuf::from("skills/test/one/SKILL.md");
+        let wanted = BTreeMap::from([(relative.clone(), b"first".to_vec())]);
+        write_wanted(&paths, &record, &wanted).unwrap();
+        let target = paths.rules_root().join(&relative);
+        assert_eq!(fs::read(&target).unwrap(), b"first");
+        // A stamp far in the past: a rewrite would move it to now.
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        for file in [&target, &record] {
+            fs::File::options()
+                .write(true)
+                .open(file)
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+        }
+        write_wanted(&paths, &record, &wanted).unwrap();
+        for file in [&target, &record] {
+            assert_eq!(fs::metadata(file).unwrap().modified().unwrap(), old);
+        }
+        // A new version from the plugin still goes in, and one the user edited stays.
+        let newer = BTreeMap::from([(relative.clone(), b"second".to_vec())]);
+        write_wanted(&paths, &record, &newer).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"second");
+        fs::write(&target, b"edited").unwrap();
+        write_wanted(&paths, &record, &wanted).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"edited");
+    }
 }

@@ -1,8 +1,9 @@
 //! The right column of a chat: its plan and tasks, subagents, changed files, background
 //! jobs and what the context holds.
 
-use crate::chat::{data::Agent, subagent::state_text};
+use crate::chat::subagent::state_text;
 use crate::state::state;
+use dusk_protocol::thread::Subagent as Agent;
 use dusk_protocol::{agent::Doing, thread::AgentState};
 use leptos::prelude::*;
 
@@ -12,7 +13,14 @@ pub fn AgentsTab(id: String) -> impl IntoView {
     let thread = id.clone();
     let agents = Signal::derive(move || {
         app.chat(&thread)
-            .map(|c| c.with(|c| c.agents.clone()))
+            .map(|c| {
+                c.with(|c| {
+                    // In the order they started.
+                    let mut agents: Vec<Agent> = c.agents.values().cloned().collect();
+                    agents.sort_by_key(|agent| agent.started_at);
+                    agents
+                })
+            })
             .unwrap_or_default()
     });
     view! {

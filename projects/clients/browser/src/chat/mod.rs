@@ -26,7 +26,7 @@ use crate::{
     state::{AppState, Chat as ChatSignal, state},
     ui::{Icon, IconName, run},
 };
-use blocks::Transcript;
+use blocks::{Source, Transcript};
 use composer::Composer;
 use data::ChatData;
 use leptos::prelude::*;
@@ -61,7 +61,7 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
                 </header>
             </Show>
             {id.clone().map(|id| view! { <pins::Pins id chat /> })}
-            <Transcript chat thread=id.clone() />
+            <Transcript source=Source::of(chat) thread=id.clone() />
             <approval::Approvals chat id=id.clone() />
             <approval::AskUser chat id=id.clone() />
             {id.clone().map(|id| view! { <plan::PlanStrip id chat /> })}

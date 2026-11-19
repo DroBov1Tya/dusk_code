@@ -1,9 +1,11 @@
-//! What stands where a cover is not: drawn here from the theme, no file and no network,
-//! and quieter than any cover. The kind's glyph for a listing without one; a quieter
-//! glyph marked "Loading" while its cover comes; the glyph and "Offline" for one that
+//! What stands where a cover is not: a gradient picked from the plugin's name (the
+//! colours come from `dusk_protocol::plugin::cover_art`, so the browser draws the same
+//! ones), no file and no network. The name's first letter large and faint with the kind's
+//! glyph for a listing without a cover; the same gradient hushed, with a quiet glyph and
+//! "Loading", while its cover comes; hushed, with the glyph and "Offline", for one that
 //! could not be fetched while the store could not be read.
 
-use dusk_protocol::plugin::Kind;
+use dusk_protocol::plugin::{CoverArt, Hsl, Kind, cover_art};
 use gpui_kit::{
     component::{ActiveTheme, Icon},
     *,
@@ -34,31 +36,28 @@ pub fn render(
     corners: Corners<Pixels>,
     cx: &App,
 ) -> Div {
-    let theme = cx.theme();
-    let (raised, hairline, muted) = (theme.secondary, theme.border, theme.muted_foreground);
-    let frame = capsule::rounded(div(), corners)
-        .relative()
-        .flex_none()
-        .w(px(width))
-        .h(px(super::grid::cover_height(width)))
+    let dark = cx.theme().is_dark();
+    let art = cover_art(name, dark);
+    if look == Look::None {
+        return made(name, kind, art, width, corners, cx);
+    }
+    let art = art.quiet(dark);
+    let ink = color(art.ink);
+    let frame = frame(art, width, corners, cx)
         .flex()
         .items_center()
-        .justify_center()
-        .bg(raised)
-        .border_1()
-        .border_color(hairline);
+        .justify_center();
     // The glyph is quieter while the cover comes: still, since nothing here answers a click.
-    let strength = if look == Look::Coming { 0.3 } else { 0.6 };
+    let strength = if look == Look::Coming { 0.45 } else { 0.75 };
     let frame = frame.child(
         Icon::default()
             .path(glyph(kind))
             .size(px(GLYPH))
-            .text_color(muted.opacity(strength)),
+            .text_color(ink.opacity(strength)),
     );
     // A word in the corner tells the three states apart without colour.
     let corner = match look {
-        Look::None => return made(name, kind, width, corners, cx),
-        Look::Coming => div().child("Loading"),
+        Look::None | Look::Coming => div().child("Loading"),
         Look::Offline => div()
             .flex()
             .flex_row()
@@ -68,7 +67,7 @@ pub fn render(
                 Icon::default()
                     .path(icons::CLOUD_OFF)
                     .size(px(OFFLINE_ICON))
-                    .text_color(muted),
+                    .text_color(ink),
             )
             .child("Offline"),
     };
@@ -78,26 +77,24 @@ pub fn render(
             .right(px(size::GAP_S))
             .bottom(px(size::GAP_S))
             .meta()
-            .text_color(muted),
+            .text_color(ink),
     )
 }
 
-/// A cover made from the name for a listing that brings none: the name's two colors, its
-/// first letter large and faint, the kind's glyph small in the corner.
-fn made(name: &str, kind: Kind, width: f32, corners: Corners<Pixels>, cx: &App) -> Div {
-    let theme = cx.theme();
-    let (ink, hairline) = (theme.foreground, theme.border);
-    let height = super::grid::cover_height(width);
-    let letter = (height * LETTER).round();
-    capsule::rounded(div(), corners)
-        .relative()
-        .flex_none()
-        .w(px(width))
-        .h(px(height))
+/// A cover made from the name for a listing that brings none: the name's gradient, its
+/// first letter large and faint, the kind's glyph in the corner.
+fn made(
+    name: &str,
+    kind: Kind,
+    art: CoverArt,
+    width: f32,
+    corners: Corners<Pixels>,
+    cx: &App,
+) -> Div {
+    let ink = color(art.ink);
+    let letter = (super::grid::cover_height(width) * LETTER).round();
+    frame(art, width, corners, cx)
         .overflow_hidden()
-        .bg(avatar::cover_fill(name, cx))
-        .border_1()
-        .border_color(hairline)
         .child(
             div()
                 .absolute()
@@ -116,8 +113,28 @@ fn made(name: &str, kind: Kind, width: f32, corners: Corners<Pixels>, cx: &App) 
                 .right(px(size::GAP_M))
                 .top(px(size::GAP_M))
                 .size(px(size::ICON_LARGE))
-                .text_color(ink.opacity(0.4)),
+                .text_color(ink),
         )
+}
+
+/// The box every look shares: the cover's size and corners, filled with `art`.
+fn frame(art: CoverArt, width: f32, corners: Corners<Pixels>, cx: &App) -> Div {
+    capsule::rounded(div(), corners)
+        .relative()
+        .flex_none()
+        .w(px(width))
+        .h(px(super::grid::cover_height(width)))
+        .bg(linear_gradient(
+            art.angle,
+            linear_color_stop(color(art.from), 0.),
+            linear_color_stop(color(art.to), 1.),
+        ))
+        .border_1()
+        .border_color(cx.theme().border)
+}
+
+fn color(c: Hsl) -> Hsla {
+    hsla(c.h / 360., c.s, c.l, 1.)
 }
 
 /// The letter's height as a share of the cover's.

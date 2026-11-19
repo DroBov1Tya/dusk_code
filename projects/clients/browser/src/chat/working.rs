@@ -217,12 +217,12 @@ mod tests {
         use dusk_protocol::model::ModelEvent;
         let mut chat = ChatData::default();
         chat.apply(ThreadEvent::TurnStarted(turn(None)));
-        assert_eq!(chat.writing(), None);
+        assert_eq!(chat.writing(0), None);
         chat.apply(ThreadEvent::Model(ModelEvent::Text("So".into())));
-        assert_eq!(chat.writing(), chat.items.last().map(|entry| entry.id));
+        assert_eq!(chat.writing(0), Some(chat.items.len() - 1));
         assert_eq!(row(&chat, 1_000).unwrap().work.kind, WorkKind::Writing);
         chat.apply(ThreadEvent::Idle);
-        assert_eq!(chat.writing(), None);
+        assert_eq!(chat.writing(0), None);
     }
 
     #[test]

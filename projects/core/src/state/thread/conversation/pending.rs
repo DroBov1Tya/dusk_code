@@ -177,8 +177,11 @@ impl State {
             .collect()
     }
 
-    /// Moves a sent message into the thread. A crash between the two writes is safe: the
-    /// request UID makes the next attempt return the stored message.
+    /// Moves a sent message into the thread, with its effect on the goal: another agent's
+    /// message is new work, so the approved goal's proofs go stale; the user's message
+    /// answers a goal that waits on them; a job's result changes nothing. A crash between
+    /// the writes is safe: the request UID makes the next attempt return the stored
+    /// message, and the goal changes with the pending row's removal, so only once.
     pub async fn admit_pending(
         &self,
         thread_id: &str,
@@ -192,7 +195,38 @@ impl State {
                     .await?
             }
         };
-        self.remove_pending(pending.pending_id).await?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("begin admitting a message")?;
+        let removed = sqlx::query("DELETE FROM pending_messages WHERE pending_id = ?")
+            .bind(pending.pending_id)
+            .execute(&mut *transaction)
+            .await
+            .context("remove sent message")?
+            .rows_affected();
+        let goal = if removed == 0 || message.from_job_id.is_some() {
+            None
+        } else if message.from_thread_id.is_some() {
+            Some(
+                "UPDATE goals SET work_epoch = work_epoch + 1
+                 WHERE thread_id = ? AND approved_at IS NOT NULL",
+            )
+        } else {
+            Some("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
+        };
+        if let Some(goal) = goal {
+            sqlx::query(goal)
+                .bind(thread_id)
+                .execute(&mut *transaction)
+                .await
+                .context("update the goal for a message")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("commit admitting a message")?;
         Ok(message)
     }
 
@@ -223,6 +257,39 @@ mod tests {
         assert_eq!(first, again);
         assert!(state.pending_messages("thread").await.unwrap().is_empty());
         assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
+    }
+
+    /// Another agent's message makes an approved goal's proofs stale, once even if the
+    /// message is admitted again; the user's message ends a goal's wait for them.
+    #[tokio::test]
+    async fn admitting_a_message_updates_the_goal_once() {
+        let state = temp_state("pending_goal").await;
+        state.create_thread("thread", "test").await.unwrap();
+        state.create_thread("agent", "test").await.unwrap();
+        state.set_goal("thread", "ship it").await.unwrap();
+        sqlx::query("UPDATE goals SET approved_at = 1, awaiting_user = 1")
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        let goal = || {
+            sqlx::query_as::<_, (i64, bool)>(
+                "SELECT work_epoch, awaiting_user FROM goals WHERE thread_id = 'thread'",
+            )
+            .fetch_one(&state.pool)
+        };
+        let (epoch, _) = goal().await.unwrap();
+
+        let from_agent = state
+            .add_pending_from("thread", "found it", Some("agent"))
+            .await
+            .unwrap();
+        state.admit_pending("thread", &from_agent).await.unwrap();
+        state.admit_pending("thread", &from_agent).await.unwrap();
+        assert_eq!(goal().await.unwrap(), (epoch + 1, true));
+
+        let from_user = state.add_pending("thread", "go on").await.unwrap();
+        state.admit_pending("thread", &from_user).await.unwrap();
+        assert_eq!(goal().await.unwrap(), (epoch + 1, false));
     }
 
     #[tokio::test]

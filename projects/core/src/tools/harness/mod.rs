@@ -27,4 +27,4 @@ pub use recall::RecallTool;
 pub use remember::Remember;
 pub(crate) use remember::project_folder;
 pub use show::Show;
-pub use tasks::{GatesYes, Started, Tasks, TeamRunner, short_task_id};
+pub use tasks::{GatesYes, Started, Tasks, TeamRunner};

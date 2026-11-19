@@ -230,6 +230,11 @@ fn settings() -> Vec<S> {
         S::Voice(VoiceSettings::default()),
         plugin(true),
         plugin(false),
+        S::SetContractPlugin {
+            contract: word(),
+            host: word(),
+            plugin: word(),
+        },
         S::PluginSecret {
             plugin: word(),
             key: word(),

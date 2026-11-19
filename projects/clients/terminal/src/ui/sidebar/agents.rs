@@ -81,7 +81,7 @@ impl Sidebar<'_> {
             let state = match (&agent.phase, agent.unavailable_at, running) {
                 (_, Some(_), _) => "unavailable",
                 (Some((phase, _)), _, _) => phase.name(),
-                (None, _, true) => agent.doing.label(),
+                (None, _, true) => agent.doing(),
                 (None, _, false) => "done",
             };
             // Room left by the loader, the time and the status, as wide as they are now:

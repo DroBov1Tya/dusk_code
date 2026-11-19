@@ -8,6 +8,7 @@ use sqlx::Row;
 use super::{State, messages::read_tokens, timestamp_ms};
 
 use crate::providers::{Usage, cost::CostSource};
+use crate::state::thread::threads::family;
 
 pub use dusk_protocol::thread::ThreadTokens;
 
@@ -159,7 +160,7 @@ impl State {
         tokens.all.summary = read_tokens(&summaries, "all_tokens")?;
         tokens.current.summary = read_tokens(&summaries, "current_tokens")?;
 
-        let spent = sqlx::query(
+        let spent = sqlx::query(family!(
             "SELECT COUNT(*) AS model_calls,
                 COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
                 COALESCE(SUM(cached_prompt_tokens), 0) AS cached_prompt_tokens,
@@ -168,12 +169,8 @@ impl State {
                 COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
                 COALESCE(SUM(cost_micro_usd), 0) AS cost_micro_usd,
                 COUNT(*) - COUNT(cost_micro_usd) AS unpriced_calls
-             FROM model_usage WHERE thread_id IN (
-                WITH RECURSIVE family(id) AS (
-                    SELECT ? UNION ALL
-                    SELECT threads.id FROM threads JOIN family ON threads.parent_thread_id = family.id
-                ) SELECT id FROM family)",
-        )
+             FROM model_usage WHERE thread_id IN (SELECT id FROM family)"
+        ))
         .bind(thread_id)
         .fetch_one(&self.pool)
         .await

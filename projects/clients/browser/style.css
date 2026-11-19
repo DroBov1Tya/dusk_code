@@ -152,6 +152,9 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 /* A step's state stands at the end of its line: a live mark while it runs, then a check or a cross that does not move. */
 .tool-mark { margin-left: auto; flex: none; width: 16px; height: 1.5em; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 .tool-mark .glyph { width: 13px; height: 13px; }
+.tool-mark > span { display: flex; }
+.tool-mark .glyph-settle { animation: act-settle .18s var(--ease) both; }
+@keyframes act-settle { from { opacity: 0; transform: scale(.6); } }
 .tool.failed .tool-mark, .tool-failed { color: var(--bad); }
 .tool-failed { flex: none; font-size: .78rem; }
 .steps > summary .act-slot { width: 16px; }
@@ -741,11 +744,15 @@ button.link, a.link { background: none; border: 0; padding: 0; color: var(--acce
 .art.fit { background: var(--bg); }
 .art.fit img { object-fit: contain; }
 /* The placeholder: the kind's glyph on the raised surface, quieter than any cover. */
-.ph { position: absolute; inset: 0; display: grid; place-items: center; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); color: color-mix(in srgb, var(--muted) 60%, transparent); }
+/* A cover-less frame: the plugin's gradient, its colours set inline per name for both
+   theme kinds (see placeholder.rs); the light theme takes the "-l" pair. */
+.ph { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(var(--ph-angle, 135deg), var(--ph-from, var(--raised)), var(--ph-to, var(--raised))); box-shadow: inset 0 0 0 1px var(--line); color: var(--ph-ink, var(--muted)); }
+[data-theme="light"] .ph { background: linear-gradient(var(--ph-angle, 135deg), var(--ph-from-l, var(--raised)), var(--ph-to-l, var(--raised))); color: var(--ph-ink-l, var(--muted)); }
 .ph > svg { width: 40px; height: 40px; }
-.ph .off { position: absolute; right: var(--s2); bottom: var(--s2); display: flex; align-items: center; gap: var(--s1); font-size: 11px; color: var(--muted); }
+.ph.quiet > svg { opacity: .75; }
+.ph .off { position: absolute; right: var(--s2); bottom: var(--s2); display: flex; align-items: center; gap: var(--s1); font-size: 11px; }
 .ph .off svg { width: 14px; height: 14px; }
-.ph.loading { background: linear-gradient(90deg, var(--surface), var(--raised), var(--surface)); background-size: 200% 100%; animation: workshop-shimmer 1.4s linear infinite; }
+.ph.loading::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 7%, transparent), transparent); background-size: 200% 100%; animation: workshop-shimmer 1.4s linear infinite; }
 /* The card: one height for every card of a row (cover, name 22, text 40, footer 32).
    Its name is the one tab stop and stretches its click over the whole card; a control
    in the slot sits above that and keeps its own. */
@@ -842,7 +849,7 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
   .store-page { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .capsule, .ph.loading, .hero-text, .hero-art .cover, .dots i, .media .stage .art { transition: none; animation: none; }
+  .capsule, .ph.loading::after, .hero-text, .hero-art .cover, .dots i, .media .stage .art { transition: none; animation: none; }
 }
 
 /* Overview: one set of sections; "Open" widens the column and lays them out in two. */

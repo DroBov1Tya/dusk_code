@@ -178,7 +178,17 @@ permissions:
     - name: token
       origins: [https://api.example.com]
       handed: false                      # true: the plugin reads the key itself
+  project: read                      # only with provides: the folder of the project a
+                                     # call is about, for that call (none | read)
+  keychain: true                     # only with provides, macOS: the login keychain
 ```
+
+Two permissions exist only for a plugin that provides a contract (see Contracts):
+`project: read` lets its program read the one project folder a call is about, while it
+answers, and never another project's; `keychain: true` opens the login keychain services
+for that program on macOS, for an item the user's own tool keeps there. You see them as
+"read the folder of the project it is asked about, while it answers" and "read items of
+your login keychain that macOS lets it read (gh keeps its token there)".
 
 A picture an MCP tool returns (PNG or JPEG) reaches the model as an image, checked like
 any other: at most 4 per result and 4 megapixels each. Each tool call carries the chat's
@@ -210,6 +220,16 @@ single port: a plugin that asks for network does not start there, and the keycha
 (Secret Service, over D-Bus) cannot be closed. Landlock needs Linux 6.7 to close the
 network at all; on an older kernel plugin programs do not start. Where a rule cannot be
 enforced the program does not start.
+
+A plugin that serves a contract (`provides:`) and asks for network is the exception on
+Linux: each call runs in a user and network namespace of its own, whose only interface
+is its own loopback, where the core's broker listens on port 3128. A seccomp filter lets
+it open only IPv4, IPv6 and netlink sockets, so no Unix socket (the D-Bus session bus,
+the Secret Service, docker, ssh or gpg agents, X11) and no vsock is reachable. So `gh`
+must keep its token in `~/.config/gh/hosts.yml` (`gh auth login --insecure-storage`),
+as the plugin's sign-in hint says. Where unprivileged user namespaces are off, or
+restricted as Ubuntu's AppArmor does, such a plugin does not start and Settings, Plugins
+says why on its row; there is no weaker fallback.
 
 You see the permissions as plain lines before you switch the plugin on, and a plugin
 update that asks for more stays off until you switch it on again.
@@ -300,6 +320,250 @@ for line in sys.stdin:
     elif message["type"] == "event" and message["widget"] == "hi":
         send({"type": "notice", "text": "Hi!"})
 ```
+
+## Contracts
+
+A plugin can serve a whole domain, such as the pull requests of a git host, instead of
+adding tools or a panel. It says so under `provides:` in `plugin.yml`; the core then
+starts its program to answer typed questions, and every client draws the answers with
+its own widgets. This section is the normative text for a program in any language.
+
+```yaml
+permissions:
+  exec: [gh, git]
+  read: [~/.config/gh]
+  network: [https://api.github.com, https://github.com]
+  keychain: true                 # macOS: read items of the login keychain macOS lets it read
+  project: read                  # the folder of the project a call is about, for that call
+provides:
+  command: [./bin/github]        # the contract program; ./ is the plugin's folder
+  forge:                         # one field per contract; `forge` is the only one so far
+    versions: [1]                # contract versions the program speaks
+    hosts: [github.com]          # git remote hosts it serves
+```
+
+Checked when the plugin loads; an error shows in `/plugins`:
+
+- `provides.command` is required when any contract is present; it is one program for all
+  the plugin's contracts.
+- A contract this duskcode does not know is refused: "this duskcode does not know the
+  contract `x`; update duskcode".
+- `versions` is a non-empty list of positive integers, at most 4.
+- Forge `hosts`: 1 to 16 lowercase DNS names, each with a dot, at most 253 bytes, no
+  wildcard, no IP literal, no port, not `localhost`, no duplicates.
+- `permissions.project` (`none` or `read`) and `permissions.keychain` (`true` or
+  `false`) are refused in a plugin without `provides:`.
+- A plugin with `provides:` may not also have `mcp`, `hooks`, `platform` or `ui`: "a
+  plugin that provides a contract cannot also have mcp, hooks, a platform or ui (yet)".
+- Before you switch the plugin on, `provides` is shown as a line: "serves pull requests
+  and CI for github.com". An update that serves more hosts or more contracts than the
+  installed plugin stays off until you switch it on again.
+
+### One process per call
+
+The core starts the program once per call, in the folder of the one project the call is
+about, writes one line to its stdin, closes stdin, and reads its stdout. The program
+answers and exits. Nothing is kept between calls, so an answer must not depend on state
+the program kept. At most 4 calls run at once per plugin, and a call that has not
+answered 45 seconds after it started is killed and counts as `unavailable`. A program
+that exits without a result is `failed`, once what it left running has been killed. A
+`result` line is at most 512 KiB; a larger one is `failed`.
+
+When the call ends, the core kills the program's whole process group. A program that
+leaves its group (with `setsid`, for one) is not killed then: it lives on, still
+confined with that call's grants (the one project's folder and the plugin's own
+permissions), until it exits.
+
+Everything is one JSON object per line, UTF-8, a line at most 4 MiB. Unknown fields are
+ignored, in both directions, within a version.
+
+### The `call` line
+
+From the core, the only line the program is sent:
+
+```json
+{"type":"call","contract":"forge","version":1,"op":"status","folder":"/Users/me/code/app","args":{}}
+```
+
+- `version` is the highest version both the manifest's `versions` and this duskcode
+  speak. A program that cannot speak it answers `failed`.
+- `op` is the operation; `args` is its arguments (below).
+- `folder` is the project's canonical folder and also the program's working directory.
+  It is the only project path the program is ever told.
+
+### Answers: `result` and `log`
+
+The program writes any number of `log` lines, then exactly one `result`, then exits.
+
+| Line | Meaning |
+| --- | --- |
+| `{"type":"result","ok":{...}}` | The answer, in the shape of the operation. |
+| `{"type":"result","error":{"kind":"signed_out","message":"...","hint":"gh auth login"}}` | A failure, by kind. `message` and `hint` may be left out. |
+| `{"type":"log","text":"..."}` | A line for the debug log. Plain text; the core keeps at most 500 characters of it and at most 20 lines per call. |
+
+Anything else before the result is a wire error and the call is `failed`. A `result`
+with neither `ok` nor `error` is `failed`. The core stops reading at the first `result`:
+lines after it are ignored, and a non-zero exit after it does not change it (the result
+stands). A program that exits without a `result` is `failed`. A result that
+does not parse into the shape of its operation is `failed`; the raw line is never shown.
+What the program writes to stderr goes to the debug log, capped.
+
+Error kinds:
+
+| Kind | Use it when | The core shows |
+| --- | --- | --- |
+| `signed_out` | The tool the plugin uses is missing or not signed in. `hint` is what the user can type to fix it: plain, one line, at most 120 characters, such as `gh auth login`. It is drawn as text and never run. | The sign-in state of the forge, with the hint. |
+| `not_found` | The account cannot see the repository, or the pull request does not exist. | For `pull`, nothing; for `status`, "{name} does not show this repository". |
+| `unavailable` | The service did not answer: network down, rate limited, a timeout. | "{name} did not answer"; the core backs off and keeps the pull requests it had. |
+| `refused` | The service refused an operation the user started, such as creating a pull request that exists already. `message` says why: plain, at most 200 characters are used. | The message, for `create_pull` only; elsewhere as `failed`. |
+| `unsupported` | The operation is not known to this program. | As `failed`; the core does not ask again for this operation during the run. |
+| `failed` | Anything else, and an unknown kind. | "{name} could not be read"; `message` goes to the debug log only. |
+
+### What a call may reach
+
+The program runs confined for this one call. It cannot widen this by any message.
+
+| What | Granted |
+| --- | --- |
+| Programs | its own, and the ones in `permissions.exec`, found on `PATH` |
+| Reads | its own folder, its data folder (`DUSKCODE_PLUGIN_DATA`), the temporary folders, `permissions.read`, git's own configuration (`~/.gitconfig`, `~/.config/git`), system files, and this call's project folder when `permissions.project` is `read`. Never another project's folder, `~/.config/duskcode`, or other plugins. |
+| Writes | its data folder and the temporary folders only; never the project |
+| Network | only through the core's broker (`HTTPS_PROXY`), to the origins in `permissions.network`, never to private addresses |
+| Keychain | macOS only, and only with `permissions.keychain: true` |
+| Environment | the bare environment of every plugin program (see above). `GH_TOKEN`, `GITHUB_TOKEN` and every other variable of the core's environment never reach the program; a program sets what it needs (`GH_PROMPT_DISABLED=1`, `GH_PAGER=cat`, `NO_COLOR=1`, `GH_NO_UPDATE_NOTIFIER=1`) itself. |
+
+On Linux a call runs in its own user and network namespace; where unprivileged user
+namespaces are off, the plugin does not start and its row in Settings, Plugins says why.
+
+### Versions
+
+Each contract has an integer version, and the core sends the highest one the manifest
+lists that it speaks. Within a version the core only adds optional fields to `args`,
+adds error kinds (a program that does not know one reads it as `failed`), and adds
+operations; a program answers an operation it does not know with
+`{"type":"result","error":{"kind":"unsupported"}}`. A program therefore must ignore
+unknown fields in `args`. Anything that would break a program that follows these rules is
+a new version. The core speaks the newest version and the one before it for at least two
+stable releases. This document carries the text of each version.
+
+## Forge
+
+A forge is a service that hosts git repositories with pull requests and CI: the contract
+name is `forge`, version 1. A program for it serves the hosts named in
+`provides.forge.hosts`; the core calls it only for a project whose `origin` is on one of
+them. One call is about one repository.
+
+Three operations. All times are Unix seconds or `null`; every list is capped by the core
+after it reads it, whatever the program sends; a field left out reads as its empty value
+(`""`, `0`, `false`, `[]`, `null`), except a pull's `number`, which is required. The
+program maps its service's states onto the words below; the core never sees a vendor's.
+
+### `status`
+
+The pull requests that matter to a branch.
+
+```json
+{"type":"call","contract":"forge","version":1,"op":"status","folder":"/Users/me/code/app","args":{
+  "host":"github.com","repository":"owner/repo","branch":"feature-x",
+  "limits":{"branch_pulls":5,"open_pulls":10,"checks":500}}}
+```
+
+`repository` is as the remote names it (one to four path segments). `branch` is `null` on
+a detached head. `limits` are what the core keeps; the program may stop reading there.
+Answer:
+
+```json
+{"type":"result","ok":{
+  "name":"GitHub",
+  "pull_prefix":"https://github.com/owner/repo/pull/",
+  "branch_pulls":[PULL],
+  "open_pulls":[PULL]}}
+```
+
+`branch_pulls` are the branch's pull requests in any state, newest first. `open_pulls`
+are the repository's open ones, most recently updated first.
+
+### `pull`
+
+One pull request by number, for a card in a chat.
+
+```json
+{"type":"call","contract":"forge","version":1,"op":"pull","folder":"/Users/me/code/app","args":{
+  "host":"github.com","repository":"owner/repo","number":13}}
+```
+
+Answer `{"type":"result","ok":{"pull":PULL}}`; when there is none, `"pull":null` or the
+error `not_found`.
+
+### `create_pull`
+
+A pull request from a branch the user already pushed.
+
+```json
+{"type":"call","contract":"forge","version":1,"op":"create_pull","folder":"/Users/me/code/app","args":{
+  "host":"github.com","repository":"owner/repo","head":"feature-x","base":null,
+  "title":"Fix the thing","body":"..."}}
+```
+
+`base: null` means the repository's default branch. Make the pull request the way the
+service's own tool does; the GitHub plugin runs `gh pr create` and nothing more. Answer
+`{"type":"result","ok":{"pull":{"number":12,"url":"https://github.com/owner/repo/pull/12"}}}`:
+the number and the page the tool printed are enough, and the other fields of a `PULL`
+may be left out. The core checks only the answer's shape (a `number` above 0 and a safe
+`url`), not whose page it is, and the repository status shows the rest on its next
+read. When the service refuses (no commits between the
+branches, one exists already, the branch is not pushed), answer `refused` with the
+service's message. The core has already checked the arguments: `head` and `base` are
+valid branch names, `title` is a valid one-line message, and `body` is at most 20000
+characters; the program need not check them again. `not_found` is not an answer of this
+operation: the core reads it as `failed` (only `refused` carries a message to the user).
+
+### A `PULL`
+
+```json
+{"number":12,"title":"Fix the thing","state":"open","branch":"feature-x",
+ "from_fork":false,"author":"octocat","created":1763467641,"updated":1763470000,
+ "added":10,"removed":2,"files":3,
+ "url":"https://github.com/owner/repo/pull/12",
+ "checks_url":"https://github.com/owner/repo/pull/12/checks",
+ "checks":[{"name":"build","workflow":"CI","stage":"running",
+            "url":"https://github.com/owner/repo/actions/runs/1/job/2",
+            "started":1763467700,"finished":null}]}
+```
+
+- `state`: exactly `open`, `draft`, `merged` or `closed`; left out it reads as `open`.
+  Any other word makes the whole answer `failed`, so map the service's states yourself.
+- `stage` of a check: exactly `queued`, `running`, `passed`, `skipped` or `failed`; left
+  out it reads as `queued`; any other word makes the whole answer `failed`. A check that
+  was cancelled, timed out or needs action is `failed`; one the service skipped or found
+  neutral is `skipped`.
+- `branch` is the head branch; `from_fork` is true when the head lives in a fork.
+- `files` may be `null`; `workflow` may be empty.
+- `url` and `checks_url` are https links, `checks_url` being the page of all its checks.
+
+### What the core checks
+
+The core never trusts an answer. Text is made plain (control and bidi characters out) and
+capped; a link is `https://` with only the characters `A-Za-z0-9-._~:/?#[]@!$&'()*+,;=%`
+and at most 500 bytes, else it becomes empty (never repaired).
+
+- `name`: one line, 1 to 40 characters; otherwise the plugin's name is shown.
+- `pull_prefix` must start with `https://{host}/{repository path}/` (ASCII
+  case-insensitive), end with `/`, and be at most 300 bytes of the safe link characters.
+  Otherwise the whole answer is `failed`: without a trusted prefix no pull can be checked.
+  Every service has one: `/owner/repo/pull/`, `/group/proj/-/merge_requests/`,
+  `/owner/repo/pulls/`, `/ws/repo/pull-requests/`.
+- A pull's `url` must equal `pull_prefix` plus its `number` (case-insensitive), or the
+  pull is dropped. Its `number` must be above 0. The pull `create_pull` answers is held to
+  its shape only (see `create_pull`).
+- `checks_url` must start with `https://{host}/`, else it becomes empty. A check's `url`
+  is any safe https link, else empty.
+- Title at most 300 characters, author 100, branch 250.
+- `branch_pulls` keeps only pulls that are not `from_fork` and whose `branch` is the one
+  asked, at most 5. `open_pulls` keeps at most 10, leaving out any number among the
+  branch's.
+- Checks: at most 500 are counted and at most 50 listed, ordered failed, running,
+  queued, passed, skipped; the roll-up (counts and the worst state) is the core's.
 
 ## The store
 

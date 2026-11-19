@@ -21,9 +21,9 @@ use crate::{
     workspace::Workspace,
 };
 
-/// A change as the chat holds it, with what the row shows of its request state.
+/// What a change's row shows of its requests; the change itself is the chat's.
+#[derive(Default)]
 pub struct SkillRow {
-    pub change: SkillChange,
     /// Fetched once, when the row is first opened.
     pub diff: Option<SkillDiff>,
     pub loading: bool,
@@ -33,19 +33,6 @@ pub struct SkillRow {
     pub error: Option<String>,
     /// The diff request's failure, apart so an undo does not clear it.
     pub diff_error: Option<String>,
-}
-
-impl SkillRow {
-    pub fn new(change: SkillChange) -> Self {
-        Self {
-            change,
-            diff: None,
-            loading: false,
-            busy: false,
-            error: None,
-            diff_error: None,
-        }
-    }
 }
 
 /// Text from a skill file or an agent: no control or bidi characters, which could move or
@@ -80,17 +67,24 @@ pub fn rows(ws: &Workspace, shown: &str, call_id: &str, cx: &mut Context<Workspa
     let Some(chat) = ws.chats.get(shown) else {
         return Vec::new();
     };
-    chat.skills
-        .iter()
-        .filter(|row| row.change.call_id == call_id)
-        .map(|row| skill_row(ws, shown, row, cx))
+    let fresh = SkillRow::default();
+    chat.skill_changes_of(call_id)
+        .map(|change| {
+            let row = chat.skill_rows.get(&change.id).unwrap_or(&fresh);
+            skill_row(ws, shown, change, row, cx)
+        })
         .collect()
 }
 
-fn skill_row(ws: &Workspace, shown: &str, row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
+fn skill_row(
+    ws: &Workspace,
+    shown: &str,
+    change: &SkillChange,
+    row: &SkillRow,
+    cx: &mut Context<Workspace>,
+) -> Div {
     let theme = cx.theme();
     let (accent, muted, danger) = (theme.primary, step_muted(cx), theme.danger);
-    let change = &row.change;
     let id = change.id;
     let key = (id as usize & (SKILL - 1)) | SKILL;
     let open = ws.unfolded.contains(&(shown.to_owned(), key));
@@ -148,13 +142,13 @@ fn skill_row(ws: &Workspace, shown: &str, row: &SkillRow, cx: &mut Context<Works
     if open {
         block = block.child(widgets::unfold(
             SharedString::from(format!("unfold-skill-{shown}-{id}")),
-            div().pl_4().pt_1().child(diff_view(shown, row, cx)),
+            div().pl_4().pt_1().child(diff_view(shown, id, row, cx)),
         ));
     }
     block
 }
 
-fn diff_view(shown: &str, row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
+fn diff_view(shown: &str, id: i64, row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (accent, muted, text, surface) = (
         theme.primary,
@@ -179,7 +173,7 @@ fn diff_view(shown: &str, row: &SkillRow, cx: &mut Context<Workspace>) -> Div {
     let mut lines = div()
         .id(SharedString::from(format!(
             "skill-diff-lines-{shown}-{}",
-            row.change.id
+            id
         )))
         .flex()
         .flex_col()
@@ -233,11 +227,7 @@ impl Workspace {
     /// Unfolds or folds the diff of a change; the first unfold asks the core for it.
     pub fn open_skill_change(&mut self, thread: &str, id: i64, cx: &mut Context<Self>) {
         self.fold(thread, (id as usize & (SKILL - 1)) | SKILL, cx);
-        let Some(row) = self
-            .chats
-            .get_mut(thread)
-            .and_then(|chat| chat.skills.iter_mut().find(|row| row.change.id == id))
-        else {
+        let Some(row) = self.chats.get_mut(thread).map(|chat| chat.skill_row(id)) else {
             return;
         };
         if row.diff.is_some() || row.loading {
@@ -250,11 +240,7 @@ impl Workspace {
             cx,
             move |client| async move { client.catalog().skill_diff(id).await },
             move |ws, result, cx| {
-                if let Some(row) = ws
-                    .chats
-                    .get_mut(&thread)
-                    .and_then(|chat| chat.skills.iter_mut().find(|row| row.change.id == id))
-                {
+                if let Some(row) = ws.chats.get_mut(&thread).map(|chat| chat.skill_row(id)) {
                     row.loading = false;
                     match result {
                         Ok(diff) => {
@@ -273,11 +259,7 @@ impl Workspace {
     }
 
     pub fn undo_skill(&mut self, thread: &str, id: i64, cx: &mut Context<Self>) {
-        let Some(row) = self
-            .chats
-            .get_mut(thread)
-            .and_then(|chat| chat.skills.iter_mut().find(|row| row.change.id == id))
-        else {
+        let Some(row) = self.chats.get_mut(thread).map(|chat| chat.skill_row(id)) else {
             return;
         };
         if row.busy {
@@ -294,12 +276,9 @@ impl Workspace {
                     match result {
                         Ok(change) => chat.skill_changed(change),
                         Err(error) => {
-                            if let Some(row) =
-                                chat.skills.iter_mut().find(|row| row.change.id == id)
-                            {
-                                row.busy = false;
-                                row.error = Some(error.to_string());
-                            }
+                            let row = chat.skill_row(id);
+                            row.busy = false;
+                            row.error = Some(error.to_string());
                         }
                     }
                 }
@@ -350,7 +329,7 @@ mod tests {
             call_id: "c".into(),
             result: ToolResult::text("[skill-save] {}".into()),
         });
-        assert!(chat.skills.is_empty());
+        assert!(chat.skill_changes.is_empty());
         chat.apply(ThreadEvent::SkillChanged(change("one")));
         let mut undone = change("one");
         undone.undone = true;
@@ -358,7 +337,7 @@ mod tests {
         chat.apply(ThreadEvent::SkillChanged(undone));
         // A stale history list read before the undo does not bring Undo back.
         chat.skills_loaded(vec![change("one")]);
-        assert_eq!(chat.skills.len(), 1);
-        assert!(chat.skills[0].change.undone && !chat.skills[0].change.can_undo);
+        assert_eq!(chat.skill_changes.len(), 1);
+        assert!(chat.skill_changes[0].undone && !chat.skill_changes[0].can_undo);
     }
 }

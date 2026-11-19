@@ -3,10 +3,7 @@
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Decision, Input};
 use crate::runtime::model_choice::ModelChoice;
-use crate::{
-    config::live::LiveConfig,
-    state::{State, estimate_tokens},
-};
+use crate::{config::live::LiveConfig, state::State};
 use anyhow::{Result, ensure};
 use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
@@ -59,19 +56,7 @@ impl ThreadInput {
 
     async fn deliver(&self, text: String, input: Input) -> Result<()> {
         ensure!(!self.inputs.is_closed(), "thread has ended");
-        // A message that alone is past the input limit could never be answered.
-        let config = self.config.current();
-        let limit = self
-            .model
-            .current()
-            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
-                choice.input_limit(&config)
-            });
-        let tokens = estimate_tokens(&text);
-        ensure!(
-            tokens <= limit,
-            "the message is about {tokens} tokens, past the input limit of {limit}"
-        );
+        self.model.ensure_fits(&text, &self.config.current())?;
         // The answer to a restart's question needs no model: "Stop" must work without one.
         if self.model.current().is_none() && !self.decides(&text) {
             let message = self.state.add_local_unsent(&self.thread_id, &text).await?;

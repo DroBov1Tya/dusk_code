@@ -191,7 +191,16 @@ impl AppState {
                     self.fork(thread_id.clone(), summary.clone());
                 }
                 match self.chat(&thread_id) {
-                    Some(chat) => chat.update(|data| data.apply(*event)),
+                    // Streamed text is told to its item alone; the rest to the whole chat.
+                    Some(chat) => {
+                        let applied = chat.try_update_untracked(|data| data.apply(*event));
+                        let told = applied.is_some_and(|applied| {
+                            chat.with_untracked(|data| data.told(&applied))
+                        });
+                        if !told {
+                            chat.notify();
+                        }
+                    }
                     None if !listed => self.refresh(),
                     None => {}
                 }

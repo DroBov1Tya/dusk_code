@@ -4,7 +4,12 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use dusk_protocol::thread::wrap;
 use image::ImageFormat;
 
-use super::{FOLDER, ThreadSources, paths::file_paths, picture, picture::MAX_PICTURE_EDGE};
+use super::{
+    FOLDER, ThreadSources,
+    paths::file_paths,
+    picture,
+    picture::{Kept, MAX_PICTURE_EDGE, PictureKey},
+};
 use crate::{
     catalog::mentions::Mentions,
     providers::ChatMessage,
@@ -244,6 +249,146 @@ async fn a_picture_goes_to_a_model_that_takes_it_and_is_named_otherwise() {
     let named = sources.block(false).await.unwrap().unwrap();
     assert!(named.pictures.is_empty() && named.text.contains("cannot see"));
     assert!(matches!(named.message(), ChatMessage::User(_)));
+}
+
+fn gray_png(edge: u32, shade: u8) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    image::RgbImage::from_pixel(edge, edge, image::Rgb([shade, shade / 2, 255 - shade]))
+        .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+        .unwrap();
+    bytes
+}
+
+#[tokio::test]
+async fn a_picture_made_smaller_is_kept_and_sent_the_same_until_its_file_changes() {
+    let state = temp_state("sources-kept-picture").await;
+    state.create_thread("thread", "test").await.unwrap();
+    let workspace = temp_dir("sources-kept-picture-workspace");
+    let sources = ThreadSources {
+        state: &state,
+        workspace: &workspace,
+        thread_id: "thread",
+    };
+    let first = gray_png(2000, 40);
+    let source = sources.store("shot.png", &first).await.unwrap();
+    let made = picture(&first).unwrap();
+    let path = workspace.join(FOLDER).join(&source.file);
+    let key = PictureKey::of(&path).await.unwrap();
+
+    let once = sources.block(true).await.unwrap().unwrap();
+    assert_eq!(once.pictures, vec![made.clone()]);
+    assert_eq!(super::picture::KEPT.get(&key), Some(made.clone()));
+    let again = sources.block(true).await.unwrap().unwrap();
+    assert_eq!(again.pictures, vec![made.clone()]);
+    assert_eq!(again.text, once.text);
+
+    // The kept picture is what goes, not one made again: a marker put in its place
+    // comes back.
+    let marker = crate::providers::Picture {
+        mime_type: "image/png",
+        base64: "marker".into(),
+    };
+    super::picture::KEPT.put(key.clone(), marker.clone());
+    let kept = sources.block(true).await.unwrap().unwrap();
+    assert_eq!(kept.pictures, vec![marker]);
+    assert_eq!(kept.text, once.text);
+
+    // Another picture in the same file is made anew.
+    let second = gray_png(1900, 200);
+    std::fs::write(&path, &second).unwrap();
+    let changed = sources.block(true).await.unwrap().unwrap();
+    assert_eq!(changed.pictures, vec![picture(&second).unwrap()]);
+    assert_ne!(changed.pictures[0], made);
+}
+
+/// A copy that keeps the time (`cp -p`, `touch -r`), or a rewrite within a coarse clock's
+/// tick, leaves the length and the time of change as they were.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_picture_replaced_with_the_same_length_and_time_is_made_again() {
+    let state = temp_state("sources-same-time-picture").await;
+    state.create_thread("thread", "test").await.unwrap();
+    let workspace = temp_dir("sources-same-time-picture-workspace");
+    let sources = ThreadSources {
+        state: &state,
+        workspace: &workspace,
+        thread_id: "thread",
+    };
+    let (first, second) = (gray_png(64, 40), gray_png(64, 200));
+    assert_eq!(
+        first.len(),
+        second.len(),
+        "the test needs pictures of one length"
+    );
+    assert_ne!(first, second);
+    let source = sources.store("shot.png", &first).await.unwrap();
+    let path = workspace.join(FOLDER).join(&source.file);
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let once = sources.block(true).await.unwrap().unwrap();
+    assert_eq!(once.pictures, vec![picture(&first).unwrap()]);
+
+    // Rewritten in place, and by a rename over it, each time with the old time back.
+    std::fs::write(&path, &second).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().modified().unwrap(),
+        modified
+    );
+    let rewritten = sources.block(true).await.unwrap().unwrap();
+    assert_eq!(rewritten.pictures, vec![picture(&second).unwrap()]);
+
+    let beside = path.with_extension("new");
+    std::fs::write(&beside, &first).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&beside)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    std::fs::rename(&beside, &path).unwrap();
+    let renamed = sources.block(true).await.unwrap().unwrap();
+    assert_eq!(renamed.pictures, vec![picture(&first).unwrap()]);
+}
+
+#[tokio::test]
+async fn kept_pictures_drop_the_least_used_past_their_bounds() {
+    let dir = temp_dir("sources-kept-bounds");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut keys = Vec::new();
+    for at in 0..3 {
+        let path = dir.join(format!("{at}.png"));
+        std::fs::write(&path, png(4)).unwrap();
+        keys.push(PictureKey::of(&path).await.unwrap());
+    }
+    let shown = |text: &str| crate::providers::Picture {
+        mime_type: "image/png",
+        base64: text.into(),
+    };
+    let kept = Kept::new(2, 10);
+    kept.put(keys[0].clone(), shown("aaaa"));
+    kept.put(keys[1].clone(), shown("bbbb"));
+    // Using the first makes the second the one to drop.
+    assert_eq!(kept.get(&keys[0]), Some(shown("aaaa")));
+    kept.put(keys[2].clone(), shown("cccc"));
+    assert_eq!(kept.get(&keys[1]), None);
+    assert_eq!(kept.get(&keys[0]), Some(shown("aaaa")));
+    assert_eq!(kept.get(&keys[2]), Some(shown("cccc")));
+    // Past the byte bound, the oldest goes; one too large is never kept.
+    kept.put(keys[1].clone(), shown("bbbbbbbb"));
+    assert_eq!(kept.get(&keys[0]), None);
+    assert_eq!(kept.get(&keys[2]), None);
+    kept.put(keys[0].clone(), shown("a".repeat(11).as_str()));
+    assert_eq!(kept.get(&keys[0]), None);
+    assert_eq!(kept.get(&keys[1]), Some(shown("bbbbbbbb")));
+    // A file with another length is another state of it.
+    std::fs::write(dir.join("1.png"), png(8)).unwrap();
+    let changed = PictureKey::of(&dir.join("1.png")).await.unwrap();
+    assert_eq!(kept.get(&changed), None);
 }
 
 #[tokio::test]

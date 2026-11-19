@@ -1,13 +1,18 @@
 //! Plugins and their settings.
 
 use crate::runtime::Runtime;
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use std::sync::Arc;
 
 impl Runtime {
     /// The plugins found, with whether each is on and what keeps one from loading.
     pub fn plugins(&self) -> Vec<crate::plugins::PluginInfo> {
         self.plugins.list()
+    }
+
+    /// The plugins that serve contracts, and the routing to them.
+    pub fn contracts(&self) -> Arc<crate::plugins::contract::Contracts> {
+        Arc::clone(self.plugins.contracts())
     }
 
     /// The parts plugins that are on add to the window, on this system.
@@ -172,6 +177,24 @@ impl Runtime {
         };
         self.config()
             .update(|config| config.set_plugin_enabled(name, allowed))?;
+        let plugins = Arc::clone(&self.plugins);
+        tokio::task::spawn_blocking(move || plugins.scan());
+        Ok(())
+    }
+
+    /// Chooses the plugin a contract goes to for one host; applies at once.
+    pub fn set_contract_plugin(&self, contract: &str, host: &str, plugin: &str) -> Result<()> {
+        ensure!(contract == "forge", "unknown contract {contract}");
+        ensure!(
+            crate::plugins::manifest::is_forge_host(host),
+            "not a forge host: {host}"
+        );
+        ensure!(
+            crate::init::paths::is_plain_folder_name(plugin),
+            "invalid plugin name"
+        );
+        self.config()
+            .update(|config| config.set_contract_plugin(contract, host, plugin))?;
         let plugins = Arc::clone(&self.plugins);
         tokio::task::spawn_blocking(move || plugins.scan());
         Ok(())

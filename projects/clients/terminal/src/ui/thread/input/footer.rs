@@ -74,7 +74,7 @@ fn doing(app: &App, activity: &Activity) -> (&'static str, ratatui::style::Color
         return (spinner(app), DUSK, what);
     }
     let now = dusk_protocol::system::now_ms();
-    let Some(work) = dusk_protocol::thread::activity(&app.live, now) else {
+    let Some(work) = app.transcript.work(now) else {
         // The message is sent and the turn's first event is on its way.
         return (
             STAR[(app.frame / 3) % STAR.len()],

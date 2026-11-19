@@ -433,3 +433,21 @@ fn the_team_section_names_models_and_roles() {
         assert!(parse(bad).is_err(), "{bad:?}");
     }
 }
+
+#[test]
+fn contract_keys_round_trip_and_old_files_still_load() {
+    let old = parse("notifications: true\n").unwrap();
+    assert!(!old.contracts_on());
+    let yaml = old.to_yaml().unwrap();
+    assert!(!yaml.contains("plugin_contracts") && !yaml.contains("contracts"));
+
+    let mut config = parse("plugin_contracts: true\n").unwrap();
+    assert!(config.contracts_on());
+    config.set_contract_plugin("forge", "github.com", "gitea");
+    config.set_contract_plugin("unknown", "github.com", "gitea");
+    let again = parse(&config.to_yaml().unwrap()).unwrap();
+    assert!(again.contracts_on());
+    assert_eq!(again.chosen("forge", "github.com"), Some("gitea"));
+    assert_eq!(again.chosen("forge", "other.example.com"), None);
+    assert_eq!(again.chosen("unknown", "github.com"), None);
+}

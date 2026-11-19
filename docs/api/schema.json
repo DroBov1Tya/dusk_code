@@ -4695,6 +4695,14 @@
     "PluginInfo": {
       "description": "A plugin as `/settings` shows it.",
       "properties": {
+        "choose": {
+          "default": [],
+          "description": "Hosts it serves where another plugin that is on serves them too and this one is\nnot the routed one: the client offers \"Use for {host}\" for each.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "clients": {
           "default": [],
           "description": "The clients that can draw its parts; all when empty.",
@@ -8223,6 +8231,35 @@
           },
           "required": [
             "PluginEnabled"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Chooses the plugin a contract goes to for one host.",
+          "properties": {
+            "SetContractPlugin": {
+              "properties": {
+                "contract": {
+                  "type": "string"
+                },
+                "host": {
+                  "type": "string"
+                },
+                "plugin": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "contract",
+                "host",
+                "plugin"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "SetContractPlugin"
           ],
           "type": "object"
         },

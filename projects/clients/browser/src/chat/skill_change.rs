@@ -1,6 +1,7 @@
 //! The row an agent's skill change leaves under its step: what changed and why, the diff
 //! on request, and Undo. Everything the core sends is skill data, drawn as text nodes.
 
+use super::blocks::Source;
 use crate::{api, state::Chat};
 use dusk_protocol::catalog::{DiffKind, SkillChange, SkillDiff, SkillSaveAction};
 use leptos::prelude::*;
@@ -10,13 +11,7 @@ use leptos::prelude::*;
 pub fn load(thread_id: String, chat: Chat) {
     crate::ui::run(
         async move { api::skill_changes(&thread_id).await },
-        move |changes| {
-            chat.update(|c| {
-                changes
-                    .into_iter()
-                    .for_each(|change| c.put_skill_change(change))
-            })
-        },
+        move |changes| chat.update(|c| c.skills_loaded(changes)),
     );
 }
 
@@ -32,19 +27,25 @@ pub fn label(change: &SkillChange) -> String {
 
 /// The rows under the step `call_id`.
 #[component]
-pub fn SkillChanges(call_id: String, chat: Chat) -> impl IntoView {
-    let rows = move || chat.with(|c| c.skill_changes_of(&call_id));
+pub fn SkillChanges(call_id: String, source: Source) -> impl IntoView {
+    let rows = move || {
+        source.with(|c| {
+            c.skill_changes_of(&call_id)
+                .map(|c| c.id)
+                .collect::<Vec<_>>()
+        })
+    };
     view! {
-        <For each=rows key=|change| change.id let:change>
-            <Row id=change.id chat />
+        <For each=rows key=|id| *id let:id>
+            <Row id source />
         </For>
     }
 }
 
 #[component]
-fn Row(id: i64, chat: Chat) -> impl IntoView {
+fn Row(id: i64, source: Source) -> impl IntoView {
     let change =
-        Memo::new(move |_| chat.with(|c| c.skill_changes.iter().find(|c| c.id == id).cloned()));
+        Memo::new(move |_| source.with(|c| c.skill_changes.iter().find(|c| c.id == id).cloned()));
     let open = RwSignal::new(false);
     let diff = RwSignal::new(None::<SkillDiff>);
     let busy = RwSignal::new(false);
@@ -66,7 +67,7 @@ fn Row(id: i64, chat: Chat) -> impl IntoView {
         leptos::task::spawn_local(async move {
             match api::undo_skill_change(id).await {
                 Ok(changes) => {
-                    chat.update(|c| changes.into_iter().for_each(|ch| c.put_skill_change(ch)));
+                    source.update(|c| changes.into_iter().for_each(|ch| c.skill_changed(ch)));
                     // A shown diff is of the change, which undoing does not alter.
                 }
                 Err(text) => error.set(Some(text)),

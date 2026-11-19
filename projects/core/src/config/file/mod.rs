@@ -136,6 +136,13 @@ pub struct Config {
     /// The model a team's members answer on, and one per role.
     #[serde(default, skip_serializing_if = "Team::is_default")]
     team: Team,
+    /// Whether a plugin that provides a contract is asked, such as for a forge's pull
+    /// requests. Off, `provides` is shown and no contract program starts.
+    #[serde(default, skip_serializing_if = "super::sections::is_false")]
+    plugin_contracts: bool,
+    /// The plugin the user chose for a host of a contract.
+    #[serde(default, skip_serializing_if = "super::Contracts::is_default")]
+    contracts: super::Contracts,
     /// What the plugins that are on add; never saved.
     #[serde(skip)]
     plugged: Plugged,
