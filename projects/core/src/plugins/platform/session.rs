@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, process::Stdio};
 use anyhow::{Context, Result};
 use parking_lot::RwLock;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     process::ChildStdin,
 };
 use tracing::warn;
@@ -19,6 +19,7 @@ use crate::{
 };
 
 use super::{
+    super::lines::{Line, Lines},
     PlatformSpec,
     thread::{new_thread, open_thread},
     wire::{FromPlatform, MAX_LINE_BYTES, ToPlatform},
@@ -78,7 +79,8 @@ impl<'a> Session<'a> {
             .spawn()
             .with_context(|| format!("cannot start {program}"))?;
         let stdin = child.stdin.take().context("no stdin")?;
-        let mut lines = BufReader::new(child.stdout.take().context("no stdout")?).lines();
+        let mut stdout = BufReader::new(child.stdout.take().context("no stdout")?);
+        let mut lines = Lines::new(MAX_LINE_BYTES);
         let thread = open_thread(launcher, &spec.plugin, None).await?;
         let mut session = Session {
             launcher,
@@ -94,14 +96,18 @@ impl<'a> Session<'a> {
         };
         loop {
             tokio::select! {
-                line = lines.next_line() => {
-                    let Some(line) = line.context("cannot read the platform")? else {
-                        return Ok(());
+                line = lines.next(&mut stdout) => {
+                    let line = match line.context("cannot read the platform")? {
+                        Line::Full(line) => line,
+                        Line::End => return Ok(()),
+                        // A line past the cap is no message of the protocol: dropped
+                        // unread, and the session goes on.
+                        Line::TooLong => {
+                            warn!("plugin {}: a line over the limit was dropped", spec.plugin);
+                            continue;
+                        }
                     };
-                    if line.len() > MAX_LINE_BYTES {
-                        continue;
-                    }
-                    match serde_json::from_str::<FromPlatform>(&line) {
+                    match serde_json::from_slice::<FromPlatform>(&line) {
                         Ok(FromPlatform::Status { text }) => {
                             statuses.write().insert(spec.plugin.clone(), text);
                         }
