@@ -4,6 +4,7 @@
 //! secrets.
 //!
 //! - `compat`: the systems and clients a plugin runs on;
+//! - `cover_art`: the gradient a plugin without a cover is drawn on;
 //! - `permission`: what a plugin asks to be allowed, and nothing more is;
 //! - `place`: where a plugin's part shows and what a click on it opens;
 //! - `store`: the plugins the store offers and what a client asks of it;
@@ -11,6 +12,7 @@
 //! - `wire`: the messages between the core and the plugin's process.
 
 mod compat;
+mod cover_art;
 mod permission;
 mod place;
 mod store;
@@ -18,6 +20,7 @@ mod view;
 mod wire;
 
 pub use compat::{Client, Os, allows, runs_here};
+pub use cover_art::{CoverArt, Hsl, cover_art};
 pub use permission::{KeyUse, Permissions};
 pub use place::{Opens, Part, Place};
 pub use store::{
