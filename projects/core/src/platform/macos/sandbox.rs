@@ -3,7 +3,10 @@
 //! network, the keychain and programs outside the system's own. `sandbox-exec` is
 //! deprecated in name only; the system and Apple's own tools still use it.
 
-use std::path::Path;
+use std::{
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use anyhow::{Result, ensure};
 use tokio::process::Command;
@@ -49,6 +52,13 @@ fn profile(confinement: &Confinement) -> Result<String> {
     );
     for folder in &confinement.writable {
         profile.push_str(&format!("\n  (subpath {})", quoted(folder)?));
+    }
+    // A keychain search takes the lock of the user's module directory, and fails
+    // without it.
+    if confinement.keychain
+        && let Some(mds) = module_directory()
+    {
+        profile.push_str(&format!("\n  (subpath {})", quoted(mds)?));
     }
     profile.push_str(")\n");
     for folder in &confinement.hidden {
@@ -101,6 +111,26 @@ fn profile(confinement: &Confinement) -> Result<String> {
         profile.push_str(")\n");
     }
     Ok(profile)
+}
+
+/// The user's module directory cache, `$DARWIN_USER_CACHE_DIR/mds`, resolved.
+fn module_directory() -> Option<&'static Path> {
+    static FOLDER: OnceLock<Option<PathBuf>> = OnceLock::new();
+    FOLDER
+        .get_or_init(|| {
+            let output = std::process::Command::new("/usr/bin/getconf")
+                .arg("DARWIN_USER_CACHE_DIR")
+                .output()
+                .ok()
+                .filter(|output| output.status.success())?;
+            let cache = String::from_utf8(output.stdout).ok()?;
+            let cache = Path::new(cache.trim());
+            if !cache.is_absolute() {
+                return None;
+            }
+            cache.join("mds").canonicalize().ok()
+        })
+        .as_deref()
 }
 
 /// A path as a profile string; one that could break out of the string is refused.
