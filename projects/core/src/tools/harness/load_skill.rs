@@ -23,7 +23,7 @@ use crate::{
     BoxFuture,
     catalog::{
         graph::{Graph, Node, SKILL_FILE},
-        skills::{BUILTIN_PACK, pack_of},
+        skills::{BUILTIN_PACK, is_builtin},
     },
     config::Config,
 };
@@ -153,11 +153,26 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
 /// The reminder goes on a skill the user can edit: not the editing skills themselves,
 /// not a built-in one (a release replaces it), and only while skill-evolve is usable.
 fn wants_reminder(graph: &Graph, name: &str, config: &Config) -> bool {
+    // skill-evolve is built in, so its switch and the built-in pack's decide; this
+    // avoids `skill_enabled`, which reads the release resources again.
     name != EVOLVE
         && name != "skill-creator"
-        && config.skill_enabled(EVOLVE)
+        && config.skill_switch(EVOLVE)
+        && config.pack_enabled(BUILTIN_PACK)
         && graph.get(EVOLVE).is_some()
-        && pack_of(name) != Some(BUILTIN_PACK.to_owned())
+        && is_own(name)
+}
+
+/// A skill in a pack folder is never built in. For a top-level one the resources must
+/// be readable to tell; when they are not, no reminder is better than one on a built-in.
+fn is_own(name: &str) -> bool {
+    if name.contains('/') {
+        return true;
+    }
+    let Ok(root) = crate::release::resources::root() else {
+        return false;
+    };
+    !is_builtin(name, Some(&root.join("skills")))
 }
 
 /// Switched-off skills are left out, wherever they would be shown.

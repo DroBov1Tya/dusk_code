@@ -67,7 +67,7 @@ pub fn pack_of(name: &str) -> Option<String> {
     is_builtin(name, builtin.as_deref()).then(|| BUILTIN_PACK.to_owned())
 }
 
-fn is_builtin(name: &str, builtin: Option<&Path>) -> bool {
+pub(crate) fn is_builtin(name: &str, builtin: Option<&Path>) -> bool {
     builtin.is_some_and(|root| root.join(name).join(SKILL_FILE).is_file())
 }
 
