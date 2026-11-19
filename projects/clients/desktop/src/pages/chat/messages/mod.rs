@@ -16,6 +16,7 @@ mod feedback;
 mod picture;
 mod row;
 mod sent_picture;
+mod skill_change;
 mod step;
 mod texts;
 mod working_row;
@@ -26,6 +27,7 @@ pub use feedback::{answered, job};
 pub use picture::picture_path;
 pub use row::label;
 pub use sent_picture::SentPicture;
+pub use skill_change::SkillRow;
 pub use step::{run, steps};
 pub use texts::Texts;
 
@@ -38,6 +40,7 @@ use crate::{ui::widgets, workspace::Workspace};
 pub(crate) const RUN: usize = 1 << 40;
 pub(crate) const STEP: usize = 1 << 41;
 pub(crate) const ACTIVITY: usize = 1 << 42;
+pub(crate) const SKILL: usize = 1 << 43;
 
 /// One row of the list: a visible item, a turn disclosure, or the working figure.
 #[derive(Clone, Copy, PartialEq, Eq)]

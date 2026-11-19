@@ -168,7 +168,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
     column
 }
 
-/// Who this is and how it stands, over its chat: the fox, the name and role, what it
+/// Who this is and how it stands, over its chat: the sun, the name and role, what it
 /// does now and for how long, and a way to stop it or to put it away once it is done.
 fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div> {
     let seen = ws.shown_chat()?.agents.get(agent)?;
@@ -212,7 +212,7 @@ fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div>
             .border_b_1()
             .border_color(theme.border)
             .child(mascot::render(
-                SharedString::from(format!("agent-chat-fox-{agent}")),
+                SharedString::from(format!("agent-chat-sun-{agent}")),
                 &seen.state,
                 color,
                 2.0,

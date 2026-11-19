@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{ProviderErrorKind, ProviderFailure, ProviderWaitKind};
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Turn {
     pub turn_id: String,
@@ -33,6 +34,7 @@ pub struct Turn {
 }
 
 /// What a running turn waits for. Times are Unix timestamps in milliseconds.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TurnWait {
     /// A restart cut off a call that may have taken effect; the user decides.
@@ -76,6 +78,7 @@ impl TurnWait {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TurnStatus {
     Running,
@@ -97,6 +100,7 @@ impl TurnStatus {
 }
 
 /// Why a turn failed: what the one row at its end shows.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TurnFailure {
     /// Safe to show: never a key, a header, a request body or a URL path.

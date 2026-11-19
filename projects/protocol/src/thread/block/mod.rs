@@ -30,6 +30,7 @@ pub const SHOW_TOOL: &str = "show";
 
 /// One block. Each kind is built only through its checked `new`, in code and from JSON
 /// alike, so a block that exists is within its caps.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", try_from = "Show")]
 pub enum Block {

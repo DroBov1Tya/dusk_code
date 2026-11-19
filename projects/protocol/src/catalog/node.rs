@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A skill's or an agent's file as a client edits it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeText {
     pub name: String,

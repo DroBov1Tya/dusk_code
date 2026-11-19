@@ -98,6 +98,14 @@ pub fn turn_activity(
         row = row.child(background_button(shown, index, tool, cx));
     }
     let mut block = div().flex().flex_col().gap_1().child(row);
+    // A change to a skill stays in sight when the turn is folded; open, its step shows it.
+    if !open {
+        for item in items {
+            if let Item::Tool(tool) = item {
+                block = block.children(super::skill_change::rows(ws, shown, &tool.call_id, cx));
+            }
+        }
+    }
     if open {
         let mut detail = div()
             .ml_4()

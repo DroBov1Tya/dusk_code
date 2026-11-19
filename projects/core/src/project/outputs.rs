@@ -60,7 +60,9 @@ pub async fn read(path: &Path, roots: &[PathBuf]) -> Result<String> {
     let metadata = tokio::fs::metadata(&path).await?;
     ensure!(metadata.is_file(), "not a file");
     if metadata.len() > MAX_PREVIEW_BYTES {
-        bail!("the file is too large to preview");
+        bail!(crate::client::Shown::new(
+            "the file is too large to preview"
+        ));
     }
     let bytes = tokio::fs::read(&path).await?;
     String::from_utf8(bytes).context("not a text file")

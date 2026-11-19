@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::plugin::UiEvent;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PluginRequest {
     /// Starts the plugin's interface when it is not running; its view follows as

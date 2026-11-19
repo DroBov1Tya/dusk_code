@@ -8,6 +8,7 @@ use crate::thread::{
     Compaction, Goal, LocalUnsent, Message, Pin, Task, Team, ThreadTokens, Turn, TurnFailure,
 };
 use crate::tools::{ApprovalRequest, Question, ToolResult};
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadEvent {
     /// The active model changed or was discovered after the thread opened.
@@ -211,6 +212,8 @@ pub enum ThreadEvent {
     /// The thread's pins changed, by a pin, an unpin or an /undo that took a pinned
     /// message: all of them, oldest message first.
     Pins(Vec<Pin>),
+    /// A skill file changed by a tool call of this thread, or such a change was undone.
+    SkillChanged(crate::catalog::SkillChange),
     /// /fork wrote its summary; a client opens a new thread that starts from it.
     Forked {
         summary: String,
@@ -223,6 +226,7 @@ pub enum ThreadEvent {
 }
 
 /// How far the core went when the model repeated itself within a turn.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepeatRung {
     /// The same call with the same result again: the model is told to change course.
@@ -238,6 +242,7 @@ pub enum RepeatRung {
 }
 
 /// What an episode the core wrote down is about.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EpisodeKind {
     /// An error that came back ended with a call that passed.

@@ -112,14 +112,14 @@ impl MarkdownPlugin for PullLink {
             return None;
         };
         let url = text.value.trim();
-        // Any https address that ends in a number; the core's prefix decides in
-        // `render_inline` which of them are pull requests.
+        // Any https address with a number in its path, as the browser client chips
+        // them; the core's prefix decides in `render_inline` which are pull requests.
         let path = url.split(['#', '?']).next().unwrap_or_default();
-        let last = path.rsplit('/').next().unwrap_or_default();
         (url.starts_with("https://")
             && url.len() <= 300
-            && !last.is_empty()
-            && last.bytes().all(|b| b.is_ascii_digit()))
+            && path
+                .split('/')
+                .any(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())))
         .then(|| MarkdownNode::new(NODE, url.to_owned()).text(text.value.clone()))
     }
 

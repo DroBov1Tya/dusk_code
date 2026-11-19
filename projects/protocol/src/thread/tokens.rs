@@ -7,6 +7,7 @@ use crate::model::Usage;
 /// room for the summary request and its answer, so 256k compacts at about 205k.
 pub const AUTO_COMPACT_PERCENT: u64 = 80;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThreadTokens {
     /// The best known size of the current context: what the provider counted for the
@@ -64,6 +65,7 @@ fn tenths(value: u64, unit: u64) -> String {
 }
 
 /// Estimated tokens by who wrote them.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenCounts {
     /// The mode's prompt and other system instructions.

@@ -193,7 +193,7 @@ impl Agent {
                 self.running.push((call.id.clone(), call.name.clone()));
                 AgentState::Tool(call.name.clone())
             }
-            // One of several tools ended: the fox goes on with the newest still running.
+            // One of several tools ended: the mascot goes on with the newest still running.
             ThreadEvent::ToolFinished { call_id, .. } => {
                 self.running.retain(|(id, _)| id != call_id);
                 match self.running.last() {
@@ -264,6 +264,8 @@ pub struct Transcript {
     /// The chat's own access mode; `None` follows the default in settings.
     pub access: Option<dusk_protocol::config::ApprovalPolicy>,
     pub tasks: Vec<Task>,
+    /// What the agents changed in skills, oldest first, from the core's typed data.
+    pub skills: Vec<super::messages::SkillRow>,
     pub agents: BTreeMap<String, Agent>,
     pub approvals: Vec<ApprovalRequest>,
     /// What the agent asked and nobody answered yet, in order; the first one shows.
@@ -628,6 +630,7 @@ impl Transcript {
             ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Pins(pins) => self.pins = pins,
+            ThreadEvent::SkillChanged(change) => self.skill_changed(change),
             ThreadEvent::Undone { text } => {
                 // The core forgot the message and all after it; so does the view.
                 if let Some(at) = self.rollback_at.take() {
@@ -651,6 +654,45 @@ impl Transcript {
             // The rest left a note above or is not shown; the rate waits for its UI.
             _ => {}
         }
+    }
+
+    /// A skill change that came live, or one that was undone: it replaces the row of its ID.
+    pub fn skill_changed(&mut self, change: dusk_protocol::catalog::SkillChange) {
+        let at = self
+            .items
+            .iter()
+            .position(|item| matches!(item, Item::Tool(tool) if tool.call_id == change.call_id));
+        if let Some(at) = at {
+            self.changed_from = Some(self.changed_from.map_or(at, |old| old.min(at)));
+        }
+        match self
+            .skills
+            .iter_mut()
+            .find(|row| row.change.id == change.id)
+        {
+            Some(row) => {
+                // An undo is final: a stale list must not offer Undo again.
+                let undone = row.change.undone || change.undone;
+                row.change = change;
+                if undone {
+                    row.change.undone = true;
+                    row.change.can_undo = false;
+                }
+                row.busy = false;
+                row.error = None;
+            }
+            None => self.skills.push(super::messages::SkillRow::new(change)),
+        }
+    }
+
+    /// The changes the core lists for a thread opened from history; those that came live
+    /// meanwhile stay.
+    pub fn skills_loaded(&mut self, changes: Vec<dusk_protocol::catalog::SkillChange>) {
+        for change in changes {
+            self.skill_changed(change);
+        }
+        self.skills
+            .sort_by_key(|row| (row.change.changed_at_ms, row.change.id));
     }
 
     /// The turn is over: what only a running turn has goes.

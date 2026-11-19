@@ -17,6 +17,7 @@ pub const EVENTS_PAGE: u32 = 100;
 /// The longest text of a log line.
 pub const LOG_CHARS: usize = 160;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Overview {
     #[serde(default)]
@@ -29,6 +30,7 @@ pub struct Overview {
 }
 
 /// What the thread's tools did, from every call it made.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Activity {
     pub tool_runs: u64,
@@ -38,6 +40,7 @@ pub struct Activity {
     pub agents_asked: u32,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolRuns {
     /// As the model called it: data, drawn as plain text.
@@ -46,6 +49,7 @@ pub struct ToolRuns {
 }
 
 /// What the thread changed in its project, from the change ledger.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangeSum {
     /// Distinct paths.
@@ -57,6 +61,7 @@ pub struct ChangeSum {
     pub newest: Vec<ChangedPath>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangedPath {
     /// Relative to the project folder.
@@ -66,6 +71,7 @@ pub struct ChangedPath {
 }
 
 /// One line of a thread's event log, written by the core from what it stored.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogEntry {
     /// Unix milliseconds.
@@ -75,6 +81,7 @@ pub struct LogEntry {
 }
 
 /// How a log line ended, which picks its glyph.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LogKind {

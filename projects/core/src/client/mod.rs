@@ -31,10 +31,14 @@ pub use hub::Hub;
 pub use plugins::Plugins;
 pub use projects::Projects;
 pub use scope::{Area, Scope};
+pub use serve::Shown;
 pub use settings::Settings;
 pub use terminal::Terminal;
 pub use threads::Threads;
 pub use work::Work;
+
+/// How the web server reads a card by its id, by the core's own rule.
+pub use crate::state::artifacts::ArtifactStore;
 
 /// Starts the core's side of the protocol over `runtime` for the one client that said
 /// `hello`, with `scope`. The core stops when that client goes away.

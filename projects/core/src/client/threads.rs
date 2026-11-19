@@ -3,6 +3,7 @@
 use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::{
+    catalog::SkillChange,
     client::{Request, Response, ThreadRequest},
     config::ApprovalPolicy,
     thread::{LocalUnsent, Message, Pin, Task, Thread},
@@ -72,6 +73,15 @@ impl Threads<'_> {
         let thread_id = thread_id.to_owned();
         match self.call(ThreadRequest::Tasks { thread_id }).await? {
             Response::Tasks(tasks) => Ok(tasks),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// What the thread's agents changed in skills, oldest first.
+    pub async fn skill_changes(&self, thread_id: &str) -> Result<Vec<SkillChange>> {
+        let thread_id = thread_id.to_owned();
+        match self.call(ThreadRequest::SkillChanges { thread_id }).await? {
+            Response::SkillChanges(changes) => Ok(changes),
             other => Err(unexpected(other)),
         }
     }
@@ -157,8 +167,14 @@ impl Threads<'_> {
     }
 
     /// Answers a tool's request; `false` when it no longer waits.
-    pub async fn approve(&self, id: u64, decision: Decision) -> Result<bool> {
-        match self.call(ThreadRequest::Approve { id, decision }).await? {
+    pub async fn approve(&self, thread_id: &str, id: u64, decision: Decision) -> Result<bool> {
+        let thread_id = thread_id.to_owned();
+        let request = ThreadRequest::Approve {
+            thread_id,
+            id,
+            decision,
+        };
+        match self.call(request).await? {
             Response::Waiting(waiting) => Ok(waiting),
             other => Err(unexpected(other)),
         }

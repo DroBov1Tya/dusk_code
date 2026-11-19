@@ -50,8 +50,14 @@ pub fn status(
     Some((status, mine))
 }
 
-/// The `ok` of `pull` or `create_pull`: the pull when it is `prefix` and its number (and
-/// `number`, when asked); an answer in another shape is `failed`.
+/// The `ok` of `create_pull`: the pull made, in the shape of a pull; an answer in
+/// another shape is `failed`.
+pub fn made(ok: serde_json::Value, host: &str) -> Result<PullStatus, ContractError> {
+    forge::made(ok, host).map(shown)
+}
+
+/// The `ok` of `pull`: the pull when it is `prefix` and its number (and `number`, when
+/// asked); an answer in another shape is `failed`.
 pub fn pull(
     ok: serde_json::Value,
     prefix: &str,

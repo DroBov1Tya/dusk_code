@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::project::DiffStat;
 /// What a project's repository looks like now; `None` fields outside a repository.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitInfo {
     /// `None` on a detached head.
@@ -24,6 +25,7 @@ pub struct GitInfo {
 }
 
 /// The repository a client's own folder is in, for a status line.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitSummary {
     /// The name of the repository's top folder.
@@ -37,12 +39,14 @@ pub struct GitSummary {
     pub ahead_behind: Option<(u64, u64)>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Worktree {
     pub path: PathBuf,
     pub branch: Option<String>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChangeKind {
     Added,
@@ -53,6 +57,7 @@ pub enum ChangeKind {
     Conflicted,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Change {
     pub path: String,
@@ -64,6 +69,7 @@ pub struct Change {
 
 /// What a change of the repository left: git's own words, and the files a merge or a
 /// pull left in conflict.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitOutcome {
     /// Plain and capped; empty when git said nothing.

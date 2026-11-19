@@ -62,6 +62,8 @@ pub struct ThreadSetup {
     pub lock: ThreadLock,
     pub hooks: Arc<crate::plugins::Hooks>,
     pub health: Arc<crate::providers::Health>,
+    pub skill_watch: Arc<crate::catalog::history::Watch>,
+    pub skill_state: Arc<crate::state::State>,
 }
 
 impl ThreadRunner {
@@ -98,6 +100,8 @@ impl ThreadRunner {
             events,
             hooks: setup.hooks,
             health: setup.health,
+            skill_watch: setup.skill_watch,
+            skill_state: setup.skill_state,
         };
         let runner = Self {
             agent,

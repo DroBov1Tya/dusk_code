@@ -147,7 +147,6 @@ impl RunCommand {
             &CommandEnv::default()
                 .var("DUSK_CWD_FILE", &marker)
                 .secrets(project_env(context).await?),
-            scope,
             confinement.as_ref(),
             timeout,
             handed.as_ref().map(|handed| handed.request()),
@@ -314,12 +313,10 @@ async fn run(
     script: &str,
     dir: &Path,
     env: &CommandEnv,
-    scope: &ToolScope,
     confinement: Option<&Confinement>,
     timeout_seconds: u64,
     detach: Option<watch::Receiver<bool>>,
 ) -> Result<Ran> {
-    let skills = super::skill_saves::snapshot(scope).await;
     let mut running = Running::start(script, dir, confinement, env)?;
     let detached = async {
         let Some(mut detach) = detach else {
@@ -351,12 +348,6 @@ async fn run(
     }
     if let Some(failure) = failure {
         output.push_str(&format!("\n{failure}"));
-    }
-    if let Some(before) = skills
-        && let Some(saved) = super::skill_saves::saved(scope, &before).await
-    {
-        // Last line, where clients look for it.
-        output.push_str(&format!("\n{}", saved.stored()));
     }
     Ok(Ran::Done(crate::tools::ToolResult {
         content: output,
@@ -398,7 +389,6 @@ pub async fn run_check(
         command,
         scope.cwd(),
         &CommandEnv::default().secrets(project_env(context).await?),
-        scope,
         confinement.as_ref(),
         timeout_seconds,
         None,
@@ -529,30 +519,6 @@ mod tests {
         );
     }
 
-    /// A skill saved by a command gets the notice clients look for; invalid text does not.
-    #[tokio::test]
-    async fn a_command_that_saves_a_skill_reports_it() {
-        let skills = temp_dir("shell-skill-save").join("skills");
-        fs::create_dir_all(&skills).unwrap();
-        let scope = scope("shell-skill-save")
-            .share(&skills)
-            .with_skills(&skills);
-        let folder = skills.canonicalize().unwrap().join("greet");
-        let write = |text: &str| {
-            json!({ "command": format!(
-                "mkdir -p '{0}' && printf '%s' '{text}' > '{0}/SKILL.md'",
-                folder.display()
-            )})
-        };
-        let saved = run_tool(&scope, write("---\ndescription: Greets.\n---\nSay hi."))
-            .await
-            .unwrap();
-        let notice = crate::catalog::skills::SkillSave::from_result(&saved).unwrap();
-        assert_eq!(notice.name, "greet");
-        let invalid = run_tool(&scope, write("no front matter")).await.unwrap();
-        assert!(crate::catalog::skills::SkillSave::from_result(&invalid).is_none());
-    }
-
     #[tokio::test]
     async fn foreground_exit_is_typed_even_if_output_claims_success() {
         let scope = scope("shell-typed-exit");
@@ -601,7 +567,6 @@ mod tests {
             script,
             scope.cwd(),
             &CommandEnv::default(),
-            &scope,
             None,
             10,
             Some(request),
@@ -632,7 +597,6 @@ mod tests {
             "sleep 30 & echo started",
             scope.cwd(),
             &CommandEnv::default(),
-            &scope,
             None,
             10,
             None,
@@ -660,7 +624,6 @@ mod tests {
             "echo \"token=$TOKEN\"; echo \"mode=$MODE\"; echo \"again=$TOKEN\" >&2",
             scope.cwd(),
             &CommandEnv::default().secrets(secrets),
-            &scope,
             None,
             10,
             None,

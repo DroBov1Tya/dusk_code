@@ -82,7 +82,7 @@ impl Tool for McpTool {
     }
 
     /// Trusted as little as `repeatable`: a server that lies can only make its own calls
-    /// run together.
+    /// run together. The skills folder is watched around every MCP call whatever this says.
     fn read_only(&self, _arguments: &Value) -> bool {
         self.read_only
     }

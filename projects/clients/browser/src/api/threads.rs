@@ -100,8 +100,8 @@ pub async fn delete_thread(thread_id: &str) -> Res<()> {
     .await
 }
 
-pub async fn approve(id: u64, decision: Decision) -> Res<bool> {
-    ask!(thread(ThreadRequest::Approve { id, decision }), Response::Waiting(w) => w)
+pub async fn approve(thread_id: String, id: u64, decision: Decision) -> Res<bool> {
+    ask!(thread(ThreadRequest::Approve { thread_id, id, decision }), Response::Waiting(w) => w)
 }
 
 pub async fn set_approvals(thread_id: &str, policy: Option<ApprovalPolicy>) -> Res<()> {
@@ -115,6 +115,12 @@ pub async fn set_approvals(thread_id: &str, policy: Option<ApprovalPolicy>) -> R
 pub async fn get_approvals(thread_id: &str) -> Res<Option<ApprovalPolicy>> {
     let thread_id = thread_id.to_owned();
     ask!(thread(ThreadRequest::GetApprovals { thread_id }), Response::Approvals(a) => a)
+}
+
+/// What the thread's agents changed in skills, oldest first.
+pub async fn skill_changes(thread_id: &str) -> Res<Vec<dusk_protocol::catalog::SkillChange>> {
+    let thread_id = thread_id.to_owned();
+    ask!(thread(ThreadRequest::SkillChanges { thread_id }), Response::SkillChanges(c) => c)
 }
 
 /// The thread's pins, oldest message first.

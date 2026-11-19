@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Usage;
 /// One increment of a streamed model response.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModelEvent {
     /// Model thinking: shown to the user and never sent back as context.
@@ -24,6 +25,7 @@ pub enum ModelEvent {
     Finished(FinishReason),
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FinishReason {
     Stop,

@@ -1,8 +1,10 @@
 //! Requests about skills, agents, MCP servers, the profile, secrets and speech settings.
 
 use super::Server;
+use super::publish::publish;
 use anyhow::Result;
-use dusk_protocol::client::{CatalogRequest, Response};
+use dusk_protocol::client::{CatalogRequest, Event, Response};
+use dusk_protocol::thread::ThreadEvent;
 
 impl Server {
     pub(super) async fn catalog(&self, request: CatalogRequest) -> Result<Response> {
@@ -13,6 +15,20 @@ impl Server {
                 Response::Node(runtime.save_skill(&name, &text)?)
             }
             CatalogRequest::SkillPacks => Response::SkillPacks(runtime.skill_packs()),
+            CatalogRequest::SkillDiff { id } => Response::SkillDiff(runtime.skill_diff(id).await?),
+            CatalogRequest::UndoSkillChange { id } => {
+                let thread_id = runtime.skill_change_thread(id).await?;
+                let change = runtime.undo_skill_change(id).await?;
+                // Clients showing the chat mark the change undone.
+                publish(
+                    &self.subscribers,
+                    Event::Thread {
+                        thread_id,
+                        event: Box::new(ThreadEvent::SkillChanged(change.clone())),
+                    },
+                );
+                Response::SkillChanges(vec![change])
+            }
             CatalogRequest::Agent { name } => Response::Node(runtime.agent(&name)?),
             CatalogRequest::SaveAgent { name, text } => {
                 Response::Node(runtime.save_agent(&name, &text).await?)

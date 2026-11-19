@@ -1,8 +1,8 @@
 //! Requests about one thread: opening, sending, pinning, closing.
 
-use super::ClientId;
 use super::publish::{publish, send_to};
 use super::{CLOSE_TIMEOUT, OpenThread, Running, Server};
+use super::{ClientId, Shown};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
@@ -189,9 +189,11 @@ impl Server {
                 }
                 Response::Done
             }
-            ThreadRequest::Approve { id, decision } => {
-                Response::Waiting(runtime.answer_approval(id, decision))
-            }
+            ThreadRequest::Approve {
+                thread_id,
+                id,
+                decision,
+            } => Response::Waiting(runtime.answer_approval(&thread_id, id, decision).await),
             ThreadRequest::SetApprovals { thread_id, policy } => {
                 runtime
                     .state_of(&thread_id)
@@ -219,6 +221,9 @@ impl Server {
                     },
                 );
                 Response::Pins(pins)
+            }
+            ThreadRequest::SkillChanges { thread_id } => {
+                Response::SkillChanges(runtime.skill_changes(&thread_id).await?)
             }
             ThreadRequest::Pins { thread_id } => Response::Pins(runtime.pins(&thread_id).await?),
         })
@@ -343,7 +348,7 @@ impl Server {
         stored
             .and_then(|thread| thread.project)
             .map(PathBuf::from)
-            .context(NO_FOLDER)
+            .ok_or_else(|| Shown::new(NO_FOLDER).into())
     }
 
     pub(super) fn open_thread(&self, thread_id: &str) -> Result<&OpenThread> {

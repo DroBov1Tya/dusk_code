@@ -10,6 +10,7 @@ pub const MAX_PICTURE_UPLOAD: usize = 6 * 1024 * 1024;
 
 /// A thread's background jobs, sources, plan, team and changes. The plan and team
 /// requests name the root thread, which leads the team.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WorkRequest {
     Jobs {
@@ -46,6 +47,14 @@ pub enum WorkRequest {
     SourcePicture {
         thread_id: String,
         name: String,
+    },
+    /// A part of a card a message of the thread, or of an agent thread below it, carries:
+    /// `image`, `audio` or `thumb`. Answers with `Response::Picture`, or an error when the
+    /// thread has no such card.
+    Card {
+        thread_id: String,
+        card_id: String,
+        part: String,
     },
     /// The chat's pinned plan, a Markdown text the user and the model both edit.
     Plan {

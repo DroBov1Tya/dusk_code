@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A plugin as `/settings` shows it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginInfo {
     pub name: String,

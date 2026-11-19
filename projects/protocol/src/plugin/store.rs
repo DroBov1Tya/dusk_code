@@ -27,6 +27,7 @@ pub const CATEGORIES: [&str; 12] = [
 ];
 
 /// One thing a source offers, or a plugin found here.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Listing {
     pub name: String,
@@ -122,6 +123,7 @@ impl Listing {
 }
 
 /// An MCP server a plugin brings.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Connector {
     pub name: String,
@@ -130,6 +132,7 @@ pub struct Connector {
 }
 
 /// What an MCP server is: a program on this computer, or an address on the network.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Runs {
@@ -139,6 +142,7 @@ pub enum Runs {
     Url(String),
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectorState {
@@ -152,6 +156,7 @@ pub enum ConnectorState {
 }
 
 /// Trust, highest first; the list is sorted in this order.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -169,6 +174,7 @@ pub enum Tier {
     Local,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
@@ -182,6 +188,7 @@ pub enum Kind {
 
 /// The star count of a GitHub repository, as the publisher of a list counted it when
 /// signing: the repository's, not a rating of the listing, so it is shown with `repo`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoStars {
     /// `owner/name` on github.com.
@@ -198,6 +205,7 @@ impl RepoStars {
 }
 
 /// A picture beside the source's list: a `.png` or `.webp` of at most 512 KiB.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cover {
     /// Relative to the list's address.
@@ -208,6 +216,7 @@ pub struct Cover {
 }
 
 /// One screenshot of a listing; its bytes come with `StoreRequest::Screenshot`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScreenshotRef {
     /// Plain text of at most 120 characters, without control characters.
@@ -216,6 +225,7 @@ pub struct ScreenshotRef {
 }
 
 /// The order of the list; the core sorts, so every client shows the same.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Order {
@@ -229,6 +239,7 @@ pub enum Order {
 }
 
 /// The answer to `StoreRequest::List`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreList {
     pub listings: Vec<Listing>,
@@ -242,6 +253,7 @@ pub struct StoreList {
 /// Indices into `StoreList::listings`, at most `PICKS` each, best first; a listing
 /// without the date sorted on is left out. Nothing is picked by stars: a mirror writes
 /// its own count, so a shelf of them would rank whoever wrote the biggest number.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Picks {
     pub newest: Vec<usize>,
@@ -251,6 +263,7 @@ pub struct Picks {
 /// How many listings a shelf of `Picks` holds.
 pub const PICKS: usize = 12;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceFailure {
     pub source: String,
@@ -259,6 +272,7 @@ pub struct SourceFailure {
 }
 
 /// The answer to `StoreRequest::UpdateAll`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateReport {
     /// `name version`, one each.
@@ -267,6 +281,7 @@ pub struct UpdateReport {
     pub skipped: Vec<(String, String)>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StoreRequest {
     /// What the sources offer; answered with `Response::Store`. Only `category`'s, when
@@ -333,6 +348,7 @@ pub enum StoreRequest {
 }
 
 /// The answer to `StoreRequest::Probe`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Probe {
     /// The list's address the probe read, after a repository's was turned into it.
@@ -345,6 +361,7 @@ pub struct Probe {
 }
 
 /// A repository the user added, as `StoreRequest::Sources` read it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceRow {
     pub name: String,
@@ -359,6 +376,7 @@ pub struct SourceRow {
 }
 
 /// The answer to `StoreRequest::Contents`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Contents {
     /// Sorted by path.
@@ -370,6 +388,7 @@ pub struct Contents {
 }
 
 /// One file of `Contents`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileRef {
     /// Relative, `/` between names.
@@ -382,6 +401,7 @@ pub struct FileRef {
 
 /// The answer to `StoreRequest::File`: plain text, its control and bidi characters
 /// escaped, at most `PREVIEW_BYTES` of it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FilePreview {
     pub text: String,

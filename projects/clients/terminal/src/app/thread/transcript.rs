@@ -12,7 +12,7 @@ use std::{
 
 use super::paste;
 use dusk_protocol::{
-    catalog::{SkillSave, SkillSaveAction},
+    catalog::{SkillChange, SkillSaveAction},
     model::ToolCall,
     thread::{Block, JobResult, Message, MessageRole},
     tools::{Answered, Asked, Card, ToolResult},
@@ -54,6 +54,12 @@ pub enum Entry {
     },
     Notice {
         local_id: Option<String>,
+        text: String,
+        tone: Tone,
+    },
+    /// One change an agent made to a skill; a change seen again replaces its line.
+    Skill {
+        id: i64,
         text: String,
         tone: Tone,
     },
@@ -409,7 +415,6 @@ impl Transcript {
     }
 
     pub fn finish_tool(&mut self, call_id: &str, finished: ToolResult) {
-        let mut saved = None;
         let mut shown = None;
         let running = self
             .entries
@@ -418,9 +423,6 @@ impl Transcript {
             .rev()
             .find_map(|(index, entry)| match entry {
                 Entry::Tool { call, result, .. } if call.id == call_id && result.is_none() => {
-                    if !finished.is_error && call.name == "run_command" {
-                        saved = SkillSave::from_result(&finished.content);
-                    }
                     shown = Block::shown(call, &finished.content).map(|block| (index, block));
                     Some(result)
                 }
@@ -432,14 +434,43 @@ impl Transcript {
         if let Some((index, block)) = shown {
             self.show_block(index, block);
         }
-        if let Some(saved) = saved {
-            let tone = match saved.action {
-                SkillSaveAction::Unchanged => Tone::Info,
-                _ => Tone::Success,
-            };
-            self.notice(saved.notice(), tone);
-        }
         self.changed();
+    }
+
+    /// One change the core reports live. A change seen before (it was undone) takes its
+    /// line's place, so a thread never shows one change twice.
+    pub fn skill_change(&mut self, change: &SkillChange) {
+        match self.skill_index(change.id) {
+            Some(index) => {
+                self.entries[index] = skill_entry(change);
+                self.changed();
+            }
+            None => self.push(skill_entry(change)),
+        }
+    }
+
+    /// The changes of a thread read from the core, each placed where it happened in the
+    /// history, after the steps that were running then.
+    pub fn add_skill_changes(&mut self, changes: &[SkillChange]) {
+        for change in changes {
+            let at = self
+                .times
+                .iter()
+                .position(|&time| time > change.changed_at_ms)
+                .unwrap_or(self.entries.len())
+                .min(self.entries.len());
+            let mut index = at;
+            while self.entries.get(index).is_some_and(is_step) {
+                index += 1;
+            }
+            self.insert(index, skill_entry(change));
+        }
+    }
+
+    fn skill_index(&self, id: i64) -> Option<usize> {
+        self.entries
+            .iter()
+            .position(|entry| matches!(entry, Entry::Skill { id: seen, .. } if *seen == id))
     }
 
     /// A shown block takes the place of its tool step and stands outside the run of steps:
@@ -504,7 +535,9 @@ impl Transcript {
                 dusk_protocol::thread::unmarked(text)
             }
             Entry::Activity { .. } => String::new(),
-            Entry::Reasoning { text, .. } | Entry::Notice { text, .. } => text.clone(),
+            Entry::Reasoning { text, .. }
+            | Entry::Notice { text, .. }
+            | Entry::Skill { text, .. } => text.clone(),
             Entry::Job { result, .. } => format!("{}\n{}", result.title(), result.output),
             Entry::Block(block) => block.text(),
             Entry::Tool { call, result, .. } => match result {
@@ -607,9 +640,65 @@ impl Transcript {
     }
 }
 
+/// The row a skill change draws as. Its name and reason are the agent's text, so they
+/// are shown as plain text: control and bidi characters never reach the screen.
+pub fn skill_line(change: &SkillChange) -> String {
+    let action = match change.action {
+        SkillSaveAction::Created => "created",
+        SkillSaveAction::Updated => "improved",
+        SkillSaveAction::Deleted => "deleted",
+    };
+    let skill: String = change
+        .skill
+        .chars()
+        .map(|c| if plain(c) { c } else { '?' })
+        .collect();
+    // A reason is one line; a line break becomes a space so the words stay apart.
+    let reason: String = change
+        .reason
+        .chars()
+        .filter_map(|c| match c {
+            '\n' | '\r' | '\t' => Some(' '),
+            _ if plain(c) => Some(c),
+            _ => None,
+        })
+        .collect();
+    // The terminal has no Undo; it says where to find one.
+    let state = if change.undone {
+        "undone"
+    } else if change.can_undo {
+        "undo in the app"
+    } else {
+        "previous text not kept"
+    };
+    format!("Skill {skill} {action}: {reason} ({state})")
+}
+
+fn skill_entry(change: &SkillChange) -> Entry {
+    Entry::Skill {
+        id: change.id,
+        text: skill_line(change),
+        tone: if change.undone {
+            Tone::Info
+        } else {
+            Tone::Success
+        },
+    }
+}
+
+/// Whether a character can stand in a row as itself: no control, no bidi override.
+fn plain(c: char) -> bool {
+    !c.is_control()
+        && !matches!(
+            c,
+            '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dusk_protocol::catalog::SkillSave;
     use serde_json::{Value, json};
 
     fn call(id: &str, name: &str, arguments: Value) -> ToolCall {
@@ -753,5 +842,104 @@ mod tests {
         );
         assert!(transcript.is_hidden(4));
         assert_eq!(transcript.times.len(), transcript.entries.len());
+    }
+
+    fn change(id: i64, action: SkillSaveAction, undone: bool) -> SkillChange {
+        SkillChange {
+            id,
+            skill: "notes/outline".into(),
+            call_id: "c".into(),
+            action,
+            reason: "adds the outline step".into(),
+            changed_at_ms: 0,
+            undone,
+            can_undo: !undone,
+        }
+    }
+
+    fn skill_rows(transcript: &Transcript) -> Vec<String> {
+        transcript
+            .entries
+            .iter()
+            .filter_map(|entry| match entry {
+                Entry::Skill { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_old_save_marker_in_a_tool_result_makes_no_row() {
+        let mut transcript = Transcript::default();
+        let save = SkillSave {
+            name: "notes/outline".into(),
+            action: SkillSaveAction::Created,
+        };
+        transcript.start_tool(call("a", "run_command", json!({ "command": "x" })));
+        transcript.finish_tool(
+            "a",
+            ToolResult {
+                content: save.stored(),
+                is_error: false,
+                exit_code: Some(0),
+                artifacts: Vec::new(),
+            },
+        );
+        assert!(skill_rows(&transcript).is_empty());
+        assert!(
+            !transcript
+                .entries
+                .iter()
+                .any(|e| matches!(e, Entry::Notice { .. }))
+        );
+    }
+
+    #[test]
+    fn a_skill_line_names_the_change_and_keeps_untrusted_text_plain() {
+        let mut shown = change(1, SkillSaveAction::Created, true);
+        assert_eq!(
+            skill_line(&shown),
+            "Skill notes/outline created: adds the outline step (undone)"
+        );
+        shown.skill = "a\x1b[2J\u{202e}b".into();
+        shown.reason = "first\nsecond\u{2067}".into();
+        shown.undone = false;
+        shown.can_undo = true;
+        shown.action = SkillSaveAction::Updated;
+        assert_eq!(
+            skill_line(&shown),
+            "Skill a?[2J?b improved: first second (undo in the app)"
+        );
+        shown.action = SkillSaveAction::Deleted;
+        shown.can_undo = false;
+        assert_eq!(
+            skill_line(&shown),
+            "Skill a?[2J?b deleted: first second (previous text not kept)"
+        );
+    }
+
+    #[test]
+    fn a_change_seen_again_replaces_its_line() {
+        let mut transcript = Transcript::default();
+        transcript.skill_change(&change(1, SkillSaveAction::Updated, false));
+        transcript.skill_change(&change(1, SkillSaveAction::Updated, true));
+        assert_eq!(
+            skill_rows(&transcript),
+            ["Skill notes/outline improved: adds the outline step (undone)"]
+        );
+    }
+
+    #[test]
+    fn a_history_change_sits_where_it_happened() {
+        let mut first = message(MessageRole::User, "go", Vec::new(), None);
+        first.created_at = 10;
+        let mut answer = message(MessageRole::Assistant, "done", Vec::new(), None);
+        answer.created_at = 30;
+        let mut transcript = Transcript::from_history(&[first, answer]);
+        let mut early = change(1, SkillSaveAction::Created, false);
+        early.changed_at_ms = 20;
+        transcript.add_skill_changes(&[early]);
+        assert_eq!(kinds(&transcript), ["user", "other", "answer"]);
+        assert!(matches!(&transcript.entries[1], Entry::Skill { id: 1, .. }));
     }
 }

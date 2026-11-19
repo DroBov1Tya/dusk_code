@@ -62,6 +62,7 @@ fn threads() -> Vec<T> {
         T::Search { text: word() },
         T::Messages { thread_id: id() },
         T::Tasks { thread_id: id() },
+        T::SkillChanges { thread_id: id() },
         T::LocalUnsent { thread_id: id() },
         T::ResendLocalUnsent {
             thread_id: id(),
@@ -94,6 +95,7 @@ fn threads() -> Vec<T> {
         },
         T::Delete { thread_id: id() },
         T::Approve {
+            thread_id: id(),
             id: 1,
             decision: Decision::Deny,
         },
@@ -139,6 +141,11 @@ fn work() -> Vec<W> {
         W::SourcePicture {
             thread_id: id(),
             name: word(),
+        },
+        W::Card {
+            thread_id: id(),
+            card_id: word(),
+            part: word(),
         },
         W::Plan { thread_id: id() },
         W::SavePlan {
@@ -243,6 +250,8 @@ fn catalog() -> Vec<C> {
         named(|name| C::Skill { name }),
         saved(|name, text| C::SaveSkill { name, text }),
         C::SkillPacks,
+        C::SkillDiff { id: 1 },
+        C::UndoSkillChange { id: 1 },
         named(|name| C::Agent { name }),
         saved(|name, text| C::SaveAgent { name, text }),
         C::McpServers,
@@ -301,6 +310,12 @@ fn projects() -> Vec<P> {
             id: word(),
             number: 7,
         },
+        P::CreatePull {
+            id: word(),
+            title: word(),
+            body: word(),
+            base: None,
+        },
         P::PullSummaries,
         repository(G::CreateBranch {
             name: word(),
@@ -326,13 +341,6 @@ fn projects() -> Vec<P> {
         repository(G::Fetch),
         repository(G::Pull),
         repository(G::Push),
-        repository(G::PullRequests),
-        repository(G::PullRequest { number: 1 }),
-        repository(G::CreatePullRequest {
-            title: word(),
-            body: word(),
-            base: None,
-        }),
         P::Outputs,
         P::Env { id: word() },
         P::SetEnv {

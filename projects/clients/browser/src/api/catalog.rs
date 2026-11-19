@@ -3,7 +3,7 @@
 
 use crate::link::request;
 use dusk_protocol::{
-    catalog::NodeText,
+    catalog::{NodeText, SkillChange, SkillDiff},
     client::{CatalogRequest, Response},
     config::{McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings},
 };
@@ -18,6 +18,15 @@ pub async fn skill(name: &str) -> Res<NodeText> {
 pub async fn save_skill(name: &str, text: String) -> Res<NodeText> {
     let name = name.to_owned();
     ask!(catalog(CatalogRequest::SaveSkill { name, text }), Response::Node(n) => n)
+}
+
+pub async fn skill_diff(id: i64) -> Res<SkillDiff> {
+    ask!(catalog(CatalogRequest::SkillDiff { id }), Response::SkillDiff(d) => d)
+}
+
+/// Puts the skill back as before the change; answers with that one change.
+pub async fn undo_skill_change(id: i64) -> Res<Vec<SkillChange>> {
+    ask!(catalog(CatalogRequest::UndoSkillChange { id }), Response::SkillChanges(c) => c)
 }
 
 pub async fn agent(name: &str) -> Res<NodeText> {

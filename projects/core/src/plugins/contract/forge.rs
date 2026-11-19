@@ -82,8 +82,23 @@ pub fn status(
     })
 }
 
-/// The `ok` of `pull` or `create_pull`, checked against the prefix of the last status;
-/// `None` when there is none or it is not the remote's (or not `number`, when asked).
+/// The `ok` of `create_pull`: the pull made, in the shape of a pull, its text plain and
+/// capped and its links safe; only the shape is checked, not whose page it is.
+pub fn made(ok: serde_json::Value, host: &str) -> Result<Pull, ContractError> {
+    let answer: PullAnswer = serde_json::from_value(ok)
+        .map_err(|error| failed(format!("the create_pull answer is not one: {error}")))?;
+    let Some(pull) = answer.pull.filter(|pull| pull.number > 0) else {
+        return Err(failed("the create_pull answer has no pull".into()));
+    };
+    let page = untrusted::link(&pull.url);
+    if page.is_empty() {
+        return Err(failed("the pull made has no safe page".into()));
+    }
+    Ok(cleaned(pull, page, host))
+}
+
+/// The `ok` of `pull`, checked against the prefix of the last status; `None` when there
+/// is none or it is not the remote's (or not `number`, when asked).
 pub fn pull(
     ok: serde_json::Value,
     prefix: &str,
@@ -125,13 +140,18 @@ fn checked(pull: Pull, prefix: &str, host: &str) -> Option<Pull> {
     if pull.number == 0 || !pull.url.eq_ignore_ascii_case(&page) {
         return None;
     }
+    Some(cleaned(pull, page, host))
+}
+
+/// `pull` with its text plain and capped, its page `page`, and links only on `host`.
+fn cleaned(pull: Pull, page: String, host: &str) -> Pull {
     let on_host = format!("https://{host}/");
     let checks_url = untrusted::link(&pull.checks_url);
     let checks_url = match checks_url.get(..on_host.len()) {
         Some(start) if start.eq_ignore_ascii_case(&on_host) => checks_url,
         _ => String::new(),
     };
-    Some(Pull {
+    Pull {
         number: pull.number,
         title: untrusted::line(&pull.title, MAX_TITLE),
         state: pull.state,
@@ -159,7 +179,7 @@ fn checked(pull: Pull, prefix: &str, host: &str) -> Option<Pull> {
                 finished: seconds(check.finished),
             })
             .collect(),
-    })
+    }
 }
 
 fn seconds(time: Option<i64>) -> Option<i64> {

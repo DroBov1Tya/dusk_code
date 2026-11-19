@@ -1,7 +1,9 @@
 //! The transcript: the items of a chat, with runs of tool steps folded into one line.
 
 use super::data::{ChatData, Entry, Item, Shown};
-use super::{markdown::Markdown, shown::ShownBlock, voice, working::Working};
+use super::{
+    markdown::Markdown, shown::ShownBlock, skill_change::SkillChanges, voice, working::Working,
+};
 use crate::{
     state::{Chat, state},
     ui::{Icon, IconName},
@@ -193,7 +195,7 @@ fn BlockView(
     let block = Memo::new(move |_| all.with(|all| all.iter().find(|b| b.key() == key).cloned()));
     move || match block.get() {
         Some(Block::One(entry)) => item_view(entry, chat, thread.clone(), read_only).into_any(),
-        Some(Block::Turn { entries, took }) => view! { <Turn entries took /> }.into_any(),
+        Some(Block::Turn { entries, took }) => view! { <Turn entries took chat /> }.into_any(),
         None => ().into_any(),
     }
 }
@@ -332,7 +334,7 @@ pub(super) fn copy(text: &str) {
 /// A turn's way to its answer: one line that says how long it took, or what it does now,
 /// and under it every step, thought and remark.
 #[component]
-fn Turn(entries: Vec<Entry>, took: Option<i64>) -> impl IntoView {
+fn Turn(entries: Vec<Entry>, took: Option<i64>, chat: Chat) -> impl IntoView {
     let running = took.is_none();
     let failed = entries
         .iter()
@@ -351,6 +353,14 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>) -> impl IntoView {
             .unwrap_or_else(|| "Thinking".to_owned()),
     };
     let names = summary_line(&entries);
+    // A folded turn still shows what its steps changed in skills, as the desktop does.
+    let calls: Vec<String> = entries
+        .iter()
+        .filter_map(|e| match &e.item {
+            Item::Tool(tool) => Some(tool.call_id.clone()),
+            _ => None,
+        })
+        .collect();
     view! {
         <details class="steps">
             <summary>
@@ -378,6 +388,7 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>) -> impl IntoView {
                 _ => ().into_any(),
             }).collect_view()}
         </details>
+        {calls.into_iter().map(|call_id| view! { <SkillChanges call_id chat /> }).collect_view()}
     }
 }
 

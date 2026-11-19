@@ -249,14 +249,13 @@ async fn an_unavailable_plugin_keeps_the_old_pulls() {
     assert_eq!(tracker.prefix("a").as_deref(), Some(PREFIX));
 }
 
-/// A refusal of `create_pull` is shown in the forge's words; a pull lookup keeps only the
-/// pull at the prefix and number asked.
+/// A refusal of `create_pull` is shown in the forge's words, and the pull it made is taken
+/// on its shape alone; a pull lookup keeps only the pull at the prefix and number asked.
 #[tokio::test]
 async fn create_refused_and_lookups_by_the_prefix() {
     let Some(setup) = setup("create") else {
         return;
     };
-    setup.answer("status", status_answer());
     let refused = "a pull request for branch \"x\" already exists";
     setup.answer(
         "create_pull",
@@ -269,23 +268,29 @@ async fn create_refused_and_lookups_by_the_prefix() {
 
     setup.answer(
         "create_pull",
-        json!({"ok": {"pull": pull(4, &format!("{PREFIX}4"))}}),
+        json!({"ok": {"pull": {"number": 4, "url": format!("{PREFIX}4")}}}),
     );
     let made = create(&setup.project, "Fix", "body", None, &setup.forges)
         .await
         .unwrap();
-    assert_eq!((made.pull.number, made.body.as_str()), (4, "body"));
-    setup.answer(
-        "create_pull",
-        json!({"ok": {"pull": pull(4, "https://github.com/fork/a/pull/4")}}),
+    assert_eq!(
+        (made.number, made.url.as_str()),
+        (4, format!("{PREFIX}4").as_str())
     );
-    assert!(
-        create(&setup.project, "Fix", "", None, &setup.forges)
+    for amiss in [
+        json!({"pull": null}),
+        json!({"pull": {"number": 4}}),
+        json!({}),
+    ] {
+        setup.answer("create_pull", json!({ "ok": amiss }));
+        let error = create(&setup.project, "Fix", "", None, &setup.forges)
             .await
-            .is_err(),
-        "a pull made elsewhere is not taken"
-    );
-
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("it may have been made"),
+            "{error}"
+        );
+    }
     setup.answer(
         "pull",
         json!({"ok": {"pull": pull(7, &format!("{PREFIX}7"))}}),

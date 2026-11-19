@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::Secret;
 use crate::config::{ApprovalPolicy, Arbiter, ContextPolicy, ProviderKind, VoiceSettings};
 /// What `/settings` changes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SettingsRequest {
     /// Answers with the input limit it gives.
@@ -92,6 +93,7 @@ pub enum SettingsRequest {
 }
 
 /// What a switch in the settings turns on or off.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Switch {
     Agent(String),
@@ -113,6 +115,7 @@ pub enum Switch {
 }
 
 /// Which provider a check asks: one typed in a form and not saved yet, or a saved one.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderTarget {
     New {

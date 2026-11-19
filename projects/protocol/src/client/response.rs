@@ -3,17 +3,18 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::catalog::{NodeText, SkillPack};
+use crate::catalog::{NodeText, SkillChange, SkillDiff, SkillPack};
 use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
     Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile,
-    Project, PullRequest, PullRequestDetail, PullStatus, PullSummary, RepositoryStatus, Schedule,
+    Project, PullStatus, PullSummary, RepositoryStatus, Schedule,
 };
 use crate::system::SystemReport;
 use crate::thread::{
     Found, JobInfo, LocalUnsent, LogEntry, Message, Overview, Pin, PlanPage, Task, Team, Thread,
 };
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
@@ -46,6 +47,8 @@ pub enum Response {
     Mcp(Vec<McpInfo>),
     Snippets(Vec<Snippet>),
     SkillPacks(Vec<SkillPack>),
+    SkillChanges(Vec<SkillChange>),
+    SkillDiff(SkillDiff),
     /// Names, sorted: a project's environment variables.
     Names(Vec<String>),
     /// The pinned plan, or none before one was written.
@@ -68,10 +71,8 @@ pub enum Response {
     Git(GitInfo),
     /// What a change of a repository left.
     GitDone(GitOutcome),
-    PullRequests(Vec<PullRequest>),
-    PullRequest(Box<PullRequestDetail>),
     RepositoryStatus(Box<RepositoryStatus>),
-    /// `None` when the repository has no such pull request or GitHub cannot be asked.
+    /// `None` when the repository has no such pull request or the forge cannot be asked.
     PullStatus(Option<Box<PullStatus>>),
     PullSummaries(Vec<PullSummary>),
     Diff(Vec<FileDiff>),

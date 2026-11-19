@@ -24,6 +24,7 @@ impl Server {
         &self,
         client: ClientId,
         id: String,
+        view: super::ErrorView,
         reply: oneshot::Sender<Response>,
     ) {
         if let Some(status) = self.pulls.watch(client, &id) {
@@ -36,7 +37,7 @@ impl Server {
         tokio::spawn(async move {
             let response = match refresh(&runtime, &tracker, &subscribers, &id).await {
                 Ok(status) => Response::RepositoryStatus(Box::new(status)),
-                Err(error) => Response::Error(format!("{error:#}")),
+                Err(error) => Response::Error(view.text(&error)),
             };
             let _ = reply.send(response);
         });
@@ -79,6 +80,37 @@ impl Server {
                 });
             }
         }
+    }
+
+    /// A pull request from the project's current branch, answered beside the loop since
+    /// the forge may take a while. The repository is told changed either way: a failed
+    /// call can still have made the pull request.
+    pub(super) fn create_pull(
+        &self,
+        id: String,
+        title: String,
+        body: String,
+        base: Option<String>,
+        view: super::ErrorView,
+        reply: oneshot::Sender<Response>,
+    ) {
+        let runtime = Arc::clone(&self.runtime);
+        let subscribers = Arc::clone(&self.subscribers);
+        let tracker = self.pulls.clone();
+        tokio::spawn(async move {
+            let made = async {
+                let project = project::find(runtime.state(), &id).await?;
+                let forges = forges(&runtime, &id).await?;
+                forge::create(&project, &title, &body, base.as_deref(), &forges).await
+            };
+            let response = match made.await {
+                Ok(pull) => Response::PullStatus(Some(Box::new(pull))),
+                Err(error) => Response::Error(view.text(&error)),
+            };
+            publish::git_changed(&subscribers, &id);
+            tracker.changed(&id);
+            let _ = reply.send(response);
+        });
     }
 
     /// Starts a read of every project the tracker says is due.

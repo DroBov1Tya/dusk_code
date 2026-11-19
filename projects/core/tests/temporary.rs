@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use dusk_core::app::{Paths, start_hub};
-use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
+use dusk_protocol::client::Hello;
 
 const MARK: &str = "ZEBRA-QUARTZ-7731";
 
@@ -35,13 +35,7 @@ async fn a_temporary_chat_leaves_nothing_on_disk() {
     let paths = Paths::new(root.join("config"), root.join("work"));
     let hub = start_hub(paths, Some(root.join("state.db"))).await.unwrap();
     let client = hub
-        .attach(
-            Hello {
-                protocol: PROTOCOL_VERSION,
-                client: "test".to_owned(),
-            },
-            dusk_core::client::Scope::full(),
-        )
+        .attach(Hello::new("test"), dusk_core::client::Scope::full())
         .unwrap();
     let threads = client.threads();
 

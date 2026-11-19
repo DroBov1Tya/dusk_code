@@ -9,6 +9,7 @@ mod agents;
 pub mod artifacts;
 mod db;
 mod project;
+mod skill_changes;
 mod thread;
 mod usage;
 
@@ -16,6 +17,7 @@ pub use agents::{AgentPhase, Identity};
 pub use db::State;
 pub use project::{Episode, Recall};
 pub use project::{EpisodeKind, NewEpisode};
+pub use skill_changes::{NewSkillChange, StoredSkillChange};
 pub use thread::MEMBER_SOURCE;
 pub use thread::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Delivery,

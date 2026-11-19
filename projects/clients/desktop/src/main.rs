@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use dusk_core::app::{self, Paths};
-use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
+use dusk_protocol::client::Hello;
 use gpui_kit::*;
 
 /// The source the threads this client creates carry.
@@ -55,10 +55,7 @@ fn main() -> Result<()> {
     let telemetry = app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "gui").ok();
     let look_file = paths.config_root().join("gui.json");
     let home = paths.workspace_root().to_path_buf();
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: THREAD_SOURCE.to_owned(),
-    };
+    let hello = Hello::new(THREAD_SOURCE);
     let hub = runtime.block_on(app::start_hub(paths, None))?;
     let client = hub.attach(hello, dusk_core::client::Scope::full())?;
     let (client, events, status) = core::split(client);

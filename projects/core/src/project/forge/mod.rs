@@ -24,7 +24,7 @@ use serde::Serialize;
 use crate::plugins::contract::{Contracts, Served};
 
 pub use lookup::{Look, read as read_pull};
-pub use pulls::{create, list, view};
+pub use pulls::create;
 pub use remote::Remote;
 pub use status::read as read_status;
 pub use watch::{PERIOD as TRACK_PERIOD, Tracker};

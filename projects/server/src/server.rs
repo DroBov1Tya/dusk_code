@@ -255,11 +255,12 @@ async fn card(
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let folder = shared.hub.status().artifacts_dir;
-    let Some(path) = cards::locate(&folder, &id, &part) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    let Some((bytes, kind)) = cards::read(&path).await else {
-        return StatusCode::NOT_FOUND.into_response();
+    // A file read blocks; keep it off the server's threads.
+    let read = tokio::task::spawn_blocking(move || cards::read(&folder, &id, &part)).await;
+    let (bytes, kind) = match read {
+        Ok(Some(card)) => card,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     let mut response = Response::new(Body::from(bytes));
     response
