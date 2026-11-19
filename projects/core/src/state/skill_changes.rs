@@ -2,6 +2,7 @@
 //! Rows are capped per skill and by text size, so the table stays small.
 
 use anyhow::{Context, Result, ensure};
+use dusk_protocol::catalog::{SkillChange, SkillSaveAction};
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 
@@ -37,6 +38,26 @@ pub struct StoredSkillChange {
     pub after: String,
     pub changed_at_ms: i64,
     pub undone_at_ms: Option<i64>,
+}
+
+impl StoredSkillChange {
+    /// What a client is told of it; the texts stay in the core.
+    pub fn info(&self) -> SkillChange {
+        SkillChange {
+            id: self.id,
+            skill: self.skill.clone(),
+            call_id: self.call_id.clone(),
+            action: if self.created {
+                SkillSaveAction::Created
+            } else {
+                SkillSaveAction::Updated
+            },
+            reason: self.reason.clone(),
+            changed_at_ms: self.changed_at_ms,
+            undone: self.undone_at_ms.is_some(),
+            can_undo: self.undone_at_ms.is_none() && (self.created || self.before.is_some()),
+        }
+    }
 }
 
 fn stored(row: &SqliteRow) -> Result<StoredSkillChange> {

@@ -4,7 +4,7 @@ use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::config::{Profile, Snippet};
 use dusk_protocol::{
-    catalog::{NodeText, SkillPack},
+    catalog::{NodeText, SkillChange, SkillDiff, SkillPack},
     client::{CatalogRequest, Request, Response},
     config::McpInfo,
 };
@@ -27,6 +27,21 @@ impl Catalog<'_> {
     pub async fn skill_packs(&self) -> Result<Vec<SkillPack>> {
         match self.call(CatalogRequest::SkillPacks).await? {
             Response::SkillPacks(packs) => Ok(packs),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    pub async fn skill_diff(&self, id: i64) -> Result<SkillDiff> {
+        match self.call(CatalogRequest::SkillDiff { id }).await? {
+            Response::SkillDiff(diff) => Ok(diff),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Undoes one change; answers with it as it stands after.
+    pub async fn undo_skill_change(&self, id: i64) -> Result<SkillChange> {
+        match self.call(CatalogRequest::UndoSkillChange { id }).await? {
+            Response::SkillChanges(mut changes) if changes.len() == 1 => Ok(changes.remove(0)),
             other => Err(unexpected(other)),
         }
     }

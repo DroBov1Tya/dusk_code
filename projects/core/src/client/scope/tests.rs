@@ -186,6 +186,7 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.resume",
         "thread.search",
         "thread.send",
+        "thread.skill_changes",
         "thread.stop_agent",
         "thread.tasks",
         "work.changed_files",
@@ -265,4 +266,22 @@ fn a_browser_is_refused_this_list_and_no_more() {
     ];
     assert_eq!(refused, BTreeSet::from(expected));
     assert_eq!(allowed.len(), NAMES.len() - expected.len());
+}
+
+#[test]
+fn skill_diff_and_undo_need_catalog_and_no_thread_bound_scope() {
+    use dusk_protocol::client::ThreadRequest;
+    let diff = Request::Catalog(CatalogRequest::SkillDiff { id: 1 });
+    let undo = Request::Catalog(CatalogRequest::UndoSkillChange { id: 1 });
+    for request in [&diff, &undo] {
+        assert_eq!(classify(request).area, Area::Catalog);
+        assert!(!Scope::threads([THREAD.to_owned()], every_area()).permits(request));
+        assert!(!Scope::threads([], &[Area::ThreadRead, Area::ThreadWrite]).permits(request));
+    }
+    let listed = Request::Thread(ThreadRequest::SkillChanges {
+        thread_id: THREAD.to_owned(),
+    });
+    assert!(Scope::threads([THREAD.to_owned()], &[Area::ThreadRead]).permits(&listed));
+    let scope = Scope::threads([THREAD.to_owned()], &[Area::ThreadRead]);
+    assert!(scope.covers(THREAD) && !scope.covers("thread-b"));
 }

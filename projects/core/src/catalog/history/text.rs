@@ -1,7 +1,7 @@
 //! Model text shown as a single plain line.
 
 /// Longest reason kept, in characters.
-// Used by the skill-evolve tool (Task 4); until then only tests call these.
+// Used by the skill-evolve tool (Task 5); until then only tests call it.
 #[allow(dead_code)]
 pub const MAX_REASON_CHARS: usize = 200;
 
@@ -10,14 +10,21 @@ pub const MAX_REASON_CHARS: usize = 200;
 #[allow(dead_code)]
 pub fn plain_line(text: &str, max_chars: usize) -> String {
     let first = text.split(['\n', '\r']).next().unwrap_or("");
-    let clean: String = first
-        .chars()
-        .filter(|c| {
-            !c.is_control()
-                && !matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}')
-        })
-        .collect();
+    let clean: String = first.chars().filter(|c| plain_char(*c, false)).collect();
     clean.trim().chars().take(max_chars).collect()
+}
+
+/// One line of skill text as plain data, as `plain_line` but a tab stays and nothing is
+/// trimmed, so a diff keeps the file's indentation.
+pub fn plain_diff_line(line: &str) -> String {
+    let line = line.trim_end_matches(['\n', '\r']);
+    line.chars().filter(|c| plain_char(*c, true)).collect()
+}
+
+fn plain_char(c: char, keep_tab: bool) -> bool {
+    (keep_tab && c == '\t')
+        || !(c.is_control()
+            || matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}'))
 }
 
 #[cfg(test)]

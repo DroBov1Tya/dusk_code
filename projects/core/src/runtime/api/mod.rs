@@ -10,6 +10,7 @@ mod plugins;
 mod providers;
 mod secrets;
 mod settings;
+mod skill_changes;
 mod skills;
 mod system;
 mod team;
