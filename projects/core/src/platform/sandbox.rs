@@ -37,6 +37,11 @@ pub struct Confinement {
     /// git does its git dir. Landlock never closes that, so only macOS needs it.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub stat: Vec<PathBuf>,
+    /// Folders whose list of entries, not the files in them, may be read inside a hidden
+    /// one: the top of a repository git moves to and asks its own path. Landlock never
+    /// closes that, so only macOS needs it.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub listed: Vec<PathBuf>,
 }
 
 /// What a confined program may reach over the network.
@@ -77,6 +82,7 @@ impl Default for Confinement {
             sockets: Vec::new(),
             hand_off: false,
             stat: Vec::new(),
+            listed: Vec::new(),
         }
     }
 }
@@ -98,6 +104,7 @@ impl Confinement {
             sockets: Vec::new(),
             hand_off: true,
             stat: Vec::new(),
+            listed: Vec::new(),
         }
     }
 }

@@ -151,6 +151,7 @@ impl Isolation {
                 sockets,
                 hand_off: true,
                 stat: Vec::new(),
+                listed: Vec::new(),
             },
         })
     }
@@ -187,11 +188,22 @@ impl Isolation {
     /// to launchd, LaunchServices or Apple events (macOS), which run it unconfined.
     ///
     /// It asks git, outside any sandbox, where the project's git dir is, and waits for
-    /// it: async callers run it through `spawn_blocking`. A worktree's git dir is
-    /// reopened read-only even inside another saved project, once its link checks out
-    /// both ways: the worktree already holds the same history, so that `.git` shows
-    /// nothing the call could not read in the project itself; the other project's
-    /// working files stay hidden.
+    /// it: async callers run it through `spawn_blocking`. A git dir outside the project
+    /// is reopened read-only only in three cases; otherwise git fails in the call:
+    ///
+    /// - the project is a sub-folder of a repository whose `.git` folder is a real
+    ///   folder, whose top is not home nor holds home or the config folder, and holds
+    ///   no other saved project or temporary chat (its objects show every file of the
+    ///   repository); the names in the top folder are listed too, as git needs them;
+    /// - the project is a submodule whose git dir's `core.worktree` names it;
+    /// - the project is a worktree whose link checks out both ways. Its repository's
+    ///   common dir is then reopened even inside another saved project B. That shows
+    ///   more than the shared history: B's index (the paths, blob ids and file times
+    ///   of B's working tree), its logs and reflogs, `COMMIT_EDITMSG`, hooks, config
+    ///   (remote URLs among it), stashes and the metadata of B's other worktrees. It
+    ///   is accepted because the worktree is a checkout of that same repository: its
+    ///   objects, refs and branches are the project's own already, and what B adds is
+    ///   metadata about B's checkout, not its working files, which stay hidden.
     ///
     /// Left open, by nature or design: a project under the temporary folders stays
     /// writable there, as they are for every plugin (projects are not kept there); a
@@ -258,23 +270,57 @@ impl Isolation {
         };
         let safe = |path: &Path| safe_from_core(path) && !overlaps(path);
         let mut reopened = vec![project.clone()];
-        // A worktree's or a sub-folder's git dir lies outside the project; one that
-        // fails the project's own checks is left closed, and git fails. The one
-        // exception is the repository of a worktree whose link git confirms both ways:
-        // its git dir may lie in another saved project.
-        let dirs = git_dirs(&project);
-        let linked = worktree_common_dir(&project, &dirs).filter(|common| {
-            safe_from_core(common) && !hidden[1..].iter().any(|other| other.starts_with(common))
-        });
-        for git in dirs {
-            let allowed = safe(&git)
-                || linked
-                    .as_ref()
-                    .is_some_and(|common| git.starts_with(common) && safe_from_core(&git));
-            if !git.starts_with(&project)
-                && !project.starts_with(&git)
-                && allowed
-                && !reopened.contains(&git)
+        // A worktree's, a submodule's or a sub-folder's git dir lies outside the
+        // project. It is reopened only when it holds nothing but this project's
+        // repository; otherwise it stays closed, and git fails.
+        let mut gits = Vec::new();
+        if let Some(repository) = repository(&project) {
+            let linked = worktree_common_dir(&project, &repository).filter(|common| {
+                safe_from_core(common) && !hidden[1..].iter().any(|other| other.starts_with(common))
+            });
+            if let Some(common) = linked {
+                // Its link holds both ways, so it may lie in another saved project.
+                gits.extend(
+                    [repository.git_dir, repository.common]
+                        .into_iter()
+                        .filter(|git| git.starts_with(&common) && safe_from_core(git)),
+                );
+            } else {
+                // An enclosing repository is reopened only when it holds no other
+                // saved project or temporary chat and is not home's (a dotfiles repo
+                // would show all of home through its objects).
+                let toplevel = &repository.toplevel;
+                let own = toplevel.join(".git");
+                let enclosing = repository.git_dir == own
+                    && repository.common == own
+                    && std::fs::symlink_metadata(&own).is_ok_and(|meta| meta.is_dir())
+                    && project.starts_with(toplevel)
+                    && !home.starts_with(toplevel)
+                    && safe_from_core(toplevel)
+                    && !hidden[1..].iter().any(|other| other.starts_with(toplevel));
+                // A submodule's git dir names the project as its work tree.
+                let submodule = repository.git_dir == repository.common
+                    && *toplevel == project
+                    && core_worktree(&repository.git_dir).as_ref() == Some(&project);
+                if (enclosing || submodule) && safe(&repository.git_dir) {
+                    if enclosing && *toplevel != project {
+                        // Git walks up from the project, then moves to the top and
+                        // asks its own path, which needs the top's list of entries.
+                        confinement.stat.extend(
+                            project
+                                .ancestors()
+                                .skip(1)
+                                .take_while(|folder| folder != toplevel)
+                                .map(Path::to_path_buf),
+                        );
+                        confinement.listed.push(toplevel.clone());
+                    }
+                    gits.push(repository.git_dir);
+                }
+            }
+        }
+        for git in gits {
+            if !git.starts_with(&project) && !project.starts_with(&git) && !reopened.contains(&git)
             {
                 // Git resolves the path one folder at a time.
                 confinement
@@ -313,37 +359,82 @@ impl Isolation {
     }
 }
 
-/// The git dir and common git dir of the repository `project` is in, resolved, read by
-/// the core outside any sandbox: no shell, no prompt, within git's usual time for a
-/// read. Empty when it is no repository or git fails.
-fn git_dirs(project: &Path) -> Vec<PathBuf> {
+/// Where git keeps the repository a project is in, resolved.
+struct Repository {
+    git_dir: PathBuf,
+    common: PathBuf,
+    /// The top of its work tree.
+    toplevel: PathBuf,
+}
+
+/// The repository `project` is in, read by the core outside any sandbox. None when it
+/// is no repository, has no work tree or git fails.
+fn repository(project: &Path) -> Option<Repository> {
+    let printed = read_git(
+        project,
+        &[
+            "rev-parse",
+            "--absolute-git-dir",
+            "--git-common-dir",
+            "--show-toplevel",
+        ],
+    )?;
+    // The common dir may be printed relative to the project.
+    let resolved: Vec<PathBuf> = printed
+        .lines()
+        .map(|line| project.join(line).canonicalize().ok())
+        .collect::<Option<_>>()?;
+    let [git_dir, common, toplevel] = <[PathBuf; 3]>::try_from(resolved).ok()?;
+    Some(Repository {
+        git_dir,
+        common,
+        toplevel,
+    })
+}
+
+/// The work tree the config of the git dir `git_dir` names, resolved from it.
+fn core_worktree(git_dir: &Path) -> Option<PathBuf> {
+    let config = git_dir.join("config");
+    let config = config.to_str()?;
+    // Read from `/`, so git does not take that git dir for the repository it is in.
+    let args = ["config", "--file", config, "--get", "core.worktree"];
+    let printed = read_git(Path::new("/"), &args)?;
+    git_dir.join(printed.lines().next()?).canonicalize().ok()
+}
+
+/// What `git -C <dir> <args>` prints, run with no shell, no prompt, no system config,
+/// no fsmonitor hook and git's other variables removed, within git's usual time for a
+/// read. None when git fails.
+fn read_git(dir: &Path, args: &[&str]) -> Option<String> {
     use std::{io::Read, process::Stdio, time::Instant};
     const LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
     let mut command = std::process::Command::new("git");
     if let Some(path) = platform::login_path::get() {
         command.env("PATH", path);
     }
+    // The user's GIT_CEILING_DIRECTORIES is kept: git stops where the user said.
     for key in [
         "GIT_DIR",
         "GIT_COMMON_DIR",
         "GIT_WORK_TREE",
-        "GIT_CEILING_DIRECTORIES",
+        "GIT_CONFIG",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_PARAMETERS",
     ] {
         command.env_remove(key);
     }
     command
-        .arg("-C")
-        .arg(project)
-        .args(["rev-parse", "--absolute-git-dir", "--git-common-dir"])
+        .args(["-c", "core.fsmonitor=false", "-C"])
+        .arg(dir)
+        .args(args)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let Ok(mut child) = command.spawn() else {
-        return Vec::new();
-    };
+    let mut child = command.spawn().ok()?;
     let deadline = Instant::now() + LIMIT;
     let finished = loop {
         match child.try_wait() {
@@ -363,24 +454,16 @@ fn git_dirs(project: &Path) -> Vec<PathBuf> {
         .stdout
         .take()
         .map(|stdout| stdout.take(64 * 1024).read_to_string(&mut printed));
-    if !finished || !matches!(read, Some(Ok(_))) {
-        return Vec::new();
-    }
-    // The common dir may be printed relative to the project.
-    printed
-        .lines()
-        .filter_map(|line| project.join(line).canonicalize().ok())
-        .collect()
+    (finished && matches!(read, Some(Ok(_)))).then_some(printed)
 }
 
 /// The common git dir of the worktree in `project`, when git's link holds both ways:
 /// the project's `.git` file names `<common>/worktrees/<name>`, and that folder's
-/// `gitdir` names the project's `.git` and its `commondir` names `<common>`. `dirs` is
-/// what `git_dirs` found: the git dir, then the common dir.
-fn worktree_common_dir(project: &Path, dirs: &[PathBuf]) -> Option<PathBuf> {
-    let [git_dir, common] = dirs else {
-        return None;
-    };
+/// `gitdir` names the project's `.git` and its `commondir` names `<common>`.
+fn worktree_common_dir(project: &Path, repository: &Repository) -> Option<PathBuf> {
+    let Repository {
+        git_dir, common, ..
+    } = repository;
     let dot_git = project.join(".git");
     if !std::fs::symlink_metadata(&dot_git).ok()?.is_file() {
         return None;
@@ -938,5 +1021,109 @@ mod tests {
         assert!(!run(&call, &forged_head).await.status.success());
         let main_head = main.join(".git/HEAD").display().to_string();
         assert!(!run(&call, &["/bin/cat", &main_head]).await.status.success());
+    }
+
+    /// `git` in `dir`, with a name for commits; it must succeed.
+    fn git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(["-c", "protocol.file.allow=always"])
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    }
+
+    /// A repository's objects show all its files: an enclosing repository's git dir is
+    /// reopened only when it holds no other saved project and is not home's, and a
+    /// git dir named by a planted `.git` file never is.
+    #[tokio::test]
+    async fn a_call_reopens_an_enclosing_git_dir_only_alone() {
+        let Some(setup) = call_setup("call-enclosing", reads_project(), None) else {
+            return;
+        };
+        let home = &setup.home;
+        let mono = home.join("mono");
+        for (folder, text) in [("a", "mono a"), ("b", "mono b")] {
+            std::fs::create_dir_all(mono.join(folder)).unwrap();
+            std::fs::write(mono.join(folder).join("x"), text).unwrap();
+        }
+        git(&mono, &["init", "-q"]);
+        git(&mono, &["add", "-A"]);
+        git(&mono, &["commit", "-q", "-m", "x"]);
+        let (mono, a, b) = (
+            mono.canonicalize().unwrap(),
+            mono.join("a").canonicalize().unwrap(),
+            mono.join("b").canonicalize().unwrap(),
+        );
+        let in_a = |args: &[&str]| -> Vec<String> {
+            ["/usr/bin/git", "-C", &a.display().to_string()]
+                .iter()
+                .chain(args)
+                .map(|word| (*word).to_owned())
+                .collect()
+        };
+        let succeeds = async |call: &Isolation, line: Vec<String>| {
+            let line: Vec<&str> = line.iter().map(String::as_str).collect();
+            run(call, &line).await.status.success()
+        };
+        let mono_git = format!("{:?}", mono.join(".git"));
+        let mono_head = mono.join(".git/HEAD").display().to_string();
+        // With B saved too, A's call cannot read B through git's objects.
+        let call = setup
+            .isolation
+            .for_call(home, &a, std::slice::from_ref(&b))
+            .unwrap();
+        assert!(!format!("{call:?}").contains(&mono_git), "{call:?}");
+        assert!(!succeeds(&call, in_a(&["show", "HEAD:b/x"])).await);
+        assert!(!succeeds(&call, in_a(&["rev-parse", "HEAD"])).await);
+        assert!(!run(&call, &["/bin/cat", &mono_head]).await.status.success());
+        // Alone in its repository, A gets git.
+        let call = setup.isolation.for_call(home, &a, &[]).unwrap();
+        assert!(format!("{call:?}").contains(&mono_git), "{call:?}");
+        assert!(succeeds(&call, in_a(&["show", "HEAD:a/x"])).await);
+        let b_file = b.join("x").display().to_string();
+        assert!(!run(&call, &["/bin/cat", &b_file]).await.status.success());
+        // A planted `.git` file naming that repository is no link: closed.
+        let planted = home.join("planted");
+        std::fs::create_dir_all(&planted).unwrap();
+        let named = format!("gitdir: {}\n", mono.join(".git").display());
+        std::fs::write(planted.join(".git"), named).unwrap();
+        let call = setup.isolation.for_call(home, &planted, &[]).unwrap();
+        assert!(!format!("{call:?}").contains(&mono_git), "{call:?}");
+        assert!(!run(&call, &["/bin/cat", &mono_head]).await.status.success());
+        // A submodule whose git dir names it as its work tree gets that git dir only.
+        let library = setup.root.join("library");
+        std::fs::create_dir_all(&library).unwrap();
+        git(&library, &["init", "-q"]);
+        git(&library, &["commit", "-q", "--allow-empty", "-m", "x"]);
+        let library = library.display().to_string();
+        git(&mono, &["submodule", "add", "-q", &library, "sub"]);
+        let sub = mono.join("sub").canonicalize().unwrap();
+        let call = setup.isolation.for_call(home, &sub, &[]).unwrap();
+        let sub_head = [
+            "/usr/bin/git",
+            "-C",
+            &sub.display().to_string(),
+            "rev-parse",
+            "HEAD",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        assert!(succeeds(&call, sub_head).await, "{call:?}");
+        assert!(!run(&call, &["/bin/cat", &mono_head]).await.status.success());
+        // A dotfiles repository at home is never reopened, though A is alone in it.
+        git(home, &["init", "-q"]);
+        let lone = home.join("lone");
+        std::fs::create_dir_all(&lone).unwrap();
+        let call = setup.isolation.for_call(home, &lone, &[]).unwrap();
+        let home_git = format!("{:?}", home.join(".git"));
+        assert!(!format!("{call:?}").contains(&home_git), "{call:?}");
+        let home_head = home.join(".git/HEAD").display().to_string();
+        assert!(!run(&call, &["/bin/cat", &home_head]).await.status.success());
     }
 }

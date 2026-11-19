@@ -74,6 +74,12 @@ fn profile(confinement: &Confinement) -> Result<String> {
             quoted(folder)?
         ));
     }
+    for folder in &confinement.listed {
+        profile.push_str(&format!(
+            "(allow file-read-data (literal {}))\n",
+            quoted(folder)?
+        ));
+    }
     for folder in &confinement.reopened {
         let access = match confinement.writable.contains(folder) {
             true => "file-read* file-write*",
@@ -205,6 +211,7 @@ mod tests {
             sockets: Vec::new(),
             hand_off: true,
             stat: Vec::new(),
+            listed: Vec::new(),
         };
         let read = |path: &Path| run(&confinement, "/bin/cat", &[&path.display().to_string()]);
         assert!(!read(&root.join("config.yml")), "the config root is closed");
