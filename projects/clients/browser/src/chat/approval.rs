@@ -10,24 +10,25 @@ use dusk_protocol::tools::{ApprovalRequest, Decision, Question};
 use leptos::prelude::*;
 
 #[component]
-pub fn Approvals(chat: Chat) -> impl IntoView {
+pub fn Approvals(chat: Chat, id: Option<String>) -> impl IntoView {
     view! {
         <div class="approvals">
             <For each=move || chat.with(|c| c.approvals.clone()) key=|a| a.id let:request>
-                <ApprovalCard request />
+                <ApprovalCard request thread=id.clone().unwrap_or_default() />
             </For>
         </div>
     }
 }
 
 #[component]
-fn ApprovalCard(request: ApprovalRequest) -> impl IntoView {
+fn ApprovalCard(request: ApprovalRequest, thread: String) -> impl IntoView {
     let app = state();
     let id = request.id;
+    let thread = StoredValue::new(thread);
     let lines: Vec<String> = request.steps.iter().map(|step| step.line()).collect();
     let session = request.session.is_some();
     let answer = move |decision: Decision| {
-        run(api::approve(id, decision), move |_| {
+        run(api::approve(thread.get_value(), id, decision), move |_| {
             // The core closes the request itself; every client sees that event.
             let _ = app;
         });

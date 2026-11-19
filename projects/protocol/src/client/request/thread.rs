@@ -96,8 +96,10 @@ pub enum ThreadRequest {
     Delete {
         thread_id: String,
     },
-    /// Answers a tool's request for a yes; `false` when it no longer waits.
+    /// Answers a tool's request for a yes; `false` when it no longer waits or was not
+    /// asked in this chat or an agent thread below it.
     Approve {
+        thread_id: String,
         id: u64,
         decision: Decision,
     },

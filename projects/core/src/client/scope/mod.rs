@@ -38,6 +38,8 @@ pub enum Area {
     ThreadDelete,
     /// Running a command the client wrote, in the chat's folder.
     ThreadCommand,
+    /// Answering a tool's request for a yes, in the chat it was asked in.
+    ThreadApprove,
     /// Changing how much a thread's agent may do without asking.
     ThreadApprovals,
     /// Limits, switches, modes, providers and secrets.
@@ -81,6 +83,7 @@ const WEB: &[Area] = &[
     Area::ThreadCreate,
     Area::ThreadDelete,
     Area::ThreadCommand,
+    Area::ThreadApprove,
     Area::ThreadApprovals,
     Area::Settings,
     Area::Catalog,
@@ -124,7 +127,7 @@ impl Scope {
     /// that is not about a thread gives nothing here.
     ///
     /// Open before a remote client may be attached this way: a handler's error text can
-    /// hold paths; refusals are not rate-limited; `Approve { id }` names no thread; the
+    /// hold paths; refusals are not rate-limited; the
     /// name given in `Hello.client` goes to the audit log as it is; the HTTP routes
     /// `/api/card` and `/api/output` are for the web scope and check no scope.
     pub fn threads(ids: impl IntoIterator<Item = String>, areas: &'static [Area]) -> Self {

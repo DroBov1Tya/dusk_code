@@ -28,6 +28,7 @@ const EVERYTHING: &[Area] = &[
     Area::ThreadCreate,
     Area::ThreadDelete,
     Area::ThreadCommand,
+    Area::ThreadApprove,
     Area::ThreadApprovals,
     Area::Settings,
     Area::PluginEnable,
@@ -126,6 +127,11 @@ fn about(thread_id: &str, folder: &Path) -> Vec<Request> {
             policy: None,
         },
         ThreadRequest::Close { thread_id: id() },
+        ThreadRequest::Approve {
+            thread_id: id(),
+            id: 1,
+            decision: Decision::Once,
+        },
         ThreadRequest::Delete { thread_id: id() },
     ]
     .into_iter()
@@ -362,10 +368,6 @@ fn apart(folder: &Path) -> Vec<Request> {
         Request::Thread(ThreadRequest::Fork {
             summary: word(),
             cwd: folder.to_path_buf(),
-        }),
-        Request::Thread(ThreadRequest::Approve {
-            id: 1,
-            decision: Decision::Once,
         }),
     ]
 }

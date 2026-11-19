@@ -42,21 +42,25 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
     };
     let theme = cx.theme();
     let (border, warning) = (theme.border, theme.warning);
+    let thread_id = ws.shown.clone().unwrap_or_default();
     for request in &chat.approvals {
         let id = request.id;
+        let (once, session, deny) = (thread_id.clone(), thread_id.clone(), thread_id.clone());
         let mut buttons = div().flex().flex_row().gap_2().child(
             Button::new(SharedString::from(format!("once-{id}")))
                 .primary()
                 .label("Allow once")
-                .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Once, cx))),
+                .on_click(
+                    cx.listener(move |ws, _, _, cx| ws.approve(&once, id, Decision::Once, cx)),
+                ),
         );
         if let Some(scope) = &request.session {
             buttons = buttons.child(
                 Button::new(SharedString::from(format!("session-{id}")))
                     .label(format!("Allow {scope} for the session"))
-                    .on_click(
-                        cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Session, cx)),
-                    ),
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.approve(&session, id, Decision::Session, cx)
+                    })),
             );
         }
         buttons = buttons.child(
@@ -66,7 +70,9 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
                 .danger()
                 .outline()
                 .label("Deny")
-                .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Deny, cx))),
+                .on_click(
+                    cx.listener(move |ws, _, _, cx| ws.approve(&deny, id, Decision::Deny, cx)),
+                ),
         );
         // A command is shown as code: it came from the model and is about to run. Its box
         // shows three lines and scrolls; "Show all" opens it up to the card's room.
@@ -324,10 +330,13 @@ fn card(cx: &App) -> Div {
 }
 
 impl Workspace {
-    fn approve(&mut self, id: u64, decision: Decision, cx: &mut Context<Self>) {
+    fn approve(&mut self, thread_id: &str, id: u64, decision: Decision, cx: &mut Context<Self>) {
         self.core.call(
             cx,
-            move |client| async move { client.threads().approve(id, decision).await },
+            {
+                let thread_id = thread_id.to_owned();
+                move |client| async move { client.threads().approve(&thread_id, id, decision).await }
+            },
             move |ws, result, cx| {
                 if let Err(error) = result {
                     ws.fail(error, cx);

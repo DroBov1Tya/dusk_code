@@ -100,8 +100,8 @@ pub async fn delete_thread(thread_id: &str) -> Res<()> {
     .await
 }
 
-pub async fn approve(id: u64, decision: Decision) -> Res<bool> {
-    ask!(thread(ThreadRequest::Approve { id, decision }), Response::Waiting(w) => w)
+pub async fn approve(thread_id: String, id: u64, decision: Decision) -> Res<bool> {
+    ask!(thread(ThreadRequest::Approve { thread_id, id, decision }), Response::Waiting(w) => w)
 }
 
 pub async fn set_approvals(thread_id: &str, policy: Option<ApprovalPolicy>) -> Res<()> {
