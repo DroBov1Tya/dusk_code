@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::release::Channel;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateInfo {
     pub current: String,

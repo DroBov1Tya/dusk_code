@@ -66,6 +66,10 @@ pub fn run(
     for (offset, tool) in tools.iter().enumerate().skip(first) {
         block = block.child(step(ws, shown, start + offset, tool, cx));
     }
+    // A step folded into "earlier" still shows the skill it changed.
+    for tool in &tools[..first] {
+        block = block.children(super::skill_change::rows(ws, shown, &tool.call_id, cx));
+    }
     if open && tools.len() > 4 {
         let id = shown.to_owned();
         block = block.child(
@@ -136,7 +140,8 @@ pub fn step(
     // The icon says what the step is; its color, how it stands.
     let icon = step_icon(&tool.name);
     let (color, status) = match tool.state {
-        ToolState::Running => (theme.warning, "Running"),
+        // A running step is told by the live mark at its end, not by its icon.
+        ToolState::Running => (muted, "Running"),
         ToolState::Done => (muted, "Completed"),
         ToolState::Failed => (theme.danger, "Failed"),
     };
@@ -199,6 +204,14 @@ pub fn step(
     .when(tool.state == ToolState::Failed, |row| {
         row.child(div().meta().text_color(color).child(status))
     })
+    .child(crate::pages::chat::activity::step_mark(
+        tool.state,
+        ws.chats.get(shown).is_some_and(|chat| chat.working),
+        ws.chats
+            .get(shown)
+            .and_then(|chat| chat.settled.get(&tool.call_id).copied()),
+        cx,
+    ))
     .child(disclosure_icon(open, muted))
     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx)));
     let mut row = div().flex().items_center().gap_2().child(button);
@@ -207,6 +220,7 @@ pub fn step(
         row = row.child(background_button(shown, index, tool, cx));
     }
     let mut line = div().flex().flex_col().child(row);
+    line = line.children(super::skill_change::rows(ws, shown, &tool.call_id, cx));
     if open {
         // The look of the plain monospace cells: `meta` size in the mono font.
         let mono_meta = gpui::TextStyleRefinement {

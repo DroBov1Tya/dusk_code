@@ -1,30 +1,34 @@
 //! A made-up plugin store for the screenshot tool, so the Workshop can be photographed
 //! before the real store is online: twenty listings of every tier and kind, some
 //! installed, one with an update, one that cannot run here, one that asks for nothing,
-//! one for the terminal only, packs, a clash, two from a mirror with their repository's
-//! GitHub stars, and a source that failed, drawn with the Workshop's real covers and
-//! screenshots. They are built in only with the feature.
+//! one for the terminal only, packs (two of the official list written by somebody else,
+//! so Verified), a clash, two from a mirror with their repository's GitHub stars, and a
+//! source that failed, drawn with the Workshop's real covers and screenshots. Nothing
+//! here is named after a company or wears its logo. They are built in only with the
+//! feature.
 
 use std::sync::Arc;
 
 use dusk_protocol::{
     catalog::{PackSkill, SkillPack},
     plugin::{
-        Client, Cover, Kind, Listing, Os, PICKS, Picks, RepoStars, ScreenshotRef, SourceFailure,
-        Tier, UpdateReport,
+        Client, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind, Listing,
+        Os, PICKS, Picks, RepoStars, Runs, ScreenshotRef, SourceFailure, Tier, UpdateReport,
     },
 };
 use gpui_kit::*;
 
 use crate::{
     modal::Modal,
-    pages::connectors::{
+    pages::customize::{
         Shelf,
         plugins::{
-            Confirm,
+            Confirm, Scope,
             workshop::{
-                Shelf as StoreShelf,
+                Shelf as StoreShelf, View,
+                contents::{Loaded, Opened},
                 covers::{self, Cover as Drawn},
+                detail::Tab,
             },
         },
     },
@@ -39,7 +43,15 @@ pub fn listings() -> Vec<Listing> {
         permissions: vec!["Reach https://api.example.com".into()],
         homepage: Some(format!("https://example.com/{name}")),
         source: "official".into(),
+        author: "duskcode".into(),
+        license: "MIT".into(),
+        origin: Some(format!(
+            "https://github.com/duskcode/workshop/tree/main/{name}"
+        )),
         ..Listing::default()
+    };
+    let filed = |categories: &[&str]| -> Vec<String> {
+        categories.iter().map(|item| (*item).to_owned()).collect()
     };
     let shots = |captions: &[&str]| -> Vec<ScreenshotRef> {
         captions
@@ -61,7 +73,8 @@ pub fn listings() -> Vec<Listing> {
             ],
             installed: Some("1.2.0".into()),
             version: "1.2.0".into(),
-            category: "engineering".into(),
+            category: "coding".into(),
+            categories: filed(&["coding", "review", "testing"]),
             tags: vec!["review".into(), "refactor".into()],
             screenshots: shots(&[
                 "The pack's page with its skills",
@@ -83,6 +96,7 @@ pub fn listings() -> Vec<Listing> {
             ],
             version: "0.9.0".into(),
             category: "security".into(),
+            categories: filed(&["security"]),
             tags: vec!["owasp".into()],
             screenshots: shots(&["Its skills", "A web audit under way"]),
             ..listing(
@@ -93,12 +107,34 @@ pub fn listings() -> Vec<Listing> {
         Listing {
             platforms: vec![Os::Macos],
             clients: vec![Client::Gui, Client::Tui],
+            // The core's lines: its program, its servers, then what else it may reach.
             permissions: vec![
+                "run the program ./bin/telegram on this computer while it is on".into(),
+                "start the MCP server telegram-history (./bin/telegram mcp) on this computer; \
+                 the agent may use its tools"
+                    .into(),
+                "send the agent's requests for the tools of chat-search to \
+                 https://search.example.com/mcp"
+                    .into(),
                 "Reach https://api.telegram.org".into(),
                 "Use the secret TELEGRAM_TOKEN".into(),
             ],
+            programs: vec!["./bin/telegram".into()],
+            connectors: vec![
+                Connector {
+                    name: "telegram-history".into(),
+                    runs: Runs::Command("./bin/telegram mcp".into()),
+                    state: ConnectorState::Added,
+                },
+                Connector {
+                    name: "chat-search".into(),
+                    runs: Runs::Url("https://search.example.com/mcp".into()),
+                    state: ConnectorState::Yours,
+                },
+            ],
             installed: Some("1.0.0".into()),
-            category: "chat".into(),
+            category: "communication".into(),
+            categories: filed(&["communication", "devices"]),
             ..listing(
                 "telegram",
                 "Chat with your agents from Telegram, with voice notes.",
@@ -107,7 +143,8 @@ pub fn listings() -> Vec<Listing> {
         Listing {
             kind: Kind::Agent,
             permissions: Vec::new(),
-            category: "automation".into(),
+            category: "coding".into(),
+            categories: filed(&["coding"]),
             ..listing(
                 "duskcode-agents",
                 "Agents that plan, build and review, each with its own model and tools.",
@@ -118,7 +155,8 @@ pub fn listings() -> Vec<Listing> {
             clients: vec![Client::Gui],
             permissions: vec!["Run xcrun simctl".into()],
             unfit: Some("It runs on macOS only".into()),
-            category: "desktop".into(),
+            category: "devices".into(),
+            categories: filed(&["devices", "testing"]),
             ..listing(
                 "ios-simulator",
                 "Drive the iOS Simulator and see its screen in a panel.",
@@ -130,37 +168,79 @@ pub fn listings() -> Vec<Listing> {
             update: Some("2.1.0".into()),
             tier: Tier::Verified,
             source: "dusk-mirror".into(),
-            category: "desktop".into(),
+            category: "devices".into(),
+            categories: filed(&["devices"]),
+            author: "phone-tools".into(),
+            license: "Apache-2.0".into(),
             ..listing("vphone", "A virtual phone for testing calls and messages.")
         },
+        // The official list's packs of somebody else's skills: Verified, not Official.
         Listing {
+            kind: Kind::Pack,
             tier: Tier::Verified,
-            source: "dusk-mirror".into(),
-            category: "providers".into(),
+            permissions: Vec::new(),
+            skills: vec![
+                "skills-for-claude/documents".into(),
+                "skills-for-claude/spreadsheets".into(),
+                "skills-for-claude/slides".into(),
+            ],
+            category: "writing".into(),
+            categories: filed(&["writing", "productivity"]),
+            author: "skill-authors".into(),
+            license: "Apache-2.0".into(),
+            origin: Some("https://github.com/skill-authors/skills".into()),
             ..listing(
-                "anthropic",
-                "Claude models, with prompt caching and extended thinking.",
+                "skills-for-claude",
+                "Documents, spreadsheets and slides, written for Claude models.",
             )
         },
         Listing {
+            kind: Kind::Pack,
             tier: Tier::Verified,
-            source: "dusk-mirror".into(),
-            category: "providers".into(),
+            permissions: Vec::new(),
+            skills: vec!["skills-for-gpt/plan".into(), "skills-for-gpt/patch".into()],
+            category: "coding".into(),
+            categories: filed(&["coding"]),
+            author: "skill-authors".into(),
+            license: "MIT".into(),
+            origin: Some("https://github.com/skill-authors/gpt-skills".into()),
             clash: true,
-            ..listing("openai", "GPT models through the Responses API.")
+            ..listing(
+                "skills-for-gpt",
+                "Plans and patches, written for GPT models.",
+            )
         },
         Listing {
+            kind: Kind::Pack,
             tier: Tier::Community,
             source: "friends".into(),
-            category: "providers".into(),
+            permissions: Vec::new(),
+            skills: vec!["skills-for-gpt/plan".into()],
+            category: "coding".into(),
+            categories: filed(&["coding"]),
+            // A mirror's claim, drawn as such.
+            author: "duskcode".into(),
             clash: true,
-            ..listing("openai", "GPT models through a proxy of a friend.")
+            ..listing(
+                "skills-for-gpt",
+                "The same skills, through a friend's mirror.",
+            )
         },
         Listing {
+            kind: Kind::Pack,
             tier: Tier::Community,
             source: "friends".into(),
-            category: "providers".into(),
-            ..listing("nvidia", "NVIDIA NIM models for local GPUs.")
+            permissions: Vec::new(),
+            skills: vec![
+                "gpu-computing-skills/kernels".into(),
+                "gpu-computing-skills/profiling".into(),
+            ],
+            category: "data".into(),
+            categories: filed(&["data", "coding"]),
+            author: "friends-example".into(),
+            license: "BSD-3-Clause".into(),
+            origin: Some("https://github.com/friends-example/gpu-skills".into()),
+            ..listing("gpu-computing-skills", "Writing and profiling GPU kernels.")
         },
         Listing {
             permissions: Vec::new(),
@@ -168,6 +248,8 @@ pub fn listings() -> Vec<Listing> {
             tier: Tier::Community,
             source: "friends".into(),
             category: "writing".into(),
+            categories: filed(&["writing"]),
+            author: "friends-example".into(),
             ..listing(
                 "word-count",
                 "Counts the words of the shown file. Asks for nothing.",
@@ -177,7 +259,9 @@ pub fn listings() -> Vec<Listing> {
             clients: vec![Client::Tui],
             tier: Tier::Community,
             source: "friends".into(),
-            category: "automation".into(),
+            category: "productivity".into(),
+            categories: filed(&["productivity", "devops"]),
+            author: "friends-example".into(),
             homepage: Some("https://github.com/friends-example/tmux-panes".into()),
             repo_stars: Some(RepoStars {
                 repo: "friends-example/tmux-panes".into(),
@@ -195,6 +279,8 @@ pub fn listings() -> Vec<Listing> {
             permissions: Vec::new(),
             skills: vec!["writing/edit".into(), "writing/outline".into()],
             category: "writing".into(),
+            categories: filed(&["writing"]),
+            author: "friends-example".into(),
             homepage: Some("https://github.com/friends-example/writing".into()),
             repo_stars: Some(RepoStars {
                 repo: "friends-example/writing".into(),
@@ -208,6 +294,9 @@ pub fn listings() -> Vec<Listing> {
             installed: Some("0.1.0".into()),
             version: "0.1.0".into(),
             permissions: Vec::new(),
+            author: String::new(),
+            license: String::new(),
+            origin: None,
             ..listing(
                 "my-hooks",
                 "Hooks of my own, dropped into the plugins folder.",
@@ -239,7 +328,9 @@ pub fn listings() -> Vec<Listing> {
             version: format!("0.{}.{}", index % 4 + 1, index % 3),
             tier: [Tier::Official, Tier::Verified, Tier::Community][index % 3],
             source: ["official", "dusk-mirror", "friends"][index % 3].into(),
-            category: ["devops", "automation"][index % 2].into(),
+            category: ["devops", "productivity"][index % 2].into(),
+            categories: filed(&[["devops", "productivity"][index % 2]]),
+            author: ["duskcode", "ops-tools", "friends-example"][index % 3].into(),
             ..listing(word, description)
         });
     }
@@ -264,13 +355,10 @@ pub fn listings() -> Vec<Listing> {
 /// The Workshop's own art for the listings that have it.
 fn art(name: &str) -> Option<&'static [u8]> {
     Some(match name {
-        "anthropic" => include_bytes!("media/anthropic.webp"),
         "duskcode-agents" => include_bytes!("media/duskcode-agents.webp"),
         "duskcode-engineering" => include_bytes!("media/duskcode-engineering.webp"),
         "duskcode-security" => include_bytes!("media/duskcode-security.webp"),
         "ios-simulator" => include_bytes!("media/ios-simulator.webp"),
-        "nvidia" => include_bytes!("media/nvidia.webp"),
-        "openai" => include_bytes!("media/openai.webp"),
         "telegram" => include_bytes!("media/telegram.webp"),
         "vphone" => include_bytes!("media/vphone.webp"),
         _ => return None,
@@ -315,8 +403,7 @@ fn packs() -> Vec<SkillPack> {
                 &[
                     "duskcode",
                     "skill-creator",
-                    "skill-improve",
-                    "skill-from-practice",
+                    "skill-evolve",
                     "computer-use",
                     "token-thrift",
                 ],
@@ -354,6 +441,67 @@ fn webp(bytes: &'static [u8]) -> Arc<Image> {
         gpui_kit::ImageFormat::Webp,
         bytes.to_vec(),
     ))
+}
+
+/// Single skills, as the Skills page's Workshop lists them: of each tier, one here.
+pub fn skill_listings() -> Vec<Listing> {
+    let skill = |name: &str, author: &str, tier: Tier, description: &str| Listing {
+        name: name.into(),
+        version: "1.0.0".into(),
+        description: description.into(),
+        kind: Kind::Skill,
+        source: match tier {
+            Tier::Community => "friends".into(),
+            _ => "official".into(),
+        },
+        tier,
+        author: author.into(),
+        license: "MIT".into(),
+        categories: vec!["coding".into()],
+        created: Some("2026-11-02T00:00:00Z".into()),
+        updated: Some("2026-11-12T00:00:00Z".into()),
+        ..Listing::default()
+    };
+    vec![
+        Listing {
+            installed: Some("1.0.0".into()),
+            ..skill(
+                "commit-messages",
+                "duskcode",
+                Tier::Official,
+                "Write commit subjects as area: imperative summary, with a body that says why.",
+            )
+        },
+        skill(
+            "changelog",
+            "duskcode",
+            Tier::Official,
+            "Keep a changelog of fragments, one per change, merged at release.",
+        ),
+        skill(
+            "sql-review",
+            "Data Tools Collective",
+            Tier::Verified,
+            "Read a migration for locks, missing indexes and irreversible steps.",
+        ),
+        skill(
+            "haiku-docs",
+            "someone",
+            Tier::Community,
+            "Explain a module in three short lines before the details.",
+        ),
+        Listing {
+            source: "skill-hub".into(),
+            from: Some("hub.example.com".into()),
+            upstream: Some("github.com/someone/skills at 0123456".into()),
+            ..skill(
+                "pdf-forms",
+                "Anthropic",
+                Tier::Unverified,
+                "Fill PDF forms from a list of fields.",
+            )
+        },
+    ]
 }
 
 /// The core's picks, made here the way the core makes them.
@@ -408,18 +556,97 @@ pub fn fake(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     cx.notify();
 }
 
-/// `workshop`: the Workshop shown; `workshop=install:NAME|remove:NAME`: its window that
+/// `fake=suggest`: a chat whose agent put a card of three made-up listings in it, one of
+/// them installed, read as the store's for the card; after `fake=store`.
+pub fn suggest(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    use crate::pages::chat::transcript::{Item, Transcript};
+    use dusk_protocol::plugin::{Kind, Suggested, Suggestion};
+    let listings = ws.workshop.listings.clone().unwrap_or_else(listings);
+    let pick = |kind: Kind, installed: bool| {
+        listings
+            .iter()
+            .find(|listing| listing.kind == kind && listing.installed.is_some() == installed)
+            .map(Suggested::of)
+    };
+    let rows: Vec<Suggested> = [
+        pick(Kind::Pack, false),
+        pick(Kind::Plugin, true),
+        pick(Kind::Skill, false),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let mut chat = Transcript::default();
+    chat.push(
+        Item::User {
+            text: "Find me something for interface animation".into(),
+            sequence: Some(1),
+            answered: Vec::new(),
+        },
+        0,
+    );
+    chat.push(
+        Item::Suggestion(Suggestion {
+            label: "Design and interface animation skills".into(),
+            listings: rows,
+        }),
+        0,
+    );
+    chat.push(
+        Item::Assistant {
+            text: "These two fit the motion work; add the one you want.".into(),
+            reasoning: String::new(),
+        },
+        0,
+    );
+    ws.workshop.suggested.listings = Some(listings);
+    ws.chats.insert("suggest".into(), chat);
+    ws.shown = Some("suggest".into());
+    ws.center = Center::Chat;
+    cx.notify();
+}
+
+/// `workshop`: the Plugins shelf's Workshop shown, `workshop=connectors|skills|agents`
+/// another shelf's, `workshop=installed:SHELF` a shelf's Installed list; `workshop=install:NAME|remove:NAME`: its window that
 /// asks first; `workshop=busy:NAME`: the capsule at work; `workshop=failed:NAME`: the
 /// capsule after a failure; `workshop=pack:NAME`: a pack's page; `workshop=open:NAME`: a
-/// listing's window, `workshop=gallery:N` its Nth picture; `workshop=hero:N`: the Nth
+/// listing's window, `workshop=gallery:N` its Nth picture, `workshop=tab:skills|contents|connectors`
+/// that tab; `workshop=hero:N`: the Nth
 /// featured pick; `workshop=next:N`: the Official shelf from its Nth capsule;
 /// `workshop=all:TIER`: that tier's shelf whole; `workshop=tier:TIER`: filter by it;
 /// `workshop=coming:NAME`: its cover still coming; `workshop=offline:`: the store could not
 /// be read again, so covers not here are drawn offline; `workshop=filters:`: the filter menu open; `workshop=scroll:PX`: the page that far down; `workshop=report`: what "Update all" did.
 pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Context<Workspace>) {
-    ws.center = Center::Connectors;
-    ws.shelf = Shelf::Plugins;
-    ws.workshop.open = true;
+    ws.center = Center::Customize;
+    let (what, name) = value.split_once(':').unwrap_or((value, ""));
+    // `connectors`, `skills`, `plugins` or `agents` shows that shelf's Discover;
+    // `installed:SHELF` its Installed list.
+    let named = |word: &str| Scope::ALL.into_iter().find(|scope| scope.noun() == word);
+    let (scope, view) = match (named(what), what) {
+        (Some(scope), _) => (scope, View::Discover),
+        (None, "installed") => (named(name).unwrap_or_default(), View::Installed),
+        // Packs are on the Skills shelf.
+        (None, "pack") => (Scope::Skills, View::Discover),
+        _ => (Scope::Plugins, View::Discover),
+    };
+    let was = ws.workshop.scope;
+    ws.shelf = Shelf::of(scope);
+    ws.workshop.views.insert(scope, view);
+    ws.workshop.scope = scope;
+    // Leaving the Skills shelf takes the made-up store back.
+    if was == Scope::Skills && scope != Scope::Skills && ws.workshop.listings.is_some() {
+        let listings = listings();
+        ws.workshop.picks = picks(&listings);
+        ws.workshop.listings = Some(listings);
+    } else if scope == Scope::Skills {
+        // The single skills, and the packs of the made-up store.
+        let listings: Vec<Listing> = skill_listings()
+            .into_iter()
+            .chain(listings().into_iter().filter(|l| l.kind == Kind::Pack))
+            .collect();
+        ws.workshop.picks = picks(&listings);
+        ws.workshop.listings = Some(listings);
+    }
     if ws.settings.is_none() {
         ws.load_settings(cx);
     }
@@ -437,7 +664,6 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         cx.notify();
         return;
     }
-    let (what, name) = value.split_once(':').unwrap_or((value, ""));
     let listing = ws
         .workshop
         .listings
@@ -446,7 +672,8 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         .find(|listing| listing.name == name)
         .cloned();
     match (what, listing) {
-        ("", _) => {}
+        ("", _) | ("installed", _) => {}
+        (word, _) if named(word).is_some() => {}
         ("pack", _) => ws.workshop.pack = Some(name.into()),
         ("open", Some(listing)) => {
             ws.workshop.gallery = 0;
@@ -457,6 +684,17 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
             });
         }
         ("gallery", _) => ws.workshop.gallery = name.parse().unwrap_or(0),
+        ("tab", _) => {
+            ws.workshop.tab = match name {
+                "skills" => Tab::Skills,
+                "contents" => Tab::Contents,
+                "connectors" => Tab::Connectors,
+                _ => Tab::Overview,
+            };
+            if let Some(Modal::Listing { source, name }) = &ws.modal {
+                ws.workshop.contents = Some(contents(source, name));
+            }
+        }
         ("hero", _) => ws.workshop.hero = name.parse().unwrap_or(0),
         ("filters", _) => ws.workshop.filters = true,
         ("scroll", _) => ws
@@ -501,10 +739,46 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         }
         _ => eprintln!(
             "workshop=install|remove|busy|failed|coming|pack|open:NAME, gallery|hero|next:N, \
-             tier|all:TIER, filters:, offline: or report: {value}"
+             tab:skills, tier|all:TIER, filters:, offline: or report: {value}"
         ),
     }
     cx.notify();
+}
+
+/// The files of a pack, the way the core lists them, with its first skill open.
+fn contents(source: &str, name: &str) -> Opened {
+    let file = |path: &str, size: u64, text: bool| FileRef {
+        path: path.into(),
+        size,
+        text,
+    };
+    Opened {
+        source: source.into(),
+        name: name.into(),
+        files: Loaded::Ready(Contents {
+            files: vec![
+                file("LICENSE", 1071, true),
+                file("bin/helper", 2_411_520, false),
+                file("pack.yml", 214, true),
+                file("review/SKILL.md", 3_890, true),
+                file("review/references/checklist.md", 1_204, true),
+                file("spike/SKILL.md", 2_317, true),
+                file("spike/scripts/time.sh", 402, true),
+            ],
+            package_sha256: "4f1c9a07be2d5e3f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f"
+                .into(),
+            installed: false,
+        }),
+        chosen: Some("spike/SKILL.md".into()),
+        preview: Loaded::Ready(FilePreview {
+            text: "---\ndescription: Answer one question with the smallest experiment.\n---\n\n\
+                   # Spike\n\nWrite down the question first. Then build the least code that answers \
+                   it, and **throw it away** once you know.\n\n- Time-box it: an hour, not a day.\n\
+                   - Keep notes of what you tried.\n- Report the answer, not the code.\n"
+                .into(),
+            truncated: false,
+        }),
+    }
 }
 
 fn tier_named(name: &str) -> Option<Tier> {
@@ -512,6 +786,7 @@ fn tier_named(name: &str) -> Option<Tier> {
         "official" => Some(Tier::Official),
         "verified" => Some(Tier::Verified),
         "community" => Some(Tier::Community),
+        "unverified" => Some(Tier::Unverified),
         "local" => Some(Tier::Local),
         _ => None,
     }

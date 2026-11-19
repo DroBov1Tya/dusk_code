@@ -77,7 +77,7 @@ large log. `--only hard-` runs them alone.
 The `team-` tasks have parts for a lead and its members (the plan graph in
 `docs/features.md`). Each part has its own files and a check command named in `task.md`, which a plan can
 take as the part's gate; `check.sh` runs those and hidden cases of each part. They run as
-well for one agent, the baseline they are compared with: `--mode ORCHESTRATOR` for a team,
+well for one agent, the baseline they are compared with: `--mode TEAM` for a team,
 the default mode for one agent.
 
 | Task | Design | What it shows |
@@ -100,7 +100,7 @@ it (`kill_on_drop`) where a crash would leave it running; blocking work still ru
 The report has `killed_after` per run; a run that ended before its point has none.
 
 ```bash
-cargo run -q -p dusk_evals -- --only team- --mode ORCHESTRATOR --runs 4 --out projects/evals/results/team.json
+cargo run -q -p dusk_evals -- --only team- --mode TEAM --runs 4 --out projects/evals/results/team.json
 cargo run -q -p dusk_evals -- --only team-chain-kill --runs 20 --seed 1 --out projects/evals/results/kill.json
 ```
 

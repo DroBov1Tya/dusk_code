@@ -8,6 +8,7 @@ use crate::thread::{
     Compaction, Goal, LocalUnsent, Message, Pin, Task, Team, ThreadTokens, Turn, TurnFailure,
 };
 use crate::tools::{ApprovalRequest, Question, ToolResult};
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadEvent {
     /// The active model changed or was discovered after the thread opened.
@@ -161,6 +162,10 @@ pub enum ThreadEvent {
         thread_id: String,
         event: Box<ThreadEvent>,
     },
+    /// An agent below this chat, a subagent or a team member, is at work (true), or the
+    /// last of them ended (false). The chat counts as working while they are, whatever its
+    /// own turn does.
+    AgentsWorking(bool),
     /// The thread's task board changed: every task with its steps.
     Tasks(Vec<Task>),
     /// One task of the plan this thread leads changed; `Tasks` stays for the board.
@@ -207,9 +212,17 @@ pub enum ThreadEvent {
     /// The thread's pins changed, by a pin, an unpin or an /undo that took a pinned
     /// message: all of them, oldest message first.
     Pins(Vec<Pin>),
+    /// A skill file changed by a tool call of this thread, or such a change was undone.
+    SkillChanged(crate::catalog::SkillChange),
     /// /fork wrote its summary; a client opens a new thread that starts from it.
     Forked {
         summary: String,
+    },
+    /// The model proposed the user's next message (`suggest_next`); a composer shows it
+    /// greyed in its empty input until the user says something or a new turn starts
+    /// (`ThreadEvent::ends_suggestion`). Only a chat's own: a subagent has no user.
+    NextSuggested {
+        text: String,
     },
     /// Nothing is running and nothing will start until the next message.
     Idle,
@@ -219,6 +232,7 @@ pub enum ThreadEvent {
 }
 
 /// How far the core went when the model repeated itself within a turn.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepeatRung {
     /// The same call with the same result again: the model is told to change course.
@@ -234,6 +248,7 @@ pub enum RepeatRung {
 }
 
 /// What an episode the core wrote down is about.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EpisodeKind {
     /// An error that came back ended with a call that passed.

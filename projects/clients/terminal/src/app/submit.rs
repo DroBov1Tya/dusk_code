@@ -27,6 +27,15 @@ impl App {
             "/overview" => return Action::Overview,
             "/schedules" => return Action::Schedule(ScheduleAction::Open),
             "/files" => return Action::ChangedFiles,
+            "/link" => {
+                return match &self.thread_id {
+                    Some(id) => Action::Copy(dusk_protocol::thread::thread_link(id)),
+                    None => {
+                        self.flash = Some("No chat yet: send a message first".into());
+                        Action::None
+                    }
+                };
+            }
             "/diff" => return Action::Diff,
             "/me" => return Action::OpenMe,
             "/pins" => return Action::Pin(super::PinAsk::List),
@@ -43,6 +52,17 @@ impl App {
                 return Action::None;
             }
             _ => {}
+        }
+        // A name after it, as a Workshop card in the chat says: the Workshop opens narrowed
+        // to it, where Enter asks before anything is installed.
+        if let Some(name) = trimmed.strip_prefix("/plugins store ") {
+            let filter = name.trim().to_owned();
+            let view = super::Workshop {
+                filter,
+                ..super::Workshop::default()
+            };
+            self.panel = Some(Panel::Workshop(Box::new(view)));
+            return Action::LoadStore;
         }
         if trimmed == "/tab" || trimmed.starts_with("/tab ") {
             return match TabMove::parse(&trimmed["/tab".len()..]) {
@@ -112,6 +132,10 @@ impl App {
         if let Some(Ok(Command::Fork { .. })) = &command {
             self.activity = Activity::Forking;
         }
+        if command.is_none() {
+            // What the user says makes the suggestion stale.
+            self.suggestion.clear();
+        }
         if command.is_some() {
             self.scroll = 0;
             self.transcript.notice(text.trim().to_owned(), Tone::Info);
@@ -156,5 +180,28 @@ impl App {
         } else {
             Activity::Idle
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::{Action, Panel, test_app};
+
+    /// What a Workshop card in the chat tells the user to type opens the Workshop
+    /// narrowed to the name; installing still waits for Enter and its box.
+    #[test]
+    fn plugins_store_with_a_name_opens_the_workshop_narrowed_to_it() {
+        let mut app = test_app();
+        app.input.set("/plugins store  motion-kit ".into());
+        assert!(matches!(app.submit(false), Action::LoadStore));
+        let Some(Panel::Workshop(view)) = &app.panel else {
+            panic!("the Workshop is open");
+        };
+        assert_eq!(view.filter, "motion-kit");
+        assert!(view.confirm.is_none());
+
+        app.input.set("/plugins store".into());
+        assert!(matches!(app.submit(false), Action::LoadStore));
+        assert!(matches!(&app.panel, Some(Panel::Workshop(view)) if view.filter.is_empty()));
     }
 }

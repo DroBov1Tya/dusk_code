@@ -5,8 +5,14 @@ mod blocks;
 mod composer;
 mod controls;
 mod markdown;
+mod panel;
 mod pictures;
+mod pins;
+mod plan;
+mod pull_link;
 mod shown;
+mod skill_change;
+mod spark;
 mod voice;
 mod working;
 pub use composer::Draft;
@@ -20,7 +26,7 @@ use crate::{
     state::{AppState, Chat as ChatSignal, state},
     ui::{Icon, IconName, run},
 };
-use blocks::Transcript;
+use blocks::{Source, Transcript};
 use composer::Composer;
 use data::ChatData;
 use leptos::prelude::*;
@@ -37,6 +43,9 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
     let chat = chat_of(app, id.as_deref());
     let open = id.is_some();
     let menu_id = id.clone();
+    if let Some(id) = id.clone() {
+        skill_change::load(id, chat);
+    }
     let project_name = move || {
         app.project
             .get()
@@ -51,15 +60,17 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
                     {menu_id.clone().map(|id| view! { <ChatMenu id /> })}
                 </header>
             </Show>
-            <Transcript chat thread=id.clone() />
-            <approval::Approvals chat />
+            {id.clone().map(|id| view! { <pins::Pins id chat /> })}
+            <Transcript source=Source::of(chat) thread=id.clone() />
+            <approval::Approvals chat id=id.clone() />
             <approval::AskUser chat id=id.clone() />
+            {id.clone().map(|id| view! { <plan::PlanStrip id chat /> })}
             <Composer id chat />
         </div>
     }
 }
 
-/// Rename, close and delete of the chat.
+/// Rename, copy the link of, close and delete the chat.
 #[component]
 fn ChatMenu(id: String) -> impl IntoView {
     let app = state();
@@ -78,6 +89,7 @@ fn ChatMenu(id: String) -> impl IntoView {
             });
         }
     };
+    let link = dusk_protocol::thread::thread_link(&id);
     let close = {
         let id = id.clone();
         move |_| app.close_chat(id.clone())
@@ -86,6 +98,9 @@ fn ChatMenu(id: String) -> impl IntoView {
         <div class="chat-menu">
             <button class="ghost" title="Rename this chat" on:click=rename>
                 <Icon name=IconName::FileText />"Rename"
+            </button>
+            <button class="ghost" title="Copy a link to paste into another chat" on:click=move |_| blocks::copy(&link)>
+                <Icon name=IconName::Copy />"Copy link"
             </button>
             <button class="ghost" title="Stop using it here; it stays in the list" on:click=close>
                 <Icon name=IconName::Close />"Close"

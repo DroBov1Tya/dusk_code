@@ -14,6 +14,7 @@ pub const MAX_TERMINAL_INPUT: usize = 64 * 1024;
 
 /// A terminal belongs to the client that opened it: its output comes as events to that
 /// client only, and no other client can name it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TerminalRequest {
     /// Starts the user's shell in `cwd`, a folder inside a saved project or the

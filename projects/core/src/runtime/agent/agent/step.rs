@@ -3,8 +3,8 @@
 use super::calls::Called;
 use super::wait::waits_out;
 use super::{Agent, StepEnd, insert_project, interrupted, missing_tools, recorded_reasoning};
-use crate::runtime::agent::Inbox;
-use crate::runtime::{ThreadEvent, thread::Conversation};
+use crate::runtime::ThreadEvent;
+use crate::runtime::agent::{Inbox, Loaded};
 use crate::{
     message::sources::{SourceBlock, ThreadSources},
     providers::{
@@ -22,23 +22,21 @@ use tracing::info;
 
 impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
-    /// `received` gathers the sources a model call took in full, for the turn to mark.
     /// `waited` says the turn's provider wait is stored, to end once the model answers.
     #[tracing::instrument(name = "step", skip_all)]
     pub(super) async fn step(
         &self,
         turn: &Turn,
         inbox: &mut Inbox,
-        received: &mut Vec<String>,
         waited: bool,
+        loaded: Option<Loaded>,
     ) -> Result<StepEnd> {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
-        let config = self.config.current();
+        let config = self.config_now().await;
         // A team's member steps only while it holds its task and the team has budget.
         crate::runtime::team::may_step(&self.state, &config, &self.thread_id, self.depth).await?;
         let stub_results = config.limits().stub_results;
-        let mut conversation =
-            Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        let mut conversation = Loaded::take(loaded, self, stub_results).await?;
         self.put_away_old_results(&mut conversation, &config).await;
         // Messages that joined between steps are answered by this turn, not a next one.
         let newest_user = conversation
@@ -196,13 +194,17 @@ impl Agent {
             generated => (output.text, generated),
         };
         let answer = TurnAnswer { reasoning, content };
-        // A model that answered, or wrote anything, has read the sources.
-        if matches!(generated, Ok(Ok(_))) || !answer.content.trim().is_empty() {
-            for id in first_time.unwrap_or_default() {
-                if !received.contains(&id) {
-                    received.push(id);
-                }
-            }
+        // A model that answered, or wrote anything, has read the sources. They are marked
+        // now, not when the turn ends: the block is rebuilt every step, so a mark kept for
+        // the turn's end sent them in full, uncached, with every step until then.
+        let read = matches!(generated, Ok(Ok(_))) || !answer.content.trim().is_empty();
+        if let Some(ids) = first_time.filter(|ids| read && !ids.is_empty())
+            && let Err(error) = self.state.mark_sources_delivered(&ids).await
+        {
+            tracing::warn!(
+                "thread {}: cannot mark sources delivered: {error:#}",
+                self.thread_id
+            );
         }
         let calls = match generated {
             Err(stop) => return Ok(StepEnd::Stopped(stop, interrupted(answer))),

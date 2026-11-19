@@ -45,7 +45,7 @@ impl Tool for WindowSession {
          Selection pins the exact accessible window. While selected, screenshot with no \
          arguments and its regions capture only that window; independent click may AXPress \
          its controls while another app covers it. AXPress can bring the target app to \
-         the foreground. System clicks, scroll, type_text and \
+         the foreground. physical_input, type_text and \
          press_keys are disabled. Listing, capture and control activation use separate grants. \
          Release uses its own approval request."
             .into()

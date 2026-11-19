@@ -5,19 +5,68 @@
 use std::cmp::Reverse;
 
 use chrono::{DateTime, FixedOffset};
-use dusk_protocol::plugin::{Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, RepoStars, Tier};
+use std::collections::{BTreeMap, BTreeSet};
 
-use super::{index::Entry, record::Record, source::Fetched};
+use dusk_protocol::plugin::{
+    Connector, ConnectorState, Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, RepoStars, Runs,
+    Tier,
+};
+
+use super::{
+    index::{Badge, Entry, Server},
+    record::Record,
+    source::Fetched,
+};
 use crate::{
     init::paths::Paths,
     plugins::{catalog, manifest::Manifest},
 };
 
-pub fn listing(paths: &Paths, record: &Record, source: &Fetched, entry: &Entry) -> Listing {
+/// What is set up here, for the state of a plugin's connectors.
+#[derive(Debug, Default)]
+pub struct Here {
+    /// The MCP servers of the user's config, by name; a plugin's of the same name is
+    /// never used.
+    pub yours: BTreeSet<String>,
+    /// The plugins that are on.
+    pub on: BTreeSet<String>,
+}
+
+impl Here {
+    fn connectors(&self, plugin: &str, installed: bool, servers: &[Server]) -> Vec<Connector> {
+        servers
+            .iter()
+            .map(|server| Connector {
+                name: server.name.clone(),
+                runs: match &server.url {
+                    Some(url) => Runs::Url(url.clone()),
+                    None => Runs::Command(server.line()),
+                },
+                state: if self.yours.contains(&server.name) {
+                    ConnectorState::Yours
+                } else if installed && self.on.contains(plugin) {
+                    ConnectorState::Added
+                } else {
+                    ConnectorState::NotAdded
+                },
+            })
+            .collect()
+    }
+}
+
+pub fn listing(
+    paths: &Paths,
+    record: &Record,
+    here: &Here,
+    source: &Fetched,
+    entry: &Entry,
+) -> Listing {
     let installed = record
         .installed_from(paths, source, &entry.name)
         .map(|item| item.version.clone());
     Listing {
+        connectors: here.connectors(&entry.name, installed.is_some(), &entry.mcp),
+        programs: entry.programs.clone(),
         name: entry.name.clone(),
         version: entry.version.clone(),
         description: entry.description.clone(),
@@ -30,7 +79,7 @@ pub fn listing(paths: &Paths, record: &Record, source: &Fetched, entry: &Entry) 
             .and_then(|installed| newer(&entry.version, installed)),
         installed,
         unfit: entry.download_here().err(),
-        tier: source.tier,
+        tier: tier(source, entry),
         source: source.name.clone(),
         kind: entry.kind,
         category: entry.category.clone(),
@@ -54,7 +103,120 @@ pub fn listing(paths: &Paths, record: &Record, source: &Fetched, entry: &Entry) 
         created: entry.created.clone(),
         updated: entry.updated.clone(),
         skills: entry.skills.clone(),
+        author: entry.author.clone().unwrap_or_default(),
+        license: entry.license.clone().unwrap_or_default(),
+        origin: match source.tier {
+            // The list's `source` is only its claim; the pinned repository is not.
+            Tier::Unverified => entry.upstream.as_ref().map(|upstream| {
+                format!(
+                    "https://github.com/{}/tree/{}",
+                    upstream.repo, upstream.commit
+                )
+            }),
+            _ => entry.source.clone(),
+        },
+        upstream: entry.upstream.as_ref().map(super::upstream::Upstream::line),
+        categories: entry.categories.clone(),
         clash: false,
+        from: (source.tier == Tier::Unverified)
+            .then(|| {
+                reqwest::Url::parse(&source.url)
+                    .ok()?
+                    .host_str()
+                    .map(str::to_owned)
+            })
+            .flatten(),
+    }
+}
+
+/// The names an Unverified listing may not take, or come close to: every name an
+/// Official or Verified listing offers, everything installed here from another source,
+/// the built-in skills and their pack, and the folders under `skills/` and `agents/`
+/// that are not this source's own.
+pub fn taken(
+    paths: &Paths,
+    record: &Record,
+    fetched: &[Fetched],
+    source: &str,
+) -> BTreeSet<String> {
+    let mut names: BTreeSet<String> = fetched
+        .iter()
+        .flat_map(|item| {
+            item.index
+                .plugins
+                .iter()
+                .filter(move |entry| matches!(tier(item, entry), Tier::Official | Tier::Verified))
+                .map(|entry| entry.name.clone())
+        })
+        .collect();
+    let own: BTreeSet<&str> = record
+        .installed
+        .iter()
+        .filter(|(_, item)| item.source == source)
+        .map(|(_, item)| item.folder.as_str())
+        .collect();
+    names.extend(
+        record
+            .installed
+            .iter()
+            .filter(|(_, item)| item.source != source)
+            .map(|(name, _)| name.clone()),
+    );
+    names.insert(crate::catalog::skills::BUILTIN_PACK.to_owned());
+    let builtin = crate::catalog::skills::builtin_dir();
+    for (part, root) in [
+        ("skills", builtin.clone()),
+        ("skills", Some(paths.skills_dir())),
+        ("agents", Some(paths.agents_dir())),
+    ] {
+        let Some(entries) = root.and_then(|root| std::fs::read_dir(root).ok()) else {
+            continue;
+        };
+        for item in entries.flatten() {
+            let Some(name) = item.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if !name.starts_with('.') && !own.contains(format!("{part}/{name}").as_str()) {
+                names.insert(name);
+            }
+        }
+    }
+    names
+}
+
+/// Marks an Unverified listing whose name is, or is close to, one of `taken` as unfit:
+/// it may never pass for a trusted or installed one.
+pub fn guard_names(listings: &mut [Listing], taken: &BTreeMap<String, BTreeSet<String>>) {
+    for listing in listings
+        .iter_mut()
+        .filter(|listing| listing.tier == Tier::Unverified)
+    {
+        let Some(names) = taken.get(&listing.source) else {
+            continue;
+        };
+        if let Some(why) = super::guard::shadow(&listing.name, names.iter().map(String::as_str)) {
+            listing.unfit = Some(why);
+        }
+    }
+}
+
+/// Who the Official mark is for: the maintainers of the official Workshop, as its
+/// publisher (`scripts/repo.py`) names them.
+const OWNERS: [&str; 2] = ["duskcode", "DroBov1Tya"];
+
+/// How far `entry` is trusted: its source's tier, lowered to Verified for an entry of the
+/// official list that somebody else made. Only the official list's badge and author are
+/// read, and only to lower: a mirror's list cannot raise its own trust by what it says.
+pub fn tier(source: &Fetched, entry: &Entry) -> Tier {
+    let not_ours = entry.badge == Some(Badge::Verified)
+        || entry
+            .author
+            .as_deref()
+            .is_some_and(|author| !OWNERS.contains(&author));
+    if source.tier == Tier::Official && not_ours {
+        Tier::Verified
+    } else {
+        source.tier
     }
 }
 
@@ -110,7 +272,7 @@ pub fn mark_clashes(listings: &mut [Listing]) {
 
 /// The plugins in the plugins folder that no source installed: shipped with duskcode or
 /// put there by the user. Shown, never updated or removed by the store.
-pub fn local(paths: &Paths, record: &Record) -> Vec<Listing> {
+pub fn local(paths: &Paths, record: &Record, here: &Here) -> Vec<Listing> {
     catalog::plugin_folders(&catalog::folder(paths))
         .into_iter()
         .filter_map(|folder| {
@@ -121,12 +283,19 @@ pub fn local(paths: &Paths, record: &Record) -> Vec<Listing> {
             let manifest = Manifest::load(&folder)
                 .inspect_err(|error| tracing::debug!("plugin {name} not listed: {error:#}"))
                 .ok()?;
+            let programs = manifest.programs();
+            let servers = super::servers(&manifest);
+            let connectors = here.connectors(&name, true, &servers);
+            let mut permissions = super::index::brings(&programs, &servers);
+            permissions.extend(manifest.permissions.lines());
             Some(Listing {
                 name,
+                connectors,
+                programs,
                 description: manifest.description,
                 platforms: manifest.platforms,
                 clients: manifest.clients,
-                permissions: manifest.permissions.lines(),
+                permissions,
                 installed: Some(manifest.version.clone()),
                 version: manifest.version,
                 tier: Tier::Local,
@@ -151,7 +320,7 @@ pub fn newer(available: &str, installed: &str) -> Option<String> {
 }
 
 /// Sorts by `order`; ties, and listings without the date sorted on, keep the
-/// trust order: Official, Verified, Community, Local, then by name.
+/// trust order: Official, Verified, Community, Unverified, Local, then by name.
 pub fn sort(listings: &mut [Listing], order: Order) {
     let trust = |listing: &Listing| (listing.tier, listing.name.clone(), listing.source.clone());
     match order {

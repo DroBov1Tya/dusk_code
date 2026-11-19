@@ -38,9 +38,6 @@ pub struct ToolContext {
     pub state: Option<Arc<crate::state::State>>,
     /// The thread the tool acts for, with `state`.
     pub thread_id: String,
-    /// The indexer of the project graph; `None` where no runtime runs the tools, and in
-    /// a chat that leaves nothing behind.
-    pub graph: Option<Arc<crate::project::graph::Indexer>>,
 }
 
 impl ToolContext {
@@ -74,7 +71,7 @@ impl ToolContext {
             };
             let policy = self.approvals_policy().await;
             approvals
-                .ask(request, self.progress.clone(), policy)
+                .ask(&self.thread_id, request, self.progress.clone(), policy)
                 .await?;
         }
         Ok(resolved)
@@ -101,7 +98,7 @@ impl ToolContext {
         };
         let policy = self.approvals_policy().await;
         approvals
-            .ask_all(requests, self.progress.clone(), policy)
+            .ask_all(&self.thread_id, requests, self.progress.clone(), policy)
             .await
     }
 
@@ -120,6 +117,7 @@ impl ToolContext {
         let policy = self.approvals_policy().await;
         approvals
             .ask(
+                &self.thread_id,
                 Request::Window {
                     grant,
                     action: action.to_owned(),
@@ -139,7 +137,9 @@ impl ToolContext {
             command: command.to_owned(),
         };
         let policy = self.approvals_policy().await;
-        approvals.ask(request, self.progress.clone(), policy).await
+        approvals
+            .ask(&self.thread_id, request, self.progress.clone(), policy)
+            .await
     }
 }
 

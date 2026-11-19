@@ -11,8 +11,11 @@ use crate::session::{
     thread::{OpenThread, close, ensure_open},
 };
 
-pub async fn approve(client: &Client, app: &mut App, id: u64, decision: Decision) {
-    if !matches!(client.threads().approve(id, decision).await, Ok(true)) {
+pub async fn approve(client: &Client, app: &mut App, thread_id: &str, id: u64, decision: Decision) {
+    if !matches!(
+        client.threads().approve(thread_id, id, decision).await,
+        Ok(true)
+    ) {
         app.flash = Some("that request is no longer waiting".into());
     }
 }
@@ -37,10 +40,10 @@ pub async fn access(client: &Client, app: &mut App, name: Option<String>) {
         "default" => None,
         "ask" => Some(ApprovalPolicy::Ask),
         "sandbox" => Some(ApprovalPolicy::Sandbox),
-        "arbiter" => Some(ApprovalPolicy::Arbiter),
+        "auto" | "arbiter" => Some(ApprovalPolicy::Arbiter),
         "full" | "full access" | "full_access" => Some(ApprovalPolicy::FullAccess),
         _ => {
-            app.flash = Some("Use ask, sandbox, arbiter, full or default".into());
+            app.flash = Some("Use ask, sandbox, auto, full or default".into());
             return;
         }
     };

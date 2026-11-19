@@ -1,5 +1,6 @@
 //! Completed questions and background commands keep their own shape in the transcript.
 
+use crate::ui::elevation::{Elevation, Level};
 use crate::{ui::Type, workspace::Workspace};
 use dusk_protocol::{thread::JobResult, tools::Answered};
 use gpui_kit::{
@@ -19,8 +20,7 @@ pub fn answered(key: &str, answers: &[Answered], cx: &App) -> Div {
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
+        .elevation(Level::Raised, cx)
         .bg(theme.secondary)
         .overflow_hidden();
     for (index, answer) in answers.iter().enumerate() {
@@ -35,6 +35,7 @@ pub fn answered(key: &str, answers: &[Answered], cx: &App) -> Div {
                 .child(super::super::links::markdown(
                     SharedString::from(format!("question-{key}-{index}")),
                     answer.question.clone(),
+                    super::super::links::Links::Paths,
                 ))
                 .children(
                     answer

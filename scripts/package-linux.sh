@@ -56,10 +56,14 @@ Terminal=false
 DESKTOP
 cp "$app/duskcode.desktop" "$app/usr/share/applications/duskcode.desktop"
 
-# The picture is 1024 px; AppImage desktops take 512.
+# The picture is 1024 px; AppImage desktops take 512, and the theme dirs take the small sizes.
 icon="$here/projects/clients/desktop/assets/icon.png"
 if command -v convert >/dev/null 2>&1; then
   convert "$icon" -resize 512x512 "$app/duskcode.png"
+  for size in 16 32 48 64 128 256; do
+    mkdir -p "$app/usr/share/icons/hicolor/${size}x${size}/apps"
+    convert "$icon" -resize "${size}x${size}" "$app/usr/share/icons/hicolor/${size}x${size}/apps/duskcode.png"
+  done
 else
   cp "$icon" "$app/duskcode.png"
 fi

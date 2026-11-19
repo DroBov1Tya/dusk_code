@@ -6,7 +6,10 @@ use crate::{
     state::{View, state},
     ui::{Icon, IconName, Section, confirm, run},
 };
-use dusk_protocol::project::{FileDiff, FileEntry, GitInfo, Project};
+use dusk_protocol::project::{
+    Check, CheckStage, CheckState, FileDiff, FileEntry, Forge, GitInfo, Project, PullState,
+    PullStatus, RepositoryStatus,
+};
 use leptos::prelude::*;
 
 /// The dialog that adds a project (`Some(None)`) or edits one (`Some(Some(project))`).
@@ -138,9 +141,25 @@ fn GitSection(id: String) -> impl IntoView {
         let id = id.clone();
         move || {
             let id = id.clone();
-            run(async move { api::git(&id).await }, move |git| {
+            let asked = id.clone();
+            run(async move { api::git(&asked).await }, move |git| {
                 info.set(Some(git))
             });
+            let asked = id.clone();
+            run(
+                async move { api::repository_status(&asked).await },
+                move |status| state().repository.set(Some((id, status))),
+            );
+        }
+    };
+    let pulls = {
+        let id = id.clone();
+        move || {
+            state()
+                .repository
+                .get()
+                .filter(|(shown, _)| *shown == id)
+                .map(|(_, status)| status)
         }
     };
     load();
@@ -187,8 +206,113 @@ fn GitSection(id: String) -> impl IntoView {
                     }).collect_view()}</ul>
                 }
             })}
+            {move || pulls().map(|status| view! {
+                <ul class="pulls">
+                    {served_pulls(&status).iter().map(|pull| pull_row(&status.repository, pull)).collect_view()}
+                </ul>
+                {forge_note(&status)}
+            })}
             <DiffView files=diff />
         </Section>
+    }
+}
+
+/// The pull requests the forge serves; none when none does.
+pub fn served_pulls(status: &RepositoryStatus) -> &[PullStatus] {
+    status.forge.served().map_or(&[], |served| &served.pulls)
+}
+
+/// The quiet line when the forge has no pull requests to show: why the core said, how
+/// to sign in (the hint is a command to copy, never run), or that a plugin serves the
+/// host. The offer's button comes with the plugins that make one.
+fn forge_note(status: &RepositoryStatus) -> impl IntoView + use<> {
+    match &status.forge {
+        Forge::SignIn(sign_in) => view! {
+            <p class="muted">{format!("{}: ", sign_in.host)}<code>{sign_in.hint.clone()}</code></p>
+        }
+        .into_any(),
+        Forge::Unserved { host, .. } => view! {
+            <p class="muted">{format!("Pull requests on {host} come from a plugin.")}</p>
+        }
+        .into_any(),
+        forge => {
+            let reason = forge
+                .served()
+                .and_then(|served| served.unavailable.clone())
+                .or_else(|| status.unavailable.clone());
+            reason
+                .map(|reason| view! { <p class="muted">{reason}</p> })
+                .into_any()
+        }
+    }
+}
+
+/// A pull request: its state, title, number and lines, and its checks as a dot and a
+/// "passed/total" count whose click opens the list of every check, as the desktop app
+/// has it. The core gives https links only.
+pub fn pull_row(repository: &str, pull: &PullStatus) -> impl IntoView + use<> {
+    let (tone, state) = match pull.state {
+        PullState::Open => ("tone-success", "open"),
+        PullState::Draft => ("tone-neutral", "draft"),
+        PullState::Merged => ("tone-accent", "merged"),
+        PullState::Closed => ("tone-danger", "closed"),
+    };
+    let dot = pull.checks.state.map(|checks| match checks {
+        CheckState::Passing => "dot on",
+        CheckState::Pending => "dot wait running",
+        CheckState::Failing => "dot off",
+    });
+    let said = format!(
+        "{} checks: {} passed, {} running, {} failed",
+        pull.checks.total, pull.checks.passed, pull.checks.running, pull.checks.failed
+    );
+    let url = Some(pull.url.clone()).filter(|url| url.starts_with("https://"));
+    let open = RwSignal::new(false);
+    let count = format!("{}/{}", pull.checks.passed, pull.checks.total);
+    let list = pull.checks.list.clone();
+    view! {
+        <li>
+            <span class=format!("tone {tone} pull-state")>{state}</span>
+            <a class="pull-title" href=url target="_blank" rel="noopener noreferrer">
+                {pull.title.clone()}
+            </a>
+            <span class="muted">{format!("{repository} #{}", pull.number)}</span>
+            <span class="add">{format!("+{}", pull.added)}</span>
+            <span class="del">{format!("\u{2212}{}", pull.removed)}</span>
+            {dot.map(|dot| view! {
+                <span class="pull-checks">
+                    <button class="pull-count" title=said.clone() aria-label=said.clone()
+                        aria-expanded=move || open.get().to_string()
+                        on:click=move |_| open.update(|o| *o = !*o)>
+                        <span class=dot></span><span class="num">{count.clone()}</span>
+                    </button>
+                    <Show when=move || open.get()>
+                        <div class="checks-pop" on:keydown=move |ev| if ev.key() == "Escape" { open.set(false) }>
+                            <ul>{list.iter().map(check_row).collect_view()}</ul>
+                        </div>
+                    </Show>
+                </span>
+            })}
+        </li>
+    }
+}
+
+/// One check, failed ones first as the core orders them; its page opens in a new tab.
+fn check_row(check: &Check) -> impl IntoView + use<> {
+    let (tone, word) = match check.stage {
+        CheckStage::Failed => ("tone-danger", "failed"),
+        CheckStage::Running => ("tone-warning", "running"),
+        CheckStage::Queued => ("tone-neutral", "queued"),
+        CheckStage::Passed => ("tone-success", "passed"),
+        CheckStage::Skipped => ("tone-neutral", "skipped"),
+    };
+    let url = Some(check.url.clone()).filter(|url| url.starts_with("https://"));
+    view! {
+        <li>
+            <span class=format!("tone {tone}")>{word}</span>
+            <a href=url target="_blank" rel="noopener noreferrer">{check.name.clone()}</a>
+            <span class="muted">{check.workflow.clone()}</span>
+        </li>
     }
 }
 

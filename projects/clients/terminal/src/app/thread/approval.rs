@@ -38,7 +38,7 @@ impl Asked {
                 Request::Command { .. } => format!("allow `{grant}` commands"),
                 Request::Screen { .. } => "allow the screen".into(),
                 Request::SystemPointer { .. } => "allow control of the system pointer".into(),
-                Request::Keyboard { .. } => String::new(),
+                Request::Keyboard { .. } | Request::Settings { .. } => String::new(),
                 Request::Window { .. } => format!("allow {grant}"),
             };
             choices.push((Decision::Session, format!("{what} for this session")));
@@ -124,6 +124,7 @@ impl App {
         }
         let asked = self.approvals.remove(0);
         Action::Approve {
+            thread_id: self.thread_id.clone().unwrap_or_default(),
             id: asked.request.id,
             decision: choices[at].0,
         }

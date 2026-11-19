@@ -6,6 +6,7 @@ use std::{
     future::Future,
     path::{Path, PathBuf},
     pin::Pin,
+    sync::Arc,
 };
 
 use anyhow::{Context, Result, ensure};
@@ -15,7 +16,10 @@ use super::Input;
 use crate::{
     BoxFuture,
     catalog::agents::GENERAL_AGENT,
-    runtime::{Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, team},
+    runtime::{
+        Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, model_choice::ModelChoice,
+        team,
+    },
     state::{Thread, TurnStatus, estimate_tokens},
 };
 
@@ -162,6 +166,10 @@ impl Launcher {
             let (runner, input, output) = self.agent_runner(thread, cwd).await?;
             live.insert(thread.id.clone(), runner.mailbox(&input));
             self.mailboxes.begin_agent_report(&thread.id).await;
+            // The chat shows it is at work while its agents are, whatever its own turn does.
+            if let Some(chat) = live.get(&root) {
+                chat.emit(ThreadEvent::AgentsWorking(true));
+            }
             drop(live);
             let launcher = self.clone();
             let folder = cwd.to_owned();
@@ -243,7 +251,11 @@ impl Launcher {
         setup.ends_when_idle = true;
         // A member of a team has what the core fixed for it, not what its role lists.
         if team::is_member(thread) {
-            team::limit_tools(&mut setup.tools);
+            team::limit_tools(&mut setup.tools, &self.config.current(), name);
+            // A role may answer on a model of its own; without one it is the chat's.
+            if let Some(choice) = team::member_model(self, thread).await? {
+                setup.model = Arc::new(ModelChoice::new(choice));
+            }
         }
         Ok(ThreadRunner::new(setup))
     }
@@ -333,6 +345,11 @@ impl Launcher {
         let live = self.mailboxes.lock().await;
         self.mailboxes.end_agent_report(&thread.id).await;
         if let Some(mailbox) = live.get(&root) {
+            match self.mailboxes.agents_at_work(&self.state, &root).await {
+                Ok(true) => {}
+                Ok(false) => mailbox.emit(ThreadEvent::AgentsWorking(false)),
+                Err(error) => warn!("cannot tell whether agents of {root} work: {error:#}"),
+            }
             mailbox.send(Input::DependencyFinished);
         }
     }
@@ -368,14 +385,13 @@ impl Launcher {
         let Some(message_id) = message_id else {
             return "(no answer)".into();
         };
-        let messages = self
-            .state
-            .list_messages(thread_id)
-            .await
-            .unwrap_or_default();
-        messages
-            .into_iter()
-            .find(|message| message.message_id == message_id)
-            .map_or_else(|| "(no answer)".into(), |message| message.content)
+        match self.state.message_content(thread_id, message_id).await {
+            Ok(Some(content)) => content,
+            Ok(None) => "(no answer)".into(),
+            Err(error) => {
+                warn!("cannot read the answer of {thread_id}: {error:#}");
+                "(no answer)".into()
+            }
+        }
     }
 }

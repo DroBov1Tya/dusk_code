@@ -1,6 +1,7 @@
 //! The Settings page of the parts plugins place there: a row per part, and the chosen
 //! one's view under them.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::plugin::Place;
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -20,12 +21,7 @@ pub fn any(ws: &Workspace) -> bool {
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (border, foreground, muted, surface) = (
-        theme.border,
-        theme.foreground,
-        theme.muted_foreground,
-        theme.muted,
-    );
+    let (foreground, muted) = (theme.foreground, theme.muted_foreground);
     let parts: Vec<_> = place::offered(ws)
         .filter(|part| part.place == Place::Settings)
         .collect();
@@ -67,9 +63,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .gap_3()
             .p_5()
             .rounded_xl()
-            .border_1()
-            .border_color(border)
-            .bg(surface)
+            .elevation(Level::Raised, cx)
             .child(
                 div()
                     .body()

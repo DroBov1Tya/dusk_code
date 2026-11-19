@@ -1,6 +1,7 @@
 //! The pictures of the Workshop, covers and screenshots: fetched only as a signed list
-//! named them, checked by size, SHA-256 and their first bytes, and kept in memory by
-//! hash so drawing a list again does not fetch them again.
+//! named them, checked by size, SHA-256, their first bytes and the pixels their header
+//! declares, and kept in memory by hash so drawing a list again does not fetch them
+//! again.
 
 use std::{collections::VecDeque, sync::LazyLock};
 
@@ -17,6 +18,12 @@ use crate::config::Mirror;
 /// The bytes kept for all pictures together: 64 covers or 32 screenshots at most.
 const KEPT_BYTES: usize = 32 * 1024 * 1024;
 
+/// The most pixels a cover may declare: drawn at 1200x630, twice that is kept. A client
+/// decodes without limits, so a small file declaring a huge picture would take gigabytes.
+pub const COVER_PIXELS: (u32, u32) = (2400, 1260);
+/// The most pixels a screenshot may declare: drawn at 1600x1000, twice that is kept.
+pub const SCREENSHOT_PIXELS: (u32, u32) = (3200, 2000);
+
 /// (SHA-256, bytes) of each picture kept, newest last.
 type Kept = VecDeque<(String, Vec<u8>)>;
 
@@ -32,7 +39,9 @@ pub async fn cover(
     let cover = seen
         .cover
         .ok_or_else(|| anyhow!("{source} showed no cover for {name}; list the store again"))?;
-    get(&seen.url, &cover).await.context("the cover")
+    get(&seen.url, &cover, COVER_PIXELS)
+        .await
+        .context("the cover")
 }
 
 /// The screenshot at `index` of `name` from `source` and its type.
@@ -48,11 +57,14 @@ pub async fn screenshot(
             anyhow!("{source} showed no screenshot {index} for {name}; list the store again")
         })?
         .picture();
-    get(&seen.url, &picture).await.context("the screenshot")
+    get(&seen.url, &picture, SCREENSHOT_PIXELS)
+        .await
+        .context("the screenshot")
 }
 
-/// `picture` beside the list at `list_url`, from the cache or fetched.
-async fn get(list_url: &str, picture: &Cover) -> Result<(Vec<u8>, &'static str)> {
+/// `picture` beside the list at `list_url`, from the cache or fetched, checked before it
+/// is kept or returned.
+async fn get(list_url: &str, picture: &Cover, most: (u32, u32)) -> Result<(Vec<u8>, &'static str)> {
     let cached = CACHE
         .lock()
         .iter()
@@ -68,6 +80,7 @@ async fn get(list_url: &str, picture: &Cover) -> Result<(Vec<u8>, &'static str)>
         }
     };
     let mime = checked_type(&picture.path, &bytes)?;
+    check_pixels(&bytes, most)?;
     keep(&picture.sha256, &bytes);
     Ok((bytes, mime))
 }
@@ -80,6 +93,61 @@ pub fn checked_type(path: &str, bytes: &[u8]) -> Result<&'static str> {
         "its bytes do not match its name"
     );
     Ok(mime)
+}
+
+/// Refuses a picture whose header cannot be read, declares more than `most` pixels, or
+/// is an animated WebP, before anything decodes it (CWE-409).
+pub fn check_pixels(bytes: &[u8], most: (u32, u32)) -> Result<()> {
+    let (width, height) = pixels(bytes).context("its size cannot be read from its header")?;
+    ensure!(
+        (1..=most.0).contains(&width) && (1..=most.1).contains(&height),
+        "it is {width}x{height} pixels, more than {}x{}",
+        most.0,
+        most.1
+    );
+    ensure!(!animated(bytes), "it is an animated picture");
+    Ok(())
+}
+
+/// Width and height from a PNG `IHDR` or a WebP `VP8 `, `VP8L` or `VP8X` header, without
+/// decoding; none when the header is not one of those.
+pub fn pixels(bytes: &[u8]) -> Option<(u32, u32)> {
+    let at = |range: std::ops::Range<usize>| bytes.get(range);
+    let little = |range: std::ops::Range<usize>| {
+        at(range).map(|part| {
+            part.iter()
+                .rev()
+                .fold(0u32, |sum, byte| (sum << 8) | u32::from(*byte))
+        })
+    };
+    match sniff(bytes)? {
+        "image/png" => {
+            if at(12..16)? != b"IHDR" {
+                return None;
+            }
+            let width = u32::from_be_bytes(at(16..20)?.try_into().ok()?);
+            let height = u32::from_be_bytes(at(20..24)?.try_into().ok()?);
+            Some((width, height))
+        }
+        _ => match at(12..16)? {
+            b"VP8X" => Some((little(24..27)? + 1, little(27..30)? + 1)),
+            b"VP8 " if at(23..26)? == b"\x9d\x01\x2a" => {
+                Some((little(26..28)? & 0x3FFF, little(28..30)? & 0x3FFF))
+            }
+            b"VP8L" if *bytes.get(20)? == 0x2F => {
+                let bits = little(21..25)?;
+                Some(((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1))
+            }
+            _ => None,
+        },
+    }
+}
+
+/// An extended WebP with its animation flag set: frames a client would decode one by one.
+fn animated(bytes: &[u8]) -> bool {
+    const ANIMATION: u8 = 0x02;
+    bytes.get(12..16) == Some(b"VP8X".as_slice())
+        && bytes.get(20).is_some_and(|flags| flags & ANIMATION != 0)
 }
 
 /// Keeps `bytes` under `sha256`, dropping the oldest until all fit in `KEPT_BYTES`.

@@ -68,3 +68,44 @@ async fn steps_run_one_after_another() {
     assert!(!task.done && task.items[2].started_at.is_some());
     assert_eq!(task.items[2].description, "test");
 }
+
+#[tokio::test]
+async fn the_board_takes_an_id_end_as_the_plan_does() {
+    let state = temp_state("tasks_id_end").await;
+    state.create_thread("mine", "test").await.unwrap();
+    let task = state.add_task("mine", "port it", &[]).await.unwrap();
+    let end = crate::state::short_task_id(&task.task_id).to_owned();
+    // The board prints `#end`; that is taken as the end of the id, in any case.
+    let done = state
+        .complete("mine", &format!("#{}", end.to_uppercase()))
+        .await
+        .unwrap();
+    assert_eq!(done.task_id, task.task_id);
+    // Compared, never matched as a pattern.
+    let wild = format!("%{}", &end[end.len() - 4..]);
+    assert!(state.complete("mine", &wild).await.is_err());
+    assert!(state.complete("mine", "abc").await.is_err());
+}
+
+#[tokio::test]
+async fn a_whole_id_wins_over_ids_that_end_with_it() {
+    let state = temp_state("tasks_id_whole").await;
+    state.create_thread("mine", "test").await.unwrap();
+    // No code writes such ids; the rule is what is pinned.
+    for id in ["abcd", "xabcd", "1wxyz", "2wxyz"] {
+        sqlx::query(
+            "INSERT INTO tasks (task_id, thread_id, description, item_ids, created_at, updated_at)
+             VALUES (?, 'mine', 'work', '[]', 1, 1)",
+        )
+        .bind(id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    }
+    assert_eq!(
+        state.complete("mine", "abcd").await.unwrap().task_id,
+        "abcd"
+    );
+    let both = state.complete("mine", "wxyz").await.unwrap_err();
+    assert!(both.to_string().contains("more than one"), "{both}");
+}

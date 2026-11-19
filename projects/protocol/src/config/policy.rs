@@ -11,6 +11,7 @@ pub const UNKNOWN_WINDOW: u64 = 128_000;
 /// the working folders; paths outside them and the screen are still asked. Full access
 /// answers every request with yes. Arbiter hands each request to an agent that decides
 /// in the user's place. The config folder stays closed either way.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalPolicy {
@@ -26,7 +27,7 @@ impl ApprovalPolicy {
         match self {
             Self::Ask => "ask",
             Self::Sandbox => "sandbox",
-            Self::Arbiter => "arbiter",
+            Self::Arbiter => "auto",
             Self::FullAccess => "full access",
         }
     }
@@ -35,7 +36,8 @@ impl ApprovalPolicy {
         *self == Self::Ask
     }
 
-    /// The name the config file and state records keep, for a thread's own mode.
+    /// The name the config file and state records keep, for a thread's own mode. Arbiter
+    /// keeps "arbiter" though it is shown as auto, so saved configs and threads still load.
     pub fn stored_name(self) -> &'static str {
         match self {
             Self::Ask => "ask",
@@ -60,6 +62,7 @@ impl ApprovalPolicy {
 /// A model's input budget. Auto is the model's own window as its provider reports it,
 /// and [`UNKNOWN_WINDOW`] for a model that reports none. Fixed and Manual are set by
 /// hand; a known window stays their ceiling.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContextPolicy {
@@ -70,6 +73,7 @@ pub enum ContextPolicy {
 }
 
 /// Decimal token counts, matching model catalogue context windows.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContextPreset {
     #[serde(rename = "128k")]

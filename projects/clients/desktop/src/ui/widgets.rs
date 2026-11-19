@@ -1,6 +1,8 @@
 //! Small pieces every column draws with.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{ActiveTheme, Icon},
     prelude::FluentBuilder,
@@ -34,7 +36,7 @@ pub fn row(id: impl Into<ElementId>, active: bool, cx: &App) -> Stateful<Div> {
         .cursor_pointer()
         .when(active, |row| row.bg(selected))
         .hover(move |row| row.bg(hover))
-        .active(move |row| row.bg(selected))
+        .press(selected, cx)
         .focusable_row(cx)
 }
 
@@ -55,7 +57,7 @@ pub fn menu_item(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
-        .active(move |row| row.bg(hover.opacity(0.7)))
+        .press(hover.opacity(0.7), cx)
         .focusable_row(cx)
 }
 
@@ -75,7 +77,7 @@ pub fn badge(text: impl Into<SharedString>, color: Hsla) -> Div {
     div()
         .px_1p5()
         .rounded_sm()
-        .text_xs()
+        .meta()
         .text_color(color)
         .bg(color.opacity(0.14))
         .child(text.into())
@@ -161,16 +163,13 @@ pub fn capitalize(text: &str) -> String {
 
 /// A card: the one surface the page is built of.
 pub fn card(cx: &App) -> Div {
-    let theme = cx.theme();
     div()
         .flex()
         .flex_col()
         .gap_3()
         .p_4()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.muted)
+        .elevation(Level::Raised, cx)
 }
 
 /// A field's label above its box.

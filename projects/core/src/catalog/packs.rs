@@ -16,8 +16,10 @@ const MAX_PACK_FILE: u64 = 64 * 1024;
 /// Every pack that holds a skill, the built-in one first, then by name.
 pub fn list(directory: &Path, config: &Config) -> Vec<SkillPack> {
     let mut packs: BTreeMap<(bool, String), SkillPack> = BTreeMap::new();
+    // Resolved once here, not per skill: resolving it validates the release resources.
+    let builtin_folder = skills::builtin_dir();
     for skill in skills::list(directory, config) {
-        let Some(name) = skills::pack_of(&skill.name) else {
+        let Some(name) = skills::pack_in(&skill.name, builtin_folder.as_deref()) else {
             continue;
         };
         let builtin = name == BUILTIN_PACK;

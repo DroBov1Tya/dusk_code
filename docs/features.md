@@ -53,11 +53,12 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 
 ## Project knowledge
 
-- **Project graph.** `limits.project_graph` (on): a background worker indexes the
-  symbols and references of each saved project. The `project_graph` tool (`tools: { project_graph: false }`
-  hides it) answers where a name is defined, who uses it, what a
-  file depends on and which tests cover it, in at most 16 rows. It is offered once the
-  index is ready.
+- **File map.** `limits.project_graph` (on): the `project_graph` tool (`tools: { project_graph: false }`
+  hides it) maps the working folder by file and folder names, never their content: an
+  indented tree that folds deeper folders to `name/ (N files)` to stay under 300 lines and
+  12 KiB, one folder of it on `path`, or the paths matching `find` (a part of a path or a
+  glob). It walks as the change ledger does (ignore rules, no `.git`, no links followed) on
+  every call; nothing is indexed or stored. The name is kept from the code graph it replaced.
 - **Episodes and `recall`.** `limits.episodes` (on): for a saved project, what ended a
   repeated failure, or a goal's verification that passed, is stored as an episode (at most
   500 a project). `limits.episode_lesson` (on) adds a one-line lesson from the model. The
@@ -73,13 +74,58 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 - **Working row.** While a turn runs, the chat shows time, tokens and step, for example
   `Working · 2m 14s · 18.4k tokens · step 7`, counted by the core; no switch.
 
-## Plan graph and teams (unfinished)
+## Teams (TEAM mode)
 
-`limits.plan_graph` (off). In ORCHESTRATOR mode the lead's `tasks` tool takes a plan: tasks
-that depend on each other, with files, roles and acceptance. `run` has the core give each
-ready task to a member (a thread under the chat), keep a lease on it and hand it out again
-if the lease runs out, and end the team when all tasks are done or a budget of steps,
-tokens or minutes (`limits.team_max_steps`, `team_max_tokens`, `team_max_minutes`) is
-spent. Not finished: command gates are not run (such a task waits for the lead's review)
-and there is no recovery after a restart. Further switches, all off: `limits.task_packets`,
-`member_worktrees`, `peer_messages`, `procedures`.
+A team runs only in the chat's TEAM mode; every other mode keeps the board and the agents
+`ask_agent` starts. A chat's mode is the one the user last wrote to it in: a turn the core
+starts there, such as for a line from its team, keeps it, so switching the mode for
+another chat does not touch this one. `limits.plan_graph` (on) is the kill switch: off, TEAM mode has the
+board too and no team runs.
+
+- **The plan.** In TEAM mode the lead's `tasks` tool takes a plan: tasks that depend on
+  each other, each with its files, role, acceptance and gate. `run` has the core give each
+  ready task to a member (a thread under the chat) and keep a lease on it. Once the user
+  writes to the chat in another mode, nothing new is given out; what is at work finishes,
+  and the team goes on when the chat is back in TEAM mode.
+- **Members.** A member gets a card the core writes: the task, its files, how done is
+  told, what was done before it, and the rules. Its tools are an allowlist (`run_command`,
+  `jobs`, `read_file`, `search_files`, `project_graph`, `recall`, `read_history`,
+  `load_skill`); a role's own `tools` and `team: { tools: { <role>: [..] } }` only take
+  from it. Its approval mode is the chat's, read again before each step. It answers on
+  `team: { models: { <role>: provider/model } }`, else `team.model`, else the chat's
+  model; a role set to a provider the config lacks fails its task with that reason.
+- **Gates.** A command gate is run by the core in the project folder under the chat's
+  approval mode: exit 0 makes the task done; anything else sends it back to its member
+  with the end of the output, twice at most, then the task fails and the lead decides. In
+  a mode that would ask the user, `run` asks once, in the usual approval card, with each
+  distinct gate command listed: a yes lets exactly those lines run as this team's gates
+  (in memory, like a yes for the session); a gate added or changed later, or one after a
+  restart, is not run and its task waits for the lead until a `run` asks again; a no
+  leaves every gated task to the lead. A gate runs `limits.team_gate_seconds` at most
+  (300), a team runs `limits.team_max_gate_runs` gates (128), and an end of the team
+  kills the gates that run; their tasks stay in review for the next run. A task without
+  a gate waits for the lead's review. A task whose gate is the user's
+  confirmation waits in review while the team goes on; the lead is told once, and the
+  desktop plan row has `confirm`.
+- **Files.** At hand-in the change ledger's rows of the member's turns on the task are
+  compared with its `files`; a change outside them holds the task for the lead with the
+  paths named, and its gate does not run. The ledger walks with the ignore rules, so
+  build output never counts. With members at work at once a walk around one command also
+  sees another's writes, so a path another thread recorded meanwhile is left out: the
+  check holds only what is surely the member's. A change the user or a background job
+  made during a member's command counts as the member's. A task without `files` is not
+  checked.
+- **What is forwarded.** A line to the lead (400 bytes at most), a task's note, a gate's
+  output and a card are made plain and cleared of the project's variables and of what is
+  shaped like a key before they are stored or sent.
+- **Budgets and ends.** `limits.team_max_steps`, `team_max_tokens`, `team_max_minutes`
+  and `team_at_once` are the ceilings; a member takes no step once one is spent. The team
+  ends when all is done, a budget is spent, it is stopped, or nothing can start and the
+  lead changed nothing.
+- **Recovery.** When the chat is opened after a restart, an ended team's work goes back
+  to open, a turn still running gets its lease again, a turn that completed is handed in,
+  a lost one is released, and a gate that was cut off runs again.
+
+Not built: a worktree per member, messages between members, procedures (their switches
+`limits.member_worktrees`, `peer_messages`, `procedures` do nothing yet; `task_packets`
+is no longer read).

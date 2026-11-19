@@ -1,4 +1,5 @@
 //! What happens in a thread: the events it tells a client, its messages, turns, tasks,
+//! the link that names it,
 //! the team that runs its plan, token counts, goal and context, the Overview, its pins, the blocks it shows, and the steps of the transcript a
 //! client folds them into.
 
@@ -7,15 +8,18 @@ mod context;
 mod event;
 mod goal;
 mod job;
+mod link;
+mod live;
 mod message;
 mod name;
 mod overview;
 mod pin;
+mod suggestion;
 mod summary;
 mod task;
 mod team;
 mod tokens;
-mod transcript;
+pub mod transcript;
 mod turn;
 
 pub use block::{
@@ -28,6 +32,8 @@ pub use context::{ContextItemDetail, ContextReport, ContextSection, ContextSourc
 pub use event::{EpisodeKind, RepeatRung, ThreadEvent};
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use job::{JobInfo, JobResult, job_message};
+pub use link::{THREAD_LINK_PREFIX, links_in, thread_link, thread_of_link};
+pub use live::{LiveTurn, STALLED_AFTER_MS, Work, WorkKind, activity};
 pub use message::{
     Compaction, LocalUnsent, Message, MessageRole, Part, Source, UndoPoint, has_pasted, plain,
     sound_tag, source_tag, split, wrap,
@@ -38,6 +44,7 @@ pub use overview::{
     OVERVIEW_PATHS, OVERVIEW_TOOLS, Overview, ToolRuns,
 };
 pub use pin::{MAX_PINS, PIN_CHARS, Pin, excerpt};
+pub use suggestion::{SUGGEST_NEXT_TOOL, SUGGESTION_CHARS, SuggestNext, Suggestion};
 pub use summary::{Found, Thread};
 pub use task::{
     PLAN_PAGE_DONE, PlanCounts, PlanPage, Task, TaskItem, TaskOwner, TaskStatus, WaitsOn,
@@ -48,7 +55,8 @@ pub use team::{
 };
 pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, short_count};
 pub use transcript::{
-    AgentState, DETAIL_KEYS, MAX_MARK_CHARS, Note, Retry, RetryRow, SHOWN_CHARS, Span, Tone, Tool,
-    ToolState, TurnSpend, clip, marks, note, retry_row, tool_detail, turn_spend, unmarked,
+    AgentState, Applied, ChatLog, DETAIL_KEYS, FAILED_PREFIXES, MAX_MARK_CHARS, Note, Retry,
+    RetryRow, SHOWN_CHARS, Span, Subagent, Tone, Tool, ToolState, TurnSpend, clip, marks, note,
+    retry_row, stored_failure, tool_detail, turn_spend, unmarked,
 };
 pub use turn::{Turn, TurnFailure, TurnStatus, TurnWait, duration_words};

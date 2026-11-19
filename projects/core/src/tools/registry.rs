@@ -46,8 +46,6 @@ pub struct ToolRegistry {
     pub(crate) state: Option<Arc<crate::state::State>>,
     /// The thread these tools run for; its own mode applies.
     pub(crate) thread_id: String,
-    /// The indexer of the project graph, which hears of the files a command changed.
-    pub(crate) graph: Option<Arc<crate::project::graph::Indexer>>,
     /// With `limits.stable_prefix`, each description as this thread first showed it, so
     /// the start of its requests stays byte-identical and the provider's cache holds.
     shown: Mutex<BTreeMap<String, String>>,
@@ -81,7 +79,11 @@ impl ToolRegistry {
     pub fn add(&mut self, tool: Box<dyn Tool>) {
         // This name belongs to the core tool, including when an MCP server attempts
         // to expose a colliding name in a child thread.
-        if matches!(tool.name(), "display_image" | "display_audio") && !tool.root_only() {
+        if matches!(
+            tool.name(),
+            "display_image" | "display_audio" | dusk_protocol::plugin::SUGGEST_TOOL
+        ) && !tool.root_only()
+        {
             return;
         }
         let name = tool.name().to_owned();
@@ -216,7 +218,6 @@ impl ToolRegistry {
             approvals: None,
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
-            graph: self.graph.clone(),
         };
         self.tools
             .iter()
@@ -233,7 +234,6 @@ impl ToolRegistry {
             approvals: None,
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
-            graph: self.graph.clone(),
         };
         let stable = config.limits().stable_prefix;
         self.tools
@@ -316,7 +316,6 @@ impl ToolRegistry {
             approvals: self.approvals.clone(),
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
-            graph: self.graph.clone(),
         };
         let started = Instant::now();
         if !tool.available(&context) {
@@ -375,7 +374,7 @@ mod tests {
         testing::{temp_dir, temp_state},
         tools::{
             AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Show,
-            Tasks,
+            SuggestNext, Tasks,
         },
     };
 
@@ -472,6 +471,35 @@ mod tests {
         assert!(asked.try_recv().is_err(), "nothing may be asked");
     }
 
+    /// The real pointer is never offered until the user switches it on, in any mode.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn physical_input_is_offered_only_when_switched_on() {
+        use crate::tools::{PhysicalInput, Screen};
+        let dir = temp_dir("registry_physical");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = Arc::new(ToolScope::new(&dir, &dir).unwrap());
+        let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
+        let mut registry = ToolRegistry {
+            root: true,
+            ..ToolRegistry::default()
+        };
+        registry.platform.gui = true;
+        registry.add(Box::new(PhysicalInput(screen)));
+        let mut config = (*crate::testing::tool_context(&scope).config).clone();
+        let offered = |config: &crate::config::Config| {
+            registry
+                .specs(&scope, &Arc::new(config.clone()))
+                .iter()
+                .any(|spec| spec.name == "physical_input")
+        };
+        assert!(!offered(&config), "off by default");
+        config.set_mode_tool_enabled("plan", "physical_input", true);
+        assert!(offered(&config), "the switch is one for every mode");
+        config.set_tool_enabled("physical_input", false);
+        assert!(!offered(&config));
+    }
+
     /// Providers reject a schema that is not one plain object at the top.
     #[tokio::test]
     async fn every_schema_is_one_object_providers_accept() {
@@ -486,16 +514,20 @@ mod tests {
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
         tools.push(Box::new(Show));
+        let paths = crate::init::paths::Paths::new(dir.join("config"), dir.join("work"));
+        tools.push(Box::new(crate::tools::SearchWorkshop::new(paths.clone())));
+        tools.push(Box::new(crate::tools::SuggestFromWorkshop::new(paths)));
+        tools.push(Box::new(SuggestNext));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             use crate::tools::{
-                Click, ComputerActions, PressKeys, Screen, Screenshot, Scroll, TypeText,
+                Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
             };
             let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
             tools.push(Box::new(Screenshot(Arc::clone(&screen))));
             tools.push(Box::new(Click(Arc::clone(&screen))));
-            tools.push(Box::new(Scroll(Arc::clone(&screen))));
+            tools.push(Box::new(PhysicalInput(Arc::clone(&screen))));
             tools.push(Box::new(TypeText(Arc::clone(&screen))));
             tools.push(Box::new(PressKeys(Arc::clone(&screen))));
             tools.push(Box::new(ComputerActions(Arc::clone(&screen))));

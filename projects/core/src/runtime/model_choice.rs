@@ -212,6 +212,25 @@ impl ModelChoice {
         self.current.read().choice.clone()
     }
 
+    /// The largest request the current model takes under `config`'s policy.
+    pub fn current_input_limit(&self, config: &Config) -> u64 {
+        self.current()
+            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
+                choice.input_limit(config)
+            })
+    }
+
+    /// Refuses a message that alone is past the input limit: it could never be answered.
+    pub fn ensure_fits(&self, text: &str, config: &Config) -> Result<()> {
+        let limit = self.current_input_limit(config);
+        let tokens = crate::state::estimate_tokens(text);
+        ensure!(
+            tokens <= limit,
+            "the message is about {tokens} tokens, past the input limit of {limit}"
+        );
+        Ok(())
+    }
+
     pub fn set(&self, choice: Choice) {
         let mut current = self.current.write();
         current.choice = Some(choice);
@@ -330,10 +349,18 @@ pub async fn check_provider(
     };
     let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models());
     let (listed, balance) = tokio::join!(listed, balance);
-    let models = match listed {
-        Ok(Ok(models)) => Ok(models),
-        Ok(Err(error)) => Err(format!("{error:#}")),
-        Err(_) => Err("no answer in time".into()),
+    let (models, failure) = match listed {
+        Ok(Ok(models)) => (Ok(models), None),
+        Ok(Err(error)) => {
+            let failure = error
+                .downcast_ref::<crate::providers::transport::http::CheckFailed>()
+                .map(|failed| failed.0);
+            (Err(format!("{error:#}")), failure)
+        }
+        Err(_) => (
+            Err("no answer in time".into()),
+            Some(dusk_protocol::model::CheckFailure::Unreachable),
+        ),
     };
     ProviderStatus {
         name,
@@ -341,6 +368,7 @@ pub async fn check_provider(
         balance,
         limits: provider.limits(),
         enabled: true,
+        failure,
     }
 }
 
@@ -368,6 +396,7 @@ mod tests {
             balance: None,
             limits: None,
             enabled: true,
+            failure: None,
         };
         assert_eq!(
             selected.learn(&[status]).unwrap().model.max_output,

@@ -1,13 +1,18 @@
 //! Plugins and their settings.
 
 use crate::runtime::Runtime;
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use std::sync::Arc;
 
 impl Runtime {
     /// The plugins found, with whether each is on and what keeps one from loading.
     pub fn plugins(&self) -> Vec<crate::plugins::PluginInfo> {
         self.plugins.list()
+    }
+
+    /// The plugins that serve contracts, and the routing to them.
+    pub fn contracts(&self) -> Arc<crate::plugins::contract::Contracts> {
+        Arc::clone(self.plugins.contracts())
     }
 
     /// The parts plugins that are on add to the window, on this system.
@@ -40,8 +45,24 @@ impl Runtime {
         };
         let mirrors = self.config().current().workshop().sources.clone();
         match request {
-            StoreRequest::List { order, category } => {
-                let list = store::list(self.paths(), &mirrors, order, category.as_deref()).await?;
+            StoreRequest::List {
+                order,
+                category,
+                kinds,
+            } => {
+                let here = store::Here {
+                    yours: self.config().current().mcp().keys().cloned().collect(),
+                    on: self
+                        .plugins
+                        .list()
+                        .into_iter()
+                        .filter(|plugin| plugin.enabled)
+                        .map(|plugin| plugin.name)
+                        .collect(),
+                };
+                let category = category.as_deref();
+                let list =
+                    store::list(self.paths(), &mirrors, order, category, &kinds, &here).await?;
                 return Ok(Response::Store(list));
             }
             StoreRequest::Install {
@@ -50,6 +71,7 @@ impl Runtime {
                 name,
                 version,
                 agreed,
+                sha256,
             } => {
                 let agreed = store::Agreed {
                     source: &source,
@@ -57,6 +79,7 @@ impl Runtime {
                     name: &name,
                     version: &version,
                     permissions: &agreed,
+                    sha256: sha256.as_deref(),
                 };
                 let kind = store::install(self.paths(), &mirrors, &agreed).await?;
                 tracing::info!("{kind:?} {name} {version} installed from {source}");
@@ -101,6 +124,45 @@ impl Runtime {
                 let mime = mime.to_owned();
                 return Ok(Response::Media { base64, mime });
             }
+            StoreRequest::Contents { source, name } => {
+                let contents =
+                    store::contents::contents(self.paths(), &mirrors, &source, &name).await?;
+                return Ok(Response::StoreContents(contents));
+            }
+            StoreRequest::Review { source, name } => {
+                let review = store::review::review(self.paths(), &mirrors, &source, &name).await?;
+                return Ok(Response::StoreReview(review));
+            }
+            StoreRequest::File { source, name, path } => {
+                let file = store::contents::file(&source, &name, &path).await?;
+                return Ok(Response::StoreFile(file));
+            }
+            StoreRequest::Probe { url, key } => {
+                let (mirror, index) = store::probe(&url, &key).await?;
+                return Ok(Response::StoreProbe(store::probed(&mirror, &index)));
+            }
+            StoreRequest::Sources => {
+                let rows = store::sources(self.paths(), &mirrors).await;
+                return Ok(Response::StoreSources(rows));
+            }
+            StoreRequest::AddSource { url, key } => {
+                // The client's probe is not trusted: the list is read again here.
+                let mirror = store::add::proposed(self.config(), &url, &key, None)?;
+                store::add::add(self.config(), mirror).await?;
+            }
+            StoreRequest::RemoveSource { name } => {
+                anyhow::ensure!(
+                    mirrors.iter().any(|item| item.name == name),
+                    "there is no repository named {name}"
+                );
+                self.config().update(|config| {
+                    config
+                        .workshop_mut()
+                        .sources
+                        .retain(|item| item.name != name)
+                })?;
+                tracing::info!("workshop repository {name} removed");
+            }
         }
         Ok(Response::Done)
     }
@@ -114,6 +176,24 @@ impl Runtime {
         };
         self.config()
             .update(|config| config.set_plugin_enabled(name, allowed))?;
+        let plugins = Arc::clone(&self.plugins);
+        tokio::task::spawn_blocking(move || plugins.scan());
+        Ok(())
+    }
+
+    /// Chooses the plugin a contract goes to for one host; applies at once.
+    pub fn set_contract_plugin(&self, contract: &str, host: &str, plugin: &str) -> Result<()> {
+        ensure!(contract == "forge", "unknown contract {contract}");
+        ensure!(
+            crate::plugins::manifest::is_forge_host(host),
+            "not a forge host: {host}"
+        );
+        ensure!(
+            crate::init::paths::is_plain_folder_name(plugin),
+            "invalid plugin name"
+        );
+        self.config()
+            .update(|config| config.set_contract_plugin(contract, host, plugin))?;
         let plugins = Arc::clone(&self.plugins);
         tokio::task::spawn_blocking(move || plugins.scan());
         Ok(())

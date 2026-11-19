@@ -5,7 +5,7 @@
 
 use dusk_protocol::{
     catalog::SkillPack,
-    plugin::{Kind, Listing, Order, SourceFailure},
+    plugin::{Kind, Listing, Order, Review, SourceFailure, Tier},
 };
 
 #[derive(Default)]
@@ -48,6 +48,31 @@ pub enum Step {
 pub struct Confirm {
     pub listing: Listing,
     pub focus: usize,
+    /// For an Unverified listing: the files an install would write, read before the yes.
+    pub review: Option<Reviewed>,
+}
+
+/// What the core read of an Unverified listing's files, or why it could not.
+pub enum Reviewed {
+    Reading,
+    Read(Box<Review>),
+    Failed(String),
+}
+
+impl Confirm {
+    /// The hash an install names: the files shown, when they were read and may be
+    /// installed. `None` for any other tier, which needs none.
+    pub fn agreed(&self) -> Option<Option<String>> {
+        if self.listing.tier != Tier::Unverified {
+            return Some(None);
+        }
+        match &self.review {
+            Some(Reviewed::Read(review)) if review.refused.is_none() => {
+                Some(Some(review.package_sha256.clone()))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// A row of the list: a listing of the store, or a pack here that no source lists.

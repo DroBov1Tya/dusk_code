@@ -3,7 +3,10 @@
 
 use super::{ClientId, Server};
 use crate::client::scope::{Subject, classify};
-use dusk_protocol::client::{Answer, Request, Response};
+use dusk_protocol::{
+    client::{Answer, Request, Response, ThreadRequest},
+    plugin::StoreRequest,
+};
 use std::{collections::HashSet, sync::Arc};
 use tracing::warn;
 
@@ -13,6 +16,15 @@ const REFUSED: &str = "this client may not send that request";
 /// The same for a thread that is not there and one out of the scope, so a client cannot
 /// tell which ids exist.
 const NO_THREAD: &str = "no such thread";
+
+/// A request only an owner's client may send: one that may send it may answer what a
+/// tool asks the owner.
+fn owner_request() -> Request {
+    Request::Store(StoreRequest::AddSource {
+        url: String::new(),
+        key: String::new(),
+    })
+}
 
 impl Server {
     /// Whether `client` may send `request`. A yes may carry the chats its answer is cut
@@ -31,6 +43,18 @@ impl Server {
         let source = attached.source.as_str();
         if !attached.scope.takes(&access) {
             warn!(client = source, area = ?access.area, "refused a request: outside the client's scope");
+            return Err(REFUSED);
+        }
+        // A change of the settings a tool proposed is answered only by a client that
+        // could make it itself: a chat shared through a narrower scope cannot.
+        if let Request::Thread(ThreadRequest::Approve { id, .. }) = request
+            && self.runtime.approval_owner_only(*id)
+            && !attached.scope.permits(&owner_request())
+        {
+            warn!(
+                client = source,
+                "refused an answer: only the owner may answer it"
+            );
             return Err(REFUSED);
         }
         let Some(ids) = attached.scope.bound() else {
@@ -143,7 +167,7 @@ mod tests {
             (2, Scope::full()),
         ] {
             let source = "test".to_owned();
-            server.clients.insert(client, Attached { source, scope });
+            server.clients.insert(client, Attached::new(source, scope));
         }
         server
     }
@@ -176,6 +200,51 @@ mod tests {
         }
     }
 
+    /// A change of the settings a tool proposed is answered only by a client that could
+    /// make it: a shared chat's scope may answer its other requests, never this one.
+    #[tokio::test]
+    async fn only_the_owner_answers_a_change_of_the_settings() {
+        use crate::tools::Progress;
+        use dusk_protocol::tools::Request as Ask;
+        const APPROVE: &[Area] = &[Area::ThreadRead, Area::ThreadApprove];
+        let mut server = server("owner").await;
+        let source = "test".to_owned();
+        server.clients.insert(
+            3,
+            Attached::new(source, Scope::threads(["a".to_owned()], APPROVE)),
+        );
+        let approvals = server.runtime.approvals();
+        let (events, mut asked) = tokio::sync::mpsc::unbounded_channel();
+        let progress = Progress {
+            call_id: "c".into(),
+            events,
+        };
+        let waiting = Arc::clone(&approvals);
+        let change = Ask::Settings {
+            change: "add the Workshop source far".into(),
+        };
+        let task =
+            tokio::spawn(async move { waiting.ask_owner("a", change, Some(progress)).await });
+        let id = loop {
+            if let Some(crate::runtime::ThreadEvent::Approval(request)) = asked.recv().await {
+                break request.id;
+            }
+        };
+        let approve = |id| {
+            Request::Thread(ThreadRequest::Approve {
+                thread_id: "a".into(),
+                id,
+                decision: dusk_protocol::tools::Decision::Once,
+            })
+        };
+        assert_eq!(server.admit(3, &approve(id)).await, Err(REFUSED));
+        assert_eq!(server.admit(1, &approve(id)).await, Err(REFUSED));
+        assert_eq!(server.admit(2, &approve(id)).await, Ok(None));
+        // Any other request of that chat it may still answer.
+        assert_eq!(server.admit(3, &approve(id + 1)).await, Ok(None));
+        task.abort();
+    }
+
     /// Only a scope holding the area of `/sources add` has a sent message read for the
     /// files of this machine it names; any other has its words kept as words.
     #[tokio::test]
@@ -185,7 +254,7 @@ mod tests {
         let with_files = Scope::threads(["a".to_owned()], &[Area::ThreadWrite, Area::Command]);
         let source = "test".to_owned();
         let scope = with_files;
-        server.clients.insert(3, Attached { source, scope });
+        server.clients.insert(3, Attached::new(source, scope));
         for (caller, files) in [
             (1, HostFiles::Left),
             (2, HostFiles::Taken),

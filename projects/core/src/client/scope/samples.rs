@@ -53,10 +53,16 @@ fn threads() -> Vec<T> {
             summary: word(),
             cwd: "/".into(),
         },
+        T::ForkAt {
+            thread_id: id(),
+            message_id: id(),
+            cwd: "/".into(),
+        },
         T::List,
         T::Search { text: word() },
         T::Messages { thread_id: id() },
         T::Tasks { thread_id: id() },
+        T::SkillChanges { thread_id: id() },
         T::LocalUnsent { thread_id: id() },
         T::ResendLocalUnsent {
             thread_id: id(),
@@ -75,6 +81,11 @@ fn threads() -> Vec<T> {
         T::RunCommand {
             thread_id: id(),
             command: word(),
+            run: 1,
+        },
+        T::StopRun {
+            thread_id: id(),
+            run: 1,
         },
         T::Close { thread_id: id() },
         T::StopAgent { thread_id: id() },
@@ -84,6 +95,7 @@ fn threads() -> Vec<T> {
         },
         T::Delete { thread_id: id() },
         T::Approve {
+            thread_id: id(),
             id: 1,
             decision: Decision::Deny,
         },
@@ -129,6 +141,11 @@ fn work() -> Vec<W> {
         W::SourcePicture {
             thread_id: id(),
             name: word(),
+        },
+        W::Card {
+            thread_id: id(),
+            card_id: word(),
+            part: word(),
         },
         W::Plan { thread_id: id() },
         W::SavePlan {
@@ -184,6 +201,7 @@ fn settings() -> Vec<S> {
             on: true,
         },
         S::BranchPrefix(word()),
+        S::Arbiter(Default::default()),
         S::NextMode,
         S::Mode(word()),
         S::Connect {
@@ -212,6 +230,11 @@ fn settings() -> Vec<S> {
         S::Voice(VoiceSettings::default()),
         plugin(true),
         plugin(false),
+        S::SetContractPlugin {
+            contract: word(),
+            host: word(),
+            plugin: word(),
+        },
         S::PluginSecret {
             plugin: word(),
             key: word(),
@@ -227,6 +250,8 @@ fn catalog() -> Vec<C> {
         named(|name| C::Skill { name }),
         saved(|name, text| C::SaveSkill { name, text }),
         C::SkillPacks,
+        C::SkillDiff { id: 1 },
+        C::UndoSkillChange { id: 1 },
         named(|name| C::Agent { name }),
         saved(|name, text| C::SaveAgent { name, text }),
         C::McpServers,
@@ -280,9 +305,22 @@ fn projects() -> Vec<P> {
             id: word(),
             path: word(),
         },
+        P::RepositoryStatus { id: word() },
+        P::PullStatus {
+            id: word(),
+            number: 7,
+        },
+        P::CreatePull {
+            id: word(),
+            title: word(),
+            body: word(),
+            base: None,
+        },
+        P::PullSummaries,
         repository(G::CreateBranch {
             name: word(),
             base: None,
+            switch: false,
         }),
         repository(G::Stage {
             paths: vec![word()],
@@ -303,13 +341,6 @@ fn projects() -> Vec<P> {
         repository(G::Fetch),
         repository(G::Pull),
         repository(G::Push),
-        repository(G::PullRequests),
-        repository(G::PullRequest { number: 1 }),
-        repository(G::CreatePullRequest {
-            title: word(),
-            body: word(),
-            base: None,
-        }),
         P::Outputs,
         P::Env { id: word() },
         P::SetEnv {
@@ -418,6 +449,7 @@ fn rest() -> Vec<R> {
         R::Store(St::List {
             order: Default::default(),
             category: None,
+            kinds: Vec::new(),
         }),
         R::Store(St::Install {
             source: word(),
@@ -425,6 +457,11 @@ fn rest() -> Vec<R> {
             name: word(),
             version: word(),
             agreed: Vec::new(),
+            sha256: None,
+        }),
+        R::Store(St::Review {
+            source: word(),
+            name: word(),
         }),
         R::Store(St::Remove { name: word() }),
         R::Store(St::UpdateAll),
@@ -437,6 +474,25 @@ fn rest() -> Vec<R> {
             name: word(),
             index: 0,
         }),
+        R::Store(St::Contents {
+            source: word(),
+            name: word(),
+        }),
+        R::Store(St::File {
+            source: word(),
+            name: word(),
+            path: word(),
+        }),
+        R::Store(St::Probe {
+            url: word(),
+            key: word(),
+        }),
+        R::Store(St::Sources),
+        R::Store(St::AddSource {
+            url: word(),
+            key: word(),
+        }),
+        R::Store(St::RemoveSource { name: word() }),
         R::InstallUpdate { tag: word() },
         R::Shutdown,
     ]

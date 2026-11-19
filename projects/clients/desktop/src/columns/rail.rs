@@ -1,6 +1,7 @@
 //! The thin strip at the window's left edge: the places of the app as icons, always in
 //! sight, so the sidebar beside it can hold only the projects and their chats.
 
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName, tooltip::Tooltip},
     prelude::FluentBuilder,
@@ -125,15 +126,15 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
             ws.load_outputs(cx);
         }))
         .into_any_element(),
-        Part::Connectors => item(
-            "rail-connectors",
+        Part::Customize => item(
+            "rail-customize",
             Icon::default().path(crate::ui::icons::BLOCKS),
-            "Connectors".into(),
-            ws.center == Center::Connectors,
+            "Customize".into(),
+            ws.center == Center::Customize,
             cx,
         )
         .on_click(cx.listener(|ws, _, _, cx| {
-            ws.center = Center::Connectors;
+            ws.center = Center::Customize;
             ws.load_settings(cx);
         }))
         .into_any_element(),
@@ -240,6 +241,7 @@ fn item(
         .cursor_pointer()
         .when(active, |item| item.bg(selected))
         .hover(move |item| item.bg(hover))
+        .press(hover, cx)
         .focusable_row(cx)
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
         .child(

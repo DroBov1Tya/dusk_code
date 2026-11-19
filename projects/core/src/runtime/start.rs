@@ -42,8 +42,6 @@ pub struct Runtime {
     pub(super) update_check: JoinHandle<()>,
     pub(super) updates: Arc<UpdateWatch>,
     pub(super) model_discovery: Option<JoinHandle<()>>,
-    /// The worker that keeps the graph of saved projects current.
-    pub(super) graph_index: JoinHandle<()>,
     /// The dispatcher's look at the running teams, every 30 s.
     pub(super) team_tick: JoinHandle<()>,
     /// Shipped files the user changed, kept at the start, with the new version beside.
@@ -134,15 +132,14 @@ impl Runtime {
         );
         let hooks = Arc::new(crate::plugins::Hooks::default());
         let platforms = Arc::new(crate::plugins::Platforms::default());
-        let (graph, graph_index) = crate::project::graph::Indexer::start(Arc::clone(&state), {
-            let config = Arc::clone(&config);
-            move || config.current().limits().project_graph
-        });
         let launcher = Launcher {
-            graph: Some(graph),
             threads: Arc::default(),
             hooks: Arc::clone(&hooks),
             health: Arc::default(),
+            skill_watch: Arc::new(crate::catalog::history::Watch::new(Some(
+                paths.skills_dir(),
+            ))),
+            skill_state: Arc::clone(&state),
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
             config: Arc::clone(&config),
@@ -161,6 +158,7 @@ impl Runtime {
             .set_judge(Arc::new(super::arbiter::Arbiter::new(
                 Arc::clone(&launcher.state),
                 Arc::clone(&launcher.model),
+                Arc::clone(&launcher.config),
             )));
         let temporary_root = super::temporary::TemporaryRoot::make()?;
         let temporary = {
@@ -171,6 +169,7 @@ impl Runtime {
             approvals.set_judge(Arc::new(super::arbiter::Arbiter::new(
                 Arc::clone(&memory),
                 Arc::clone(&launcher.model),
+                Arc::clone(&launcher.config),
             )));
             Launcher {
                 jobs: JobManager::new(
@@ -182,8 +181,6 @@ impl Runtime {
                 state: memory,
                 paths: launcher.paths.temporary(&temporary_root.path),
                 approvals,
-                // Its database holds no saved project, so there is nothing to index.
-                graph: None,
                 temporary: true,
                 ..launcher.clone()
             }
@@ -198,6 +195,10 @@ impl Runtime {
             hooks,
             Arc::clone(&platforms),
         );
+        // The probe starts a program: asked here off the runtime's threads, so the scan
+        // below and later ones find it answered.
+        #[cfg(target_os = "linux")]
+        let _ = tokio::task::spawn_blocking(crate::platform::netns::available).await;
         plugins.scan();
         let plugins_check = tokio::spawn(Arc::clone(&plugins).watch(CONFIG_CHECK_PERIOD));
         let model_discovery = if !config.current().all_providers().is_empty() {
@@ -247,7 +248,6 @@ impl Runtime {
             update_check,
             updates,
             model_discovery,
-            graph_index,
             team_tick,
             updated_builtin: initialized.builtin.updated,
             speech: Default::default(),
@@ -291,7 +291,6 @@ impl Runtime {
         self.agents_check.abort();
         self.plugins_check.abort();
         self.update_check.abort();
-        self.graph_index.abort();
         self.team_tick.abort();
         if let Some(discovery) = self.model_discovery {
             discovery.abort();

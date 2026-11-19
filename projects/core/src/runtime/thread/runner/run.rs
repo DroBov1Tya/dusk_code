@@ -62,6 +62,8 @@ pub struct ThreadSetup {
     pub lock: ThreadLock,
     pub hooks: Arc<crate::plugins::Hooks>,
     pub health: Arc<crate::providers::Health>,
+    pub skill_watch: Arc<crate::catalog::history::Watch>,
+    pub skill_state: Arc<crate::state::State>,
 }
 
 impl ThreadRunner {
@@ -98,6 +100,8 @@ impl ThreadRunner {
             events,
             hooks: setup.hooks,
             health: setup.health,
+            skill_watch: setup.skill_watch,
+            skill_state: setup.skill_state,
         };
         let runner = Self {
             agent,
@@ -159,6 +163,15 @@ impl ThreadRunner {
             && let Some(failure) = self.agent.state.last_failure(&self.agent.thread_id).await?
         {
             self.agent.emit(ThreadEvent::TurnFailed(failure));
+        }
+        // A chat opened while its agents work shows it is at work from the start.
+        if self.agent.depth == 0
+            && self
+                .mailboxes
+                .agents_at_work(&self.agent.state, &self.agent.thread_id)
+                .await?
+        {
+            self.agent.emit(ThreadEvent::AgentsWorking(true));
         }
         // A turn a restart cut off goes on before anything sent meanwhile is taken in,
         // which would come between its step's calls and their results.
@@ -271,8 +284,8 @@ impl ThreadRunner {
                 // It goes on as it stood: a compaction would cut its step in two.
                 Some(turn) => Ok(Some((turn, true))),
                 None => match self.agent.compact_if_needed(None, &mut self.inbox).await {
-                    Some(stop) => Err(stop),
-                    None => Ok(self.agent.start_turn().await?.map(|turn| (turn, false))),
+                    Err(stop) => Err(stop),
+                    Ok(_) => Ok(self.agent.start_turn().await?.map(|turn| (turn, false))),
                 },
             };
             let stop = match turn {

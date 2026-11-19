@@ -5,8 +5,7 @@ use anyhow::{Context, Result};
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use dusk_core::client::{Client, Hub, Scope};
 use dusk_protocol::client::{
-    Hello, PROTOCOL_VERSION, Request, RequestFrame, Response, ServerFrame, VoiceRequest,
-    WorkRequest,
+    Hello, Request, RequestFrame, Response, ServerFrame, VoiceRequest, WorkRequest,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Semaphore, mpsc, watch};
@@ -50,13 +49,7 @@ fn attach(
     mpsc::UnboundedReceiver<dusk_protocol::client::Event>,
 )> {
     // What a browser may ask is the core's to check: it is attached with the web scope.
-    let mut client = hub.attach(
-        Hello {
-            protocol: PROTOCOL_VERSION,
-            client: "web".to_owned(),
-        },
-        Scope::web(),
-    )?;
+    let mut client = hub.attach(Hello::new("web"), Scope::web())?;
     let events = std::mem::replace(&mut client.events, mpsc::unbounded_channel().1);
     Ok((Arc::new(client), events))
 }

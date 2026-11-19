@@ -2,6 +2,7 @@
 
 use super::{ClientId, Subscribers};
 use dusk_protocol::client::{Event, ProjectRequest, Request};
+use dusk_protocol::project::RepositoryStatus;
 
 /// The thread an event is about; none for what belongs to one client, such as a
 /// terminal's bytes, which is never given to all.
@@ -13,7 +14,8 @@ fn thread_of(event: &Event) -> Option<&str> {
         | Event::PluginView { .. }
         | Event::PluginFrame { .. }
         | Event::PluginNotice { .. }
-        | Event::GitChanged { .. } => None,
+        | Event::GitChanged { .. }
+        | Event::RepositoryStatus { .. } => None,
     }
 }
 
@@ -30,12 +32,29 @@ pub(super) fn publish(subscribers: &Subscribers, event: Event) {
 
 /// Tells every client that may read projects that one's repository changed.
 pub(super) fn git_changed(subscribers: &Subscribers, project_id: &str) {
-    let reads = Request::Project(ProjectRequest::Git {
-        id: project_id.to_owned(),
-    });
     let event = Event::GitChanged {
         project_id: project_id.to_owned(),
     };
+    to_project_readers(subscribers, project_id, event);
+}
+
+/// Gives a project's new repository status to every client that may read projects.
+pub(super) fn repository_status(
+    subscribers: &Subscribers,
+    project_id: &str,
+    status: &RepositoryStatus,
+) {
+    let event = Event::RepositoryStatus {
+        project_id: project_id.to_owned(),
+        status: Box::new(status.clone()),
+    };
+    to_project_readers(subscribers, project_id, event);
+}
+
+fn to_project_readers(subscribers: &Subscribers, project_id: &str, event: Event) {
+    let reads = Request::Project(ProjectRequest::Git {
+        id: project_id.to_owned(),
+    });
     subscribers.lock().retain(|subscriber| {
         !subscriber.scope.permits(&reads) || subscriber.queue.send(event.clone()).is_ok()
     });

@@ -4,13 +4,16 @@
 //! names.
 //!
 //! Format 1 lists plugins. Format 2 adds what each entry is (`kind`), how it is filed
-//! and shown, and, in the official list only, the mirrors it vouches for.
+//! and shown, and, in the official list only, the mirrors it vouches for. Format 3 adds
+//! who made each entry: `author`, `license`, `source`, `categories` and `badge`, all
+//! required; and for a plugin what it runs and adds, `mcp`, `programs` and `skills`,
+//! which its manifest must say exactly.
 
 use anyhow::{Context, Result, bail, ensure};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use base64::Engine;
 use chrono::{DateTime, Utc};
-use dusk_protocol::plugin::{Client, Kind, Os, Permissions};
+use dusk_protocol::plugin::{CATEGORIES, Client, Kind, Os, Permissions};
 use serde::Deserialize;
 
 use crate::config::{Mirror, is_word};
@@ -19,9 +22,11 @@ use crate::config::{Mirror, is_word};
 /// leaves the store's maintainers.
 pub const PUBLIC_KEY: &str = "ajB547F8pPEYYXGxEYBRZgpgw+iU57ydMrr6VtaLwBQ=";
 /// The formats read; a list in another one is refused rather than half read.
-const FORMATS: [u32; 2] = [1, 2];
+const FORMATS: [u32; 3] = [1, 2, 3];
 pub const MAX_INDEX_BYTES: u64 = 4 * 1024 * 1024;
 pub const MAX_SIGNATURE_BYTES: u64 = 1024;
+/// More than a list is ever expected to hold; a list past it is refused whole.
+pub const MAX_ENTRIES: usize = 2000;
 /// The largest package the store may name.
 pub const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 /// The largest cover: a picture for a card, not a gallery.
@@ -36,6 +41,14 @@ const MAX_TAGS: usize = 8;
 const MAX_WORD: usize = 32;
 const MAX_PICTURE_PATH: usize = 200;
 const MAX_PACK_SKILLS: usize = 256;
+/// In characters, for `author` and `license`; `source` is an address of `MAX_URL` bytes.
+const MAX_CREDIT: usize = 64;
+const MAX_URL: usize = 200;
+const MAX_CATEGORIES: usize = 3;
+const MAX_SERVERS: usize = 16;
+const MAX_PROGRAMS: usize = 8;
+/// In characters, for a command line or an address shown to the user.
+const MAX_LINE: usize = 200;
 /// The system and processor of a package of plain files, which runs nowhere.
 pub const ANY: &str = "any";
 const SYSTEMS: [&str; 4] = [ANY, "macos", "linux", "windows"];
@@ -58,9 +71,13 @@ pub struct Index {
     /// Grows with every list signed; a list older than one seen is refused, so an old
     /// signed list cannot bring back an old package or hide an update.
     pub serial: u64,
+    /// RFC 3339, in the future.
+    pub expires: String,
     pub plugins: Vec<Entry>,
     /// Mirrors this list vouches for. Only the official list's are believed.
     pub verified: Vec<Mirror>,
+    /// What was left out of `plugins` because its source may not bring it, one line.
+    pub left_out: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -84,6 +101,8 @@ pub struct Entry {
     /// there itself, outside the plugin's sandbox, so the user is told.
     #[serde(default)]
     pub providers: Vec<String>,
+    /// Empty only when `upstream` names the files instead.
+    #[serde(default)]
     pub downloads: Vec<Download>,
     #[serde(default)]
     pub category: String,
@@ -104,6 +123,67 @@ pub struct Entry {
     /// For a pack: the skills it holds, by name.
     #[serde(default)]
     pub skills: Vec<String>,
+    /// Format 3: who made it, one plain line.
+    pub author: Option<String>,
+    /// Format 3: an SPDX expression.
+    pub license: Option<String>,
+    /// Format 3: an `https` address of where it comes from.
+    pub source: Option<String>,
+    /// Format 3: one to three of `CATEGORIES`.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// Format 3: whose work it is, as the publisher says. Read only from the official
+    /// list, and only to lower its tier.
+    pub badge: Option<Badge>,
+    /// Format 3, a plugin: the MCP servers it brings, by name.
+    #[serde(default)]
+    pub mcp: Vec<Server>,
+    /// Format 3, a plugin: the command lines of its own programs (its platform, panel and
+    /// hooks), sorted.
+    #[serde(default)]
+    pub programs: Vec<String>,
+    /// Format 3, a skill, pack or agent: its files at a pinned commit of the author's
+    /// repository, instead of `downloads`.
+    pub upstream: Option<super::upstream::Upstream>,
+    /// The list's format, which says what its manifest is checked against.
+    #[serde(skip)]
+    pub format: u32,
+}
+
+/// An MCP server a plugin brings: a program it starts, or an address the core sends the
+/// agent's requests to.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Server {
+    pub name: String,
+    /// The program, `./` being the plugin's folder.
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub url: Option<String>,
+}
+
+impl Server {
+    /// What it runs or reaches, as one line.
+    pub fn line(&self) -> String {
+        match (&self.command, &self.url) {
+            (Some(command), _) => std::iter::once(command)
+                .chain(&self.args)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
+            (None, Some(url)) => url.clone(),
+            (None, None) => String::new(),
+        }
+    }
+}
+
+/// Official for the work of duskcode's maintainers, Verified for anybody else's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Badge {
+    Official,
+    Verified,
 }
 
 /// One package of a plugin, for one system and processor or for all.
@@ -163,10 +243,16 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
     UnparsedPublicKey::new(&ED25519, &key)
         .verify(json, &signature)
         .map_err(|_| anyhow::anyhow!("the list is not signed by its source's key"))?;
+    parse(json, now)
+}
+
+/// The list in `json` with every check but the signature's, for a source without a key:
+/// what it offers is Unverified, and `guard` keeps only what such a source may bring.
+pub fn parse(json: &[u8], now: DateTime<Utc>) -> Result<Index> {
     let raw: Raw = serde_json::from_slice(json).context("the list is not valid")?;
     ensure!(
         FORMATS.contains(&raw.format),
-        "the list is in format {}; this duskcode reads 1 and 2, update it",
+        "the list is in format {}; this duskcode reads 1 to 3, update it",
         raw.format
     );
     let expires =
@@ -177,18 +263,26 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
         raw.expires
     );
     ensure!(
+        raw.plugins.len() <= MAX_ENTRIES,
+        "the list names {} entries; at most {MAX_ENTRIES} are read",
+        raw.plugins.len()
+    );
+    ensure!(
         raw.format >= 2 || raw.verified.is_empty(),
         "a format 1 list names verified mirrors"
     );
     for mirror in &raw.verified {
-        mirror.check().context("a verified mirror of the list")?;
+        mirror
+            .check_signed()
+            .context("a verified mirror of the list")?;
     }
     let mut names = std::collections::BTreeSet::new();
     let mut plugins = Vec::new();
     for value in raw.plugins {
-        let Some(entry) = read_entry(value)? else {
+        let Some(mut entry) = read_entry(value)? else {
             continue;
         };
+        entry.format = raw.format;
         ensure!(
             names.insert(entry.name.clone()),
             "the list names {} twice",
@@ -199,8 +293,10 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
     }
     Ok(Index {
         serial: raw.serial,
+        expires: raw.expires,
         plugins,
         verified: raw.verified,
+        left_out: None,
     })
 }
 
@@ -239,6 +335,24 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
         format >= 2 || entry.is_format_1(),
         "fields of format 2 in a format 1 list"
     );
+    if format >= 3 {
+        check_credit(entry)?;
+    } else {
+        ensure!(
+            entry.is_format_2(),
+            "fields of format 3 in a format {format} list"
+        );
+    }
+    match &entry.upstream {
+        Some(upstream) => {
+            ensure!(
+                entry.kind != Kind::Plugin && entry.downloads.is_empty(),
+                "only a skill, pack or agent comes from upstream, and then without packages"
+            );
+            upstream.check()?;
+        }
+        None => ensure!(!entry.downloads.is_empty(), "no package"),
+    }
     if let Some(page) = &entry.homepage {
         ensure!(page.starts_with("https://"), "the homepage is not https");
     }
@@ -293,9 +407,14 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
         DateTime::parse_from_rfc3339(date).context("a date is not RFC 3339")?;
     }
     ensure!(
-        entry.kind == Kind::Pack || entry.skills.is_empty(),
-        "only a pack names skills"
+        entry.kind == Kind::Pack || entry.kind == Kind::Plugin || entry.skills.is_empty(),
+        "only a pack or a plugin names skills"
     );
+    ensure!(
+        entry.kind == Kind::Plugin || (entry.mcp.is_empty() && entry.programs.is_empty()),
+        "only a plugin brings MCP servers or programs"
+    );
+    check_brings(entry)?;
     ensure!(
         entry.skills.len() <= MAX_PACK_SKILLS
             && entry
@@ -304,6 +423,82 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
                 .all(|skill| crate::init::paths::is_plain_folder_name(skill)),
         "a pack's skills are not plain names"
     );
+    Ok(())
+}
+
+/// A plugin's servers and programs: a few, each one plain line, named once.
+fn check_brings(entry: &Entry) -> Result<()> {
+    ensure!(
+        entry.mcp.len() <= MAX_SERVERS,
+        "up to {MAX_SERVERS} MCP servers are allowed"
+    );
+    let mut names = std::collections::BTreeSet::new();
+    for server in &entry.mcp {
+        ensure!(
+            is_word(&server.name, MAX_WORD) && names.insert(&server.name),
+            "an MCP server's name is not a word of a-z, 0-9 and -, or is given twice"
+        );
+        match (&server.command, &server.url) {
+            (Some(_), None) => {}
+            (None, Some(url)) => ensure!(
+                url.starts_with("https://") && !url.contains(' '),
+                "the MCP server {} is not at an https address",
+                server.name
+            ),
+            _ => bail!(
+                "the MCP server {} names a command or an address, not both",
+                server.name
+            ),
+        }
+        ensure!(
+            is_line(&server.line(), MAX_LINE),
+            "the MCP server {} is not one plain line of up to {MAX_LINE} characters",
+            server.name
+        );
+    }
+    ensure!(
+        entry.programs.len() <= MAX_PROGRAMS
+            && entry.programs.iter().all(|line| is_line(line, MAX_LINE))
+            && entry.programs.windows(2).all(|pair| pair[0] < pair[1]),
+        "programs are up to {MAX_PROGRAMS} plain lines, sorted, each once"
+    );
+    Ok(())
+}
+
+/// Format 3's fields: all given, each one plain line, the categories from the fixed list.
+fn check_credit(entry: &Entry) -> Result<()> {
+    let author = entry.author.as_deref().context("no author")?;
+    ensure!(
+        is_line(author, MAX_CREDIT),
+        "the author is not one plain line of up to {MAX_CREDIT} characters"
+    );
+    let license = entry.license.as_deref().context("no license")?;
+    ensure!(
+        is_line(license, MAX_CREDIT),
+        "the license is not one plain line of up to {MAX_CREDIT} characters"
+    );
+    let source = entry.source.as_deref().context("no source")?;
+    ensure!(
+        source.starts_with("https://")
+            && source.len() <= MAX_URL
+            && is_line(source, MAX_URL)
+            && !source.contains(' '),
+        "the source is not an https address"
+    );
+    let categories = &entry.categories;
+    ensure!(
+        (1..=MAX_CATEGORIES).contains(&categories.len())
+            && categories
+                .iter()
+                .all(|item| CATEGORIES.contains(&item.as_str()))
+            && categories
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                == categories.len(),
+        "the categories are not 1 to {MAX_CATEGORIES} different ones of the fixed list"
+    );
+    ensure!(entry.badge.is_some(), "no badge");
     Ok(())
 }
 
@@ -318,7 +513,7 @@ pub fn check_screenshot(screenshot: &Screenshot) -> Result<()> {
     check_picture(&screenshot.picture(), MAX_SCREENSHOT_BYTES).context("a screenshot")?;
     if let Some(caption) = &screenshot.caption {
         ensure!(
-            is_caption(caption),
+            is_line(caption, MAX_CAPTION),
             "a screenshot's caption is not one plain line of up to {MAX_CAPTION} characters"
         );
     }
@@ -352,14 +547,14 @@ fn check_picture(picture: &Cover, max: u64) -> Result<()> {
     Ok(())
 }
 
-/// Not empty, not padded, at most `MAX_CAPTION` characters, and none that is a control
-/// or one that turns the text around (bidi overrides and isolates), which could make a
-/// caption read as something else.
-fn is_caption(text: &str) -> bool {
+/// Not empty, not padded, at most `max` characters, and none that is a control or one
+/// that turns the text around (bidi overrides and isolates), which could make a caption
+/// or a name read as something else.
+fn is_line(text: &str, max: usize) -> bool {
     let bidi = |c: char| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
     !text.trim().is_empty()
         && text.trim() == text
-        && text.chars().count() <= MAX_CAPTION
+        && text.chars().count() <= max
         && !text.chars().any(|c| c.is_control() || bidi(c))
 }
 
@@ -381,10 +576,32 @@ fn is_sha256(text: &str) -> bool {
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+/// One line per program, then one per MCP server, as the user is asked.
+pub fn brings(programs: &[String], servers: &[Server]) -> Vec<String> {
+    let mut lines: Vec<String> = programs
+        .iter()
+        .map(|program| format!("run the program {program} on this computer while it is on"))
+        .collect();
+    lines.extend(servers.iter().map(|server| match &server.url {
+        Some(url) => format!(
+            "send the agent's requests for the tools of {} to {url}",
+            server.name
+        ),
+        None => format!(
+            "start the MCP server {} ({}) on this computer; the agent may use its tools",
+            server.name,
+            server.line()
+        ),
+    }));
+    lines
+}
+
 impl Entry {
-    /// What the user agrees to by installing it, one line each.
+    /// What the user agrees to by installing it, one line each: first one per program,
+    /// then one per MCP server, in their order, as `Listing::permissions` says.
     pub fn consent(&self) -> Vec<String> {
-        let mut lines = self.permissions.lines();
+        let mut lines = brings(&self.programs, &self.mcp);
+        lines.extend(self.permissions.lines());
         for url in &self.providers {
             lines.push(format!("send your chats to {url} when you pick its model"));
         }
@@ -442,5 +659,18 @@ impl Entry {
             && self.created.is_none()
             && self.updated.is_none()
             && self.skills.is_empty()
+    }
+
+    /// Nothing format 3 added is set.
+    fn is_format_2(&self) -> bool {
+        self.mcp.is_empty()
+            && self.upstream.is_none()
+            && self.programs.is_empty()
+            && (self.kind != Kind::Plugin || self.skills.is_empty())
+            && self.author.is_none()
+            && self.license.is_none()
+            && self.source.is_none()
+            && self.categories.is_empty()
+            && self.badge.is_none()
     }
 }

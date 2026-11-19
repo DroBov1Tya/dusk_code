@@ -215,10 +215,11 @@ fn a_mirror_must_be_signed_by_its_pinned_key() {
     assert!(index::verify(json.as_bytes(), &signature, &other, now()).is_err());
     assert!(index::verify(json.as_bytes(), b"", &other, now()).is_err());
 
-    // In config.yml: no key, http, a reserved name, a short key or a twin are refused.
-    let missing: Result<Mirror, _> =
-        serde_json::from_str(r#"{"name": "m", "url": "https://m.example.com/i.json"}"#);
-    assert!(missing.is_err());
+    // In config.yml: http, a reserved name, a short key or a twin are refused. No key
+    // makes an Unverified source, whose list `guard_tests` holds to its own rules.
+    let keyless: Mirror =
+        serde_json::from_str(r#"{"name": "m", "url": "https://m.example.com/i.json"}"#).unwrap();
+    assert!(keyless.is_keyless());
     let good = mirror("m", index::PUBLIC_KEY);
     good.check().unwrap();
     for bad in [
@@ -344,7 +345,9 @@ fn only_a_mirror_the_user_added_shows_stars_and_with_their_repository() {
             .index
             .plugins
             .iter()
-            .map(|entry| listing::listing(&paths, &record, &source, entry).repo_stars)
+            .map(|entry| {
+                listing::listing(&paths, &record, &Default::default(), &source, entry).repo_stars
+            })
             .collect()
     };
     assert_eq!(stars(Tier::Official), [None, None]);
@@ -427,6 +430,7 @@ fn an_install_needs_the_tier_the_user_saw() {
         name: "hello",
         version: "1.0.0",
         permissions: &[],
+        sha256: None,
     };
     let error = super::pick(&sources, &agreed).unwrap_err();
     assert!(error.to_string().contains("Community"), "{error}");
@@ -512,7 +516,7 @@ fn the_store_reaches_only_public_addresses() {
 async fn a_name_that_resolves_here_is_refused() {
     use reqwest::dns::Resolve;
     let name: reqwest::dns::Name = "localhost".parse().unwrap();
-    assert!(fetch::PublicOnly.resolve(name).await.is_err());
+    assert!(crate::net::public::PublicOnly.resolve(name).await.is_err());
 }
 
 #[test]

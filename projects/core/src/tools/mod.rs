@@ -25,11 +25,14 @@ pub use computer::WindowSession;
 #[cfg(target_os = "macos")]
 pub use computer::run_overlay_if_asked;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-pub use computer::{Click, ComputerActions, PressKeys, Screen, Screenshot, Scroll, TypeText};
+pub use computer::{
+    Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
+};
 pub use console::{Jobs, RunCommand, Shaped};
 pub use harness::{
-    AskUser, DisplayAudio, DisplayImage, GoalTool, PlanEdit, Question, ReadHistory, Remember, Show,
-    Tasks, TeamRunner, is_sound, save_sound, short_task_id,
+    AddWorkshopSource, AskUser, DisplayAudio, DisplayImage, GatesYes, GoalTool, PlanEdit, Question,
+    ReadHistory, Remember, SearchWorkshop, Show, Started, SuggestFromWorkshop, SuggestNext, Tasks,
+    TeamRunner, is_sound, save_sound,
 };
 pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_plan};
 pub use mcp::McpTool;

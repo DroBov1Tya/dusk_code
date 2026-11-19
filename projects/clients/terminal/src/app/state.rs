@@ -108,6 +108,8 @@ pub struct App {
     pub undone: Option<String>,
     /// A question the agent asked, until it is answered or declined.
     pub poll: Option<Poll>,
+    /// The user's likely next message, as the model proposed it, greyed in the empty box.
+    pub suggestion: dusk_protocol::thread::Suggestion,
     /// Questions asked while one was on the screen, and the answers given so far: they
     /// go to the agent together, after the last one.
     pub polls_waiting: std::collections::VecDeque<dusk_protocol::tools::Question>,
@@ -270,6 +272,7 @@ impl App {
             goal_rounds: status.max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
+            suggestion: Default::default(),
             polls_waiting: Default::default(),
             poll_answers: Vec::new(),
             approvals: Vec::new(),
@@ -453,6 +456,7 @@ impl App {
         self.activity = Activity::Idle;
         self.turn_running = false;
         self.compacting = false;
+        self.transcript.stopped();
         self.turn_started_at = None;
         self.turn_spend = None;
         self.transcript.stop_running_tools();
@@ -466,34 +470,30 @@ impl App {
         if self.local_unsent.iter().any(|item| item.id == message.id) {
             return;
         }
-        self.transcript.push(Entry::Notice {
-            local_id: Some(message.id.clone()),
-            text: format!(
+        self.transcript.local(
+            Some(message.id.clone()),
+            format!(
                 "Saved locally \u{00B7} not sent \u{00B7} /resend\n{}",
                 message.content
             ),
-            tone: Tone::Info,
-        });
+            Tone::Info,
+        );
         self.local_unsent.push(message);
     }
 
     pub fn mark_local_sent(&mut self, id: &str) {
         self.local_unsent.retain(|item| item.id != id);
-        for entry in self.transcript.entries_mut() {
-            if let Entry::Notice {
-                local_id: Some(local_id),
-                text,
-                ..
-            } = entry
-                && local_id == id
-            {
-                *text = text.replacen(
+        self.transcript.change_locals(|local| {
+            let mine = local.local_id.as_deref() == Some(id);
+            if mine {
+                local.text = local.text.replacen(
                     "Saved locally \u{00B7} not sent \u{00B7} /resend",
                     "Queued by explicit resend",
                     1,
                 );
             }
-        }
+            mine
+        });
         if let Some(Panel::Unsent { selected }) = &mut self.panel {
             *selected = (*selected).min(self.local_unsent.len().saturating_sub(1));
         }
@@ -504,7 +504,7 @@ impl App {
         if let Some(Entry::User { text: shown, .. }) = self.transcript.entries.last()
             && *shown == text
         {
-            self.transcript.entries_mut().pop();
+            self.transcript.remove(self.transcript.entries.len() - 1);
         }
         if self.input.is_empty() {
             self.input.set(text);

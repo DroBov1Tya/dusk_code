@@ -82,17 +82,17 @@ impl Tool for McpTool {
     }
 
     /// Trusted as little as `repeatable`: a server that lies can only make its own calls
-    /// run together.
+    /// run together. The skills folder is watched around every MCP call whatever this says.
     fn read_only(&self, _arguments: &Value) -> bool {
         self.read_only
     }
 
-    fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             Ok(self
                 .server
                 .client
-                .call_tool(&self.remote, arguments)
+                .call_tool(&self.remote, arguments, Some(context.scope.cwd()))
                 .await?
                 .text)
         })
@@ -102,13 +102,13 @@ impl Tool for McpTool {
     fn call_result<'a>(
         &'a self,
         arguments: Value,
-        _context: ToolContext,
+        context: ToolContext,
     ) -> BoxFuture<'a, ToolResult> {
         Box::pin(async move {
             let output = self
                 .server
                 .client
-                .call_tool(&self.remote, arguments)
+                .call_tool(&self.remote, arguments, Some(context.scope.cwd()))
                 .await?;
             let mut result = ToolResult::text(output.text);
             for bytes in output.images {

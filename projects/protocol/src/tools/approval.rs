@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::tools::WindowAccess;
 /// What a tool asks to do.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Request {
     /// A path outside the working directory and the workspace.
@@ -25,6 +26,9 @@ pub enum Request {
     /// Typing or pressing keys, which can do anything a shell can: asked every time,
     /// with what it sends.
     Keyboard { action: String },
+    /// Changing the settings, such as adding a Workshop source: asked every time, in
+    /// every mode, and answered only by a client that may change them itself.
+    Settings { change: String },
 }
 
 impl Request {
@@ -42,6 +46,7 @@ impl Request {
             Self::Window { action, .. } => {
                 format!("{who} wants to use window tools: {action}")
             }
+            Self::Settings { change } => format!("{who} wants to change your settings: {change}"),
         }
     }
 
@@ -54,11 +59,13 @@ impl Request {
             Self::SystemPointer { action } => format!("controlling the system pointer: {action}"),
             Self::Keyboard { action } => format!("using the keyboard: {action}"),
             Self::Window { action, .. } => format!("using window tools: {action}"),
+            Self::Settings { change } => format!("changing your settings: {change}"),
         }
     }
 }
 
 /// A request as the client sees it; `id` is what its answer names.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalRequest {
     pub id: u64,
@@ -66,13 +73,15 @@ pub struct ApprovalRequest {
     /// What a yes for the session covers, as the core decides it: the folder of the
     /// path, or the program of a plain command. `None` when it cannot be offered.
     pub session: Option<String>,
-    /// Every step of a batch of screen actions, in order; empty for a single request.
+    /// Every step of a batch of screen actions, or every gate command of a plan, in
+    /// order; empty for a single request.
     /// The user answers for all of them, so a client shows each one, never a summary.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<ApprovalStep>,
 }
 
 /// One step of a batch as the user sees it before saying yes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalStep {
     /// Its place in the batch, from 1.
@@ -97,10 +106,18 @@ impl ApprovalStep {
 
 impl ApprovalRequest {
     /// What `who` asks for, in a line: for a batch a neutral heading over its steps,
-    /// since no one kind says what all of them do.
+    /// since no one kind says what all of them do. A batch of commands only is a plan's
+    /// gates, allowed once to run later.
     pub fn title(&self, who: &str) -> String {
+        let commands = self
+            .steps
+            .iter()
+            .all(|step| matches!(step.request, Request::Command { .. }));
         match self.steps.len() {
             0 => self.request.describe(who),
+            count if commands => {
+                format!("{who} wants {count} commands to run as its plan's gates, unasked")
+            }
             count => format!("{who} wants to run {count} computer actions"),
         }
     }
@@ -116,6 +133,7 @@ impl ApprovalRequest {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Decision {
     Once,

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::ThreadRunner;
-use crate::runtime::ThreadEvent;
+use crate::runtime::{ThreadEvent, agent::Admit};
 use crate::{message::commands, state::PendingMessage};
 
 impl ThreadRunner {
@@ -36,36 +36,7 @@ impl ThreadRunner {
             commands::parse(&pending.content)
         };
         let Some(command) = command else {
-            let message = state.admit_pending(&self.agent.thread_id, &pending).await?;
-            if message.from_thread_id.is_some() {
-                sqlx::query("UPDATE goals SET work_epoch = work_epoch + 1 WHERE thread_id = ? AND approved_at IS NOT NULL")
-                    .bind(&self.agent.thread_id).execute(&state.pool).await?;
-            } else if message.from_job_id.is_none() {
-                sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
-                    .bind(&self.agent.thread_id)
-                    .execute(&state.pool)
-                    .await?;
-            }
-            if message.from_job_id.is_none() {
-                self.agent.title_from_first_message(&message).await?;
-            }
-            if message.from_thread_id.is_none() && message.from_job_id.is_none() {
-                let details = serde_json::json!({ "text": message.content });
-                self.agent
-                    .hook_notes(crate::plugins::HookEvent::UserMessage, details)
-                    .await?;
-            }
-            self.agent.emit(ThreadEvent::Queued {
-                message_id: message.message_id.clone(),
-            });
-            if message.from_job_id.is_some() {
-                self.agent.emit(ThreadEvent::FromJob(message));
-            } else if message.from_thread_id.is_some() {
-                self.agent.emit(ThreadEvent::FromAgent(message));
-            } else {
-                self.agent.emit(ThreadEvent::UserMessage(message));
-            }
-            return Ok(());
+            return self.agent.admit(&pending, Admit::BETWEEN_TURNS).await;
         };
         match command {
             Err(error) => self.agent.emit(ThreadEvent::Rejected {

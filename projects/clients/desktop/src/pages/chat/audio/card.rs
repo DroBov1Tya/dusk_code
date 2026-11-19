@@ -2,6 +2,7 @@
 
 use super::player::sound_path;
 use crate::pages::chat::transcript::Clip;
+use crate::ui::elevation::{Elevation, Level};
 use crate::{ui::Type, workspace::Workspace};
 use gpui_kit::{
     component::{
@@ -48,11 +49,10 @@ pub(super) fn fraction(x: Pixels, bar: Bounds<Pixels>) -> f32 {
 
 pub fn card(ws: &Workspace, key: &str, clip: &Clip, cx: &mut Context<Workspace>) -> AnyElement {
     let theme = cx.theme();
-    let (muted, accent, border, surface, raised, foreground) = (
+    let (muted, accent, border, raised, foreground) = (
         theme.muted_foreground,
         theme.primary,
         theme.border,
-        theme.muted,
         theme.accent,
         theme.foreground,
     );
@@ -203,9 +203,7 @@ pub fn card(ws: &Workspace, key: &str, clip: &Clip, cx: &mut Context<Workspace>)
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
+        .elevation(Level::Raised, cx)
         .child(head)
         .child(div().h(px(1.)).bg(border))
         .child(

@@ -6,7 +6,7 @@
 use dusk_protocol::thread::{TaskStatus, TeamEnd};
 use tracing::warn;
 
-use super::{events, lead_lines};
+use super::{allow, events, gate, lead_lines};
 use crate::{
     runtime::{Launcher, agent::Input},
     state::{Delivery, PlanTask, TeamError, TeamRun},
@@ -38,6 +38,8 @@ pub(super) async fn end(
         }
     }
     let (run, returned) = ended?;
+    allow::forget(launcher, lead);
+    gate::stop(launcher, lead);
     for task in &returned {
         events::task(launcher, lead, task).await;
     }
@@ -123,6 +125,12 @@ pub(super) async fn settle(launcher: &Launcher, run: &TeamRun, now: i64) -> Resu
         return Ok(());
     }
     if counts.at_work > 0 || counts.ready > 0 {
+        return Ok(());
+    }
+    // A task whose gate runs, or that waits for the user's confirmation, is no stall:
+    // the gate ends by itself and the user was asked. The lead can do nothing about
+    // either, so it is not woken to end the team; the team's time bounds the wait.
+    if counts.review > counts.for_lead {
         return Ok(());
     }
     let mark = lead_lines::plan_mark(state, lead).await?;

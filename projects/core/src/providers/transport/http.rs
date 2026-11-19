@@ -1,16 +1,99 @@
 //! What every provider's HTTP client shares: where it may connect, how it is built, its
 //! endpoints, and which failures may pass if the request is sent again.
 
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::{Result, anyhow, ensure};
-use reqwest::{Client, Response, StatusCode, Url, header::CONTENT_TYPE, redirect::Policy};
+use reqwest::{
+    Client, Response, StatusCode, Url,
+    header::{CONTENT_TYPE, HeaderValue},
+    redirect::Policy,
+};
 
-use crate::providers::errors::{ProviderError, ProviderErrorKind};
+use dusk_protocol::model::CheckFailure;
+
+use crate::providers::{
+    errors::{ProviderError, ProviderErrorKind},
+    registry::Model,
+};
 
 /// Longest silence tolerated between streamed chunks; reasoning models can pause for a while.
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 pub const EVENT_STREAM: &str = "text/event-stream";
+
+/// The most of a failed request's body read for its message.
+const MAX_ERROR_BYTES: usize = 64 * 1024;
+/// Error messages reach the transcript; a long one is cut.
+const MAX_ERROR_CHARS: usize = 300;
+
+/// How long the body of a failed request is waited for.
+const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The API's own words about a failed request, at `/error/message` of its JSON body,
+/// read with a cap and cut short; none when the body is too large or says nothing.
+async fn error_message(response: Response) -> Option<String> {
+    let bytes = crate::net::read_limited(response, MAX_ERROR_BYTES)
+        .await
+        .ok()?;
+    let body: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let message = body.pointer("/error/message")?.as_str()?;
+    Some(message.chars().take(MAX_ERROR_CHARS).collect())
+}
+
+/// A request to `what`, such as "completion", answered with a failed status: the
+/// failure, its message carrying the API's own words when they came in time, and those
+/// words, for the caller's checks of what the provider could not do.
+pub async fn refused_with_reason(
+    response: Response,
+    what: &str,
+) -> (ProviderError, Option<String>) {
+    let status = response.status();
+    // Read before the body, which takes the response.
+    let mut failure = status_failure(&response, String::new());
+    let reason = tokio::time::timeout(ERROR_BODY_TIMEOUT, error_message(response))
+        .await
+        .ok()
+        .flatten();
+    let refused = refused(what, status);
+    failure.message = match &reason {
+        Some(reason) => format!("{refused}: {reason}"),
+        None => refused,
+    };
+    (failure, reason)
+}
+
+/// An API key as a header value, after `prefix` such as "Bearer ", marked sensitive so
+/// it never shows in a log; none when there is no key.
+pub fn sensitive_header(key: &str, prefix: &str) -> Result<Option<HeaderValue>> {
+    if key.is_empty() {
+        return Ok(None);
+    }
+    let mut value = HeaderValue::from_str(&format!("{prefix}{key}"))
+        .map_err(|_| anyhow!("invalid provider API key"))?;
+    value.set_sensitive(true);
+    Ok(Some(value))
+}
+
+/// A model ID from a catalogue: not empty and with no control characters.
+pub fn check_model_id(id: &str) -> Result<()> {
+    ensure!(
+        !id.trim().is_empty() && !id.chars().any(char::is_control),
+        "provider returned an empty or invalid model ID"
+    );
+    Ok(())
+}
+
+/// The models of a catalogue, by ID, with their context window and output limit.
+pub fn models(catalogue: BTreeMap<String, (Option<u64>, Option<u64>)>) -> Vec<Model> {
+    catalogue
+        .into_iter()
+        .map(|(id, (context_window, max_output))| Model {
+            id,
+            context_window,
+            max_output,
+        })
+        .collect()
+}
 
 /// Plain HTTP is allowed only to a server on this machine, such as a local model, named
 /// by its address: a name could be made to resolve elsewhere.
@@ -216,6 +299,32 @@ fn printable(text: &str, limit: usize) -> String {
 }
 
 /// What a refused request tells the user; a bad key says so, with where to fix it.
+/// A model list that failed in a way a client can name; its text is the error's own.
+#[derive(Debug)]
+pub struct CheckFailed(pub CheckFailure, pub String);
+
+impl std::fmt::Display for CheckFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.1)
+    }
+}
+
+impl std::error::Error for CheckFailed {}
+
+pub fn check_failed(cause: CheckFailure, text: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(CheckFailed(cause, text.into()))
+}
+
+/// A model list the server refused: 401 and 403 are the key, 404 a wrong address.
+pub fn catalogue_refused(status: StatusCode) -> anyhow::Error {
+    let text = refused("model", status);
+    match status.as_u16() {
+        401 | 403 => check_failed(CheckFailure::Refused, text),
+        404 => check_failed(CheckFailure::NotCompatible, text),
+        _ => anyhow!(text),
+    }
+}
+
 pub fn refused(what: &str, status: StatusCode) -> String {
     let code = status.as_u16();
     match code {

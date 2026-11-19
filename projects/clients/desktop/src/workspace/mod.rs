@@ -33,14 +33,14 @@ use crate::{
     columns::topbar,
     core::Core,
     modal::Modal,
-    pages::{chat, chat::transcript::Transcript, connectors::Shelf, settings::SettingsPage},
+    pages::{chat, chat::transcript::Transcript, customize::Shelf, settings::SettingsPage},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Center {
     Chat,
     Artifacts,
-    Connectors,
+    Customize,
     Settings,
     /// The project's changes, file by file.
     Review,
@@ -52,8 +52,8 @@ pub enum Center {
     Overview,
 }
 
-/// The modules of the right column, top to bottom.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// The modules of the right column, in their default order top to bottom.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Right {
     Arbiter,
     /// How the shown chat's work stands: plan, team, tokens, context, changes, activity
@@ -72,7 +72,7 @@ pub enum Right {
 }
 
 impl Right {
-    const ALL: [Right; 10] = [
+    pub const ALL: [Right; 10] = [
         Right::Arbiter,
         Right::Overview,
         Right::Screenshots,
@@ -85,7 +85,7 @@ impl Right {
         Right::Sources,
     ];
 
-    /// The name the choice of folding is kept under.
+    /// The name the choices of folding and order are kept under.
     pub fn key(self) -> &'static str {
         match self {
             Self::Arbiter => "arbiter",
@@ -157,10 +157,20 @@ pub struct Workspace {
     pub center: Center,
     pub shelf: Shelf,
     pub shelf_search: Entity<InputState>,
-    /// Where the connectors page is scrolled to; a shelf shown whole starts at its top.
+    /// Where the Customize page is scrolled to; a shelf shown whole starts at its top.
     pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,
+    /// The right column's modules top to bottom, every one once.
+    pub right_order: Vec<Right>,
+    /// While a module's header is dragged: the module under the pointer, and whether the
+    /// drop lands below it rather than above.
+    pub module_drop: Option<(Right, bool)>,
+    /// The module moved last, the side it came from in pixels (negative: from above),
+    /// and when, so it settles into its place once.
+    pub module_moved: Option<(Right, f32, std::time::Instant)>,
+    /// The todo module shows its finished tasks; they are folded away by default.
+    pub todo_done_open: bool,
     pub modal: Option<Modal>,
     pub settings_page: SettingsPage,
     pub ai_tab: crate::pages::settings::ai::Tab,
@@ -188,11 +198,19 @@ pub struct Workspace {
     pub drafts: chat::composer::Drafts,
     /// The profile and snippets a message names with `@`, and their settings fields.
     pub me: crate::pages::settings::about_me::AboutMe,
+    pub arbiter: crate::pages::settings::arbiter::ArbiterForm,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
     /// A short note over any page, and when it came; see `toast`.
     pub toast: Option<(std::time::Instant, String)>,
     pub git: Option<GitInfo>,
+    /// The shown project's work tree and pull requests, kept fresh by the core.
+    pub repository: Option<dusk_protocol::project::RepositoryStatus>,
+    /// The pull requests of each project's branch, by project ID, for the chat rows.
+    pub pulls: HashMap<String, dusk_protocol::project::PullSummary>,
+    /// Which groups of a pull request's checks are unfolded, by its number and the
+    /// group's name; a group not here has its default (Failed open, the rest closed).
+    pub checks_open: HashMap<(u64, &'static str), bool>,
     pub touched: Vec<dusk_protocol::project::Change>,
     pub review: crate::pages::review::Review,
     /// The window's own focus: shortcuts reach the workspace from here when no box or row
@@ -235,8 +253,12 @@ pub struct Workspace {
     pub web_global: bool,
     pub voice_form: crate::pages::settings::ai::voice::VoiceForm,
     /// The plugin store on the plugins shelf.
-    pub workshop: crate::pages::connectors::plugins::Workshop,
+    pub workshop: crate::pages::customize::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,
+    /// Settings, Workshop: the repositories added and the Add form.
+    pub repositories: crate::pages::settings::Repositories,
+    /// The Advanced page's number being typed in place of its minus and plus.
+    pub limit_edit: crate::pages::settings::LimitEdit,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.
@@ -265,6 +287,8 @@ pub struct Workspace {
     pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.
     pub picked: Vec<usize>,
+    /// Approval command boxes shown in full, by request and step.
+    pub approval_open: std::collections::HashSet<(u64, usize)>,
     pub attach_open: bool,
     pub left_hidden: bool,
     /// The strip of places at the left edge, hidden on the user's word.
@@ -288,8 +312,17 @@ pub struct Workspace {
     pub pending: Vec<chat::queue::Pending>,
     /// Output tokens per second by thread, from the core's rate events.
     pub rates: HashMap<String, u64>,
+    /// The user's likely next message by chat, as the model proposed it.
+    pub suggestions: HashMap<String, dusk_protocol::thread::Suggestion>,
+    /// What the composer's empty box says now: the placeholder or a suggestion.
+    pub placeholder_shown: String,
+    /// When Tab last took a suggestion in, for the box's flare.
+    pub suggestion_taken: Option<std::time::Instant>,
     /// The shown chat's sent messages, by transcript row, for the navigator.
-    pub sent_rows: Vec<(usize, String)>,
+    /// The rows of the user's sent messages: their row and their item.
+    pub sent_rows: Vec<(usize, usize)>,
+    /// What `rows` were built from: the chat, its shape and whether a turn ran.
+    pub rows_key: Option<(String, u64, bool)>,
     pub navigator_open: bool,
     /// Fields for the settings a plugin lacks, in its detail window.
     pub secret_inputs: Vec<(String, Entity<InputState>)>,
@@ -323,6 +356,8 @@ pub struct Workspace {
     pub rows: Vec<crate::pages::chat::messages::Row>,
     /// The chat the list was built for; another one starts it anew.
     pub list_chat: Option<String>,
+    /// The parsed words of that chat's rows, so a row scrolled back comes at its height.
+    pub texts: crate::pages::chat::messages::Texts,
     /// A row changed height, as when folded: measure every row again.
     pub measure_again: bool,
     /// How wide the transcript's rows are drawn, for blocks that set their columns by it.
@@ -332,6 +367,8 @@ pub struct Workspace {
     pub replied: Option<(String, usize)>,
     /// The pinned bar: the pin it shows, whether its list is open, a pin under way.
     pub pins: chat::pins::PinsView,
+    /// The first screen while no provider is connected.
+    pub welcome: crate::pages::welcome::Welcome,
 }
 
 impl Workspace {

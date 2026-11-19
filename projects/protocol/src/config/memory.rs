@@ -13,6 +13,7 @@ pub fn default_memory_chars() -> usize {
 
 /// The memory of the user: whether the agent keeps it, and its size. Every request
 /// carries it, so it is kept small.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Memory {
@@ -38,6 +39,7 @@ impl Memory {
 }
 
 /// Compact facts about the current project, kept separately from user memory.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkHistory {

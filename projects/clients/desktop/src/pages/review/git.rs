@@ -5,14 +5,14 @@
 use dusk_protocol::client::GitRequest;
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, IconName,
         button::{Button, ButtonVariants},
         input::{Input, InputState},
     },
     *,
 };
 
-use crate::{modal::Modal, workspace::Workspace};
+use crate::{modal::Modal, ui::Type, workspace::Workspace};
 
 /// What the user is asked before a git request that cannot be taken back.
 #[derive(Clone)]
@@ -26,6 +26,9 @@ pub struct GitBox {
     pub branch: Entity<InputState>,
     /// A request is running; the buttons wait for it.
     pub busy: bool,
+    /// A commit went in: its message is cleared when the page is next drawn, where the
+    /// window is. A failed one keeps what was typed.
+    pub committed: bool,
 }
 
 impl GitBox {
@@ -34,12 +37,19 @@ impl GitBox {
             message: cx.new(|cx| InputState::new(window, cx).placeholder("Commit message")),
             branch: cx.new(|cx| InputState::new(window, cx).placeholder("new-branch")),
             busy: false,
+            committed: false,
         }
     }
 }
 
 /// The two rows under the review's header.
-pub fn bar(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+pub fn bar(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
+    if std::mem::take(&mut ws.review.git.committed) {
+        ws.review
+            .git
+            .message
+            .update(cx, |input, cx| input.set_value("", window, cx));
+    }
     let border = cx.theme().border;
     let busy = ws.review.git.busy;
     let staged = ws
@@ -55,10 +65,9 @@ pub fn bar(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(
             Button::new("git-new-branch")
                 .ghost()
-                .small()
                 .icon(IconName::Plus)
                 .label("New branch")
-                .tooltip("Make a branch from the current commit")
+                .tooltip("Make a branch from the current commit and switch to it")
                 .on_click(cx.listener(move |ws, _, window, cx| {
                     let name = ws.review.git.branch.read(cx).value().trim().to_owned();
                     if busy || name.is_empty() {
@@ -68,7 +77,12 @@ pub fn bar(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                         .git
                         .branch
                         .update(cx, |input, cx| input.set_value("", window, cx));
-                    ws.run_git(GitRequest::CreateBranch { name, base: None }, cx);
+                    let request = GitRequest::CreateBranch {
+                        name,
+                        base: None,
+                        switch: true,
+                    };
+                    ws.run_git(request, cx);
                 })),
         )
         .child(div().flex_1())
@@ -116,18 +130,13 @@ pub fn bar(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(
             Button::new("git-commit")
                 .primary()
-                .small()
                 .label(format!("Commit {staged} staged"))
-                .on_click(cx.listener(move |ws, _, window, cx| {
+                .on_click(cx.listener(move |ws, _, _, cx| {
                     let message = ws.review.git.message.read(cx).value().trim().to_owned();
                     if busy || message.is_empty() {
                         ws.toast("Write a commit message first".into(), cx);
                         return;
                     }
-                    ws.review
-                        .git
-                        .message
-                        .update(cx, |input, cx| input.set_value("", window, cx));
                     ws.run_git(GitRequest::Commit { message }, cx);
                 })),
         );
@@ -136,7 +145,7 @@ pub fn bar(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex_col()
         .gap_2()
         .px_4()
-        .py_2()
+        .py_3()
         .border_b_1()
         .border_color(border)
         .child(branch_row)
@@ -153,7 +162,6 @@ fn action(
 ) -> Button {
     Button::new(id)
         .ghost()
-        .small()
         .icon(icon)
         .label(label)
         .on_click(cx.listener(move |ws, _, _, cx| {
@@ -191,7 +199,7 @@ pub fn confirm(confirm: &GitConfirm, cx: &mut Context<Workspace>) -> Div {
         .gap_3()
         .p_5()
         .child(question)
-        .child(div().text_sm().text_color(muted).child(detail))
+        .child(div().small().text_color(muted).child(detail))
         .child(
             div()
                 .flex()
@@ -223,12 +231,14 @@ impl Workspace {
             return;
         };
         self.review.git.busy = true;
+        let commit = matches!(request, GitRequest::Commit { .. });
         cx.notify();
         self.core.call(
             cx,
             move |client| async move { client.projects().repository(&id, request).await },
-            |ws, result, cx| {
+            move |ws, result, cx| {
                 ws.review.git.busy = false;
+                ws.review.git.committed |= commit && result.is_ok();
                 match result {
                     Ok(outcome) if !outcome.conflicts.is_empty() => ws.fail(
                         anyhow::anyhow!("conflicts in {}", outcome.conflicts.join(", ")),

@@ -59,6 +59,11 @@ impl Settings<'_> {
             .await
     }
 
+    /// How auto mode's arbiter judges; empty fields go back to the defaults.
+    pub async fn arbiter(&self, arbiter: dusk_protocol::config::Arbiter) -> Result<()> {
+        self.done(SettingsRequest::Arbiter(arbiter)).await
+    }
+
     /// Returns the mode switched to.
     pub async fn next_mode(&self) -> Result<String> {
         self.0
@@ -164,6 +169,16 @@ impl Settings<'_> {
         let name = name.to_owned();
         self.done(SettingsRequest::PluginEnabled { name, enabled })
             .await
+    }
+
+    /// Chooses the plugin a contract goes to for one host.
+    pub async fn contract_plugin(&self, contract: &str, host: &str, plugin: &str) -> Result<()> {
+        self.done(SettingsRequest::SetContractPlugin {
+            contract: contract.to_owned(),
+            host: host.to_owned(),
+            plugin: plugin.to_owned(),
+        })
+        .await
     }
 
     /// Kept for this run only, never written to the config file.

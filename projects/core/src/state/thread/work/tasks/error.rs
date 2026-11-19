@@ -74,8 +74,9 @@ pub enum Unclaimable {
     ForeignOwner,
 }
 
-/// The end of an id, as the board shows it.
-pub(super) fn short(id: &str) -> &str {
+/// The last 8 characters of a task or step id, as the board, the plan and their errors
+/// show it.
+pub fn short_task_id(id: &str) -> &str {
     let from = id.char_indices().rev().nth(7).map_or(0, |(index, _)| index);
     &id[from..]
 }
@@ -96,46 +97,50 @@ impl fmt::Display for PlanError {
             Self::Illegal { task, from, to } => write!(
                 f,
                 "task #{} is {}; it cannot become {}",
-                short(task),
+                short_task_id(task),
                 from.as_str(),
                 to.as_str()
             ),
             Self::NotOwner { task } => {
-                write!(f, "task #{} was given to another thread", short(task))
+                write!(
+                    f,
+                    "task #{} was given to another thread",
+                    short_task_id(task)
+                )
             }
             Self::NotClaimable { task, why } => {
-                write!(f, "task #{} cannot start: ", short(task))?;
+                write!(f, "task #{} cannot start: ", short_task_id(task))?;
                 match why {
                     Unclaimable::Dependency(dependency) => {
-                        write!(f, "#{} is not done", short(dependency))
+                        write!(f, "#{} is not done", short_task_id(dependency))
                     }
                     Unclaimable::Files { holder, entry } => {
-                        write!(f, "#{} holds {}", short(holder), shown(entry))
+                        write!(f, "#{} holds {}", short_task_id(holder), shown(entry))
                     }
                     Unclaimable::AtOnce(limit) => write!(f, "{limit} are at work already"),
                     Unclaimable::OwnerBusy => write!(f, "the thread has an unfinished task"),
                     Unclaimable::ForeignOwner => write!(f, "the thread is not of this plan"),
                 }
             }
-            Self::Gate { task, why } => write!(f, "task #{}: {why}", short(task)),
+            Self::Gate { task, why } => write!(f, "task #{}: {why}", short_task_id(task)),
             Self::BehindFailed { task, dependency } => write!(
                 f,
                 "task #{} waits for failed #{}; reopen that one",
-                short(task),
-                short(dependency)
+                short_task_id(task),
+                short_task_id(dependency)
             ),
             Self::Cycle(path) => match path.as_slice() {
                 [] => write!(f, "the tasks depend on each other in a loop"),
-                [only] | [only, _] => write!(f, "task #{} depends on itself", short(only)),
+                [only] | [only, _] => write!(f, "task #{} depends on itself", short_task_id(only)),
                 [first, rest @ ..] => {
-                    write!(f, "task #{}", short(first))?;
+                    write!(f, "task #{}", short_task_id(first))?;
                     for (index, next) in rest.iter().enumerate() {
                         let link = if index == 0 {
                             " depends on"
                         } else {
                             ", which depends on"
                         };
-                        write!(f, "{link} #{}", short(next))?;
+                        write!(f, "{link} #{}", short_task_id(next))?;
                     }
                     Ok(())
                 }

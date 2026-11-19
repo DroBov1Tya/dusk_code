@@ -80,7 +80,8 @@ account only in its own apps. Claude models work here with an API key.
 
 ## What it does
 
-- **Modes**: MAIN for direct work, ORCHESTRATOR to delegate, PLAN to plan first; your own
+- **Modes**: MAIN for direct work, ORCHESTRATOR to delegate, TEAM to have a
+  plan run by a team, PLAN to plan first; your own
   modes are Markdown files.
 - **Tools**: read, search and edit files, run commands in the foreground or as background
   jobs, look at pictures, and on a desktop see the screen and use the mouse and keyboard.
@@ -111,8 +112,10 @@ or unstage a file, stage all, commit, discard a file's changes (after a yes), ma
 branch, fetch, pull (fast-forward only) and push (after a yes, to the upstream or to
 `origin` as a new one). The core also merges with a list of conflicts, aborts a merge,
 adds and removes worktrees beside the repository, and reads and opens pull requests
-through the GitHub CLI when `gh` is installed and signed in; the clients do not show
-these yet. Git runs with an argument vector and never a shell, with your own hooks,
+through the GitHub CLI when `gh` is installed and signed in, or through a plugin that
+serves the remote's host while `plugin_contracts` is on. Either way a pull request on
+GitHub is made by `gh pr create`, the GitHub plugin's included; the clients show them
+in the Changes module and as chips on pull request links in chat. Git runs with an argument vector and never a shell, with your own hooks,
 config and credential helper; the app never reads a token.
 
 It never forces a push, amends a commit, prunes worktrees or removes a worktree that has
@@ -203,6 +206,8 @@ that, `cargo sweep` when it is installed), or everything with `--all`.
 
 - Pre-1.0: commands, configuration and the database schema may change. Full releases are
   tagged on `stable`, beta pre-releases on `beta`, nightlies on `main`.
+  A nightly builds only the programs (terminal, desktop) whose code changed since the
+  previous tag (`scripts/release-plan.sh`); its notes name the previous tag for the rest.
 - Release builds are for macOS arm64 and Linux; there is no Windows build.
 - The macOS app is signed with the project's own certificate, not an Apple Developer
   ID, so the first start needs your confirmation.

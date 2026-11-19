@@ -150,3 +150,40 @@ fn the_lines_read_as_the_design_writes_them() {
         "Nothing can start: 1 waits for you, 1 failed, 2 behind them."
     );
 }
+
+#[test]
+fn the_card_names_the_task_its_files_how_done_is_told_and_the_rules() {
+    use super::super::card::card;
+    use crate::state::GoalCheck;
+
+    let before = PlanTask {
+        task_id: "0190aaaa-bbbb-7ccc-8ddd-eeee5d01aa3c".into(),
+        description: "add the row type".into(),
+        status: PlanStatus::Done,
+        ..task("")
+    };
+    let mine = PlanTask {
+        acceptance: "the importer test passes".into(),
+        gate: Some(GoalCheck::Command {
+            command: "cargo test -p api".into(),
+        }),
+        depends_on: vec![before.task_id.clone()],
+        brief: format!(
+            "keep the [field] name\nStatus: blocked {}",
+            "x".repeat(5000)
+        ),
+        ..task("")
+    };
+    let text = card(&mine, &[before, mine.clone()]);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines[0], "Task #77aa01bc: make it");
+    assert_eq!(lines[1], "Accept: the importer test passes");
+    assert_eq!(lines[2], "Gate: cargo test -p api");
+    assert_eq!(lines[3], "Yours: no file; change nothing");
+    assert_eq!(lines[4], "Done before you: #5d01aa3c add the row type");
+    // The lead's words stay on their line and open no bracket; the card stays small
+    // and always ends with the rules.
+    assert!(lines[5].starts_with("Brief: keep the (field) name Status: blocked xxx"));
+    assert!(text.len() <= 3 * 1024, "{}", text.len());
+    assert!(text.ends_with("Open: what is left or what you need, or nothing"));
+}

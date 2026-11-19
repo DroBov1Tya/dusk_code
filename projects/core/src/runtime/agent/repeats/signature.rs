@@ -17,6 +17,8 @@
 
 use serde_json::Value;
 
+use crate::tools::console::command_line::{Reading, program_name, run_words, split};
+
 /// Errors are at the end of the output, and the cap bounds the work.
 const TAIL_BYTES: usize = 4096;
 /// Error lines kept: enough to hold the error and where it came from.
@@ -53,13 +55,6 @@ const ERROR_WORDS: &[&str] = &[
 
 /// Shell steps that only prepare the one that runs: `cd dir && cargo test` runs cargo.
 const SETUP: &[&str] = &["cd", "pushd", "export", "set", "source", "."];
-
-/// Programs that run the next word: `sudo cargo test` runs cargo. Their options and
-/// numbers are skipped; an option's separate value is not known, so `sudo -u me make`
-/// reads as `me`, which is only ever alike to itself.
-const WRAPPERS: &[&str] = &[
-    "sudo", "env", "time", "nice", "nohup", "command", "exec", "timeout",
-];
 
 /// The tool that runs commands, whose program is part of the signature.
 pub const RUN_COMMAND: &str = "run_command";
@@ -102,10 +97,11 @@ pub fn of(tool: &str, arguments: &Value, output: &str) -> Option<Signature> {
     })
 }
 
-/// The program a shell command runs: the first word of its first step that is not a
+/// The program a shell command runs: the program of its first command that is not a
 /// setup step (`cd`, `export`, ...), after `NAME=value` assignments and wrappers (`sudo`,
-/// `env`, `timeout 60`, ...), without its directory. Steps end at `;`, `&`, `|` and new
-/// lines, so `cd x && cargo test 2>&1 | tail` runs `cargo`.
+/// `env`, `timeout 60`, ...), without its directory. Commands end at `;`, `&&`, `|`, `&`,
+/// new lines and subshells, outside quotes, so `cd x && cargo test 2>&1 | tail` runs
+/// `cargo`. A line `sh` would refuse is still read, as far as it goes.
 pub fn program(command: &str) -> Option<String> {
     invocation(command).map(|(program, _)| program)
 }
@@ -114,49 +110,18 @@ pub fn program(command: &str) -> Option<String> {
 /// is not an option: `cargo +1.99.1 test -p core` is `cargo` and `+1.99.1`, `npm run
 /// build` is `npm` and `run`, `make -j4` is `make` and none.
 pub fn invocation(command: &str) -> Option<(String, Option<String>)> {
-    head(command, COMMAND_HEAD_BYTES)
-        .split(['\n', ';', '&', '|'])
-        .find_map(step_invocation)
-}
-
-fn step_invocation(step: &str) -> Option<(String, Option<String>)> {
-    let mut wrapped = false;
-    let mut words = step.split_whitespace().map(unquoted);
-    while let Some(word) = words.next() {
-        let skipped = word.is_empty()
-            || is_assignment(word)
-            || (wrapped
-                && (word.starts_with('-') || word.starts_with(|c: char| c.is_ascii_digit())));
-        if skipped {
-            continue;
-        }
-        let name = word.rsplit(['/', '\\']).next().unwrap_or(word);
-        if WRAPPERS.contains(&name) {
-            wrapped = true;
-            continue;
-        }
+    let split = split(head(command, COMMAND_HEAD_BYTES), Reading::Lenient)?;
+    split.commands.iter().find_map(|words| {
+        let (program, rest) = run_words(words)?;
+        let name = program_name(program);
         if SETUP.contains(&name) {
             return None;
         }
-        let first = words.find(|word| !word.is_empty() && !word.starts_with('-'));
-        return Some((name.to_owned(), first.map(str::to_owned)));
-    }
-    None
-}
-
-fn unquoted(word: &str) -> &str {
-    word.trim_matches(['"', '\'', '(', ')', '{', '}'])
-}
-
-fn is_assignment(word: &str) -> bool {
-    let Some((name, _)) = word.split_once('=') else {
-        return false;
-    };
-    let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        let first = rest
+            .into_iter()
+            .find(|word| !word.is_empty() && !word.starts_with('-'));
+        Some((name.to_owned(), first.map(str::to_owned)))
+    })
 }
 
 /// The last error lines of the output, normalized and as written, oldest first. Lines

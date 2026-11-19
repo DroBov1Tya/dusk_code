@@ -1,11 +1,12 @@
 //! What waits for the user: a tool's request for a yes, and a question of the agent.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::rc::Rc;
 
 use dusk_protocol::tools::{Decision, Question, Request};
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, IconName,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -13,52 +14,68 @@ use gpui_kit::{
 };
 
 use crate::{
-    pages::chat::messages,
+    pages::chat::{messages, transcript::Transcript},
     ui::{Type, widgets},
     workspace::Workspace,
 };
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+/// Lines of a command shown before its box scrolls.
+const SHOWN_LINES: f32 = 3.;
+const LINE: f32 = 18.;
+/// Room the buttons row and the card's padding take.
+const BUTTONS: f32 = 72.;
+
+/// The dock never takes more than half the window; each card fits in it with its buttons,
+/// so a long command scrolls inside its box and the yes and no stay in view.
+pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
+    let dock = (window.viewport_size().height * 0.5).max(px(160.));
+    let budget = (dock - px(BUTTONS)).max(px(LINE * SHOWN_LINES + 16.));
     let mut cards = div()
+        .id("approval-dock")
+        .max_h(dock)
+        .overflow_y_scroll()
         .flex()
         .flex_col()
-        .gap_2()
-        .px_6()
-        .max_w(px(780.))
-        .mx_auto()
-        .w_full();
+        .gap_2();
     let Some(chat) = ws.shown_chat() else {
         return cards;
     };
     let theme = cx.theme();
-    let (border, warning, surface) = (theme.border, theme.warning, theme.muted);
+    let (border, warning) = (theme.border, theme.warning);
+    let thread_id = ws.shown.clone().unwrap_or_default();
     for request in &chat.approvals {
         let id = request.id;
+        let (once, session, deny) = (thread_id.clone(), thread_id.clone(), thread_id.clone());
         let mut buttons = div().flex().flex_row().gap_2().child(
             Button::new(SharedString::from(format!("once-{id}")))
                 .primary()
-                .small()
                 .label("Allow once")
-                .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Once, cx))),
+                .on_click(
+                    cx.listener(move |ws, _, _, cx| ws.approve(&once, id, Decision::Once, cx)),
+                ),
         );
         if let Some(scope) = &request.session {
             buttons = buttons.child(
                 Button::new(SharedString::from(format!("session-{id}")))
-                    .small()
                     .label(format!("Allow {scope} for the session"))
-                    .on_click(
-                        cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Session, cx)),
-                    ),
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.approve(&session, id, Decision::Session, cx)
+                    })),
             );
         }
         buttons = buttons.child(
             Button::new(SharedString::from(format!("deny-{id}")))
+                // One filled button on the card: the yes. The no is its outline, in the
+                // danger color, so it is found and not pressed by habit.
                 .danger()
-                .small()
+                .outline()
                 .label("Deny")
-                .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Deny, cx))),
+                .on_click(
+                    cx.listener(move |ws, _, _, cx| ws.approve(&deny, id, Decision::Deny, cx)),
+                ),
         );
-        // A command is shown as code, in full: it came from the model and is about to run.
+        // A command is shown as code: it came from the model and is about to run. Its box
+        // shows three lines and scrolls; "Show all" opens it up to the card's room.
         // A batch shows every step, one row each: the yes covers all of them.
         let what = match &request.request {
             // A long batch scrolls inside the card, so the buttons stay in view.
@@ -66,12 +83,23 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 let steps = request.steps.iter().fold(
                     div()
                         .id(SharedString::from(format!("steps-{id}")))
-                        .max_h(px(240.))
+                        .max_h(budget - px(24.))
                         .overflow_y_scroll()
                         .flex()
                         .flex_col()
                         .gap_1(),
-                    |list, step| list.child(div().pl_3().child(step.line())),
+                    |list, step| match &step.request {
+                        Request::Command { command } if !step.allowed => list.child(
+                            div()
+                                .pl_3()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(format!("{}.", step.number))
+                                .child(code(ws, (id, step.number), command, budget, cx)),
+                        ),
+                        _ => list.child(div().pl_3().child(step.line())),
+                    },
                 );
                 div()
                     .flex()
@@ -80,34 +108,19 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .child(request.title("The agent"))
                     .child(steps)
             }
-            Request::Command { command } => {
-                let mono = crate::ui::theme::prefs(cx)
-                    .mono_font
-                    .clone()
-                    .unwrap_or_else(|| "Menlo".to_owned());
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child("The agent wants to run")
-                    .child(
-                        div()
-                            .px_3()
-                            .py_2()
-                            .rounded_lg()
-                            .bg(cx.theme().background)
-                            .small()
-                            .font_family(mono)
-                            .child(command.clone()),
-                    )
-            }
+            Request::Command { command } => div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child("The agent wants to run")
+                .child(code(ws, (id, 0), command, budget - px(24.), cx)),
             other => div().child(other.describe("The agent")),
         };
         cards = cards.child(
-            card(border, surface)
-                .border_color(warning)
+            card(cx)
+                .border_color(warning.opacity(0.6))
                 .child(what)
-                .child(buttons),
+                .child(buttons.flex_none()),
         );
     }
     if let Some(question) = chat.questions.front().filter(|question| buttons(question)) {
@@ -160,7 +173,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .on_click(cx.listener(move |ws, _, _, cx| ws.pick(index, cx))),
             );
         }
-        let mut card = card(border, surface)
+        let mut card = card(cx)
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)
@@ -180,17 +193,83 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 )))
             })
             .child(options);
+        let mut actions = div().flex().flex_row().items_center().gap_2();
         if question.multiple {
-            card = card.child(
+            actions = actions.child(
                 Button::new("answer-chosen")
                     .primary()
                     .label("Answer")
                     .on_click(cx.listener(|ws, _, _, cx| ws.answer_picked(cx))),
             );
         }
+        card = card.child(actions.child(skip_button(cx)));
         cards = cards.child(card);
     }
     cards
+}
+
+/// A command in a box of three lines that scrolls inside; long lines wrap. `key` is the
+/// request and step, so each box opens on its own; open, it grows up to `room`.
+fn code(
+    ws: &Workspace,
+    key: (u64, usize),
+    command: &str,
+    room: Pixels,
+    cx: &mut Context<Workspace>,
+) -> Div {
+    let mono = crate::ui::theme::prefs(cx)
+        .mono_font
+        .clone()
+        .unwrap_or_else(|| "Menlo".to_owned());
+    let open = ws.approval_open.contains(&key);
+    let shut = px(LINE * SHOWN_LINES + 16.);
+    let long = long(command);
+    let height = if open {
+        (room - px(28.)).max(shut)
+    } else {
+        shut
+    };
+    let (id, step) = key;
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            div()
+                .id(SharedString::from(format!("command-{id}-{step}")))
+                .max_h(height)
+                .overflow_y_scroll()
+                .px_3()
+                .py_2()
+                .rounded_lg()
+                .bg(cx.theme().background)
+                .small()
+                .line_height(px(LINE))
+                .font_family(mono)
+                .whitespace_normal()
+                .child(command.to_owned()),
+        )
+        .when(long, |column| {
+            column.child(
+                div()
+                    .id(SharedString::from(format!("command-more-{id}-{step}")))
+                    .meta()
+                    .text_color(cx.theme().muted_foreground)
+                    .cursor_pointer()
+                    .child(if open { "Show less" } else { "Show all" })
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        if !ws.approval_open.remove(&key) {
+                            ws.approval_open.insert(key);
+                        }
+                        cx.notify();
+                    })),
+            )
+        })
+}
+
+/// More than the box shows: over three lines, or a line long enough to wrap past them.
+fn long(command: &str) -> bool {
+    command.lines().count() > SHOWN_LINES as usize || command.chars().count() > 240
 }
 
 /// A short question is answered with one click on a pill, not in a card.
@@ -230,7 +309,20 @@ fn light_question(
                 .font_weight(FontWeight::MEDIUM)
                 .child(question.question.clone()),
         )
-        .child(messages::pills("question", &labels, true, true, pick, cx))
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_start()
+                .gap_2()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(messages::pills("question", &labels, true, true, pick, cx)),
+                )
+                .child(skip_button(cx)),
+        )
         // More wait behind this one; the answers go to the agent together.
         .when(total > 1, |column| {
             column.child(
@@ -242,23 +334,32 @@ fn light_question(
         })
 }
 
-fn card(border: Hsla, surface: Hsla) -> Div {
+/// Leaves the question to the agent: a quiet button, since the choice is the main thing.
+fn skip_button(cx: &mut Context<Workspace>) -> Button {
+    Button::new("skip-question")
+        .ghost()
+        .label("Skip")
+        .on_click(cx.listener(|ws, _, _, cx| ws.skip_question(cx)))
+}
+
+fn card(cx: &App) -> Div {
     div()
         .flex()
         .flex_col()
-        .gap_2()
+        .gap_3()
         .p_3()
-        .rounded_lg()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
+        .rounded_xl()
+        .elevation(Level::Raised, cx)
 }
 
 impl Workspace {
-    fn approve(&mut self, id: u64, decision: Decision, cx: &mut Context<Self>) {
+    fn approve(&mut self, thread_id: &str, id: u64, decision: Decision, cx: &mut Context<Self>) {
         self.core.call(
             cx,
-            move |client| async move { client.threads().approve(id, decision).await },
+            {
+                let thread_id = thread_id.to_owned();
+                move |client| async move { client.threads().approve(&thread_id, id, decision).await }
+            },
             move |ws, result, cx| {
                 if let Err(error) = result {
                     ws.fail(error, cx);
@@ -296,13 +397,27 @@ impl Workspace {
         if chosen.is_empty() {
             return;
         }
+        self.answer_with(|chat| chat.answer(&chosen, ""), cx);
+    }
+
+    /// Skips only the question shown; the next one shows, or the answers go out.
+    fn skip_question(&mut self, cx: &mut Context<Self>) {
+        self.picked.clear();
+        self.answer_with(Transcript::skip, cx);
+    }
+
+    fn answer_with(
+        &mut self,
+        record: impl FnOnce(&mut Transcript) -> Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(thread_id) = self.shown.clone() else {
             return;
         };
         let Some(chat) = self.chats.get_mut(&thread_id) else {
             return;
         };
-        let Some(text) = chat.answer(&chosen, "") else {
+        let Some(text) = record(chat) else {
             // The next question shows; nothing is sent until the last one is answered.
             cx.notify();
             return;
@@ -325,6 +440,7 @@ mod tests {
     use dusk_protocol::tools::Question;
 
     use super::buttons;
+    use crate::pages::chat::transcript::Transcript;
 
     fn question(options: &[&str], multiple: bool) -> Question {
         Question {
@@ -341,5 +457,30 @@ mod tests {
         assert!(!buttons(&question(&["a", "b", "c", "d", "e"], false)));
         assert!(!buttons(&question(&["Yes"], false)));
         assert!(!buttons(&question(&["Yes", &"x".repeat(25)], false)));
+    }
+
+    #[test]
+    fn skipping_moves_on_and_the_last_skip_sends_every_answer() {
+        let (first, second) = (question(&["a", "b"], false), question(&["c", "d"], true));
+        let mut chat = Transcript::default();
+        chat.questions.extend([first.clone(), second.clone()]);
+        assert_eq!(chat.skip(), None);
+        assert_eq!(chat.questions.front(), Some(&second));
+        assert_eq!(chat.answers, [first.skipped()]);
+        let sent = chat.answer(&[1], "").unwrap();
+        assert_eq!(
+            sent,
+            [first.skipped(), second.answer(&[1], "")].join("\n\n")
+        );
+        assert!(chat.answers.is_empty());
+
+        chat.questions.extend([first.clone(), second.clone()]);
+        assert_eq!(chat.answer(&[0], ""), None);
+        let sent = chat.skip().unwrap();
+        assert_eq!(
+            sent,
+            [first.answer(&[0], ""), second.skipped()].join("\n\n")
+        );
+        assert_eq!(chat.skip(), None, "nothing is left to skip");
     }
 }

@@ -1,6 +1,6 @@
 //! Modes of the chat: each is a prompt in `modes/<NAME>.md` and its own set of tools.
 //! MAIN does the work itself, PLAN only reads and plans, ORCHESTRATOR gives the work
-//! to agents. Any other file in the folder is a mode of the user's, with every tool of
+//! to agents it asks one by one, TEAM writes a plan the core runs with a team. Any other file in the folder is a mode of the user's, with every tool of
 //! MAIN. A mode's tools start from the defaults here and can be switched in /settings.
 //! Modes apply to the chat only; agents keep their own prompts and tools.
 
@@ -18,12 +18,15 @@ use crate::{
 pub const MAIN: &str = "MAIN";
 pub const PLAN: &str = "PLAN";
 pub const ORCHESTRATOR: &str = "ORCHESTRATOR";
+/// The only mode whose `tasks` is the plan a team runs; every other mode keeps the
+/// board and the agents `ask_agent` starts.
+pub const TEAM: &str = "TEAM";
 
 /// The built-in modes, in the order Tab walks them.
-const BUILTIN: [&str; 3] = [MAIN, PLAN, ORCHESTRATOR];
+const BUILTIN: [&str; 4] = [MAIN, PLAN, ORCHESTRATOR, TEAM];
 
 /// What PLAN can do: read, look things up, and write the plan down.
-const PLAN_TOOLS: [&str; 9] = [
+const PLAN_TOOLS: [&str; 10] = [
     "read_file",
     "search_files",
     "project_graph",
@@ -33,16 +36,18 @@ const PLAN_TOOLS: [&str; 9] = [
     "tasks",
     "ask_user",
     "show",
+    "suggest_next",
 ];
 
-/// What ORCHESTRATOR can do: hand work out and keep track of it.
-const ORCHESTRATOR_TOOLS: [&str; 6] = [
+/// What ORCHESTRATOR and TEAM can do: hand work out and keep track of it.
+const ORCHESTRATOR_TOOLS: [&str; 7] = [
     "ask_agent",
     "read_history",
     "load_skill",
     "tasks",
     "ask_user",
     "show",
+    "suggest_next",
 ];
 
 /// The modes in one folder.
@@ -81,6 +86,15 @@ impl<'a> Modes<'a> {
             .collect()
     }
 
+    /// The mode a chat runs in: its own stored mode when it is a known one, else the
+    /// setting's. The folder is listed only when the two differ.
+    pub fn effective(&self, stored: Option<String>, setting: &str) -> String {
+        match stored {
+            Some(mode) if mode == setting || self.list().contains(&mode) => mode,
+            _ => setting.to_owned(),
+        }
+    }
+
     /// The mode after `mode`, round to the first.
     pub fn next(&self, mode: &str) -> String {
         let modes = self.list();
@@ -109,7 +123,7 @@ impl<'a> Modes<'a> {
     pub fn default_tool(mode: &str, name: &str, kind: ToolKind) -> Option<bool> {
         let allowed: &[&str] = match mode {
             PLAN => &PLAN_TOOLS,
-            ORCHESTRATOR => &ORCHESTRATOR_TOOLS,
+            ORCHESTRATOR | TEAM => &ORCHESTRATOR_TOOLS,
             _ => return None,
         };
         Some(!matches!(kind, ToolKind::Mcp | ToolKind::Computer) && allowed.contains(&name))
@@ -129,7 +143,7 @@ mod tests {
         fs::write(directory.join("notes.txt"), "not a mode").unwrap();
         assert_eq!(
             Modes::new(&directory).list(),
-            [MAIN, PLAN, ORCHESTRATOR, "REVIEW"]
+            [MAIN, PLAN, ORCHESTRATOR, TEAM, "REVIEW"]
         );
         assert_eq!(Modes::new(&directory).next("REVIEW"), MAIN);
         assert_eq!(Modes::new(&directory).next("gone"), MAIN);

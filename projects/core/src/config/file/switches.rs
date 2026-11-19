@@ -1,5 +1,7 @@
 //! What is switched on or off: tools, modes, agents and skills.
 
+use std::path::Path;
+
 use super::Config;
 use crate::{
     catalog::{
@@ -9,10 +11,9 @@ use crate::{
     tools::ToolKind,
 };
 
-/// Tools that landed before the clients draw what they make, or before the evals show
-/// they help. Each is off in every mode until `tools:` in the config switches it on by
-/// name; take a name out when it is ready.
-const OFF_UNTIL_SWITCHED_ON: [&str; 0] = [];
+/// Tools off in every mode until `tools:` in the config switches them on by name:
+/// `physical_input` moves the user's real mouse, which only they may allow.
+const OFF_UNTIL_SWITCHED_ON: [&str; 1] = ["physical_input"];
 
 impl Config {
     /// Whether the file switches the tool on, whatever the mode; the tests read it back.
@@ -56,7 +57,8 @@ impl Config {
     }
 
     pub fn set_mode_tool_enabled(&mut self, mode: &str, name: &str, enabled: bool) {
-        if mode == modes::MAIN {
+        // One switch for every mode: the user allows it, not a mode.
+        if mode == modes::MAIN || OFF_UNTIL_SWITCHED_ON.contains(&name) {
             return self.set_tool_enabled(name, enabled);
         }
         let tools = self.modes.entry(mode.to_owned()).or_default();
@@ -71,9 +73,17 @@ impl Config {
         self.agents.insert(name.to_owned(), enabled);
     }
 
-    /// Whether a skill may be loaded: its own switch and its pack's are on.
+    /// Whether a skill may be loaded: its own switch and its pack's are on. For one skill;
+    /// a caller asking about many resolves the built-in folder once for `skill_enabled_in`.
     pub fn skill_enabled(&self, name: &str) -> bool {
-        self.skill_switch(name) && skills::pack_of(name).is_none_or(|pack| self.pack_enabled(&pack))
+        self.skill_enabled_in(name, skills::builtin_dir().as_deref())
+    }
+
+    /// `skill_enabled` with the built-in skills' folder already resolved: resolving it
+    /// validates the release resources, so a caller asking about many skills does it once.
+    pub(crate) fn skill_enabled_in(&self, name: &str, builtin: Option<&Path>) -> bool {
+        self.skill_switch(name)
+            && skills::pack_in(name, builtin).is_none_or(|pack| self.pack_enabled(&pack))
     }
 
     /// The skill's own switch, whatever its pack's.

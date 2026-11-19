@@ -1,6 +1,9 @@
 //! Where the shown chat works: the project and its folder, the branch, the model, the
 //! mode and the approval policy. A click on the folder opens what to do with it.
 
+use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName},
     *,
@@ -30,7 +33,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .gap_2()
             .px_4()
             .py_1()
-            .text_sm()
+            .small()
             .text_color(secondary)
             .child(widgets::icon(icon, muted))
             .child(div().flex_1().min_w_0().truncate().child(text))
@@ -40,6 +43,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .id("environment-path")
         .cursor_pointer()
         .hover(|row| row.bg(theme.accent))
+        .press(theme.accent, cx)
         .on_click(cx.listener(|ws, _, _, cx| {
             ws.path_menu = !ws.path_menu;
             cx.notify();
@@ -96,10 +100,7 @@ fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> 
         .flex()
         .flex_col()
         .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .occlude()
         .child(
             item("path-reveal", IconName::Folder.into(), reveal_label(), cx).on_click(cx.listener(

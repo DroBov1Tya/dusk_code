@@ -25,8 +25,8 @@ use crate::{
     state::{Identity, State},
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
-        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Show, Tasks,
-        ToolRegistry, ToolScope, console::project_folder,
+        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, SearchWorkshop, Show,
+        SuggestFromWorkshop, SuggestNext, Tasks, ToolRegistry, ToolScope,
     },
 };
 
@@ -53,9 +53,10 @@ pub struct Launcher {
     pub hooks: Arc<crate::plugins::Hooks>,
     /// How each provider's calls go, learned by every thread's calls.
     pub health: Arc<crate::providers::Health>,
-    /// Keeps the graph of saved projects current; `None` for chats that leave nothing
-    /// behind.
-    pub graph: Option<Arc<crate::project::graph::Indexer>>,
+    /// Notices skill changes for every thread, temporary ones too.
+    pub skill_watch: Arc<crate::catalog::history::Watch>,
+    /// The main state, where skill changes are kept even for a temporary chat.
+    pub skill_state: Arc<State>,
     /// What the teams that run plans keep in memory: a lock and caches.
     pub(crate) team: Arc<crate::runtime::team::Teams>,
     /// Its chats leave nothing behind: the database is in memory, their files are in the
@@ -70,7 +71,6 @@ impl Launcher {
         Ok(ToolScope::new(cwd, workspace)?
             .protect(self.paths.config_root())
             .share(&self.paths.skills_dir())
-            .with_skills(&self.paths.skills_dir())
             .share(&self.paths.agents_dir()))
     }
 
@@ -85,10 +85,6 @@ impl Launcher {
         depth: usize,
     ) -> Result<ThreadSetup> {
         let scope = Arc::new(self.scope(cwd, workspace)?);
-        // The thread's task starts: its project is looked over, in the background.
-        if let Some(graph) = &self.graph {
-            graph.refresh(project_folder(&scope));
-        }
         Ok(ThreadSetup {
             state: Arc::clone(&self.state),
             model: Arc::clone(&self.model),
@@ -107,6 +103,8 @@ impl Launcher {
             lock: ThreadLock::take(workspace)?,
             hooks: Arc::clone(&self.hooks),
             health: Arc::clone(&self.health),
+            skill_watch: Arc::clone(&self.skill_watch),
+            skill_state: Arc::clone(&self.skill_state),
         })
     }
 
@@ -122,7 +120,6 @@ impl Launcher {
         tools.approvals = Some(Arc::clone(&self.approvals));
         tools.platform = self.platform;
         tools.state = Some(Arc::clone(&self.state));
-        tools.graph = self.graph.clone();
         tools.thread_id = thread_id.to_owned();
         for server in self.mcp.ready() {
             let pictures = ArtifactStore::new(self.paths.artifacts_dir());
@@ -147,6 +144,10 @@ impl Launcher {
                 .with_team(Arc::new(team::Runner::new(self.clone()))),
             _ => tasks,
         }));
+        if depth == 0 {
+            let config = Arc::clone(&self.config);
+            tools.add(Box::new(crate::tools::AddWorkshopSource::new(config)));
+        }
         // A temporary chat reads what is remembered and adds nothing to it.
         if !self.temporary {
             tools.add(Box::new(Remember::user(self.paths.rules_root())));
@@ -158,12 +159,12 @@ impl Launcher {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             use crate::tools::{
-                Click, ComputerActions, PressKeys, Screen, Screenshot, Scroll, TypeText,
+                Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
             };
             let screen = Arc::new(Screen::new(ArtifactStore::new(self.paths.artifacts_dir())));
             tools.add(Box::new(Screenshot(Arc::clone(&screen))));
             tools.add(Box::new(Click(Arc::clone(&screen))));
-            tools.add(Box::new(Scroll(Arc::clone(&screen))));
+            tools.add(Box::new(PhysicalInput(Arc::clone(&screen))));
             tools.add(Box::new(TypeText(Arc::clone(&screen))));
             tools.add(Box::new(PressKeys(Arc::clone(&screen))));
             tools.add(Box::new(ComputerActions(Arc::clone(&screen))));
@@ -182,6 +183,9 @@ impl Launcher {
         if depth == 0 {
             tools.add(Box::new(AskUser));
             tools.add(Box::new(Show));
+            tools.add(Box::new(SearchWorkshop::new(self.paths.clone())));
+            tools.add(Box::new(SuggestFromWorkshop::new(self.paths.clone())));
+            tools.add(Box::new(SuggestNext));
             tools.add(Box::new(GoalTool::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
@@ -257,6 +261,8 @@ impl Launcher {
         let handle = self
             .run_thread(thread_id.to_owned(), &workspace, cwd)
             .await?;
+        // What a stopped process left of its team is settled before its members wake.
+        self.team_settle(thread_id).await;
         // Its agents a stopped process left at work go on, or tell it they stopped.
         if let Err(error) = self.wake_unfinished(Some(thread_id), cwd).await {
             warn!("thread {thread_id}: cannot start its agents left at work: {error:#}");
@@ -321,6 +327,7 @@ mod tests {
     /// whether the call only reads, so it may run with the reads next to it. A tool added
     /// without a decision here fails the test.
     const DECISIONS: &[(&str, bool, bool)] = &[
+        ("add_workshop_source", false, false),
         ("agent_state", true, false),
         ("ask_agent", false, false),
         ("ask_user", true, false),
@@ -335,6 +342,7 @@ mod tests {
         ("message_parent", false, false),
         ("plan_edit", true, false),
         ("project_graph", true, true),
+        ("physical_input", false, false),
         ("press_keys", false, false),
         ("read_file", true, true),
         ("read_history", true, true),
@@ -343,9 +351,11 @@ mod tests {
         ("remember_project", true, false),
         ("run_command", false, false),
         ("screenshot", true, false),
-        ("scroll", false, false),
         ("search_files", true, true),
+        ("search_workshop", true, true),
         ("show", true, false),
+        ("suggest_from_workshop", true, false),
+        ("suggest_next", true, false),
         ("tasks", false, false),
         ("type_text", false, false),
         ("window_session", false, false),

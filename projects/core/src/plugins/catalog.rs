@@ -15,19 +15,21 @@ use parking_lot::{Mutex, RwLock};
 use serde_json::json;
 use tracing::{info, warn};
 
-use dusk_protocol::plugin::{Part, Permissions};
+use dusk_protocol::plugin::{Part, Permissions, ProjectAccess, Provides};
 
 use super::{
     broker::{self, Broker, Key, Origin, Policy},
+    contract::{Contracts, Served},
     hooks::{Hook, Hooks},
     install,
     isolation::Isolation,
     manifest::{MANIFEST_FILE, Manifest},
     platform::{PlatformSpec, Platforms},
+    store::Record,
     ui::{UiHost, UiSpec},
 };
 use crate::{
-    config::{McpServerConfig, Plugged, live::LiveConfig},
+    config::{McpServerConfig, Plugged, PluginConfig, live::LiveConfig},
     init::paths::{Paths, is_plain_folder_name},
     mcp::McpServers,
 };
@@ -56,6 +58,8 @@ pub struct Plugins {
     hooks: Arc<Hooks>,
     platforms: Arc<Platforms>,
     ui: Arc<UiHost>,
+    /// The plugins that serve contracts, while `plugin_contracts` is on.
+    contracts: Arc<Contracts>,
     /// The broker of each plugin that is on and may connect; kept across scans, so its
     /// port and token stay while the plugin runs.
     brokers: Mutex<BTreeMap<String, Broker>>,
@@ -86,6 +90,7 @@ impl Plugins {
             hooks,
             platforms,
             ui: Arc::default(),
+            contracts: Arc::default(),
             brokers: Mutex::default(),
             found: RwLock::default(),
             secrets: Mutex::default(),
@@ -97,10 +102,16 @@ impl Plugins {
         &self.ui
     }
 
+    /// The plugins that serve contracts, and the way to call them.
+    pub fn contracts(&self) -> &Arc<Contracts> {
+        &self.contracts
+    }
+
     /// What `plugin`'s manifest asks for now, to keep as allowed when it is switched on.
-    pub fn permissions(&self, plugin: &str) -> Result<Permissions> {
+    pub fn permissions(&self, plugin: &str) -> Result<(Permissions, Option<Provides>)> {
         ensure!(is_plain_folder_name(plugin), "invalid plugin name");
-        Ok(Manifest::load(&folder(&self.paths).join(plugin))?.permissions)
+        let manifest = Manifest::load(&folder(&self.paths).join(plugin))?;
+        Ok((manifest.permissions, manifest.provides))
     }
 
     pub fn list(&self) -> Vec<PluginInfo> {
@@ -136,6 +147,14 @@ impl Plugins {
         let mut platforms = Vec::new();
         let mut interfaces = Vec::new();
         let mut connecting = Vec::new();
+        let mut served = Vec::new();
+        let record = match Record::load(&self.paths) {
+            Ok(record) => record,
+            Err(error) => {
+                warn!("cannot read the store's record: {error:#}");
+                Record::default()
+            }
+        };
         for folder in plugin_folders(&folder(&self.paths)) {
             let name = folder_name(&folder);
             let settings = config.plugin(&name);
@@ -171,11 +190,7 @@ impl Plugins {
                 .secrets()
                 .map(|key| (key.clone(), secret_of(key).is_some()))
                 .collect();
-            let allowed = settings
-                .allowed
-                .as_ref()
-                .is_some_and(|allowed| covers(allowed, &manifest.permissions))
-                || manifest.permissions == Permissions::default();
+            let allowed = allowed(&settings, &manifest);
             let mut problem = None;
             let here = manifest.runs_here();
             if !here {
@@ -186,7 +201,10 @@ impl Plugins {
             }
             let mut enabled = settings.enabled && missing_settings.is_empty() && allowed && here;
             let mut isolation = None;
-            if enabled && manifest.runs_programs() {
+            // A contract plugin runs nothing while the switch is off: no confinement is
+            // made, so no broker listens and no "cannot start here" shows.
+            let contract_off = manifest.provides.is_some() && !config.contracts_on();
+            if enabled && manifest.runs_programs() && !contract_off {
                 match self.isolate(&manifest, &folder, &values, &keys) {
                     Ok(made) => {
                         if !manifest.permissions.network.is_empty() {
@@ -226,6 +244,15 @@ impl Plugins {
                         isolation: isolation.clone(),
                     });
                 }
+                if let (true, Some(provides)) = (config.contracts_on(), &manifest.provides) {
+                    served.push(Served::new(
+                        name.clone(),
+                        record.tier(&self.paths, &name),
+                        provides.clone(),
+                        resolve(&provides.command, &folder),
+                        isolation.clone(),
+                    ));
+                }
                 if let Some(ui) = &manifest.ui {
                     interfaces.push(ui_spec(&manifest, ui, &folder, isolation));
                 }
@@ -244,7 +271,28 @@ impl Plugins {
         self.hooks.set(hooks);
         self.platforms.set(platforms);
         self.ui.set(interfaces);
+        self.contracts.set(served);
+        for info in &mut found {
+            info.choose = self.choices(&config, &info.name);
+        }
         *self.found.write() = found;
+    }
+
+    /// The hosts `plugin` serves where another plugin serves them too and the routing
+    /// sends them elsewhere: the user may choose this one for each.
+    fn choices(&self, config: &crate::config::Config, plugin: &str) -> Vec<String> {
+        let mut hosts = Vec::new();
+        let served = self.contracts.served_by(plugin);
+        for host in served {
+            let others = self.contracts.serving("forge", &host);
+            let routed = self
+                .contracts
+                .route("forge", &host, config.chosen("forge", &host));
+            if others.len() > 1 && routed.is_some_and(|routed| routed.plugin != plugin) {
+                hosts.push(host);
+            }
+        }
+        hosts
     }
 
     /// The confinement of a plugin's programs, with its broker when it may connect.
@@ -258,8 +306,12 @@ impl Plugins {
         let data = data_folder(&self.paths, folder)?;
         let env = env(folder, &data, values);
         let permissions = &manifest.permissions;
+        let isolation = match manifest.provides {
+            Some(_) => Isolation::for_contract,
+            None => Isolation::new,
+        };
         if permissions.network.is_empty() {
-            return Isolation::new(&self.paths, folder, &data, permissions, env, None);
+            return isolation(&self.paths, folder, &data, permissions, env, None);
         }
         let policy = policy(permissions, keys)?;
         let mut brokers = self.brokers.lock();
@@ -271,7 +323,7 @@ impl Plugins {
             }
         }
         let broker = brokers.get(&manifest.name);
-        Isolation::new(&self.paths, folder, &data, permissions, env, broker)
+        isolation(&self.paths, folder, &data, permissions, env, broker)
     }
 
     /// Reads the folder again every `period`.
@@ -389,6 +441,23 @@ fn resolve_mcp(server: &McpServerConfig, folder: &Path, isolation: &Isolation) -
     server
 }
 
+/// Whether what the user agreed to covers all the manifest asks for, permissions and
+/// contracts alike.
+pub(super) fn allowed(settings: &PluginConfig, manifest: &Manifest) -> bool {
+    let permissions = settings
+        .allowed
+        .as_ref()
+        .is_some_and(|allowed| covers(allowed, &manifest.permissions))
+        || manifest.permissions == Permissions::default();
+    let provides = manifest.provides.as_ref().is_none_or(|wanted| {
+        settings
+            .allowed_provides
+            .as_ref()
+            .is_some_and(|agreed| agreed.covers(wanted))
+    });
+    permissions && provides
+}
+
 /// Whether what the user allowed covers all that `wanted` asks for.
 pub(super) fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
     let within = |have: &[String], want: &[String]| want.iter().all(|item| have.contains(item));
@@ -396,6 +465,7 @@ pub(super) fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
         && within(&allowed.exec, &wanted.exec)
         && within(&allowed.read, &wanted.read)
         && within(&allowed.sockets, &wanted.sockets)
+        && (wanted.project == ProjectAccess::None || allowed.project == wanted.project)
         && wanted.keys.iter().all(|key| {
             allowed.keys.iter().any(|had| {
                 had.name == key.name
@@ -476,6 +546,7 @@ fn info(
         (!manifest.hooks.is_empty(), "hooks"),
         (manifest.platform.is_some(), "platform"),
         (manifest.ui.is_some(), "ui"),
+        (manifest.provides.is_some(), "provides"),
     ] {
         if has {
             parts.push(part.to_owned());
@@ -492,9 +563,15 @@ fn info(
             .then(|| format!("needs settings: {}", missing_settings.join(", "))),
         missing_settings,
         secrets,
-        permissions: manifest.permissions.lines(),
+        permissions: manifest
+            .provides
+            .iter()
+            .flat_map(Provides::lines)
+            .chain(manifest.permissions.lines())
+            .collect(),
         platforms: manifest.platforms.clone(),
         clients: manifest.clients.clone(),
+        choose: Vec::new(),
     }
 }
 
@@ -528,6 +605,7 @@ fn broken(name: String, enabled: bool, error: &anyhow::Error) -> PluginInfo {
         permissions: Vec::new(),
         platforms: Vec::new(),
         clients: Vec::new(),
+        choose: Vec::new(),
         problem: Some(format!("{error:#}")),
     }
 }
@@ -604,9 +682,89 @@ mod tests {
     }
 
     #[test]
+    fn an_update_that_serves_more_hosts_stays_off() {
+        let manifest = |hosts: &str, permissions: &str| -> Manifest {
+            serde_saphyr::from_str(&format!(
+                "name: g\npermissions: {{{permissions}}}\nprovides:\n  command: [./p]\n  \
+                 forge: {{versions: [1], hosts: [{hosts}]}}\n"
+            ))
+            .unwrap()
+        };
+        let agreed = |manifest: &Manifest| PluginConfig {
+            enabled: true,
+            allowed: Some(manifest.permissions.clone()),
+            allowed_provides: manifest.provides.clone(),
+            ..Default::default()
+        };
+        let one = manifest("github.com", "");
+        let two = manifest("github.com, ghe.example.com", "");
+        assert!(!allowed(&agreed(&one), &two));
+        assert!(allowed(&agreed(&two), &two));
+        assert!(allowed(&agreed(&two), &one));
+        // Asking for a project folder is asking for more, too.
+        let without = agreed(&one);
+        assert!(!allowed(&without, &manifest("github.com", "project: read")));
+        // A plugin that provides and was never agreed to is off.
+        assert!(!allowed(&PluginConfig::default(), &one));
+    }
+
+    #[test]
     fn errors_and_debug_hide_the_value() {
         let error = check_secret(&manifest(), "token", "sk\u{7}-secret").unwrap_err();
         assert!(!format!("{error:#}").contains("secret"));
         assert_eq!(format!("{:?}", Secret("sk-secret".into())), "[REDACTED]");
+    }
+
+    /// A plugin that serves a contract and connects: on Linux without user namespaces
+    /// it does not start, and its row says why.
+    #[tokio::test]
+    async fn a_contract_plugin_says_why_it_cannot_start() {
+        let paths = crate::testing::temp_paths("catalog-contract");
+        let plugin = folder(&paths).join("g");
+        std::fs::create_dir_all(&plugin).unwrap();
+        let provides = "{command: [./p], forge: {versions: [1], hosts: [github.com]}}";
+        let permissions = "{network: ['https://api.github.com']}";
+        std::fs::write(
+            plugin.join(MANIFEST_FILE),
+            format!("name: g\npermissions: {permissions}\nprovides: {provides}\n"),
+        )
+        .unwrap();
+        std::fs::write(plugin.join("p"), "#!/bin/sh\n").unwrap();
+        let row = |on: bool| {
+            let settings = format!(
+                "plugin_contracts: {on}\nplugins:\n  g:\n    enabled: true\n    allowed: \
+                 {permissions}\n    allowed_provides: {provides}\n"
+            );
+            let config = Arc::new(crate::testing::temp_live_config_with(
+                &format!("catalog-contract-{on}"),
+                &settings,
+            ));
+            let mcp = McpServers::start(&config.current(), paths.mcp_tokens_dir());
+            let plugins = Plugins::new(paths.clone(), config, mcp, Arc::default(), Arc::default());
+            plugins.scan();
+            plugins
+                .list()
+                .into_iter()
+                .find(|row| row.name == "g")
+                .unwrap()
+        };
+        // Off: nothing is confined or started, so nothing can fail to be.
+        let off = row(false);
+        assert!(off.problem.is_none(), "{off:?}");
+        let row = row(true);
+        #[cfg(target_os = "linux")]
+        if !crate::platform::netns::available() {
+            let problem = row.problem.unwrap_or_default();
+            assert!(!row.enabled);
+            assert!(
+                problem
+                    .starts_with("this Linux does not let a program have a network of its own ("),
+                "{problem}"
+            );
+            return;
+        }
+        if crate::platform::sandbox_available() {
+            assert!(row.enabled && row.problem.is_none(), "{row:?}");
+        }
     }
 }

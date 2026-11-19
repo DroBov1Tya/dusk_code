@@ -2,6 +2,7 @@
 
 use gpui_kit::{component::ActiveTheme, *};
 
+use crate::ui::looping::Loop;
 use crate::{
     pages::chat::{links, transcript::CommandRun},
     ui::{Type, widgets},
@@ -56,11 +57,9 @@ pub fn command_card(key: &str, run: &CommandRun, cx: &mut Context<Workspace>) ->
                             .bg(accent)
                             .w(relative(0.02))
                             // The animation only drives the redraws; the width follows the clock.
-                            .with_animation(
-                                SharedString::from(format!("run-bar-{key}")),
-                                Animation::new(std::time::Duration::from_millis(250)).repeat(),
-                                move |bar, _| bar.w(relative(run_fraction(started.elapsed()))),
-                            ),
+                            .looping(std::time::Duration::from_millis(250), move |bar, _| {
+                                bar.w(relative(run_fraction(started.elapsed())))
+                            }),
                     ),
             );
         }
@@ -69,6 +68,7 @@ pub fn command_card(key: &str, run: &CommandRun, cx: &mut Context<Workspace>) ->
             card = card.child(links::markdown(
                 SharedString::from(format!("command-{key}")),
                 fenced,
+                links::Links::Paths,
             ));
         }
         Some(Err(error)) => {

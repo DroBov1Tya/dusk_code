@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::thread::ThreadEvent;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
     Thread {
@@ -33,6 +34,12 @@ pub enum Event {
     /// The repository of a saved project was changed through the core: open views of
     /// it read it again. Given to clients that may read projects.
     GitChanged { project_id: String },
+    /// A project's repository status changed: its pull requests or their checks, or
+    /// the work tree. Given to clients that may read projects.
+    RepositoryStatus {
+        project_id: String,
+        status: Box<crate::project::RepositoryStatus>,
+    },
     /// A plugin's short note, or why its interface stopped.
     PluginNotice { plugin: String, text: String },
 }

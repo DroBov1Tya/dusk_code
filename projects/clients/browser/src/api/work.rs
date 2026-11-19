@@ -83,3 +83,9 @@ pub async fn team(thread_id: &str) -> Res<Option<Team>> {
     let thread_id = thread_id.to_owned();
     ask!(work(WorkRequest::Team { thread_id }), Response::Team(t) => t)
 }
+
+/// Passes a task that waits for the user's confirmation; its own event moves the row.
+pub async fn confirm_task(thread_id: &str, task_id: &str) -> Res<()> {
+    let (thread_id, task_id) = (thread_id.to_owned(), task_id.to_owned());
+    done(work(WorkRequest::ConfirmTask { thread_id, task_id })).await
+}

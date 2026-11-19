@@ -61,6 +61,10 @@ impl Workspace {
                     *event,
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }
                 );
+                self.suggestions
+                    .entry(thread_id.clone())
+                    .or_default()
+                    .hear(&event);
                 self.notify_event(&thread_id, &event, cx);
                 self.watch_plan(&thread_id, &event, cx);
                 self.overview_heard(&thread_id, &event, cx);
@@ -86,11 +90,19 @@ impl Workspace {
                     self.load_jobs(cx);
                     self.load_sources(cx);
                 }
+                let tool_done = matches!(
+                    *event,
+                    dusk_protocol::thread::ThreadEvent::ToolFinished { .. }
+                );
                 let mut finished = false;
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     let was_working = chat.working;
                     chat.apply(*event);
                     finished = was_working && !chat.working;
+                }
+                // A card of the Workshop shows what is installed now, read once it comes.
+                if tool_done && self.shown.as_deref() == Some(thread_id.as_str()) {
+                    self.ensure_suggested(cx);
                 }
                 if finished {
                     self.rates.remove(&thread_id);
@@ -116,9 +128,13 @@ impl Workspace {
             } => self.plugin_frame(plugin, part, widget, jpeg, cx),
             Event::PluginNotice { plugin, text } => self.plugin_notice(&plugin, &text, cx),
             Event::GitChanged { project_id } => self.git_changed(&project_id, cx),
+            Event::RepositoryStatus { project_id, status } => {
+                self.repository_changed(&project_id, *status, cx)
+            }
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.working = false;
+                    chat.live = Default::default();
                 }
             }
         }

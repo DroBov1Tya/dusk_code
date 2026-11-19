@@ -2,6 +2,7 @@
 //! it repeats, and under that the choice the repeat needs: a date, an interval, a day or
 //! days, and a time typed in or picked from a list.
 
+use crate::ui::elevation::{Elevation, Level};
 use chrono::{Days, Local, NaiveTime, TimeZone};
 use dusk_protocol::project::{
     Clock, DAY_NAMES, Repeat, RepeatKind, Schedule, ScheduleDraft, WEEKDAYS, interval_name,
@@ -259,7 +260,6 @@ fn picker(
     cx: &mut Context<Workspace>,
 ) -> Div {
     let list = (open == Some(menu)).then(|| {
-        let theme = cx.theme();
         let mut panel = div()
             .id(SharedString::from(format!("{id}-menu")))
             .absolute()
@@ -272,10 +272,7 @@ fn picker(
             .flex()
             .flex_col()
             .rounded_xl()
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.popover)
-            .shadow_lg()
+            .elevation(Level::Floating, cx)
             // Painted over the window, the list must keep its clicks: the dimmed backdrop
             // under it closes the window on any press that reaches it.
             .occlude()
@@ -326,7 +323,6 @@ fn time_field(editor: &Editor, cx: &mut Context<Workspace>) -> Div {
     });
     // The list writes into the box through the workspace, which owns the window.
     let list = (editor.menu == Some(Menu::Time)).then(|| {
-        let theme = cx.theme();
         let mut panel = div()
             .id("schedule-time-menu")
             .absolute()
@@ -339,10 +335,7 @@ fn time_field(editor: &Editor, cx: &mut Context<Workspace>) -> Div {
             .flex()
             .flex_col()
             .rounded_xl()
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.popover)
-            .shadow_lg()
+            .elevation(Level::Floating, cx)
             .occlude()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
         for (index, text) in times.enumerate() {

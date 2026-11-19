@@ -1,6 +1,7 @@
 //! The card that connects a provider: its kind, its address and key, and a check that finds
 //! out whether it answers before anything is saved.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::{
     client::{ChatGpt, ProviderTarget},
     config::ProviderKind,
@@ -177,9 +178,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .flex_col()
             .p_1()
             .rounded_lg()
-            .border_1()
-            .border_color(border)
-            .bg(cx.theme().popover);
+            .elevation(Level::Floating, cx);
         for (kind, label, about) in KINDS {
             let chosen = page.kind == kind;
             list = list.child(

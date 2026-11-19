@@ -10,7 +10,7 @@ use anyhow::Result;
 use dusk_protocol::thread::TaskStatus;
 use tracing::warn;
 
-use super::{dispatch, events, gate, lead_lines, lease};
+use super::{clean, dispatch, events, gate, lead_lines, lease, outside};
 use crate::{
     runtime::{Launcher, ThreadEvent},
     state::{GoalCheck, PlanError, Thread, Turn, TurnStatus},
@@ -76,6 +76,14 @@ pub(crate) async fn member_event(
     let Some(lead) = member.parent_thread_id.as_deref() else {
         return;
     };
+    // From its first event on this runner moves the member's task; recovery leaves
+    // the member to it.
+    {
+        let mut served = launcher.team.served.lock();
+        if !served.contains(&member.id) {
+            served.insert(member.id.clone());
+        }
+    }
     let moved = match event {
         ThreadEvent::TurnStarted(turn) | ThreadEvent::TurnRunning(turn) => {
             started(launcher, lead, member, turn).await
@@ -105,11 +113,19 @@ async fn started(launcher: &Launcher, lead: &str, member: &Thread, turn: &Turn) 
     let Some(held) = lease::at_work(state, lead, &member.id).await? else {
         return Ok(false);
     };
-    if held.status == TaskStatus::Claimed {
-        let task = state
-            .start_task(&member.id, &held.task_id, &turn.turn_id)
-            .await?;
-        events::task(launcher, lead, &task).await;
+    match held.status {
+        TaskStatus::Claimed => {
+            let task = state
+                .start_task(&member.id, &held.task_id, &turn.turn_id)
+                .await?;
+            events::task(launcher, lead, &task).await;
+        }
+        // The turn that redoes a task sent back is the task's as much as the first.
+        _ => {
+            state
+                .mark_task_turn(&member.id, &held.task_id, &turn.turn_id)
+                .await?
+        }
     }
     Ok(false)
 }
@@ -151,16 +167,28 @@ async fn finished(
 }
 
 /// The member's turn completed: its answer is the hand-in, or says it is blocked.
-async fn completed(launcher: &Launcher, lead: &str, member: &Thread, turn: &Turn) -> Result<bool> {
+pub(super) async fn completed(
+    launcher: &Launcher,
+    lead: &str,
+    member: &Thread,
+    turn: &Turn,
+) -> Result<bool> {
     let state = &launcher.state;
     let Some(held) = lease::at_work(state, lead, &member.id).await? else {
         return Ok(false);
     };
     // The start was not seen, as when the turn began before a restart.
-    if held.status == TaskStatus::Claimed {
-        state
-            .start_task(&member.id, &held.task_id, &turn.turn_id)
-            .await?;
+    match held.status {
+        TaskStatus::Claimed => {
+            state
+                .start_task(&member.id, &held.task_id, &turn.turn_id)
+                .await?;
+        }
+        _ => {
+            state
+                .mark_task_turn(&member.id, &held.task_id, &turn.turn_id)
+                .await?
+        }
     }
     let answer = launcher
         .answer(&member.id, turn.response_message_id.as_deref())
@@ -168,8 +196,9 @@ async fn completed(launcher: &Launcher, lead: &str, member: &Thread, turn: &Turn
     let report = Report::of(&answer);
     let moved = match &report.blocked {
         Some(note) => {
+            let note = clean::note(launcher, lead, note).await;
             state
-                .block_task(&member.id, &held.task_id, None, note)
+                .block_task(&member.id, &held.task_id, None, &note)
                 .await
         }
         None => state.hand_in(&member.id, &held.task_id).await,
@@ -180,20 +209,39 @@ async fn completed(launcher: &Launcher, lead: &str, member: &Thread, turn: &Turn
         Err(PlanError::NotOwner { .. } | PlanError::Illegal { .. }) => return Ok(false),
         Err(error) => return Err(error.into()),
     };
-    let task = match (&report.blocked, &task.gate) {
-        (Some(_), _) => {
+    // A change outside the task's files is the lead's to judge, whatever its gate.
+    let outside = match &report.blocked {
+        Some(_) => None,
+        None => outside::line(launcher, &member.id, &task).await?,
+    };
+    let task = match (&report.blocked, &outside, &task.gate) {
+        (Some(_), _, _) => {
             lead_lines::blocked(launcher, lead, member, &task).await;
             task
         }
-        (None, None) => {
-            lead_lines::review(launcher, lead, member, &task, &report.result, "no gate").await;
+        (None, Some(outside), gate) => {
+            let why = match gate {
+                None => format!("no gate; {outside}"),
+                Some(_) => format!("its gate was not run: it {outside}"),
+            };
+            let why = clean::note(launcher, lead, &why).await;
+            let held = state.hold_for_lead(lead, &task.task_id, &why).await?;
+            lead_lines::review(launcher, lead, &member.id, &held, &report.result, &why).await;
+            held
+        }
+        (None, None, None) => {
+            lead_lines::review(launcher, lead, &member.id, &task, &report.result, "no gate").await;
             task
         }
-        (None, Some(GoalCheck::Command { .. })) => {
-            gate::begin(launcher, lead, member, &task, &report.result).await?
+        (None, None, Some(GoalCheck::Command { .. })) => {
+            gate::begin(launcher, lead, &member.id, &task, &report.result).await?
         }
-        // It stays in review; clients show it and the user's ConfirmTask passes it.
-        (None, Some(GoalCheck::UserConfirmation)) => task,
+        // It stays in review until the user's ConfirmTask passes it. Clients show it,
+        // and the lead is told once so the chat says what the user is asked for.
+        (None, None, Some(GoalCheck::UserConfirmation)) => {
+            lead_lines::confirm(launcher, lead, member, &task, &report.result).await;
+            task
+        }
     };
     events::task(launcher, lead, &task).await;
     Ok(true)

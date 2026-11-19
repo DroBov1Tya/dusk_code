@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Permissions {
@@ -22,9 +23,26 @@ pub struct Permissions {
     pub sockets: Vec<String>,
     /// Keys of its own the user gives it, and where each may be sent.
     pub keys: Vec<KeyUse>,
+    /// Only for a plugin that provides a contract: the folder of the project a call is
+    /// about, for that call only.
+    pub project: ProjectAccess,
+    /// No longer granted: a manifest that asks for it is refused. Kept so that such a
+    /// manifest is refused with a reason rather than as an unknown field.
+    pub keychain: bool,
+}
+
+/// How much of the project a contract call is about the plugin may reach.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectAccess {
+    #[default]
+    None,
+    Read,
 }
 
 /// One of the plugin's own keys. The user's provider keys are never among them.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct KeyUse {
@@ -65,6 +83,38 @@ impl Permissions {
                 ),
             });
         }
+        if self.project == ProjectAccess::Read {
+            lines.push("read the folder of the project it is asked about, while it answers".into());
+        }
+        if !self.network.is_empty()
+            && (self.project == ProjectAccess::Read || !self.read.is_empty())
+        {
+            // The list limits where it connects, not what it sends there.
+            lines.push(
+                "send what it reads to those addresses, under any account it can use there".into(),
+            );
+        }
         lines
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_project_has_its_line_and_the_network_says_what_it_carries() {
+        assert!(Permissions::default().lines().is_empty());
+        let read: Permissions = serde_json::from_str(r#"{"project":"read"}"#).unwrap();
+        assert_eq!(read.lines().len(), 1);
+        let sends: Permissions =
+            serde_json::from_str(r#"{"project":"read","network":["https://api.github.com"]}"#)
+                .unwrap();
+        assert!(
+            sends.lines()[2].starts_with("send what it reads"),
+            "{:?}",
+            sends.lines()
+        );
+        assert!(serde_json::from_str::<Permissions>(r#"{"project":"write"}"#).is_err());
     }
 }

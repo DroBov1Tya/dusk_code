@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::catalog::{AgentTree, SkillInfo};
-use crate::config::{ApprovalPolicy, McpInfo, Memory, VersionControl, WorkHistory};
+use crate::config::{ApprovalPolicy, Arbiter, McpInfo, Memory, VersionControl, WorkHistory};
 use crate::release::Channel;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     pub max_agents_at_work: usize,
@@ -20,6 +21,10 @@ pub struct Settings {
     pub approvals: ApprovalPolicy,
     /// Version control settings, shown as their own section.
     pub version_control: VersionControl,
+    /// How auto mode's arbiter judges.
+    pub arbiter: Arbiter,
+    /// The built-in review prompt, for an editor to show and reset to.
+    pub arbiter_default_prompt: String,
     /// Whether clients notify at all; the bell is the TUI's notification.
     pub notifications: bool,
     /// Whether notifications ring the terminal bell; off stays silent.
@@ -39,6 +44,7 @@ pub struct Settings {
     pub mcp: Vec<McpInfo>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModeInfo {
     pub name: String,
@@ -46,6 +52,7 @@ pub struct ModeInfo {
     pub summary: String,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolInfo {
     pub name: String,
@@ -56,6 +63,7 @@ pub struct ToolInfo {
 }
 
 /// What a tool works on, for clients to group tools by; in the order they are shown.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ToolKind {
     Files,

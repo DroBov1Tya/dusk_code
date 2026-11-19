@@ -69,3 +69,7 @@ Thumbs.db
 
 # Playwright MCP scratch
 .playwright-mcp/
+
+# Local planning and agent workspaces
+/docs/superpowers/
+/.superpowers/

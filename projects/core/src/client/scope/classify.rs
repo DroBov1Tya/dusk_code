@@ -78,12 +78,23 @@ pub fn classify(request: &Request) -> Access<'_> {
             | Plugin::Close { .. }
             | Plugin::Event { .. },
         ) => apart(Area::PluginParts),
-        Request::Store(Store::List { .. } | Store::Cover { .. } | Store::Screenshot { .. }) => {
-            apart(Area::Store)
-        }
-        Request::Store(Store::Install { .. } | Store::Remove { .. } | Store::UpdateAll) => {
-            apart(Area::StoreInstall)
-        }
+        Request::Store(
+            Store::List { .. }
+            | Store::Cover { .. }
+            | Store::Screenshot { .. }
+            | Store::Contents { .. }
+            | Store::File { .. }
+            | Store::Sources,
+        ) => apart(Area::Store),
+        Request::Store(
+            Store::Install { .. }
+            | Store::Review { .. }
+            | Store::Remove { .. }
+            | Store::UpdateAll
+            | Store::Probe { .. }
+            | Store::AddSource { .. }
+            | Store::RemoveSource { .. },
+        ) => apart(Area::StoreInstall),
         Request::SystemReport => apart(Area::System),
         Request::InstallUpdate { .. } => apart(Area::Update),
         Request::Shutdown => apart(Area::Shutdown),
@@ -95,9 +106,12 @@ fn thread(request: &Thread) -> Access<'_> {
         Thread::New { .. } | Thread::NewTemporary { .. } | Thread::Fork { .. } => {
             apart(Area::ThreadCreate)
         }
+        // A new thread, but with what one thread said: only from a thread in reach.
+        Thread::ForkAt { thread_id, .. } => of(Area::ThreadCreate, thread_id),
         Thread::List | Thread::Search { .. } => all(Area::ThreadRead),
         Thread::Messages { thread_id }
         | Thread::Tasks { thread_id }
+        | Thread::SkillChanges { thread_id }
         | Thread::LocalUnsent { thread_id }
         | Thread::GetApprovals { thread_id }
         | Thread::Pins { thread_id } => of(Area::ThreadRead, thread_id),
@@ -110,10 +124,10 @@ fn thread(request: &Thread) -> Access<'_> {
         | Thread::StopAgent { thread_id }
         | Thread::Rename { thread_id, .. }
         | Thread::Pin { thread_id, .. } => of(Area::ThreadWrite, thread_id),
-        // An approval is known by its number alone, so it is about no thread: a scope
-        // bound to threads cannot answer one.
-        Thread::Approve { .. } => apart(Area::ThreadWrite),
-        Thread::RunCommand { thread_id, .. } => of(Area::ThreadCommand, thread_id),
+        Thread::Approve { thread_id, .. } => of(Area::ThreadApprove, thread_id),
+        Thread::RunCommand { thread_id, .. } | Thread::StopRun { thread_id, .. } => {
+            of(Area::ThreadCommand, thread_id)
+        }
         Thread::Delete { thread_id } => of(Area::ThreadDelete, thread_id),
         Thread::SetApprovals { thread_id, .. } => of(Area::ThreadApprovals, thread_id),
     }
@@ -124,6 +138,7 @@ fn work(request: &Work) -> Access<'_> {
         Work::Jobs { thread_id }
         | Work::JobOutput { thread_id, .. }
         | Work::SourcePicture { thread_id, .. }
+        | Work::Card { thread_id, .. }
         | Work::Plan { thread_id }
         | Work::ChangedFiles { thread_id }
         | Work::FileChanges { thread_id }
@@ -201,6 +216,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::WorkHistoryChars(_)
         | Settings::Switch { .. }
         | Settings::BranchPrefix(_)
+        | Settings::Arbiter(_)
         | Settings::NextMode
         | Settings::Mode(_)
         | Settings::Connect { .. }
@@ -213,6 +229,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::SetSecret { .. }
         | Settings::DeleteSecret { .. }
         | Settings::Voice(_)
+        | Settings::SetContractPlugin { .. }
         | Settings::PluginSecret { .. } => Area::Settings,
     }
 }
@@ -226,6 +243,8 @@ fn catalog(request: &Catalog) -> Area {
         | Catalog::Skill { .. }
         | Catalog::SaveSkill { .. }
         | Catalog::SkillPacks
+        | Catalog::SkillDiff { .. }
+        | Catalog::UndoSkillChange { .. }
         | Catalog::Agent { .. }
         | Catalog::SaveAgent { .. }
         | Catalog::McpServers
@@ -253,6 +272,10 @@ fn project(request: &Project) -> Area {
         // repositories. A scope bound to threads takes none of them; push and discard
         // are asked of the user by the client before they are sent.
         | Project::Repository { .. }
+        | Project::RepositoryStatus { .. }
+        | Project::PullStatus { .. }
+        | Project::CreatePull { .. }
+        | Project::PullSummaries
         | Project::Files { .. }
         | Project::Outputs
         | Project::Env { .. }

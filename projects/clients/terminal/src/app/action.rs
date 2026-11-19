@@ -17,6 +17,7 @@ pub enum Action {
     Cancel,
     /// The answer to a tool's request for approval.
     Approve {
+        thread_id: String,
         id: u64,
         decision: Decision,
     },
@@ -30,8 +31,14 @@ pub enum Action {
     },
     /// Reads the store and the skill packs into the Workshop.
     LoadStore,
-    /// Installs or updates a plugin from the store at the version the user saw.
-    InstallPlugin(Box<dusk_protocol::plugin::Listing>),
+    /// Installs or updates a plugin from the store at the version the user saw, with the
+    /// hash of the files shown for an Unverified one.
+    InstallPlugin(Box<dusk_protocol::plugin::Listing>, Option<String>),
+    /// Reads what installing an Unverified listing would write, for its question.
+    ReviewListing {
+        source: String,
+        name: String,
+    },
     /// Removes a plugin the store installed.
     RemovePlugin(String),
     /// Updates what asks for nothing more, and says what was done and left.
@@ -153,7 +160,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ),
         (
             "/plugins",
-            "the plugins found, to switch on or off; /plugins store installs more",
+            "the plugins found, to switch on or off; /plugins store [name] installs more",
         ),
         (
             "/tab",
@@ -170,6 +177,10 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "pin the agent's last answer; /unpin N takes pin N away",
         ),
         ("/files", "the files this chat's commands changed"),
+        (
+            "/link",
+            "copy this chat's link, for a message in another chat",
+        ),
         ("/diff", "review the changes in this chat's folder"),
         (
             "/disconnect",
@@ -182,7 +193,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ("/snippet", "write a snippet for @name: /snippet name"),
         (
             "/access",
-            "this chat's access: ask, sandbox, arbiter, full or default",
+            "this chat's access: ask, sandbox, auto, full or default",
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())

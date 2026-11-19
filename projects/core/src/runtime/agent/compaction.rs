@@ -11,10 +11,9 @@ use tracing::warn;
 use super::{Agent, Inbox, Stop};
 use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
-    catalog::modes::Modes,
     config::Limits,
     providers::{ChatMessage, ChatRequest, ProviderErrorKind, provider_error},
-    runtime::thread::start::{NO_PROMPT, read_prompt},
+    runtime::thread::start::read_prompt,
     state::{CallPurpose, Compaction, ModelCall, Turn},
 };
 pub use dusk_protocol::thread::AUTO_COMPACT_PERCENT;
@@ -26,6 +25,28 @@ const EARLY_COMPACT_PERCENT: u64 = 60;
 /// older part, and the work did not stop there.
 const TAIL_NOTE: &str = "The newest messages are not shown here: they stay after your \
 summary word for word.\n\n";
+
+/// A context loaded to check its size and left as it was, for the next reader to take
+/// over when nothing was written in between, so a step costs one load and not two.
+pub struct Loaded {
+    /// The `limits.stub_results` switch it was loaded with.
+    pub stub_results: bool,
+    pub conversation: Conversation,
+}
+
+impl Loaded {
+    /// The conversation as loaded with `stub_results`, from `loaded` when it matches.
+    pub async fn take(
+        loaded: Option<Self>,
+        agent: &Agent,
+        stub_results: bool,
+    ) -> Result<Conversation> {
+        match loaded {
+            Some(loaded) if loaded.stub_results == stub_results => Ok(loaded.conversation),
+            _ => Conversation::load(&agent.state, &agent.thread_id, stub_results).await,
+        }
+    }
+}
 
 /// Sections a summary gains under the switch they serve, after the list of the prompt,
 /// so the prompt as shipped or edited stays as it is with the switches off.
@@ -101,17 +122,22 @@ fn is_too_long(error: &anyhow::Error) -> bool {
 impl Agent {
     /// Compacts when the context has passed the automatic limit and there is something
     /// to work on: a queued message, or the running `turn`. Without a turn this is the
-    /// point between turns, where `limits.compact_early` compacts sooner.
-    pub async fn compact_if_needed(&self, turn: Option<&Turn>, inbox: &mut Inbox) -> Option<Stop> {
+    /// point between turns, where `limits.compact_early` compacts sooner. A context left
+    /// as it was is handed back, for the next step to read without a reload.
+    pub async fn compact_if_needed(
+        &self,
+        turn: Option<&Turn>,
+        inbox: &mut Inbox,
+    ) -> Result<Option<Loaded>, Stop> {
         let limit = self.input_limit();
-        let config = self.config.current();
+        let config = self.config_now().await;
         let stub_results = config.limits().stub_results;
         let conversation =
             match Conversation::load(&self.state, &self.thread_id, stub_results).await {
                 Ok(conversation) => conversation,
                 Err(error) => {
                     warn!("cannot check the context size: {error:#}");
-                    return None;
+                    return Ok(None);
                 }
             };
         let specs = self.tools.specs(&self.scope, &config);
@@ -122,9 +148,16 @@ impl Agent {
         };
         let full = conversation.tokens(&specs) >= limit / 100 * percent;
         if !working || !full || conversation.compactable_through().is_none() {
-            return None;
+            return Ok(Some(Loaded {
+                stub_results,
+                conversation,
+            }));
         }
-        self.compact(None, Keep::Tail, turn, inbox).await
+        // A compaction wrote the context anew: the next reader loads it.
+        match self.compact(None, Keep::Tail, turn, inbox).await {
+            Some(stop) => Err(stop),
+            None => Ok(None),
+        }
     }
 
     /// Summarizes everything that is not queued, or all but the recent tail as `keep`
@@ -198,11 +231,9 @@ impl Agent {
         self.tools.refresh_descriptions();
         // The context starts over here, so a chat takes up the prompt of its mode now.
         if self.depth == 0 {
-            let mode = self.config.current().mode().to_owned();
-            let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
-            let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
+            let (_, prompt) = self.mode_prompt().await?;
             self.state
-                .add_system_message(&self.thread_id, prompt)
+                .add_system_message(&self.thread_id, &prompt)
                 .await?;
         }
         self.put_away_kept_results(&limits).await;
@@ -281,7 +312,7 @@ impl Agent {
             "{prompt}\n\n{tail}Answer with text only; do not call tools."
         )));
         let choice = self.model.current().context("provider is unavailable")?;
-        let config = self.config.current();
+        let config = self.config_now().await;
         // Same tools, project text and key as the steps, so the provider's cache of the
         // thread serves this request too; without them the whole context is read cold.
         let tools = self.tools.specs(&self.scope, &config);

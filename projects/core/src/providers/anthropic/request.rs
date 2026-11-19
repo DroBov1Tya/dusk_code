@@ -7,7 +7,7 @@ use crate::{
     config::Effort,
     providers::{
         output::ToolCall,
-        request::{ChatMessage, ChatRequest, Picture, ToolSpec},
+        request::{ChatMessage, ChatRequest, Picture, ToolSpec, arguments_object},
     },
 };
 
@@ -162,11 +162,7 @@ fn text_block(text: &str) -> Vec<Value> {
 }
 
 fn tool_use_block(call: &ToolCall) -> Value {
-    // Input must be an object; arguments that were not JSON go back as none.
-    let input = match &call.arguments {
-        Value::Object(_) => call.arguments.clone(),
-        _ => json!({}),
-    };
+    let input = arguments_object(call);
     json!({"type": "tool_use", "id": call.id, "name": call.name, "input": input})
 }
 

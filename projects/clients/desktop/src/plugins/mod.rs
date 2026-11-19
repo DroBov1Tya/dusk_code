@@ -101,6 +101,14 @@ pub struct Plugins {
     waiting: HashMap<Slot, Vec<u8>>,
     /// Where each screen widget was drawn, to turn a click into its units.
     drawn: HashMap<Slot, Drawn>,
+    /// Each screen's focus, so keys typed on it go to the device.
+    screen_focus: HashMap<Slot, FocusHandle>,
+    /// The screen a press began on and its last place, while the button is held.
+    pressed: Option<(Slot, (u32, u32))>,
+    /// A screen's touches, keys and text wait here and go one at a time, so a lift
+    /// never overtakes its press; text typed meanwhile joins into one paste.
+    screen_queue: std::collections::VecDeque<(Key, String, dusk_protocol::plugin::UiEvent)>,
+    screen_sending: bool,
     /// The text boxes of open parts, by widget.
     fields: HashMap<Slot, fields::Field>,
     /// The list shown as a menu that is open.
@@ -133,6 +141,10 @@ impl Plugins {
             decoding: HashSet::new(),
             waiting: HashMap::new(),
             drawn: HashMap::new(),
+            screen_focus: HashMap::new(),
+            pressed: None,
+            screen_queue: Default::default(),
+            screen_sending: false,
             fields: HashMap::new(),
             open_list: None,
             menu: false,
@@ -165,6 +177,7 @@ impl Plugins {
         }
         self.waiting.retain(|(k, _), _| k != key);
         self.drawn.retain(|(k, _), _| k != key);
+        self.screen_focus.retain(|(k, _), _| k != key);
         self.fields.retain(|(k, _), _| k != key);
         if self.open_list.as_ref().is_some_and(|(k, _)| k == key) {
             self.open_list = None;
@@ -189,8 +202,15 @@ pub fn settle(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         });
     }
     plugins.drawn.retain(|slot, _| screens.contains(slot));
+    plugins
+        .screen_focus
+        .retain(|slot, _| screens.contains(slot));
     for slot in screens {
-        plugins.drawn.entry(slot).or_default();
+        plugins.drawn.entry(slot.clone()).or_default();
+        plugins
+            .screen_focus
+            .entry(slot)
+            .or_insert_with(|| cx.focus_handle());
     }
 }
 

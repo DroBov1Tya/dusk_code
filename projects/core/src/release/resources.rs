@@ -12,7 +12,7 @@ use crate::{init::create_private_dir, release::update::VERSION};
 
 /// Folders of resources, each shipped into the rules folder; `internal` goes to `prompts`.
 pub const CATEGORIES: [&str; 5] = ["agents", "skills", "internal", "modes", "plugins"];
-pub const REQUIRED: [&str; 11] = [
+pub const REQUIRED: [&str; 12] = [
     "internal/AGENT.md",
     "internal/ARBITER.md",
     "internal/AGENT_LEAF.md",
@@ -24,6 +24,7 @@ pub const REQUIRED: [&str; 11] = [
     "modes/MAIN.md",
     "modes/PLAN.md",
     "modes/ORCHESTRATOR.md",
+    "modes/TEAM.md",
 ];
 
 pub fn data_root() -> Result<PathBuf> {

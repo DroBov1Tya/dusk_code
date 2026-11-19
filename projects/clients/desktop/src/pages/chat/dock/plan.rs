@@ -2,9 +2,11 @@
 //! work; unfolded, the plan's numbered rows, six in sight and the rest behind a scroll that
 //! lays out only the rows in sight, so two hundred tasks cost what six do.
 
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use std::ops::Range;
 
-use dusk_protocol::thread::{PlanCounts, Task, TaskStatus};
+use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
     prelude::FluentBuilder,
@@ -24,6 +26,10 @@ const ROW: f32 = 28.;
 const IN_SIGHT: usize = 6;
 /// The bar's widest, whatever the plan's size.
 const BAR: f32 = 160.;
+/// How long a task that just came takes to draw in.
+pub const ARRIVE: std::time::Duration = std::time::Duration::from_millis(220);
+/// How long the bar takes to ease to new shares.
+const BAR_EASE: std::time::Duration = std::time::Duration::from_millis(300);
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat()?;
@@ -33,8 +39,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         return None;
     }
     let open = ws.dock.plan_open;
+    // While the plan is written, its label carries the light.
+    let planning = chat
+        .work(dusk_protocol::system::now_ms())
+        .is_some_and(|work| work.kind == dusk_protocol::thread::WorkKind::Planning);
     let theme = cx.theme();
-    let (muted, border, surface) = (theme.muted_foreground, theme.border, theme.muted);
+    let (muted, border) = (theme.muted_foreground, theme.border);
     let summary = match counts {
         Some(counts) => div()
             .small()
@@ -68,6 +78,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(|line| line.bg(cx.theme().list_hover))
+        .press(cx.theme().list_hover, cx)
         .focusable_row(cx)
         .child(
             widgets::icon(
@@ -85,11 +96,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                 .flex_none()
                 .group_name()
                 .text_color(muted)
-                .child("Plan"),
+                .child(crate::pages::chat::activity::plan_label(planning, cx)),
         )
         .child(summary)
         .child(div().flex_1().min_w_0().children(current))
-        .children(counts.map(|counts| bar(counts, cx)))
+        .children(counts.map(|counts| bar(counts, ws.dock.counts_before, cx)))
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_plan(cx)));
     let rows = open.then(|| {
         let shown = chat.tasks.len().min(IN_SIGHT);
@@ -102,33 +113,47 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                     .map(|chat| chat.tasks.as_slice())
                     .unwrap_or_default();
                 range
-                    .filter_map(|index| tasks.get(index).map(|task| row(index + 1, task, cx)))
+                    .filter_map(|index| {
+                        let task = tasks.get(index)?;
+                        let row = row(index + 1, task, cx);
+                        // A task that just came fades in and rises its last 4 px, once.
+                        let came = ws.dock.tasks_came.1.get(&task.task_id).copied();
+                        let arriving = came.and_then(|came| {
+                            crate::pages::chat::activity::arriving(came, ARRIVE, cx).or_else(
+                                // Its turn has not come yet: it waits unseen.
+                                || (came > std::time::Instant::now()).then_some(0.),
+                            )
+                        });
+                        Some(match arriving {
+                            Some(t) => row
+                                .opacity(t)
+                                .relative()
+                                .top(px((1. - t) * 4.))
+                                .child(crate::pages::chat::activity::next_frame()),
+                            None => row,
+                        })
+                    })
                     .collect::<Vec<_>>()
             }),
         )
         .track_scroll(&ws.dock.rows)
         .h(px(shown as f32 * ROW))
-        .border_t_1()
-        .border_color(border)
+        .my_1()
     });
     Some(
-        div()
-            .px_6()
-            .pb_2()
-            .max_w(px(780.))
-            .mx_auto()
-            .w_full()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .rounded_xl()
-                    .border_1()
-                    .border_color(border)
-                    .bg(surface)
-                    .child(line)
-                    .children(rows),
-            ),
+        crate::pages::chat::composer::dock_lane(
+            div()
+                .flex()
+                .flex_col()
+                .rounded_xl()
+                .elevation(Level::Raised, cx)
+                .overflow_hidden()
+                .child(line)
+                // The hairline under the line is the rows' own frame, so their air
+                // above and below stays inside the card.
+                .children(rows.map(|rows| div().border_t_1().border_color(border).child(rows))),
+        )
+        .pb_2(),
     )
 }
 
@@ -183,9 +208,13 @@ fn current(tasks: &[Task]) -> Option<(usize, &Task)> {
 
 /// The plan as one bar of fixed width: done, running, failed and blocked shares in their
 /// colours on the track; it never grows with the number of tasks.
-fn bar(counts: PlanCounts, cx: &App) -> Div {
+fn bar(counts: PlanCounts, before: Option<(PlanCounts, std::time::Instant)>, cx: &App) -> Div {
     let theme = cx.theme();
-    let all = total(counts).max(1) as f32;
+    let share = |count: u32, of: PlanCounts| count as f32 / total(of).max(1) as f32;
+    // While the shares ease from what they were, each is between the old and the new.
+    let easing = before.and_then(|(before, since)| {
+        crate::pages::chat::activity::arriving(since, BAR_EASE, cx).map(|t| (before, t))
+    });
     let mut bar = div()
         .flex_none()
         .flex()
@@ -195,24 +224,57 @@ fn bar(counts: PlanCounts, cx: &App) -> Div {
         .rounded_full()
         .overflow_hidden()
         .bg(theme.border);
-    for (count, color) in [
-        (counts.done, theme.success),
-        (counts.running, theme.primary),
-        (counts.failed, theme.danger),
-        (counts.blocked, theme.warning),
-    ] {
-        if count > 0 {
-            bar = bar.child(div().h_full().w(px(BAR * count as f32 / all)).bg(color));
+    type Share = (fn(PlanCounts) -> u32, Hsla);
+    let pick: [Share; 4] = [
+        (|counts| counts.done, theme.success),
+        (|counts| counts.running, theme.primary),
+        (|counts| counts.failed, theme.danger),
+        (|counts| counts.blocked, theme.warning),
+    ];
+    for (of, color) in pick {
+        let now = share(of(counts), counts);
+        let shown = match easing {
+            Some((before, t)) => {
+                let was = share(of(before), before);
+                was + (now - was) * t
+            }
+            None => now,
+        };
+        if shown > 0. {
+            bar = bar.child(div().h_full().w(px(BAR * shown)).bg(color));
         }
+    }
+    if easing.is_some() {
+        bar = bar.child(crate::pages::chat::activity::next_frame());
     }
     bar
 }
 
 /// One task: its number, the state's glyph and word, its words on one line and its owner.
-fn row(number: usize, task: &Task, cx: &App) -> Div {
+/// A task that waits for the user's confirmation has `confirm` for its word, and a
+/// click on it passes the task.
+fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let muted = theme.muted_foreground;
+    let (muted, accent) = (theme.muted_foreground, theme.primary);
     let (glyph, color) = look(task.status, cx);
+    let word = div().flex_none().w(px(56.)).meta().text_right();
+    let for_user =
+        task.status == TaskStatus::Review && task.gate == Some(GoalCheck::UserConfirmation);
+    let word = match for_user {
+        true => {
+            let task_id = task.task_id.clone();
+            word.id(SharedString::from(format!("confirm-{}", task.task_id)))
+                .text_color(accent)
+                .cursor_pointer()
+                .child("confirm")
+                .on_click(cx.listener(move |ws, _, _, cx| ws.confirm_task(&task_id, cx)))
+                .into_any_element()
+        }
+        false => word
+            .text_color(color)
+            .child(task.status.name())
+            .into_any_element(),
+    };
     let owner = task.owner.as_ref().map(|owner| {
         div()
             .flex_none()
@@ -222,7 +284,10 @@ fn row(number: usize, task: &Task, cx: &App) -> Div {
             .truncate()
             .child(owner.name.clone())
     });
+    // A list item sizes to its content unless told otherwise; full width keeps the status
+    // words in one column at the right edge.
     div()
+        .w_full()
         .flex()
         .flex_row()
         .items_center()
@@ -259,15 +324,7 @@ fn row(number: usize, task: &Task, cx: &App) -> Div {
                 .child(one_line(&task.description)),
         )
         .children(owner)
-        .child(
-            div()
-                .flex_none()
-                .w(px(56.))
-                .meta()
-                .text_color(color)
-                .text_right()
-                .child(task.status.name()),
-        )
+        .child(word)
 }
 
 /// The glyph and colour of a status; its word is always beside it, so colour is never

@@ -175,9 +175,12 @@ impl State {
                         | "display_image"
                         | "display_audio"
                         | "show"
+                        | "search_workshop"
+                        | "suggest_from_workshop"
                         | "tasks"
                         | "remember"
                         | "ask_user"
+                        | "suggest_next"
                         | "jobs"
                 );
                 if !approved_check && !read_only {
@@ -448,6 +451,22 @@ pub(super) async fn close_call(
     Ok(())
 }
 
+impl State {
+    /// The newest turn of a thread, however it stands; `None` before its first.
+    pub async fn last_turn(&self, thread_id: &str) -> Result<Option<Turn>> {
+        let row = sqlx::query(concat!(
+            "SELECT ",
+            turn_row!(),
+            " FROM turns WHERE thread_id = ? ORDER BY started_at DESC, turn_id DESC LIMIT 1"
+        ))
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("load the newest turn")?;
+        row.map(decode_turn).transpose()
+    }
+}
+
 pub(super) async fn read_running_turn(
     transaction: &mut Transaction<'_, Sqlite>,
     turn_id: &str,
@@ -498,6 +517,15 @@ pub(super) fn decode_turn(row: SqliteRow) -> Result<Turn> {
 mod tests {
     use super::*;
     use crate::{state::MessageRole, testing::temp_state};
+
+    #[tokio::test]
+    async fn a_turn_reads_its_spend_by_the_turn_index() {
+        let state = temp_state("turn_spend_plan").await;
+        let sql = concat!("EXPLAIN QUERY PLAN SELECT ", turn_row!(), " FROM turns");
+        let plan = crate::testing::query_plan(&state, sql).await;
+        assert!(!plan.contains("SCAN u"), "{plan}");
+        assert!(plan.contains("model_usage_turn"), "{plan}");
+    }
 
     async fn thread(name: &str) -> State {
         let state = temp_state(name).await;

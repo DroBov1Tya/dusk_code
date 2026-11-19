@@ -1,6 +1,7 @@
 //! A group of activity folded into one row, and the foldable texts inside it: thoughts,
 //! agent reports, background results.
 
+use crate::ui::press::Press;
 use dusk_protocol::thread::ToolState;
 use gpui_kit::{
     component::{ActiveTheme, Colorize, IconName},
@@ -27,6 +28,7 @@ pub fn turn_activity(
     start: usize,
     items: &[Item],
     span: Option<crate::pages::chat::timing::Span>,
+    spend: Option<(String, bool)>,
     cx: &mut Context<Workspace>,
 ) -> Div {
     let open = ws.unfolded.contains(&(shown.to_owned(), start | ACTIVITY));
@@ -77,12 +79,41 @@ pub fn turn_activity(
             .text_color(cx.theme().foreground)
             .child(title),
     )
+    // A step of it runs: the heading carries the step's live mark.
+    .children(
+        (ws.chats.get(shown).is_some_and(|chat| chat.working)
+            && items
+                .iter()
+                .any(|item| matches!(item, Item::Tool(tool) if tool.state == ToolState::Running)))
+        .then(|| crate::pages::chat::activity::live_mark(cx)),
+    )
+    // What the turn spent, on the same line: one row closes a turn, not two.
+    .children(spend.map(|(text, dear)| {
+        let theme = cx.theme();
+        div()
+            .flex_none()
+            .meta()
+            .text_color(if dear {
+                theme.warning
+            } else {
+                theme.muted_foreground
+            })
+            .child(format!("\u{00B7}  {text}"))
+    }))
     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, start | ACTIVITY, cx)));
     let mut row = div().flex().items_center().gap_2().child(header);
     if !open && let Some((index, tool)) = running {
         row = row.child(background_button(shown, index, tool, cx));
     }
     let mut block = div().flex().flex_col().gap_1().child(row);
+    // A change to a skill stays in sight when the turn is folded; open, its step shows it.
+    if !open {
+        for item in items {
+            if let Item::Tool(tool) = item {
+                block = block.children(super::skill_change::rows(ws, shown, &tool.call_id, cx));
+            }
+        }
+    }
     if open {
         let mut detail = div()
             .ml_4()
@@ -107,12 +138,13 @@ pub fn turn_activity(
                         cx,
                     ))
                 }
-                Item::Agent { from, text } => {
-                    detail.child(agent_report(ws, shown, index, from, text, cx))
+                Item::Agent { from, text, .. } => {
+                    detail.child(agent_report(ws, shown, index, (from, text), true, cx))
                 }
                 Item::User {
                     text,
                     sequence: None,
+                    ..
                 } => detail.child(activity_text(
                     ws,
                     shown,
@@ -159,19 +191,31 @@ pub fn notice(key: &str, body: Div, text: &str, cx: &App) -> Div {
         ))
 }
 
+/// An agent's report, folded to its first line. `kept`: it is a row of the chat's list,
+/// whose text is kept with the chat's (`Texts`) so the list measures it at its height.
 pub fn agent_report(
     ws: &Workspace,
     shown: &str,
     index: usize,
-    from: &str,
-    text: &str,
+    (from, text): (&str, &str),
+    kept: bool,
     cx: &mut Context<Workspace>,
 ) -> Div {
-    let label = if ws.unfolded.contains(&(shown.to_owned(), index)) {
+    let open = ws.unfolded.contains(&(shown.to_owned(), index));
+    let label = if open {
         format!("{from} reported")
     } else {
         let first = text.lines().next().unwrap_or_default();
         format!("{from} reported: {first}")
+    };
+    let key = SharedString::from(format!("report-{shown}-{index}"));
+    let body = match (open, kept) {
+        (true, true) => Some(
+            ws.texts
+                .message(key.clone(), index, text, cx)
+                .into_any_element(),
+        ),
+        _ => None,
     };
     activity_text(
         ws,
@@ -180,11 +224,9 @@ pub fn agent_report(
         (&label, IconName::Bot),
         text,
         || {
-            links::markdown(
-                SharedString::from(format!("report-{shown}-{index}")),
-                text.to_owned(),
-            )
-            .into_any_element()
+            body.unwrap_or_else(|| {
+                links::markdown(key, text.to_owned(), links::Links::Paths).into_any_element()
+            })
         },
         cx,
     )
@@ -225,15 +267,17 @@ pub fn activity_text(
                     .aria_label(title.to_owned())
                     .child(widgets::icon(icon, muted))
                     .child(div().flex_1().min_w_0().truncate().child(title.to_owned()))
+                    // Inside the row, before its chevron, so the chevrons of a turn's
+                    // rows stand in one column whether a row can be copied or not.
+                    .child(widgets::copy(
+                        SharedString::from(format!("activity-text-copy-{shown}-{index}")),
+                        &group,
+                        text,
+                        cx,
+                    ))
                     .child(disclosure_icon(open, muted))
                     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index, cx))),
-                )
-                .child(widgets::copy(
-                    SharedString::from(format!("activity-text-copy-{shown}-{index}")),
-                    &group,
-                    text,
-                    cx,
-                )),
+                ),
         )
         .when(open, |block| {
             block.child(
@@ -283,6 +327,7 @@ pub fn disclosure(id: impl Into<ElementId>, open: bool, cx: &App) -> Stateful<Di
         .cursor_pointer()
         .when(open, |row| row.bg(hover))
         .hover(move |row| row.bg(hover))
+        .press(hover, cx)
 }
 
 /// Whether an unfolded text is long enough that its end is far from its heading.

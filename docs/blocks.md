@@ -16,7 +16,7 @@ tools:
   show: false
 ```
 
-PLAN and ORCHESTRATOR list `show` among their own tools; switch it off there under
+PLAN, ORCHESTRATOR and TEAM list `show` among their own tools; switch it off there under
 `modes:` (`modes: { PLAN: { show: false } }`) or in the settings. The eval runner takes
 `--set tools.show=false`.
 

@@ -1,7 +1,9 @@
-//! What a right click on a chat offers: rename, pin to the top, a task on a timetable,
-//! delete. Delete asks
+//! What a right click on a chat offers: rename, pin to the top, copy its link, a task on
+//! a timetable, delete. Delete asks
 //! first, since the core erases the chat and its folder for good.
 
+use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName,
@@ -21,8 +23,8 @@ use crate::{
 };
 
 /// The small menu at the pointer, over everything.
-/// Tall enough for the four rows and the padding.
-const MENU_HEIGHT: f32 = 144.;
+/// Tall enough for the five rows and the padding.
+const MENU_HEIGHT: f32 = 176.;
 
 pub fn render(
     ws: &Workspace,
@@ -40,7 +42,8 @@ pub fn render(
     let theme = cx.theme();
     let muted = theme.muted_foreground;
     let pinned = theme::prefs(cx).pinned.contains(&thread_id);
-    let (rename, pin, delete) = (thread_id.clone(), thread_id.clone(), thread_id);
+    let (rename, pin, delete) = (thread_id.clone(), thread_id.clone(), thread_id.clone());
+    let link = dusk_protocol::thread::thread_link(&thread_id);
     Some(
         div()
             .id("chat-menu")
@@ -54,10 +57,7 @@ pub fn render(
             .flex()
             .flex_col()
             .rounded_lg()
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.popover)
-            .shadow_lg()
+            .elevation(Level::Floating, cx)
             .child(
                 widgets::menu_item("menu-rename", cx)
                     .child(widgets::icon(IconName::Replace, muted))
@@ -71,6 +71,16 @@ pub fn render(
                     .child(widgets::icon(IconName::Star, muted))
                     .child(if pinned { "Unpin" } else { "Pin to the top" })
                     .on_click(cx.listener(move |ws, _, _, cx| ws.toggle_pin(&pin, cx))),
+            )
+            .child(
+                widgets::menu_item("menu-link", cx)
+                    .child(widgets::icon(IconName::Copy, muted))
+                    .child("Copy link")
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.chat_menu = None;
+                        cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
+                        cx.notify();
+                    })),
             )
             .child(
                 widgets::menu_item("menu-schedule", cx)
@@ -136,7 +146,7 @@ pub fn delete(title: &str, cx: &mut Context<Workspace>) -> Div {
         .child(format!("Delete \"{title}\"?"))
         .child(
             div()
-                .text_sm()
+                .small()
                 .text_color(muted)
                 .child("Its messages, its agents' threads and its folder in the workspace are erased. This cannot be undone."),
         )
@@ -176,7 +186,7 @@ pub fn delete_file(path: &std::path::Path, cx: &mut Context<Workspace>) -> Div {
         ))
         .child(
             div()
-                .text_sm()
+                .small()
                 .text_color(muted)
                 .child("The file is removed from the disk. This cannot be undone."),
         )
@@ -214,7 +224,7 @@ pub fn delete_files(count: usize, cx: &mut Context<Workspace>) -> Div {
         ))
         .child(
             div()
-                .text_sm()
+                .small()
                 .text_color(muted)
                 .child("They are removed from the disk. This cannot be undone."),
         )

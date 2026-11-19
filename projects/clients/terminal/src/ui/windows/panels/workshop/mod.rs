@@ -22,8 +22,8 @@ use crate::app::{Row, Step, Workshop, order_word};
 use crate::ui::text::format::one_line;
 use crate::ui::windows::{
     theme::{
-        ACCENT, DONE, ELLIPSIS, INFO, NEGATIVE, POSITIVE, RAISED, TEXT_MUTED, TEXT_SOFT, bold, dim,
-        fg, thought,
+        ACCENT, DONE, ELLIPSIS, INFO, NEGATIVE, POSITIVE, RAISED, TEXT_MUTED, TEXT_SOFT, WARNING,
+        bold, dim, fg, thought,
     },
     wrap,
 };
@@ -166,6 +166,7 @@ pub fn mark(tier: Tier) -> (&'static str, Style) {
             Tier::Official => DONE,
             Tier::Verified => "\u{25C6}",
             Tier::Community => "\u{25CB}",
+            Tier::Unverified => "\u{25CC}",
             Tier::Local => "\u{25C7}",
         },
         fg(color(tier)),
@@ -177,6 +178,7 @@ fn color(tier: Tier) -> Color {
         Tier::Official => ACCENT,
         Tier::Verified => INFO,
         Tier::Community => TEXT_MUTED,
+        Tier::Unverified => WARNING,
         Tier::Local => TEXT_SOFT,
     }
 }
@@ -186,15 +188,17 @@ pub fn word(tier: Tier) -> &'static str {
         Tier::Official => "Official",
         Tier::Verified => "Verified",
         Tier::Community => "Community",
+        Tier::Unverified => "Unverified",
         Tier::Local => "Local",
     }
 }
 
 fn about(tier: Tier) -> &'static str {
     match tier {
-        Tier::Official => "signed by the key built into duskcode",
-        Tier::Verified => "from mirrors the official list names, with their address and key",
+        Tier::Official => "made by duskcode and signed by the key built into it",
+        Tier::Verified => "checked and signed for duskcode; written by somebody else",
         Tier::Community => "from mirrors you added; no key of duskcode vouches for them",
+        Tier::Unverified => "from sources you added without a key; nobody vouches for them",
         Tier::Local => "found here; no source installed them",
     }
 }

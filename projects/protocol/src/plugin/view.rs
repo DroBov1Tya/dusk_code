@@ -11,6 +11,7 @@ pub const MAX_DEPTH: usize = 8;
 /// The longest text a widget may carry.
 pub const MAX_TEXT: usize = 4000;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Tone {
@@ -21,6 +22,7 @@ pub enum Tone {
     Danger,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Size {
@@ -30,6 +32,7 @@ pub enum Size {
     Small,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListItem {
     pub id: String,
@@ -38,6 +41,7 @@ pub struct ListItem {
     pub detail: String,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RowLayout {
@@ -47,18 +51,22 @@ pub enum RowLayout {
     Toolbar,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schema", schemars(extend("x-open" = true)))]
 pub enum ButtonIcon {
     Home,
     Lock,
     Power,
     Refresh,
+    #[cfg_attr(feature = "schema", schemars(skip))]
     #[serde(other)]
     Unknown,
 }
 
 /// A widget. Ids name the widget in the events it sends back.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Widget {
@@ -125,14 +133,55 @@ pub enum Widget {
 }
 
 /// What a widget sends back; places on a screen are in its own whole units.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UiEvent {
     Click,
-    Input { value: String },
-    Select { item: String },
-    Tap { x: u32, y: u32 },
-    Swipe { from: (u32, u32), to: (u32, u32) },
+    Input {
+        value: String,
+    },
+    Select {
+        item: String,
+    },
+    Tap {
+        x: u32,
+        y: u32,
+    },
+    Swipe {
+        from: (u32, u32),
+        to: (u32, u32),
+    },
+    /// One phase of a press on a screen, for drags and long presses.
+    Touch {
+        phase: TouchPhase,
+        x: u32,
+        y: u32,
+    },
+    /// A key pressed while a screen has focus, by name, such as `return`.
+    Key {
+        key: String,
+    },
+    /// Text typed while a screen has focus.
+    Text {
+        text: String,
+    },
+    /// A wheel turned over a screen at `x`, `y`; the finger moves by `dx`, `dy` units.
+    Scroll {
+        x: u32,
+        y: u32,
+        dx: i32,
+        dy: i32,
+    },
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TouchPhase {
+    Down,
+    Move,
+    Up,
 }
 
 /// Whether a view is small enough to draw: few widgets, shallow, short texts and finite

@@ -20,7 +20,7 @@ actions!(
         FocusNextRow,
         FocusPrevRow,
         TogglePlan,
-        ToggleViews,
+        TogglePanel,
         NextPin
     ]
 );
@@ -36,7 +36,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("secondary-j", "Show or hide the terminal"),
     ("secondary-s", "Save the open file"),
     ("secondary-q", "Quit"),
-    ("secondary-e", "Open the views of the chat: the Overview"),
+    ("secondary-e", "Open or close the panel over the box"),
     ("secondary-shift-p", "Go to the next pinned message"),
     (
         "escape",
@@ -54,7 +54,7 @@ pub fn bind(cx: &mut App) {
         ("ctrl-shift-j", "ctrl-shift-s", "ctrl-shift-f", "ctrl-alt-p")
     };
     // Control-P is the shell's own key too.
-    let (views, plan) = if cfg!(target_os = "macos") {
+    let (panel, plan) = if cfg!(target_os = "macos") {
         ("cmd-e", "cmd-p")
     } else {
         ("ctrl-e", "ctrl-shift-p")
@@ -81,7 +81,7 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new(terminal, ToggleTerminal, None),
         KeyBinding::new(save, SaveFile, None),
         KeyBinding::new(quit, Quit, None),
-        KeyBinding::new(views, ToggleViews, None),
+        KeyBinding::new(panel, TogglePanel, None),
         KeyBinding::new(plan, TogglePlan, None),
         KeyBinding::new(pin, NextPin, None),
         // Tab walks the rows only while a row has the keyboard; in a box it stays the box's.
@@ -90,6 +90,22 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new("tab", FocusNextRow, Some("Workspace")),
         KeyBinding::new("shift-tab", FocusPrevRow, Some("Workspace")),
     ]);
+    // A binding is matched before any key listener, so while a shell has the keyboard
+    // the keys it needs are unbound there: Tab completes instead of moving the focus,
+    // Control-C interrupts, and away from a Mac the window's Control shortcuts are the
+    // shell's own keys. Copy is the panel's, from its selection. Bound after the rest, so
+    // these win over a window binding of the same depth.
+    let mut shell = vec!["tab", "shift-tab"];
+    if cfg!(target_os = "macos") {
+        shell.push("cmd-c");
+    } else {
+        shell.extend(["ctrl-c", new, find, sidebar, quit, panel]);
+    }
+    cx.bind_keys(
+        shell
+            .into_iter()
+            .map(|key| KeyBinding::new(key, NoAction, Some("Terminal"))),
+    );
     // Quit works wherever the focus is, and the Mac's application menu shows it.
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.set_menus(vec![Menu {
@@ -135,13 +151,8 @@ impl Workspace {
         self.toggle_terminal(window, cx);
     }
 
-    pub fn on_toggle_views(
-        &mut self,
-        _: &ToggleViews,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.toggle_views(window, cx);
+    pub fn on_toggle_panel(&mut self, _: &TogglePanel, _: &mut Window, cx: &mut Context<Self>) {
+        self.toggle_panel(cx);
     }
 
     pub fn on_toggle_plan(&mut self, _: &TogglePlan, _: &mut Window, cx: &mut Context<Self>) {
@@ -185,10 +196,16 @@ impl Workspace {
         {
             return true;
         }
-        if self.close_views(window, cx) {
+        if std::mem::take(&mut self.pins.open) {
             return true;
         }
         if std::mem::take(&mut self.navigator_open) {
+            return true;
+        }
+        if self.dismiss_suggestion(window, cx) {
+            return true;
+        }
+        if self.welcome_back(cx) {
             return true;
         }
         if self.center == Center::Review {

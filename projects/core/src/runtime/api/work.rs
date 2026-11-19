@@ -44,7 +44,6 @@ impl Runtime {
             approvals: None,
             state: Some(Arc::clone(state)),
             thread_id: thread_id.to_owned(),
-            graph: launcher.graph.clone(),
         };
         crate::tools::console::run_for_user(command, &context).await
     }
@@ -123,6 +122,29 @@ impl Runtime {
         .await
     }
 
+    /// A part of the card `card_id`, only when a message of the thread or of an agent
+    /// thread below it carries that card. The id is checked before any file is read, and
+    /// the path comes from the artifact folder, never from the caller.
+    pub async fn card(
+        &self,
+        thread_id: &str,
+        card_id: &str,
+        part: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        if !crate::state::artifacts::is_card_id(card_id) {
+            return Ok(None);
+        }
+        let launcher = self.of(thread_id).await;
+        if !launcher.state.carries_card(thread_id, card_id).await? {
+            return Ok(None);
+        }
+        let store = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());
+        // A file read blocks; keep it off the loop's thread.
+        let (card_id, part) = (card_id.to_owned(), part.to_owned());
+        let bytes = tokio::task::spawn_blocking(move || store.read_part(&card_id, &part).ok());
+        Ok(bytes.await?)
+    }
+
     pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
         let launcher = self.of(thread_id).await;
         launcher.state.pin_source(thread_id, id, pinned).await
@@ -174,7 +196,7 @@ impl Runtime {
             .state
             .load_thread(thread_id)
             .await?
-            .context("no such thread")?;
+            .ok_or_else(|| crate::client::Shown::new("no such thread"))?;
         let dir = thread.project.context("the thread has no folder")?;
         crate::project::diff(std::path::Path::new(&dir), path).await
     }
@@ -237,9 +259,42 @@ impl Runtime {
         launcher.state.undo_points(thread_id).await
     }
 
+    /// The approvals of stored chats, for the tests that ask one.
+    #[cfg(test)]
+    pub(crate) fn approvals(&self) -> std::sync::Arc<crate::tools::Approvals> {
+        std::sync::Arc::clone(&self.launcher.approvals)
+    }
+
     /// False when the request is no longer waiting, such as after its turn was stopped.
-    pub fn answer_approval(&self, id: u64, decision: Decision) -> bool {
-        self.launcher.approvals.answer(id, decision)
-            || self.temporary.approvals.answer(id, decision)
+    ///
+    /// Whether only the owner may answer request `id`: a change of the settings a tool
+    /// proposed.
+    pub fn approval_owner_only(&self, id: u64) -> bool {
+        [&self.launcher, &self.temporary]
+            .iter()
+            .any(|launcher| launcher.approvals.owner_only(id))
+    }
+
+    /// Only the chat it was asked in, or the chat above the agent thread that asked,
+    /// may answer: a request asked elsewhere counts as unknown.
+    pub async fn answer_approval(&self, thread_id: &str, id: u64, decision: Decision) -> bool {
+        for launcher in [&self.launcher, &self.temporary] {
+            let Some(asked) = launcher.approvals.thread_of(id) else {
+                continue;
+            };
+            let state = &launcher.state;
+            let (asked_chat, named_chat) = match (
+                state.root_thread(&asked).await,
+                state.root_thread(thread_id).await,
+            ) {
+                (Ok(asked_chat), Ok(named_chat)) => (asked_chat, named_chat),
+                (Err(error), _) | (_, Err(error)) => {
+                    tracing::warn!("approval {id} not answered: {error:#}");
+                    return false;
+                }
+            };
+            return asked_chat == named_chat && launcher.approvals.answer(id, decision);
+        }
+        false
     }
 }

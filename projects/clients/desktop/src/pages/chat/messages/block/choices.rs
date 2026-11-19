@@ -6,6 +6,7 @@
 //! round, 32 px, and only they are ever filled or danger coloured. A pill is never either,
 //! whatever its label says, so a model cannot dress one up as an approval.
 
+use crate::ui::press::Press;
 use std::rc::Rc;
 
 use dusk_protocol::thread::Choices;
@@ -120,7 +121,9 @@ pub fn pills(
                 .px_3()
                 .flex()
                 .items_center()
-                .rounded_full()
+                // A button's own corner, as the box's controls have: a full round read as a
+                // tag, not as something to press.
+                .rounded_lg()
                 .border_1()
                 .border_color(rule)
                 .small()
@@ -137,7 +140,7 @@ pub fn pills(
                 .tab_stop(true)
                 .tab_index(0)
                 .hover(move |pill| pill.bg(raised))
-                .active(move |pill| pill.bg(pressed))
+                .press(pressed, cx)
                 .focus_visible(move |pill| pill.border_color(ring).shadow(focus))
                 // Left and Right move along the row and stop at its ends.
                 .on_key_down(cx.listener(move |_, event: &KeyDownEvent, window, cx| {
@@ -206,6 +209,7 @@ mod tests {
         Item::User {
             text: "ok".into(),
             sequence: Some(1),
+            answered: Vec::new(),
         }
     }
 

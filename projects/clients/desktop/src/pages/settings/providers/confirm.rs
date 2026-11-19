@@ -1,5 +1,6 @@
 //! What the one button that forgets every provider says before it does.
 
+use crate::ui::Type;
 use gpui_kit::{
     component::{
         ActiveTheme,
@@ -18,7 +19,7 @@ pub fn confirm_remove_all(cx: &mut Context<Workspace>) -> Div {
         .gap_3()
         .p_5()
         .child("Remove every connected provider?")
-        .child(div().text_sm().text_color(muted).child(
+        .child(div().small().text_color(muted).child(
             "Their API keys are forgotten and the chosen model is cleared. Chats stay, but \
              cannot be continued until a provider is connected again.",
         ))

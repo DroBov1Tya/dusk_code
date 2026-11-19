@@ -15,14 +15,15 @@ use super::{
     activity::{agent_report, notice, turn_activity},
     block,
     command::command_card,
-    cost::TurnCost,
+    cost::spend_label,
+    error_row::error_row,
     picture::picture,
     sent_picture::{is_picture_name, sent_pictures},
 };
 
 use crate::{
-    pages::chat::{links, transcript::Item},
-    ui::{Type, clipboard},
+    pages::chat::transcript::Item,
+    ui::{Type, clipboard, motion},
     workspace::Workspace,
 };
 
@@ -37,14 +38,15 @@ impl Workspace {
             let text = text.clone();
             self.load_sent_pictures(&shown, &text, cx);
         }
+        let arriving = self.arriving(&shown, ix);
         let (Some(row), Some(chat)) = (self.rows.get(ix).copied(), self.chats.get(&shown)) else {
             return div().into_any_element();
         };
         let theme = cx.theme();
-        let (muted, accent, danger) = (theme.muted_foreground, theme.primary, theme.danger);
+        let (muted, accent) = (theme.muted_foreground, theme.primary);
         // Space between rows lives in the rows, as the list has no gap of its own.
         let content = match row {
-            Row::Working => super::working_row::render(&shown, chat, cx),
+            Row::Working => super::working_row::render(chat, cx),
             Row::Activity {
                 start,
                 end,
@@ -54,14 +56,26 @@ impl Workspace {
                 let dear = spent
                     .zip(chat.mean_turn_cost())
                     .is_some_and(|((_, micro), mean)| micro > 2 * mean.max(1));
-                turn_activity(self, &shown, start, &chat.items[start..end], span, cx)
-                    .child_cost(spent, dear, cx)
-                    .into_any_element()
+                let spend = spend_label(spent, dear).map(|text| (text, dear));
+                turn_activity(
+                    self,
+                    &shown,
+                    start,
+                    &chat.items[start..end],
+                    span,
+                    spend,
+                    cx,
+                )
+                .into_any_element()
             }
             Row::Item(at) => {
                 let key = format!("{shown}-{at}");
                 match &chat.items[at] {
-                    Item::User { text, sequence } => {
+                    Item::User {
+                        text,
+                        sequence,
+                        answered,
+                    } => {
                         let group = SharedString::from(format!("user-row-{key}"));
                         let mut tools = div()
                             .flex()
@@ -83,6 +97,8 @@ impl Workspace {
                         );
                         tools =
                             tools.children(crate::pages::chat::pins::button(self, &shown, at, cx));
+                        tools = tools
+                            .children(crate::pages::chat::pins::fork_button(self, &shown, at, cx));
                         // The core refuses to go back inside a turn, so the button waits.
                         if let (Some(sequence), false) = (*sequence, chat.working) {
                             let (thread_id, text) = (shown.clone(), text.clone());
@@ -106,12 +122,11 @@ impl Workspace {
                             .flex_col()
                             .items_end()
                             .gap_1()
-                            .when_some(chat.answered.get(&at), |row, answers| {
-                                row.child(super::answered(&key, answers, cx))
+                            .when(!answered.is_empty(), |row| {
+                                row.child(super::answered(&key, answered, cx))
                             })
                             .when(
-                                !chat.answered.contains_key(&at)
-                                    && !user_text(text).trim().is_empty(),
+                                answered.is_empty() && !user_text(text).trim().is_empty(),
                                 |row| {
                                     row.child(
                                         // The user's words carry a breath of the accent, so the
@@ -124,9 +139,11 @@ impl Workspace {
                                             .border_1()
                                             .border_color(accent.opacity(0.16))
                                             // Selectable like the answers; pastes and files show as labels.
-                                            .child(links::markdown(
+                                            .child(self.texts.message(
                                                 SharedString::from(format!("user-{key}")),
-                                                user_text(text),
+                                                at,
+                                                &user_text(text),
+                                                cx,
                                             )),
                                     )
                                 },
@@ -147,9 +164,9 @@ impl Workspace {
                     Item::Job(result) => {
                         super::job(self, &shown, at, result, cx).into_any_element()
                     }
-                    Item::Command(run) => command_card(&key, run, cx),
-                    Item::Agent { from, text } => {
-                        agent_report(self, &shown, at, from, text, cx).into_any_element()
+                    Item::Local(run) => command_card(&key, run, cx),
+                    Item::Agent { from, text, .. } => {
+                        agent_report(self, &shown, at, (from, text), true, cx).into_any_element()
                     }
                     Item::Assistant { text, .. } => {
                         let group = SharedString::from(format!("answer-row-{key}"));
@@ -162,7 +179,9 @@ impl Workspace {
                         if !text.is_empty() {
                             answer = answer.child(crate::pages::chat::media::render(
                                 &format!("answer-{key}"),
+                                at,
                                 text,
+                                &mut self.texts,
                                 cx,
                             ));
                             let (copied, spoken) = (text.clone(), text.clone());
@@ -217,33 +236,51 @@ impl Workspace {
                                     )
                                     .children(crate::pages::chat::pins::button(
                                         self, &shown, at, cx,
+                                    ))
+                                    .children(crate::pages::chat::pins::fork_button(
+                                        self, &shown, at, cx,
                                     )),
                             );
                         }
                         answer.into_any_element()
                     }
                     Item::Block(shown_block) => block::render(self, &shown, at, shown_block, cx),
-                    Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
-                    Item::Audio(clip) => crate::pages::chat::audio::card(self, &key, clip, cx),
-                    Item::Notice(text) => {
+                    Item::Image { card, .. } => {
+                        picture(&self.status.artifacts_dir, &card.into(), cx)
+                    }
+                    Item::Audio(card) => {
+                        crate::pages::chat::audio::card(self, &key, &card.into(), cx)
+                    }
+                    // What a compaction wrote reads as a quiet note.
+                    Item::Notice(text) | Item::Summary(text) => {
                         notice(&key, div().meta().text_color(muted), text, cx).into_any_element()
                     }
-                    Item::Error(text) => div()
-                        .px_3()
-                        .py_2()
-                        .rounded_md()
-                        .meta()
-                        .text_color(danger)
-                        .bg(danger.opacity(0.1))
-                        .child(text.clone())
-                        .into_any_element(),
+                    Item::Error(text) => {
+                        // Only the error the chat ends with can be answered by sending
+                        // again, and only while no turn runs.
+                        let last = at + 1 == chat.items.len() && !chat.working;
+                        let again = (last && chat.last_sent().is_some()).then(|| shown.clone());
+                        error_row(&key, text, again, cx)
+                    }
+                    Item::Suggestion(card) => {
+                        crate::pages::customize::plugins::workshop::suggested::render(
+                            self, &key, card, cx,
+                        )
+                    }
                     Item::Tool(_) => div().into_any_element(),
                 }
             }
         };
         let activity = matches!(row, Row::Activity { .. });
         let gutter = if activity { 3. } else { 8. };
-        let top = if ix == 0 { 24. } else { gutter };
+        // A message of the user opens a turn: the air above it parts one exchange from the
+        // next, so the chat reads in pieces.
+        let opens_turn = matches!(row, Row::Item(at) if matches!(chat.items[at], Item::User { sequence: Some(_), .. }));
+        let top = match (ix, opens_turn) {
+            (0, _) => 24.,
+            (_, true) => TURN_GAP - 8.,
+            _ => gutter,
+        };
         let bottom = if ix + 1 == self.rows.len() {
             24.
         } else {
@@ -251,14 +288,40 @@ impl Workspace {
         };
         // A message gone to from the pinned bar is tinted for a moment, then plain.
         let flashed = matches!(row, Row::Item(at) if self.flashed(&shown, at));
-        div()
+        let row = div()
             .pt(px(top))
             .pb(px(bottom))
             .when(flashed, |row| row.bg(accent.opacity(0.12)))
-            .child(lane(content))
-            .into_any_element()
+            .child(lane(content));
+        match arriving {
+            Some((at, since)) => {
+                let id = SharedString::from(format!("arrive-{shown}-{at}"));
+                motion::arrive(id, row, since).into_any_element()
+            }
+            None => row.into_any_element(),
+        }
+    }
+
+    /// The item of row `ix` and when it was first drawn, when it came after the chat was
+    /// opened; the ones stored before stand still.
+    fn arriving(&mut self, shown: &str, ix: usize) -> Option<(usize, std::time::Instant)> {
+        let Some(Row::Item(at)) = self.rows.get(ix).copied() else {
+            return None;
+        };
+        let chat = self.chats.get_mut(shown)?;
+        if at < chat.loaded {
+            return None;
+        }
+        let since = *chat
+            .arrived
+            .entry(at)
+            .or_insert_with(std::time::Instant::now);
+        Some((at, since))
     }
 }
+
+/// The air between the end of one turn and the message that opens the next.
+const TURN_GAP: f32 = crate::ui::size::GAP_XXL;
 
 /// A sent message as the user wrote it, each paste and kept file as a short label.
 fn user_text(text: &str) -> String {

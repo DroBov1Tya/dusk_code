@@ -1,7 +1,8 @@
 //! The `@` names a message may carry: the menu over the box, and completing the word.
 
 use crate::ui::Type;
-use gpui_kit::{component::ActiveTheme, *};
+use crate::ui::elevation::{Elevation, Level};
+use gpui_kit::*;
 
 use crate::workspace::Workspace;
 
@@ -11,7 +12,6 @@ pub fn mention_menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> 
     if names.is_empty() {
         return None;
     }
-    let theme = cx.theme();
     let mut menu = div()
         .absolute()
         .bottom(relative(1.))
@@ -21,10 +21,7 @@ pub fn mention_menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> 
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg();
+        .elevation(Level::Floating, cx);
     for (index, name) in names.into_iter().enumerate() {
         let label = format!("@{name}");
         menu = menu.child(

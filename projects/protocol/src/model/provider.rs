@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::ProviderErrorKind;
 
 /// A configured provider as a check found it: its models, or why it did not answer.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderStatus {
     pub name: String,
@@ -19,6 +20,22 @@ pub struct ProviderStatus {
     /// Off: the provider is kept with its key but not asked, so `models` is empty.
     #[serde(default = "yes")]
     pub enabled: bool,
+    /// Why `models` failed, when the core can tell; the text there says it in full.
+    #[serde(default)]
+    pub failure: Option<CheckFailure>,
+}
+
+/// What kind of failure a provider check met, so a client can say it plainly.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckFailure {
+    /// No connection, or no answer in time.
+    Unreachable,
+    /// HTTP 401 or 403: the key was refused.
+    Refused,
+    /// An answer, but not a model list of the OpenAI API.
+    NotCompatible,
 }
 
 impl ProviderStatus {
@@ -30,6 +47,7 @@ impl ProviderStatus {
             balance: None,
             limits: None,
             enabled: false,
+            failure: None,
         }
     }
 }
@@ -41,6 +59,7 @@ fn yes() -> bool {
 /// How a configured provider's calls went, as the turns that used it since the core
 /// started found. Every field holds until the provider turns healthy or failing or fails
 /// for another reason, so the status is not sent again on every call.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderHealth {
     pub name: String,
@@ -48,6 +67,7 @@ pub struct ProviderHealth {
 }
 
 /// Whether a provider's calls are answered. Times are Unix milliseconds.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CallHealth {
     /// Its newest call was answered, and every one since `since`.
@@ -77,6 +97,7 @@ impl CallHealth {
 }
 
 /// Money left on a provider account, as the provider wrote it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// A decimal number; none when the key has no spending limit.
@@ -95,6 +116,7 @@ impl Balance {
 }
 
 /// The rate limits of a provider account, as its last answer reported them.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RateLimits {
     pub requests: Option<RateLimit>,
@@ -106,6 +128,7 @@ pub struct RateLimits {
 }
 
 /// One usage window of a subscription: how long it is and how much of it is used.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanWindow {
     /// How long the window is, in minutes; none when the provider did not say.
@@ -117,6 +140,7 @@ pub struct PlanWindow {
 }
 
 /// One limit: how much the account may use in the provider's period, and what is left.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RateLimit {
     pub limit: u64,
@@ -211,6 +235,7 @@ fn count(number: u64) -> String {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: String,

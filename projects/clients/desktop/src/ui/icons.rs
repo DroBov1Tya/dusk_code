@@ -55,13 +55,46 @@ const PIN_SVG: &[u8] = lucide!(
 /// extended with (agents, skills, MCP servers, plugins).
 pub const GIT_BRANCH: &str = "icons/dusk/git-branch.svg";
 pub const GIT_COMPARE: &str = "icons/dusk/git-compare.svg";
+/// A new chat from one message of another.
+pub const GIT_FORK: &str = "icons/dusk/git-fork.svg";
 pub const BLOCKS: &str = "icons/dusk/blocks.svg";
 
 const GIT_BRANCH_SVG: &[u8] = lucide!(
     r#"<path d="M15 6a9 9 0 0 0-9 9V3" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" />"#
 );
+const GIT_FORK_SVG: &[u8] = lucide!(
+    r#"<circle cx="12" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" /><path d="M12 12v3" />"#
+);
 const GIT_COMPARE_SVG: &[u8] = lucide!(
     r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><path d="M11 18H8a2 2 0 0 1-2-2V9" />"#
+);
+/// A pull request as it stands: open, a draft, merged or closed.
+pub const GIT_PULL: &str = "icons/dusk/git-pull-request.svg";
+pub const GIT_PULL_DRAFT: &str = "icons/dusk/git-pull-request-draft.svg";
+pub const GIT_PULL_CLOSED: &str = "icons/dusk/git-pull-request-closed.svg";
+pub const GIT_MERGE: &str = "icons/dusk/git-merge.svg";
+
+/// A check waiting to start, and one skipped.
+pub const CHECK_QUEUED: &str = "icons/dusk/circle-dashed.svg";
+pub const CHECK_SKIPPED: &str = "icons/dusk/circle-minus.svg";
+
+const CHECK_QUEUED_SVG: &[u8] = lucide!(
+    r#"<path d="M10.1 2.182a10 10 0 0 1 3.8 0" /><path d="M13.9 21.818a10 10 0 0 1-3.8 0" /><path d="M17.609 3.721a10 10 0 0 1 2.69 2.7" /><path d="M2.182 13.9a10 10 0 0 1 0-3.8" /><path d="M20.279 17.609a10 10 0 0 1-2.7 2.69" /><path d="M21.818 10.1a10 10 0 0 1 0 3.8" /><path d="M3.721 6.391a10 10 0 0 1 2.7-2.69" /><path d="M6.391 20.279a10 10 0 0 1-2.69-2.7" />"#
+);
+const CHECK_SKIPPED_SVG: &[u8] =
+    lucide!(r#"<circle cx="12" cy="12" r="10" /><path d="M8 12h8" />"#);
+
+const GIT_PULL_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><line x1="6" x2="6" y1="9" y2="21" />"#
+);
+const GIT_PULL_DRAFT_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M18 6V5" /><path d="M18 11v-1" /><line x1="6" x2="6" y1="9" y2="21" />"#
+);
+const GIT_PULL_CLOSED_SVG: &[u8] = lucide!(
+    r#"<circle cx="6" cy="6" r="3" /><path d="M6 9v12" /><path d="m21 3-6 6" /><path d="m21 9-6-6" /><path d="M18 11.5V15" /><circle cx="18" cy="18" r="3" />"#
+);
+const GIT_MERGE_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" />"#
 );
 const BLOCKS_SVG: &[u8] = lucide!(
     r#"<path d="M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2" /><rect x="14" y="2" width="8" height="8" rx="1" />"#
@@ -139,6 +172,14 @@ const FILTER_SVG: &[u8] = lucide!(
     r#"<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />"#
 );
 
+/// Six dots: the handle a module is dragged by. The kit's catalog has it, but not its
+/// default bundle that the app serves.
+pub const GRIP: &str = "icons/dusk/grip-vertical.svg";
+
+const GRIP_SVG: &[u8] = lucide!(
+    r#"<circle cx="9" cy="12" r="1" /><circle cx="9" cy="5" r="1" /><circle cx="9" cy="19" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="5" r="1" /><circle cx="15" cy="19" r="1" />"#
+);
+
 pub const HOME: &str = "icons/dusk/home.svg";
 pub const LOCK: &str = "icons/dusk/lock.svg";
 pub const POWER: &str = "icons/dusk/power.svg";
@@ -168,7 +209,14 @@ impl AssetSource for Assets {
             POWER => return Ok(Some(Cow::Borrowed(POWER_SVG))),
             PUZZLE => return Ok(Some(Cow::Borrowed(PUZZLE_SVG))),
             GIT_BRANCH => return Ok(Some(Cow::Borrowed(GIT_BRANCH_SVG))),
+            GIT_FORK => return Ok(Some(Cow::Borrowed(GIT_FORK_SVG))),
             GIT_COMPARE => return Ok(Some(Cow::Borrowed(GIT_COMPARE_SVG))),
+            GIT_PULL => return Ok(Some(Cow::Borrowed(GIT_PULL_SVG))),
+            CHECK_QUEUED => return Ok(Some(Cow::Borrowed(CHECK_QUEUED_SVG))),
+            CHECK_SKIPPED => return Ok(Some(Cow::Borrowed(CHECK_SKIPPED_SVG))),
+            GIT_PULL_DRAFT => return Ok(Some(Cow::Borrowed(GIT_PULL_DRAFT_SVG))),
+            GIT_PULL_CLOSED => return Ok(Some(Cow::Borrowed(GIT_PULL_CLOSED_SVG))),
+            GIT_MERGE => return Ok(Some(Cow::Borrowed(GIT_MERGE_SVG))),
             BLOCKS => return Ok(Some(Cow::Borrowed(BLOCKS_SVG))),
             PIN => return Ok(Some(Cow::Borrowed(PIN_SVG))),
             TIER_OFFICIAL => return Ok(Some(Cow::Borrowed(TIER_OFFICIAL_SVG))),
@@ -176,6 +224,7 @@ impl AssetSource for Assets {
             TIER_COMMUNITY => return Ok(Some(Cow::Borrowed(TIER_COMMUNITY_SVG))),
             TIER_LOCAL => return Ok(Some(Cow::Borrowed(TIER_LOCAL_SVG))),
             FILTER => return Ok(Some(Cow::Borrowed(FILTER_SVG))),
+            GRIP => return Ok(Some(Cow::Borrowed(GRIP_SVG))),
             KIND_PLUGIN => return Ok(Some(Cow::Borrowed(KIND_PLUGIN_SVG))),
             KIND_PACK => return Ok(Some(Cow::Borrowed(KIND_PACK_SVG))),
             KIND_SKILL => return Ok(Some(Cow::Borrowed(KIND_SKILL_SVG))),

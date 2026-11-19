@@ -40,6 +40,7 @@ impl Server {
             }
             SettingsRequest::Switch { switch, on } => self.switch(switch, on)?,
             SettingsRequest::BranchPrefix(prefix) => runtime.set_branch_prefix(&prefix)?,
+            SettingsRequest::Arbiter(arbiter) => runtime.set_arbiter(arbiter)?,
             SettingsRequest::NextMode => return Ok(Response::Text(runtime.next_mode()?)),
             SettingsRequest::Mode(name) => runtime.set_mode(&name)?,
             SettingsRequest::Connect {
@@ -75,6 +76,15 @@ impl Server {
             SettingsRequest::Voice(voice) => runtime.set_voice(voice)?,
             SettingsRequest::PluginEnabled { name, enabled } => {
                 runtime.set_plugin_enabled(&name, enabled)?;
+            }
+            SettingsRequest::SetContractPlugin {
+                contract,
+                host,
+                plugin,
+            } => {
+                runtime.set_contract_plugin(&contract, &host, &plugin)?;
+                // Read again under the new routing, not at the next period.
+                self.pulls.all_due();
             }
             SettingsRequest::PluginSecret { plugin, key, value } => {
                 runtime.set_plugin_secret(&plugin, &key, &value.0)?;

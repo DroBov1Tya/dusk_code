@@ -13,3 +13,14 @@ impl fmt::Debug for Secret {
         f.write_str("Secret(hidden)")
     }
 }
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Secret {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Secret".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({ "type": "string", "writeOnly": true })
+    }
+}

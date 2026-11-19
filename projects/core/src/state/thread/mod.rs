@@ -9,6 +9,7 @@ mod changes;
 mod conversation;
 mod files;
 mod goal;
+mod mode;
 mod threads;
 mod work;
 
@@ -18,6 +19,7 @@ pub use conversation::{
     PendingMessage, ShapedResult, Source, Stub, UndoPoint, calls_of, estimate_tokens, saved_tokens,
 };
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
+pub(crate) use threads::below;
 pub use threads::{MEMBER_SOURCE, Thread};
 pub use work::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallPurpose, JobSummary, LastPrompt, ModelCall,
@@ -25,9 +27,9 @@ pub use work::{
     Unfinished,
 };
 pub use work::{
-    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_OPEN_TASKS,
-    MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus, PlanTask, TaskEdit,
-    TaskFiles, Unclaimable, WaitsOn, overlaps,
+    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_NOTE,
+    MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
+    PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, overlaps, short_task_id,
 };
 pub use work::{
     BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamCounts, TeamError, TeamRun,

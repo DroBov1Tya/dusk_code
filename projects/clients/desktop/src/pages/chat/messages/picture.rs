@@ -77,6 +77,7 @@ pub fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> A
         text = text.child(links::markdown(
             SharedString::from(format!("picture-{id}")),
             description.clone(),
+            links::Links::Paths,
         ));
     }
     if image.title.is_none() && image.description.is_none() {
@@ -103,12 +104,15 @@ pub fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> A
                     .cursor_pointer()
                     .hover(|card| card.opacity(0.9))
                     .active(|card| card.opacity(0.8))
-                    .child(img(path.clone()).size_full().object_fit(ObjectFit::Contain))
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        ws.modal = Some(crate::modal::Modal::Picture {
-                            image: path.clone().into(),
-                        });
-                        cx.notify();
+                    // The clip of a box is square: the picture rounds its own corners.
+                    .child(
+                        img(path.clone())
+                            .size_full()
+                            .rounded_lg()
+                            .object_fit(ObjectFit::Contain),
+                    )
+                    .on_click(cx.listener(move |ws, _, window, cx| {
+                        ws.open_picture(path.clone().into(), window, cx);
                     })),
             ),
         )

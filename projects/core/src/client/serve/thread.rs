@@ -1,10 +1,10 @@
 //! Requests about one thread: opening, sending, pinning, closing.
 
-use super::ClientId;
 use super::publish::{publish, send_to};
 use super::{CLOSE_TIMEOUT, OpenThread, Running, Server};
+use super::{ClientId, Shown};
 use crate::runtime::ThreadHandle;
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
 use dusk_protocol::thread::{ThreadEvent, TurnWait};
 use parking_lot::Mutex;
@@ -20,6 +20,17 @@ use tracing::warn;
 
 /// For a client bound to chats that asks to open one with no folder stored.
 const NO_FOLDER: &str = "this chat cannot be opened from this client";
+
+/// What a chat's event does to the suggestion kept for a client that joins: a new one,
+/// none any more, or (`None`) nothing. A subagent's event comes wrapped and changes
+/// nothing: only the chat has a user.
+pub(super) fn suggestion_after(event: &ThreadEvent) -> Option<Option<String>> {
+    match event {
+        ThreadEvent::NextSuggested { text } => Some(Some(text.clone())),
+        event if event.ends_suggestion() => Some(None),
+        _ => None,
+    }
+}
 
 impl Server {
     pub(super) async fn thread(&mut self, request: ThreadRequest) -> Result<Response> {
@@ -42,6 +53,7 @@ impl Server {
                 {
                     // Read before the lock, which no wait may hold.
                     let failure = runtime.last_failure(&thread_id).await?;
+                    let agents = runtime.agents_at_work(&thread_id).await?;
                     let Some(open) = self.threads.get_mut(&thread_id) else {
                         anyhow::bail!("thread has ended");
                     };
@@ -51,6 +63,8 @@ impl Server {
                     // without a fold boundary, or waits, with the question it waits on.
                     // The lock keeps it before the end. With no turn running, it sees why
                     // the newest one failed, as the others did.
+                    // In the forwarding task's order: the suggestion, then the turn.
+                    let suggested = open.suggested.lock();
                     let running = open.running.lock();
                     let events = match (running.clone(), failure) {
                         (Some(Running { turn, question }), _) if turn.waiting.is_some() => {
@@ -63,7 +77,11 @@ impl Server {
                         (None, Some(failure)) => [Some(ThreadEvent::TurnFailed(failure)), None],
                         (None, None) => [None, None],
                     };
-                    for event in events.into_iter().flatten() {
+                    let agents = agents.then_some(ThreadEvent::AgentsWorking(true));
+                    let suggestion = suggested
+                        .clone()
+                        .map(|text| ThreadEvent::NextSuggested { text });
+                    for event in events.into_iter().chain([agents, suggestion]).flatten() {
                         send_to(
                             &self.subscribers,
                             self.caller,
@@ -92,6 +110,16 @@ impl Server {
             }
             ThreadRequest::Fork { summary, cwd } => {
                 let handle = runtime.fork_thread(self.source(), &summary, &cwd).await?;
+                self.open(handle)
+            }
+            ThreadRequest::ForkAt {
+                thread_id,
+                message_id,
+                cwd,
+            } => {
+                let handle = runtime
+                    .fork_thread_at(self.source(), &thread_id, &message_id, &cwd)
+                    .await?;
                 self.open(handle)
             }
             ThreadRequest::List => Response::Threads(runtime.list_threads().await?),
@@ -132,8 +160,9 @@ impl Server {
                 runtime.send_to_background(&thread_id, &call_id).await?;
                 Response::Done
             }
-            ThreadRequest::RunCommand { thread_id, command } => {
-                Response::Text(runtime.run_for_user(&thread_id, &command).await?)
+            // Answered beside the loop, by the server.
+            ThreadRequest::RunCommand { .. } | ThreadRequest::StopRun { .. } => {
+                bail!("a command the user runs is answered beside the loop")
             }
             ThreadRequest::Cancel { thread_id } => {
                 self.open_thread(&thread_id)?.input.cancel().await?;
@@ -176,9 +205,11 @@ impl Server {
                 }
                 Response::Done
             }
-            ThreadRequest::Approve { id, decision } => {
-                Response::Waiting(runtime.answer_approval(id, decision))
-            }
+            ThreadRequest::Approve {
+                thread_id,
+                id,
+                decision,
+            } => Response::Waiting(runtime.answer_approval(&thread_id, id, decision).await),
             ThreadRequest::SetApprovals { thread_id, policy } => {
                 runtime
                     .state_of(&thread_id)
@@ -207,6 +238,9 @@ impl Server {
                 );
                 Response::Pins(pins)
             }
+            ThreadRequest::SkillChanges { thread_id } => {
+                Response::SkillChanges(runtime.skill_changes(&thread_id).await?)
+            }
             ThreadRequest::Pins { thread_id } => Response::Pins(runtime.pins(&thread_id).await?),
         })
     }
@@ -224,6 +258,8 @@ impl Server {
         let flag = Arc::clone(&done);
         let running: Arc<Mutex<Option<Running>>> = Arc::new(Mutex::new(None));
         let current = Arc::clone(&running);
+        let suggested: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let suggestion = Arc::clone(&suggested);
         let forward = tokio::spawn(async move {
             // A thread may say it is idle as it opens; it is done only once it has worked.
             let mut worked = false;
@@ -280,6 +316,12 @@ impl Server {
                     }
                     _ => None,
                 };
+                // Kept under the lock a joining client takes, as the turn is.
+                let _suggested = suggestion_after(&event).map(|text| {
+                    let mut kept = suggestion.lock();
+                    *kept = text;
+                    kept
+                });
                 let event = Event::Thread {
                     thread_id: id.clone(),
                     event: Box::new(event),
@@ -312,6 +354,7 @@ impl Server {
                 unattended: false,
                 done,
                 running,
+                suggested,
             },
         );
         Response::Opened { thread_id }
@@ -330,7 +373,7 @@ impl Server {
         stored
             .and_then(|thread| thread.project)
             .map(PathBuf::from)
-            .context(NO_FOLDER)
+            .ok_or_else(|| Shown::new(NO_FOLDER).into())
     }
 
     pub(super) fn open_thread(&self, thread_id: &str) -> Result<&OpenThread> {
@@ -373,6 +416,8 @@ impl Server {
     /// A client went away: it leaves every thread, and the ones nobody keeps close.
     pub(super) async fn detach(&mut self, client: ClientId) {
         self.clients.remove(&client);
+        self.pulls.forget(client);
+        self.user_runs.stop_client(client);
         self.subscribers
             .lock()
             .retain(|subscriber| subscriber.client != client);

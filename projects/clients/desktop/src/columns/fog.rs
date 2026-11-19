@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::{component::ActiveTheme, *};
 
+use crate::ui::looping::Loop;
 use crate::workspace::Workspace;
 
 /// How long the window is left alone before the mist starts.
@@ -136,14 +137,12 @@ pub fn render(ws: &Workspace, window: &Window, cx: &App) -> Option<AnyElement> {
         div()
             .absolute()
             .inset_0()
-            .with_animation(
-                "fog-drift",
-                Animation::new(DRIFT).repeat().with_max_fps(12.),
-                move |holder, phase| {
-                    // The level is read anew each frame, so the mist rises as it drifts.
-                    holder.child(layer(height, risen(since.elapsed()), phase, color))
-                },
-            )
+            .looping(DRIFT, move |holder, phase| {
+                // The level is read anew each frame, so the mist rises as it drifts.
+                holder.child(layer(height, risen(since.elapsed()), phase, color))
+            })
+            // The mist is costly to draw and drifts slowly: every other tick is enough.
+            .every(2)
             .into_any_element(),
     )
 }

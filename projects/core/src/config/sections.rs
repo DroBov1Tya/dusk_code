@@ -117,8 +117,8 @@ pub struct Limits {
     /// on how to read it whole. The full output stays stored.
     #[serde(default = "yes")]
     pub shape_output: bool,
-    /// Whether the core keeps an index of a saved project's source (files, symbols, the
-    /// names each file uses) for the `project_graph` tool. The model sees nothing of it.
+    /// Whether the model is offered `project_graph`: a map of the project's files and
+    /// folders by name. The name is kept from the code graph it replaced.
     #[serde(default = "yes")]
     pub project_graph: bool,
     /// Whether the core writes down what ended a problem in a saved project (a repeated
@@ -130,10 +130,10 @@ pub struct Limits {
     /// at the end of its answer, stored with the episode.
     #[serde(default = "yes")]
     pub episode_lesson: bool,
-    /// Whether the chat in ORCHESTRATOR mode gets the plan form of `tasks` (tasks that
-    /// depend on each other, and `run`, which has the core start the team). Off until the
-    /// evals show the lead needs fewer steps.
-    #[serde(default)]
+    /// The kill switch of teams. On, a chat in TEAM mode gets the plan form of `tasks`
+    /// (tasks that depend on each other, and `run`, which has the core start the team).
+    /// Off, TEAM mode has the board like any other mode and no team runs.
+    #[serde(default = "yes")]
     pub plan_graph: bool,
     /// Whether a team member gets its own prompt, tool set, task card and a one-line
     /// hand-in, instead of today's subagent prompt. Off until the evals show it helps.
@@ -163,6 +163,12 @@ pub struct Limits {
     /// The most minutes a team may run.
     #[serde(default = "default_team_max_minutes")]
     pub team_max_minutes: u32,
+    /// The longest one gate command may run before it is killed and counts as failed.
+    #[serde(default = "default_team_gate_seconds")]
+    pub team_gate_seconds: u64,
+    /// The most gate commands one team may run; past it a gated task waits for the lead.
+    #[serde(default = "default_team_max_gate_runs")]
+    pub team_max_gate_runs: u32,
 }
 
 impl Default for Limits {
@@ -196,7 +202,7 @@ impl Default for Limits {
             project_graph: true,
             episodes: true,
             episode_lesson: true,
-            plan_graph: false,
+            plan_graph: true,
             task_packets: false,
             member_worktrees: false,
             peer_messages: false,
@@ -205,6 +211,8 @@ impl Default for Limits {
             team_max_steps: default_team_max_steps(),
             team_max_tokens: default_team_max_tokens(),
             team_max_minutes: default_team_max_minutes(),
+            team_gate_seconds: default_team_gate_seconds(),
+            team_max_gate_runs: default_team_max_gate_runs(),
         }
     }
 }
@@ -310,6 +318,11 @@ pub const MIN_TEAM_MAX_TOKENS: u64 = 100_000;
 pub const MAX_TEAM_MAX_TOKENS: u64 = 100_000_000;
 pub const MIN_TEAM_MAX_MINUTES: u32 = 5;
 pub const MAX_TEAM_MAX_MINUTES: u32 = 1_440;
+/// A gate is a check such as a build and its tests; the top is a command's own longest.
+pub const MIN_TEAM_GATE_SECONDS: u64 = 10;
+pub const MAX_TEAM_GATE_SECONDS: u64 = 600;
+pub const MIN_TEAM_MAX_GATE_RUNS: u32 = 1;
+pub const MAX_TEAM_MAX_GATE_RUNS: u32 = 1_000;
 
 fn default_team_at_once() -> usize {
     3
@@ -327,6 +340,15 @@ fn default_team_max_minutes() -> u32 {
     120
 }
 
+fn default_team_gate_seconds() -> u64 {
+    300
+}
+
+/// Two gate runs a task (its first and a rework) for a plan of 64 tasks, the most open.
+fn default_team_max_gate_runs() -> u32 {
+    128
+}
+
 /// A role name is an agent's folder name.
 const MAX_ROLE_NAME: usize = 64;
 
@@ -340,6 +362,10 @@ pub struct Team {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, String>,
+    /// The tools a member of a role keeps, by role. A list only takes tools away from
+    /// what every member may have; a role without one keeps them all.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tools: BTreeMap<String, Vec<String>>,
 }
 
 impl Team {
@@ -357,14 +383,23 @@ impl Team {
                 "team models must be written as provider/model"
             );
         }
-        for role in self.models.keys() {
+        for tool in self.tools.values().flatten() {
+            anyhow::ensure!(
+                !tool.is_empty()
+                    && tool.len() <= MAX_ROLE_NAME
+                    && tool.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
+                "team.tools names tools, such as read_file"
+            );
+        }
+        for role in self.models.keys().chain(self.tools.keys()) {
             anyhow::ensure!(
                 !role.is_empty()
                     && role.len() <= MAX_ROLE_NAME
                     && role
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-                "team.models keys must be role names of up to {MAX_ROLE_NAME} of a-z, 0-9, - and _"
+                "team.models and team.tools keys must be role names of up to {MAX_ROLE_NAME} of \
+                 a-z, 0-9, - and _"
             );
         }
         Ok(())

@@ -4,7 +4,7 @@ use dusk_protocol::plugin::Tier;
 
 use super::{
     index::{self, Index},
-    picture::checked_type,
+    picture::{COVER_PIXELS, SCREENSHOT_PIXELS, check_pixels, checked_type, pixels},
     source::{self, Fetched},
     tests::{SHA, signed},
 };
@@ -109,6 +109,99 @@ fn a_screenshot_must_be_the_picture_its_name_says() {
     assert!(checked_type("s/x.png", b"<svg xmlns=").is_err());
 }
 
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+    bytes.extend(width.to_be_bytes());
+    bytes.extend(height.to_be_bytes());
+    bytes.extend([8, 6, 0, 0, 0]);
+    bytes
+}
+
+/// A WebP of one chunk `kind` whose data starts with `data`.
+fn webp(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let mut bytes = b"RIFF\0\0\0\0WEBP".to_vec();
+    bytes.extend(kind);
+    bytes.extend(u32::try_from(data.len()).unwrap().to_le_bytes());
+    bytes.extend(data);
+    bytes
+}
+
+fn vp8(width: u16, height: u16) -> Vec<u8> {
+    let mut data = vec![0, 0, 0, 0x9d, 0x01, 0x2a];
+    data.extend(width.to_le_bytes());
+    data.extend(height.to_le_bytes());
+    webp(b"VP8 ", &data)
+}
+
+fn vp8l(width: u32, height: u32) -> Vec<u8> {
+    let bits = (width - 1) | ((height - 1) << 14);
+    let mut data = vec![0x2f];
+    data.extend(bits.to_le_bytes());
+    webp(b"VP8L", &data)
+}
+
+fn vp8x(flags: u8, width: u32, height: u32) -> Vec<u8> {
+    let mut data = vec![flags, 0, 0, 0];
+    data.extend(&(width - 1).to_le_bytes()[..3]);
+    data.extend(&(height - 1).to_le_bytes()[..3]);
+    webp(b"VP8X", &data)
+}
+
+#[test]
+fn a_picture_declaring_too_many_pixels_is_refused() {
+    for (bytes, size) in [
+        (png(1200, 630), (1200, 630)),
+        (vp8(1200, 630), (1200, 630)),
+        (vp8l(1600, 1000), (1600, 1000)),
+        (vp8x(0x10, 2400, 1260), (2400, 1260)),
+    ] {
+        assert_eq!(pixels(&bytes), Some(size));
+        assert!(check_pixels(&bytes, COVER_PIXELS).is_ok());
+    }
+    // Header-only bombs: a few bytes that would decode into gigabytes.
+    for bomb in [
+        png(60000, 60000),
+        png(3201, 10),
+        vp8(16383, 16383),
+        vp8l(16384, 16384),
+        vp8x(0, 60000, 60000),
+    ] {
+        assert!(check_pixels(&bomb, COVER_PIXELS).is_err());
+        assert!(check_pixels(&bomb, SCREENSHOT_PIXELS).is_err());
+    }
+    assert!(check_pixels(&png(3200, 2000), SCREENSHOT_PIXELS).is_ok());
+    assert!(check_pixels(&png(3200, 2000), COVER_PIXELS).is_err());
+    assert!(check_pixels(&png(0, 10), COVER_PIXELS).is_err());
+}
+
+#[test]
+fn an_animated_or_unreadable_picture_is_refused() {
+    assert!(check_pixels(&vp8x(0x02, 100, 100), COVER_PIXELS).is_err());
+    let unreadable: [&[u8]; 5] = [
+        b"\x89PNG\r\n\x1a\nrest",
+        b"RIFF\x10\0\0\0WEBPVP8 ",
+        b"RIFF\x10\0\0\0WEBPALPH\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+        b"<svg xmlns=",
+        b"",
+    ];
+    for bytes in unreadable {
+        assert!(pixels(bytes).is_none());
+        assert!(check_pixels(bytes, COVER_PIXELS).is_err());
+    }
+    for cut in 0..vp8(10, 10).len() {
+        let _ = pixels(&vp8(10, 10)[..cut]);
+    }
+}
+
+#[test]
+fn the_real_pictures_pass() {
+    let cover = include_bytes!("../../../../clients/desktop/src/dev/media/duskcode-agents.webp");
+    let shot = include_bytes!("../../../../clients/desktop/src/dev/media/engineering-1.webp");
+    assert_eq!(pixels(cover), Some((1200, 630)));
+    assert!(check_pixels(cover, COVER_PIXELS).is_ok());
+    assert!(check_pixels(shot, SCREENSHOT_PIXELS).is_ok());
+}
+
 fn mirror(name: &str, key: &str) -> Mirror {
     Mirror {
         name: name.into(),
@@ -122,7 +215,7 @@ fn remembered(name: &str) -> Mirror {
     let shots = [shot("s/1.png", 10, None), shot("s/2.png", 10, None)].join(", ");
     let (index, key) = read(&list(&entry("hello", &shots))).unwrap();
     let mirror = mirror(name, &key);
-    source::remember_pictures(&[Fetched {
+    source::remember(&[Fetched {
         name: mirror.name.clone(),
         url: mirror.url.clone(),
         key: key.clone(),

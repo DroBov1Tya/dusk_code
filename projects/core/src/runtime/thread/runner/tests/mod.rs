@@ -345,6 +345,23 @@ fn runner_with(
 ) -> (ThreadRunner, ThreadInput, ThreadOutput) {
     let root = temp_dir("runner_scope");
     std::fs::create_dir_all(&root).unwrap();
+    let artifacts = ArtifactStore::new(root.join("artifacts"));
+    runner_seeing(state, provider, config, model, tool, root, artifacts, false)
+}
+
+/// `runner_with` in `root`, keeping pictures in `artifacts`; with `vision`, the model is
+/// known to see pictures, so tool results carry theirs.
+#[allow(clippy::too_many_arguments)]
+fn runner_seeing(
+    state: &Arc<State>,
+    provider: &Arc<FakeProvider>,
+    config: &Arc<LiveConfig>,
+    model: Model,
+    tool: Box<dyn Tool>,
+    root: std::path::PathBuf,
+    artifacts: ArtifactStore,
+    vision: bool,
+) -> (ThreadRunner, ThreadInput, ThreadOutput) {
     let mut tools = ToolRegistry::default();
     tools.add(tool);
     tools.set_depth(0);
@@ -356,9 +373,14 @@ fn runner_with(
     // The size of the real prompt must not decide what fits in these small limits.
     std::fs::create_dir_all(root.join("modes")).unwrap();
     std::fs::write(root.join("modes/MAIN.md"), MAIN_PROMPT).unwrap();
+    let name = choice.name();
+    let model = ModelChoice::new(choice);
+    if vision {
+        model.set_vision(name, true);
+    }
     ThreadRunner::new(ThreadSetup {
         state: Arc::clone(state),
-        model: Arc::new(ModelChoice::new(choice)),
+        model: Arc::new(model),
         config: Arc::clone(config),
         thread_id: "thread".into(),
         tools,
@@ -367,13 +389,17 @@ fn runner_with(
         compact_prompt: root.join("COMPACT.md"),
         fork_prompt: root.join("FORK.md"),
         modes_dir: root.join("modes"),
-        artifacts: ArtifactStore::new(root.join("artifacts")),
+        artifacts,
         depth: 0,
         mailboxes: Arc::default(),
         ends_when_idle: false,
         lock: ThreadLock::take(&root).unwrap(),
         hooks: Arc::default(),
         health: Arc::default(),
+        skill_watch: Arc::new(crate::catalog::history::Watch::new(Some(
+            root.join("skills"),
+        ))),
+        skill_state: Arc::clone(state),
     })
 }
 
@@ -411,6 +437,8 @@ mod resume;
 mod retries;
 mod shaped;
 mod shrink;
+mod simulator;
+mod skills;
 mod stubs;
 mod tail;
 mod together;

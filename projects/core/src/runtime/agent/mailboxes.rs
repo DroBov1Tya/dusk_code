@@ -7,10 +7,14 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use anyhow::Result;
 use tokio::sync::{Mutex, MutexGuard, mpsc::WeakUnboundedSender};
 
 use super::Input;
-use crate::runtime::{ThreadEvent, thread::ContextSource};
+use crate::{
+    runtime::{ThreadEvent, thread::ContextSource},
+    state::State,
+};
 
 #[derive(Default)]
 pub struct Mailboxes {
@@ -73,6 +77,12 @@ impl Mailboxes {
         threads.iter().any(|thread| reports.contains_key(thread))
     }
 
+    /// An agent below `root` works or still reports its end, so the chat is at work.
+    pub async fn agents_at_work(&self, state: &State, root: &str) -> Result<bool> {
+        let below = state.descendant_threads(root).await?;
+        Ok(self.has_agent_reports(&below).await)
+    }
+
     pub fn close(&self) {
         self.closed.store(true, Ordering::SeqCst);
     }
@@ -100,5 +110,33 @@ impl Mailbox {
             // A client that stopped listening does not stop the sender.
             let _ = events.send(event);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Mailboxes;
+    use crate::testing::temp_state;
+
+    #[tokio::test]
+    async fn a_chat_is_at_work_while_an_agent_at_any_depth_below_it_reports() {
+        let state = temp_state("agents_at_work").await;
+        state.create_thread("chat", "test").await.unwrap();
+        state
+            .create_agent_thread("a", "chat", "general", "Aster-01")
+            .await
+            .unwrap();
+        state
+            .create_agent_thread("b", "a", "general", "Beryl-02")
+            .await
+            .unwrap();
+        let mailboxes = Mailboxes::default();
+        assert!(!mailboxes.agents_at_work(&state, "chat").await.unwrap());
+
+        mailboxes.begin_agent_report("b").await;
+        assert!(mailboxes.agents_at_work(&state, "chat").await.unwrap());
+
+        mailboxes.end_agent_report("b").await;
+        assert!(!mailboxes.agents_at_work(&state, "chat").await.unwrap());
     }
 }

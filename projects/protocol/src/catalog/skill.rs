@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const SAVE_MARKER: &str = "[dusk_skill_saved] ";
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SkillKind {
     Builtin,
@@ -21,6 +22,7 @@ impl SkillKind {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillInfo {
     pub name: String,
@@ -37,6 +39,7 @@ pub struct SkillInfo {
 /// Skills as they came, switched on or off together: the built-in skills as the pack
 /// `duskcode`, and every folder under `skills/` that holds skills, such as a pack from
 /// the store or a plugin's skills. A skill of the user's own at the top is in none.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillPack {
     pub name: String,
@@ -49,6 +52,7 @@ pub struct SkillPack {
     pub skills: Vec<PackSkill>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackSkill {
     /// The skill's full name, such as `engineering/spike`.
@@ -59,6 +63,7 @@ pub struct PackSkill {
 
 /// A successful file-tool save. Kept in its stored result so replay needs no filesystem
 /// inspection and cannot mistake a loaded skill for an updated one.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SkillSave {
@@ -66,12 +71,14 @@ pub struct SkillSave {
     pub action: SkillSaveAction,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillSaveAction {
     Created,
     Updated,
-    Unchanged,
+    /// The file is gone; its text is the change's `before`.
+    Deleted,
 }
 
 impl SkillSave {
@@ -83,18 +90,48 @@ impl SkillSave {
     pub fn from_result(content: &str) -> Option<Self> {
         serde_json::from_str(content.lines().last()?.strip_prefix(SAVE_MARKER)?).ok()
     }
+}
 
-    pub fn notice(&self) -> String {
-        let action = match self.action {
-            SkillSaveAction::Created => "created",
-            SkillSaveAction::Updated => "updated",
-            SkillSaveAction::Unchanged => "saved without changes",
-        };
-        let name: String = self
-            .name
-            .chars()
-            .map(|c| if c.is_control() { '?' } else { c })
-            .collect();
-        format!("Skill {action}: {name}")
-    }
+/// One change an agent made to a skill file, kept so it can be seen and undone.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillChange {
+    pub id: i64,
+    pub skill: String,
+    /// The tool call that made it, in its thread.
+    pub call_id: String,
+    pub action: SkillSaveAction,
+    /// One plain line, as the agent gave it.
+    pub reason: String,
+    pub changed_at_ms: i64,
+    pub undone: bool,
+    /// Not undone, and the text before it is known (or it created the skill).
+    pub can_undo: bool,
+}
+
+/// A change as lines. The text is skill data: shown as plain text, never as markup.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillDiff {
+    pub change: SkillChange,
+    pub lines: Vec<DiffLine>,
+    /// More lines followed that are not here.
+    pub cut: bool,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", schemars(rename = "SkillDiffLine"))]
+pub struct DiffLine {
+    pub kind: DiffKind,
+    pub text: String,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", schemars(rename = "SkillDiffKind"))]
+pub enum DiffKind {
+    Same,
+    Added,
+    Removed,
 }

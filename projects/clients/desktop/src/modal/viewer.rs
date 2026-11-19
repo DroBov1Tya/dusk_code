@@ -2,6 +2,7 @@
 //! the mono font, pictures drawn. The core reads text, only inside its own folders and
 //! the projects; pictures are drawn from the path the core listed.
 
+use crate::ui::Type;
 use std::path::{Path, PathBuf};
 
 use dusk_protocol::project::OutputKind;
@@ -46,7 +47,7 @@ pub fn render(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_xs()
+                .meta()
                 .text_color(muted)
                 .child(path.display().to_string()),
         )
@@ -61,7 +62,7 @@ pub fn render(
     let body = match content {
         ViewerContent::Loading => widgets::muted("Loading...", cx).into_any_element(),
         ViewerContent::Markdown(text) => {
-            links::markdown("viewer-markdown", text.clone()).into_any_element()
+            links::markdown("viewer-markdown", text.clone(), links::Links::Paths).into_any_element()
         }
         ViewerContent::Text(text) => div()
             .font_family(
@@ -70,7 +71,7 @@ pub fn render(
                     .clone()
                     .unwrap_or_else(|| "Menlo".to_owned()),
             )
-            .text_sm()
+            .small()
             .whitespace_normal()
             .child(text.clone())
             .into_any_element(),

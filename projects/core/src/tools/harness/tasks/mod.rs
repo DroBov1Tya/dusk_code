@@ -3,7 +3,7 @@
 //! a step or a whole task done. Steps are timed as they run. The board lives in the
 //! database, so it outlives a compaction.
 //!
-//! A chat in ORCHESTRATOR mode with `limits.plan_graph` on is offered the plan form
+//! A chat in TEAM mode (unless `limits.plan_graph` is off) is offered the plan form
 //! instead (`lead`): the same rows as a plan the core runs with a team. The board's
 //! `add_items`, `start` and `done` are still taken there, never on a task the team has
 //! given out. Anywhere else the tool is byte for byte the board.
@@ -20,8 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-pub use team::TeamRunner;
-pub use text::short as short_task_id;
+pub use team::{GatesYes, Started, TeamRunner};
 
 use lead::Lead;
 use team::NoTeam;
@@ -29,13 +28,10 @@ use team::NoTeam;
 use crate::tools::{Tool, ToolContext, schema, schema::parse_arguments};
 use crate::{
     BoxFuture,
-    catalog::{agents::Agents, modes::ORCHESTRATOR},
+    catalog::{agents::Agents, modes::TEAM},
     runtime::ThreadEvent,
-    state::{PlanError, PlanStatus, State, Task},
+    state::{PlanError, PlanStatus, State, Task, short_task_id},
 };
-
-/// IDs are shown by their last characters, which are random; the agent may use those.
-const SHORT_ID: usize = 8;
 
 pub struct Tasks {
     state: Arc<State>,
@@ -136,11 +132,12 @@ impl Tasks {
         self
     }
 
-    /// The plan form, when this is a chat's, its mode ORCHESTRATOR and the switch on.
+    /// The plan form, when this is a chat's and its mode is TEAM. `limits.plan_graph`
+    /// is the kill switch.
     fn plan_form(&self, context: &ToolContext) -> Option<&Lead> {
         let lead = self.lead.as_ref()?;
         let config = &context.config;
-        (config.limits().plan_graph && config.mode() == ORCHESTRATOR).then_some(lead)
+        (config.limits().plan_graph && config.mode() == TEAM).then_some(lead)
     }
 
     /// The board's actions do not touch a task the team has given out: its review, the
@@ -163,7 +160,7 @@ impl Tasks {
         ensure!(
             !given_out,
             "task #{} is {} in the team's plan; the board cannot change it",
-            text::short(&task.task_id),
+            short_task_id(&task.task_id),
             task.status.as_str()
         );
         Ok(())
@@ -283,7 +280,7 @@ impl Tool for Tasks {
                     .any(|field| arguments.get(field).is_some())
             {
                 bail!(
-                    "the plan's actions need ORCHESTRATOR mode and limits.plan_graph; \
+                    "the plan's actions need TEAM mode; \
                      use add with task and items"
                 );
             }
@@ -327,7 +324,7 @@ pub fn board(tasks: &[Task]) -> String {
                 "  {} {} #{} ({finished}/{})\n",
                 mark(task.done),
                 task.description,
-                short(&task.task_id),
+                short_task_id(&task.task_id),
                 task.items.len()
             ));
             for item in &task.items {
@@ -343,7 +340,7 @@ pub fn board(tasks: &[Task]) -> String {
                 text.push_str(&format!(
                     "      {mark} {} #{}{took}\n",
                     item.description,
-                    short(&item.item_id)
+                    short_task_id(&item.item_id)
                 ));
             }
         }
@@ -353,10 +350,6 @@ pub fn board(tasks: &[Task]) -> String {
 
 fn mark(done: bool) -> &'static str {
     if done { "[x]" } else { "[ ]" }
-}
-
-fn short(id: &str) -> &str {
-    &id[id.len().saturating_sub(SHORT_ID)..]
 }
 
 #[cfg(test)]

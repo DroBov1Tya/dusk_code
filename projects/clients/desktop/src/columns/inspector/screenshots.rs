@@ -8,7 +8,6 @@ use gpui_kit::{
 };
 
 use crate::{
-    modal::Modal,
     pages::chat::messages::picture_path,
     ui::{Type, widgets},
     workspace::{Right, Workspace},
@@ -18,9 +17,9 @@ use crate::{
 const FIRST: usize = 5;
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let shots = ws
+    let shots: Vec<_> = ws
         .shown_chat()
-        .map(|chat| chat.screenshots.as_slice())
+        .map(|chat| chat.screenshots().collect())
         .unwrap_or_default();
     if shots.is_empty() {
         return div().child(widgets::muted("Screenshots the model takes show here.", cx));
@@ -57,11 +56,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                         .child(img(path).size_full().object_fit(ObjectFit::Cover)),
                 )
                 .child(div().flex_1().min_w_0().truncate().small().child(name))
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    ws.modal = Some(Modal::Picture {
-                        image: large.clone().into(),
-                    });
-                    cx.notify();
+                .on_click(cx.listener(move |ws, _, window, cx| {
+                    ws.open_picture(large.clone().into(), window, cx);
                 })),
         );
     }

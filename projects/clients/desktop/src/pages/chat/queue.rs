@@ -155,6 +155,19 @@ impl Workspace {
         self.send_text(pending.thread_id, text, now, cx);
     }
 
+    /// Sends the chat's last message once more, after a call that failed.
+    pub fn send_again(&mut self, thread_id: &str, cx: &mut Context<Self>) {
+        let Some(text) = self
+            .chats
+            .get(thread_id)
+            .and_then(|chat| chat.last_sent())
+            .map(str::to_owned)
+        else {
+            return;
+        };
+        self.send_text(thread_id.to_owned(), text, false, cx);
+    }
+
     fn send_text(&mut self, thread_id: String, text: String, now: bool, cx: &mut Context<Self>) {
         cx.notify();
         if text.is_empty() {

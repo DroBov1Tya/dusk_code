@@ -6,12 +6,15 @@ mod agents;
 mod arbiter;
 mod chat_menu;
 pub mod detail;
+mod picture;
 mod project;
 mod search;
 mod sphere;
 mod viewer;
 mod whats_new;
 
+use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use std::path::PathBuf;
 
 use gpui_kit::{
@@ -28,7 +31,7 @@ use crate::workspace::Workspace;
 
 pub use chat_menu::{FADE, render as chat_menu};
 
-use crate::pages::connectors::plugins::workshop::detail as listing;
+use crate::pages::customize::plugins::workshop::detail as listing;
 pub use viewer::ViewerContent;
 
 pub enum Modal {
@@ -78,9 +81,12 @@ pub enum Modal {
     WhatsNew {
         from: Option<String>,
     },
-    /// A picture large over the window; a click outside closes it.
+    /// A picture over the whole window, to zoom and move; a click beside it closes it.
     Picture {
         image: ImageSource,
+        /// Its pixel size, when its bytes were at hand.
+        size: Option<(u32, u32)>,
+        view: picture::PictureView,
     },
     /// A speech button was pressed with no server connected for it.
     VoiceMissing {
@@ -95,7 +101,7 @@ pub enum Modal {
     /// A push or a discard of the review page, after a yes.
     Git(crate::pages::review::GitConfirm),
     /// Installing or removing a plugin of the store, after a yes.
-    Workshop(crate::pages::connectors::plugins::Confirm),
+    Workshop(crate::pages::customize::plugins::Confirm),
     /// A listing of the Workshop as a store page, by its source and name.
     Listing {
         source: String,
@@ -156,20 +162,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
-        Modal::Picture { image } => {
-            // As large as the window allows, below the title and its margins.
-            let room = window.viewport_size();
-            let height = (room.height.as_f32() - 140.).max(120.);
-            (
-                "Picture".to_owned(),
-                (room.width.as_f32() - 32.).clamp(220., 1600.),
-                div().p_3().child(
-                    img(image.clone())
-                        .w_full()
-                        .max_h(px(height))
-                        .object_fit(ObjectFit::Contain),
-                ),
-            )
+        // It has the whole window, not a panel with a title.
+        Modal::Picture { image, size, view } => {
+            return Some(picture::render(ws, image, *size, view, window, cx));
         }
         Modal::Uninstall(state) => (
             "Remove duskcode".to_owned(),
@@ -214,7 +209,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             (
                 confirm.title(),
                 480.,
-                crate::pages::connectors::plugins::confirm(&confirm, &ws.confirm_focus, cx),
+                crate::pages::customize::plugins::confirm(
+                    &confirm,
+                    ws.workshop.review.as_ref(),
+                    &ws.confirm_focus,
+                    cx,
+                ),
             )
         }
         Modal::Listing { source, name } => {
@@ -331,10 +331,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         // Clicks inside stay inside.
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(
@@ -424,7 +421,7 @@ fn rollback(cx: &mut Context<Workspace>) -> Div {
         .gap_3()
         .p_5()
         .child("Go back to this message?")
-        .child(div().text_sm().text_color(muted).child(
+        .child(div().small().text_color(muted).child(
             "The message and everything after it are erased from the chat for good. \
              Files the agents wrote stay. The message returns to the box.",
         ))

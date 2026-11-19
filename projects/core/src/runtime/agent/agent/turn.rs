@@ -2,15 +2,10 @@
 
 use super::wait::Waited;
 use super::{Agent, Pace, StepEnd};
-use crate::catalog::modes::Modes;
 use crate::plugins::HookEvent;
 use crate::runtime::agent::{Inbox, Keep, Stop};
-use crate::runtime::{
-    ThreadEvent,
-    thread::{Conversation, start::NO_PROMPT},
-};
+use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::state::{AgentPhase, Goal, GoalStatus, PendingMessage, Turn, TurnOutcome, TurnStatus};
-use crate::tools::console::project_folder;
 use anyhow::Result;
 use dusk_protocol::thread::TurnWait;
 use serde_json::json;
@@ -25,12 +20,15 @@ impl Agent {
         if self.model.current().is_none() {
             return Ok(None);
         }
-        let config = self.config.current();
-        let stub_results = config.limits().stub_results;
+        let stub_results = self.config.current().limits().stub_results;
         let conversation = Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        if !conversation.has_queued() {
+            return Ok(None);
+        }
+        self.take_up_mode(&conversation).await;
+        let config = self.config_now().await;
         let specs = self.tools.specs(&self.scope, &config);
-        if !conversation.has_queued() || self.context_too_large(&conversation, &specs, 0).is_some()
-        {
+        if self.context_too_large(&conversation, &specs, 0).is_some() {
             return Ok(None);
         }
         if self.depth == 0 {
@@ -56,13 +54,11 @@ impl Agent {
     /// edit of the prompt, applies from the next turn. The cached prefix changes once
     /// then, and only then.
     pub(super) async fn follow_mode(&self, conversation: &Conversation) -> Result<()> {
-        let mode = self.config.current().mode().to_owned();
-        let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
-        let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
-        if conversation.prompt() != Some(prompt) {
+        let (mode, prompt) = self.mode_prompt().await?;
+        if conversation.prompt() != Some(prompt.as_str()) {
             info!("thread {} takes up the {mode} prompt", self.thread_id);
             self.state
-                .add_system_message(&self.thread_id, prompt)
+                .add_system_message(&self.thread_id, &prompt)
                 .await?;
         }
         Ok(())
@@ -93,7 +89,6 @@ impl Agent {
         // The user's stop and the context's compaction end a long run, not a step count.
         let outcome;
         let mut stop = None;
-        let mut received = Vec::new();
         // When the provider waits in a row began, while one is stored with the turn.
         let mut waiting_since = match turn.waiting {
             Some(TurnWait::Provider { since, .. }) => Some(since),
@@ -101,13 +96,15 @@ impl Agent {
         };
         // Compactions of a context too large for the step at hand.
         let mut shrunk = 0;
+        // The context the size check after the last step read, while nothing changed it.
+        let mut loaded = None;
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
             let step = match first.take() {
                 Some(end) => Ok(end),
                 None => {
                     let waited = waiting_since.is_some();
-                    self.step(turn, inbox, &mut received, waited).await
+                    self.step(turn, inbox, waited, loaded.take()).await
                 }
             };
             let end = match step {
@@ -138,14 +135,18 @@ impl Agent {
             match end {
                 // Tool results are what fills the context, so it is checked after each.
                 StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {
-                    None => {
-                        if let Err(error) = self.take_agent_messages().await {
+                    Ok(checked) => match self.take_agent_messages().await {
+                        // A message taken in changed the context: the step loads it.
+                        Ok(admitted) => {
+                            loaded = checked.filter(|_| !admitted);
+                            continue;
+                        }
+                        Err(error) => {
                             outcome = TurnOutcome::failed(format!("{error:#}"));
                             break;
                         }
-                        continue;
-                    }
-                    Some(reason) => {
+                    },
+                    Err(reason) => {
                         stop = Some(reason);
                         outcome = TurnOutcome::Interrupted(None);
                     }
@@ -194,14 +195,6 @@ impl Agent {
             }
             break;
         }
-        // However the turn ended, sources a model read go as a short line from now on.
-        // Each step of this turn carried them in full, since the block is not kept.
-        if let Err(error) = self.state.mark_sources_delivered(&received).await {
-            warn!(
-                "thread {}: cannot mark sources delivered: {error:#}",
-                self.thread_id
-            );
-        }
         if let TurnOutcome::Completed(answer) = &outcome {
             self.store_lesson(&turn.turn_id, &answer.content).await;
         }
@@ -220,11 +213,6 @@ impl Agent {
                 "thread {} turn {} {:?} after {took} ms",
                 self.thread_id, turn.turn_id, turn.status
             ),
-        }
-        // What the turn changed and the ledger did not record is found by a walk.
-        if let Some(graph) = &self.tools.graph {
-            let recorded = self.config.current().limits().record_changes;
-            graph.turn_ended(project_folder(&self.scope), recorded);
         }
         let status = turn.status;
         let ended = match status {
@@ -263,29 +251,45 @@ impl Agent {
 
     /// Messages from other agents join the running turn, so the next step reads them,
     /// and so does the answer to the question on the user's screen. Anything else the
-    /// user sent waits for the next turn.
-    pub(super) async fn take_agent_messages(&self) -> Result<()> {
+    /// user sent waits for the next turn. Says whether anything joined.
+    pub(super) async fn take_agent_messages(&self) -> Result<bool> {
+        let mut admitted = false;
         for pending in self.state.pending_messages(&self.thread_id).await? {
             if pending.from_thread_id.is_none() && pending.from_job_id.is_none() {
                 if self.answers_question(&pending.content) {
                     self.take_answer(&pending).await?;
+                    admitted = true;
                 }
                 continue;
             }
-            let message = self.state.admit_pending(&self.thread_id, &pending).await?;
-            if message.from_thread_id.is_some() {
-                sqlx::query("UPDATE goals SET work_epoch = work_epoch + 1 WHERE thread_id = ? AND approved_at IS NOT NULL")
-                    .bind(&self.thread_id).execute(&self.state.pool).await?;
-            }
-            self.emit(ThreadEvent::Queued {
-                message_id: message.message_id.clone(),
-            });
-            self.emit(if message.from_job_id.is_some() {
-                ThreadEvent::FromJob(message)
-            } else {
-                ThreadEvent::FromAgent(message)
-            });
+            self.admit(&pending, Admit::MID_TURN).await?;
+            admitted = true;
         }
+        Ok(admitted)
+    }
+
+    /// Adds a sent message to the thread, with its effect on the goal, and tells the
+    /// clients. `admit` says what else taking it in does.
+    pub(crate) async fn admit(&self, pending: &PendingMessage, admit: Admit) -> Result<()> {
+        let message = self.state.admit_pending(&self.thread_id, pending).await?;
+        let from_user = message.from_thread_id.is_none() && message.from_job_id.is_none();
+        if admit.title && message.from_job_id.is_none() {
+            self.title_from_first_message(&message).await?;
+        }
+        if admit.user_hook && from_user {
+            let details = json!({ "text": message.content });
+            self.hook_notes(HookEvent::UserMessage, details).await?;
+        }
+        self.emit(ThreadEvent::Queued {
+            message_id: message.message_id.clone(),
+        });
+        self.emit(if message.from_job_id.is_some() {
+            ThreadEvent::FromJob(message)
+        } else if message.from_thread_id.is_some() {
+            ThreadEvent::FromAgent(message)
+        } else {
+            ThreadEvent::UserMessage(message)
+        });
         Ok(())
     }
 
@@ -299,15 +303,29 @@ impl Agent {
 
     pub(super) async fn take_answer(&self, pending: &PendingMessage) -> Result<()> {
         self.asking.lock().clear();
-        let message = self.state.admit_pending(&self.thread_id, pending).await?;
-        sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
-            .bind(&self.thread_id)
-            .execute(&self.state.pool)
-            .await?;
-        self.emit(ThreadEvent::Queued {
-            message_id: message.message_id.clone(),
-        });
-        self.emit(ThreadEvent::UserMessage(message));
-        Ok(())
+        self.admit(pending, Admit::MID_TURN).await
     }
+}
+
+/// What taking a message in does beyond adding it and its goal effect.
+#[derive(Clone, Copy)]
+pub(crate) struct Admit {
+    /// Name an untitled thread after it, unless it is a job's result.
+    pub title: bool,
+    /// Run the `UserMessage` hook for a message the user wrote.
+    pub user_hook: bool,
+}
+
+impl Admit {
+    /// Between turns: the message starts the thread's work.
+    pub(crate) const BETWEEN_TURNS: Self = Self {
+        title: true,
+        user_hook: true,
+    };
+    /// Into a running turn: another agent's message, or the answer to a question asked
+    /// in it, which the turn's step reads next.
+    pub(crate) const MID_TURN: Self = Self {
+        title: false,
+        user_hook: false,
+    };
 }

@@ -7,7 +7,7 @@ use super::{Center, Workspace};
 use crate::{
     columns::{inspector, rail, sidebar, topbar},
     modal,
-    pages::{artifacts, chat, connectors, review, schedules, settings},
+    pages::{artifacts, chat, customize, review, schedules, settings, welcome},
 };
 
 impl Workspace {
@@ -17,7 +17,7 @@ impl Workspace {
     }
 
     fn side_panel_shown(&self) -> bool {
-        self.side_panel_allowed() && !self.right_hidden && !self.quiet
+        self.side_panel_allowed() && !self.right_hidden && !self.quiet && !welcome::shown(self)
     }
 
     /// The middle column's width once the side columns have settled.
@@ -40,15 +40,17 @@ impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.record_place();
         crate::plugins::settle(self, window, cx);
+        welcome::settle(self, window, cx);
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
         let (frame, theme_border) = (rail::color(cx), theme.border);
         let center = match self.center {
+            Center::Chat if welcome::shown(self) => welcome::render(self, cx).into_any_element(),
             Center::Chat => chat::render(self, window, cx).into_any_element(),
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
-            Center::Connectors => connectors::render(self, window, cx).into_any_element(),
+            Center::Customize => customize::render(self, window, cx).into_any_element(),
             Center::Settings => settings::render(self, window, cx).into_any_element(),
-            Center::Review => review::render(self, cx).into_any_element(),
+            Center::Review => review::render(self, window, cx).into_any_element(),
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
             Center::Overview => inspector::overview::page(self, cx).into_any_element(),
@@ -94,7 +96,7 @@ impl Render for Workspace {
                 .h_full()
                 .flex_none()
                 .overflow_hidden()
-                .child(sidebar::render(self, window, cx))
+                .child(sidebar::render(self, cx))
         });
         let inspector = (right > px(0.5)).then(|| {
             div()
@@ -150,7 +152,10 @@ impl Render for Workspace {
                                     .h_full()
                                     .flex()
                                     .flex_col()
-                                    .child(div().flex_1().min_h_0().child(center))
+                                    .child(crate::ui::motion::switch(
+                                        ("center", self.center as usize),
+                                        div().flex_1().min_h_0().child(center),
+                                    ))
                                     .children(terminal)
                                     .children(bottom_dock),
                             )
@@ -158,7 +163,7 @@ impl Render for Workspace {
                             .children(right_dock),
                     ),
             )
-            .children(crate::columns::flyout::render(self, window, cx))
+            .children(crate::columns::flyout::render(self, cx))
             .children(modal)
             .children(chat_menu)
             .children(artifact_menu)
@@ -170,7 +175,7 @@ impl Render for Workspace {
             // follows the pointer.
             .when(dragging, |root| {
                 root.on_mouse_move(cx.listener(|ws, event: &MouseMoveEvent, window, cx| {
-                    ws.drag_terminal(event, cx);
+                    ws.drag_terminal(event, window, cx);
                     ws.drag_plugin_dock(event, window, cx);
                 }))
                 .on_mouse_up(
@@ -194,10 +199,11 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_side_panel))
             .on_action(cx.listener(Self::on_toggle_terminal))
             .on_action(cx.listener(Self::on_save_file))
-            .on_action(cx.listener(Self::on_toggle_views))
+            .on_action(cx.listener(Self::on_toggle_panel))
             .on_action(cx.listener(Self::on_toggle_plan))
             .on_action(cx.listener(Self::on_next_pin))
             .on_action(cx.listener(Self::run_code))
+            .on_action(cx.listener(Self::stop_code))
             .capture_key_down(cx.listener(Self::menu_keys))
     }
 }

@@ -1,17 +1,20 @@
 //! The box that asks before a listing is installed, updated or removed: what it may do,
 //! where it comes from and how far that is trusted, then the buttons.
 
-use dusk_protocol::plugin::{Client, Kind};
+use dusk_protocol::{
+    catalog::DiffKind,
+    plugin::{Client, Kind, Tier},
+};
 use ratatui::{
     style::Style,
     text::{Line, Span},
 };
 
 use super::{mark, paragraph, word};
-use crate::app::{Choice, Confirm, choices};
+use crate::app::{Choice, Confirm, Reviewed, choices};
 use crate::ui::text::format::one_line;
 use crate::ui::windows::{
-    theme::{ACCENT, BULLET, RAISED, bold, dim, fg},
+    theme::{ACCENT, BULLET, NEGATIVE, POSITIVE, RAISED, WARNING, bold, dim, fg},
     wrap,
 };
 
@@ -55,7 +58,11 @@ pub fn confirm_box(confirm: &Confirm, width: usize) -> Vec<Line<'static>> {
         ));
     }
     lines.push(Line::default());
-    if offered.contains(&Choice::Install) || offered.contains(&Choice::Update) {
+    if listing.tier == Tier::Unverified
+        && (offered.contains(&Choice::Install) || offered.contains(&Choice::Update))
+    {
+        lines.extend(unverified(confirm, width));
+    } else if offered.contains(&Choice::Install) || offered.contains(&Choice::Update) {
         if listing.permissions.is_empty() {
             lines.extend(paragraph(
                 "It asks for nothing beyond its own folder.",
@@ -116,5 +123,131 @@ pub fn confirm_box(confirm: &Confirm, width: usize) -> Vec<Line<'static>> {
         buttons.push(Span::raw("  "));
     }
     lines.push(Line::from(buttons));
+    lines
+}
+
+/// What an Unverified install is: where it comes from as far as anyone can tell, what it
+/// may make the agent do, and every file it writes, with what an update changes.
+fn unverified(confirm: &Confirm, width: usize) -> Vec<Line<'static>> {
+    let listing = &confirm.listing;
+    let from = match &listing.from {
+        Some(host) => format!("{} ({})", one_line(&listing.source), one_line(host)),
+        None => one_line(&listing.source),
+    };
+    let mut lines = paragraph(
+        &format!(
+            "Nobody vouches for {}. It comes from {from}, a source added without a key: \
+             nobody signed its list and nobody checked these files.",
+            one_line(&listing.name)
+        ),
+        fg(WARNING),
+        width,
+    );
+    if let Some(upstream) = &listing.upstream {
+        lines.extend(paragraph(
+            &format!("Its files: {}.", one_line(upstream)),
+            dim(),
+            width,
+        ));
+    }
+    if !listing.author.is_empty() {
+        lines.extend(paragraph(
+            &format!(
+                "The source says it is by {}; nothing checks that.",
+                one_line(&listing.author)
+            ),
+            dim(),
+            width,
+        ));
+    }
+    let review = match &confirm.review {
+        None | Some(Reviewed::Reading) => {
+            lines.extend(paragraph("Reading its files...", dim(), width));
+            return lines;
+        }
+        Some(Reviewed::Failed(why)) => {
+            lines.extend(paragraph(&one_line(why), fg(NEGATIVE), width));
+            return lines;
+        }
+        Some(Reviewed::Read(review)) => review,
+    };
+    if let Some(why) = &review.refused {
+        lines.extend(paragraph(&one_line(why), fg(NEGATIVE), width));
+        return lines;
+    }
+    let what = match (review.agent, &review.agent_tools) {
+        (true, None) => {
+            "It is an agent: its AGENT.md becomes a chat's instructions, with every tool."
+                .to_owned()
+        }
+        (true, Some(tools)) => format!(
+            "It is an agent: its AGENT.md becomes a chat's instructions, with {}.",
+            match tools.is_empty() {
+                true => "no tools".to_owned(),
+                false => one_line(&tools.join(", ")),
+            }
+        ),
+        (false, _) => "Its text becomes instructions the agent may follow.".to_owned(),
+    };
+    lines.extend(paragraph(&what, Style::new(), width));
+    if !review.scripts.is_empty() {
+        lines.extend(paragraph(
+            &format!(
+                "It carries {} script(s) the agent may run, under the permission mode you chose: {}.",
+                review.scripts.len(),
+                one_line(&review.scripts.join(", "))
+            ),
+            fg(WARNING),
+            width,
+        ));
+    }
+    let update = !review.changed.is_empty() || !review.removed.is_empty();
+    let groups = [
+        ("Added", &review.added),
+        ("Changed", &review.changed),
+        ("Removed", &review.removed),
+    ];
+    for (title, paths) in groups {
+        if paths.is_empty() || (!update && title != "Added") {
+            continue;
+        }
+        let title = if update { title } else { "Files" };
+        lines.push(Line::from(Span::styled(format!("{title}:"), bold(ACCENT))));
+        for path in paths.iter().take(20) {
+            lines.push(Line::from(format!("  {BULLET} {}", one_line(path))));
+        }
+        if paths.len() > 20 {
+            lines.push(Line::from(Span::styled(
+                format!("  and {} more", paths.len() - 20),
+                dim(),
+            )));
+        }
+    }
+    if let Some(path) = &review.diff_path {
+        lines.push(Line::from(Span::styled(
+            format!("What changes in {}:", one_line(path)),
+            bold(ACCENT),
+        )));
+        for line in review
+            .diff
+            .iter()
+            .filter(|line| line.kind != DiffKind::Same)
+            .take(30)
+        {
+            let (mark, color) = match line.kind {
+                DiffKind::Added => ("+", POSITIVE),
+                _ => ("-", NEGATIVE),
+            };
+            lines.push(Line::from(Span::styled(
+                format!("  {mark} {}", one_line(&line.text)),
+                fg(color),
+            )));
+        }
+    }
+    lines.extend(paragraph(
+        "Installing it is your call: what it asks of the agent is yours to accept.",
+        dim(),
+        width,
+    ));
     lines
 }

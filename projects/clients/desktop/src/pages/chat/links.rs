@@ -1,9 +1,13 @@
 //! Markdown as the chat draws it: links open in the system browser and pictures load,
 //! both only over http(s), so a message cannot reach a local file or another scheme.
 //! One scheme of our own: a path in code, such as `src/main.rs:42`, becomes a link that
-//! opens the file in the viewer. The core reads it, and only inside a project.
+//! opens the file in the viewer. The core reads it, and only inside a project. Text of a
+//! third party, such as a pack's, is drawn with `Links::Web` and never gets that scheme.
 
-use gpui_kit::{component::text::TextView, *};
+use gpui_kit::{
+    component::text::{TextView, TextViewState},
+    *,
+};
 
 use crate::workspace::Workspace;
 
@@ -15,21 +19,56 @@ const EXTENSIONS: &[&str] = &[
     "xml", "rb", "php", "lua", "gradle", "proto",
 ];
 
-pub fn markdown(id: impl Into<ElementId>, text: String) -> TextView {
-    view(id, linkify(&text, false))
+/// Which links a text may carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Links {
+    /// http(s), and paths in code opening in the viewer: for the user's and the model's
+    /// own text.
+    Paths,
+    /// http(s) only: for text a third party wrote, such as a pack's or a plugin's, where
+    /// a click must not open a path it chose.
+    Web,
+}
+
+pub fn markdown(id: impl Into<ElementId>, text: String, links: Links) -> TextView {
+    match links {
+        Links::Paths => view(TextView::markdown(id, linkify(&text, false)), links)
+            .markdown_extensions(super::pull_link::extensions(false)),
+        Links::Web => view(TextView::markdown(id, unschemed(&text)), links),
+    }
 }
 
 /// The model's own answer: as `markdown`, and its `{{tone: label}}` drawn as labels.
 pub fn answer(id: impl Into<ElementId>, text: String) -> TextView {
-    view(id, linkify(&text, true)).markdown_extensions(super::marks::extensions())
+    view(TextView::markdown(id, linkify(&text, true)), Links::Paths)
+        .markdown_extensions(super::pull_link::extensions(true))
 }
 
-fn view(id: impl Into<ElementId>, text: String) -> TextView {
-    TextView::markdown(id, text)
-        .selectable(true)
+/// A view of a state kept apart, set up as `markdown` or, `marked`, as `answer`.
+pub fn kept(state: &Entity<TextViewState>, marked: bool) -> TextView {
+    view(TextView::new(state), Links::Paths)
+        .markdown_extensions(super::pull_link::extensions(marked))
+}
+
+/// A list's marker. The library draws it as a glyph in one cell, bullets and numbers
+/// alike, and lets only that cell's text be styled: numbers take tabular figures, so
+/// they stand in one column. A larger or drawn dot would need the library's own change
+/// or a renderer of lists of our own; a larger font here would swell the numbers too.
+fn marker() -> StyleRefinement {
+    let mut style = StyleRefinement::default();
+    style.text.font_features = Some(super::working::tabular());
+    style
+}
+
+fn view(view: TextView, links: Links) -> TextView {
+    view.selectable(true)
+        .list_style(marker())
         .code_block_actions(super::code::actions)
-        .on_link_click(|url, _, window, cx| {
-            if let Some(path) = url.strip_prefix(FILE_SCHEME) {
+        .on_link_click(move |url, _, window, cx| {
+            if let Some(path) = url
+                .strip_prefix(FILE_SCHEME)
+                .filter(|_| links == Links::Paths)
+            {
                 if let Some(workspace) = window.root::<Workspace>().flatten() {
                     let path = path.to_owned();
                     workspace.update(cx, |ws, cx| ws.open_path(&path, cx));
@@ -57,10 +96,8 @@ fn is_web(url: &str) -> bool {
 /// Turns each path in a single-backtick span into a link of ours and, when `marked`, each
 /// label in the prose around them into one too. Fenced code is left alone, and our schemes
 /// are cut from anything the model wrote itself, so only what we made can carry them.
-fn linkify(text: &str, marked: bool) -> String {
-    let text = text
-        .replace(FILE_SCHEME, "dusk-file-")
-        .replace(super::marks::SCHEME, "dusk-mark-");
+pub fn linkify(text: &str, marked: bool) -> String {
+    let text = unschemed(text);
     let prose = |out: &mut String, text: &str| {
         if marked {
             super::marks::encode(out, text);
@@ -96,6 +133,12 @@ fn linkify(text: &str, marked: bool) -> String {
     out
 }
 
+/// `text` with our schemes cut, so only what we made can carry them.
+fn unschemed(text: &str) -> String {
+    text.replace(FILE_SCHEME, "dusk-file-")
+        .replace(super::marks::SCHEME, "dusk-mark-")
+}
+
 /// A relative path, with an optional `:line`, in the characters of file names.
 fn is_path(span: &str) -> bool {
     let name = match span.rsplit_once(':') {
@@ -127,6 +170,14 @@ mod tests {
     use super::*;
 
     // `use super::*` brings in the toolkit's own `test` macro; this is the standard one.
+    #[::core::prelude::v1::test]
+    fn a_third_partys_text_carries_no_link_of_ours() {
+        let text = "run `src/main.rs` or [x](dusk-file:/etc/passwd) and [y](dusk-mark:ok)";
+        let out = unschemed(text);
+        assert!(!out.contains("dusk-file:") && !out.contains(super::super::marks::SCHEME));
+        assert!(out.contains("`src/main.rs`"), "paths stay plain code");
+    }
+
     #[::core::prelude::v1::test]
     fn only_a_relative_path_in_code_becomes_a_link() {
         let text = "see `src/main.rs:42`, `README.md` and `self.field`, not `/etc/passwd`, \

@@ -1,12 +1,11 @@
 //! The dock between the transcript and the composer: the plan strip, one line that unfolds
-//! to the plan's rows, and the views tab on the composer's upper edge with its menu. Both
-//! draw what the core holds: the chat's tasks and the plan's counts.
+//! to the plan's rows, and the panel the tab on the composer's upper edge opens. Both draw
+//! what the core holds: the chat's tasks, the plan's counts, the chat's folder and meters.
 
+pub mod panel;
 mod plan;
-mod views;
 
 pub use plan::render as plan_strip;
-pub use views::render as views_tab;
 
 use dusk_protocol::thread::{PlanCounts, ThreadEvent};
 use gpui_kit::*;
@@ -17,6 +16,14 @@ use crate::workspace::Workspace;
 pub struct Dock {
     /// The plan's counts as the core last gave them, and the chat they are of.
     pub counts: Option<(String, PlanCounts)>,
+    /// The counts before the last change and when it came, for the bar to ease from.
+    pub counts_before: Option<(PlanCounts, std::time::Instant)>,
+    /// When each task of the shown chat's plan was first heard of, and the chat: a task
+    /// that just came draws in once.
+    pub tasks_came: (
+        Option<String>,
+        std::collections::HashMap<String, std::time::Instant>,
+    ),
     /// A request for the counts is on its way.
     busy: bool,
     /// The plan moved while busy: ask again once the answer is in.
@@ -24,27 +31,30 @@ pub struct Dock {
     /// The strip shows the plan's rows.
     pub plan_open: bool,
     pub rows: UniformListScrollHandle,
-    pub views_open: bool,
-    /// The chosen row of the views menu.
-    pub views_chosen: usize,
-    /// The views tab, a stop of the focus order.
-    pub views_focus: FocusHandle,
-    /// The open menu, which takes the keys.
-    pub views_menu_focus: FocusHandle,
+    /// The composer's panel is open.
+    pub panel_open: bool,
+    /// The panel's tab, a stop of the focus order.
+    pub panel_focus: FocusHandle,
+    /// The pointer is over the composer's box or its tab: the tab is in sight.
+    pub box_hovered: bool,
+    /// The tab was in sight at least once, so it has something to fade from.
+    pub tab_seen: bool,
 }
 
 impl Dock {
     pub fn new(cx: &mut App) -> Self {
         Self {
             counts: None,
+            counts_before: None,
+            tasks_came: Default::default(),
             busy: false,
             queued: false,
             plan_open: false,
             rows: UniformListScrollHandle::new(),
-            views_open: false,
-            views_chosen: 0,
-            views_focus: cx.focus_handle().tab_index(0).tab_stop(true),
-            views_menu_focus: cx.focus_handle(),
+            panel_open: false,
+            panel_focus: cx.focus_handle().tab_index(0).tab_stop(true),
+            box_hovered: false,
+            tab_seen: false,
         }
     }
 
@@ -58,9 +68,39 @@ impl Dock {
 impl Workspace {
     /// The shown chat's tasks changed: the strip asks for the plan's counts again.
     pub fn plan_heard(&mut self, thread_id: &str, event: &ThreadEvent, cx: &mut Context<Self>) {
-        let moved = matches!(event, ThreadEvent::Tasks(_) | ThreadEvent::TaskChanged(_));
-        if moved && self.shown.as_deref() == Some(thread_id) {
+        let tasks = match event {
+            ThreadEvent::Tasks(tasks) => tasks.as_slice(),
+            ThreadEvent::TaskChanged(task) => std::slice::from_ref(task),
+            _ => return,
+        };
+        if self.shown.as_deref() == Some(thread_id) {
+            self.tasks_heard(thread_id, tasks.iter().map(|task| task.task_id.as_str()));
             self.load_plan_counts(cx);
+        }
+    }
+
+    /// Notes when each of `tasks` was first heard of. Those of one event come one after
+    /// another, a little apart; the plan a chat is opened with is simply there.
+    fn tasks_heard<'a>(&mut self, thread_id: &str, tasks: impl Iterator<Item = &'a str>) {
+        use std::time::{Duration, Instant};
+        let (chat, came) = &mut self.dock.tasks_came;
+        let now = Instant::now();
+        let opened = chat.as_deref() != Some(thread_id);
+        if opened {
+            *chat = Some(thread_id.to_owned());
+            came.clear();
+        }
+        let mut fresh = 0;
+        for task in tasks {
+            if came.contains_key(task) {
+                continue;
+            }
+            let at = match opened {
+                true => now.checked_sub(plan::ARRIVE).unwrap_or(now),
+                false => now + Duration::from_millis(70) * fresh,
+            };
+            came.insert(task.to_owned(), at);
+            fresh += 1;
         }
     }
 
@@ -83,6 +123,13 @@ impl Workspace {
                 ws.dock.busy = false;
                 match result {
                     Ok(counts) => {
+                        // The bar eases from the shares it showed for the same chat.
+                        ws.dock.counts_before = match &ws.dock.counts {
+                            Some((chat, before)) if *chat == asked && *before != counts => {
+                                Some((*before, std::time::Instant::now()))
+                            }
+                            _ => None,
+                        };
                         ws.dock.counts = Some((asked, counts));
                         cx.notify();
                     }
@@ -91,6 +138,24 @@ impl Workspace {
                 }
                 if std::mem::take(&mut ws.dock.queued) {
                     ws.load_plan_counts(cx);
+                }
+            },
+        );
+    }
+
+    /// Passes a task that waits for the user's confirmation. The core answers with the
+    /// task's own event, which moves the row.
+    pub fn confirm_task(&mut self, task_id: &str, cx: &mut Context<Self>) {
+        let Some(thread_id) = self.shown.clone() else {
+            return;
+        };
+        let task_id = task_id.to_owned();
+        self.core.call(
+            cx,
+            move |client| async move { client.work().confirm_task(&thread_id, &task_id).await },
+            |ws, result, cx| {
+                if let Err(error) = result {
+                    ws.fail(error, cx);
                 }
             },
         );

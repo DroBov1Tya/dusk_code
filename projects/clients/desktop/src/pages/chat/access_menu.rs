@@ -28,7 +28,7 @@ const CHOICES: [(Option<ApprovalPolicy>, &str, &str); 5] = [
     ),
     (
         Some(ApprovalPolicy::Arbiter),
-        "Arbiter",
+        "Auto",
         "A second model answers the approvals",
     ),
     (

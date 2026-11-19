@@ -45,6 +45,7 @@ pub fn find(text: &str) -> Vec<(std::ops::Range<usize>, &str)> {
     found
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snippet {
     pub name: String,
@@ -52,12 +53,14 @@ pub struct Snippet {
 }
 
 /// Who the user is, and the files that go with `@me`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     pub about: String,
     pub files: Vec<ProfileFile>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProfileFile {
     pub path: PathBuf,

@@ -9,34 +9,39 @@ mod plan_tests;
 mod plugin;
 mod projects;
 mod publish;
+mod pulls;
 mod schedules;
 mod settings;
+mod shown;
 mod status;
 mod terminal;
 #[cfg(test)]
 mod tests;
 mod thread;
+mod user_runs;
 mod voice;
 mod work;
 
+use shown::ErrorView;
+pub use shown::Shown;
 pub use status::blank_status;
 use status::read_status;
 
 use crate::{
-    client::Scope,
+    client::{Area, Scope, scope::classify},
     message::{commands, sources::HostFiles},
     runtime::{Runtime, ThreadInput},
     terminal::Terminals,
 };
 use anyhow::{Result, anyhow};
-use dusk_protocol::client::{Event, ProjectRequest, Request, Response, Status};
+use dusk_protocol::client::{Event, ProjectRequest, Request, Response, Status, ThreadRequest};
 use dusk_protocol::thread::Turn;
 use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
     sync::{mpsc, oneshot, watch},
@@ -55,6 +60,11 @@ const ORPHAN_GRACE: Duration = Duration::from_secs(60);
 const STATUS_PERIOD: Duration = Duration::from_millis(100);
 /// How often the timetable is read for tasks whose time has come.
 const SCHEDULE_PERIOD: Duration = Duration::from_secs(30);
+
+/// How many requests a client may have refused within `REFUSAL_WINDOW`; the next one
+/// detaches it.
+const REFUSAL_LIMIT: usize = 20;
+const REFUSAL_WINDOW: Duration = Duration::from_secs(60);
 
 /// Who is attached to the core; ids are never reused within a run.
 pub type ClientId = u64;
@@ -104,6 +114,9 @@ struct OpenThread {
     /// The turn running now, as the forwarding task sees it; a client that joins
     /// mid-turn is told so before any later event.
     running: Arc<Mutex<Option<Running>>>,
+    /// The user's likely next message the model proposed, until it goes stale
+    /// (`ThreadEvent::ends_suggestion`); a client that joins is told it.
+    suggested: Arc<Mutex<Option<String>>>,
 }
 
 /// A running turn as a client that joins is told of it.
@@ -119,6 +132,18 @@ struct Attached {
     /// The source of the threads it creates.
     source: String,
     scope: Scope,
+    /// When its latest refused requests came, none older than `REFUSAL_WINDOW`.
+    refusals: VecDeque<Instant>,
+}
+
+impl Attached {
+    fn new(source: String, scope: Scope) -> Self {
+        Self {
+            source,
+            scope,
+            refusals: VecDeque::new(),
+        }
+    }
 }
 
 pub struct Server {
@@ -126,10 +151,16 @@ pub struct Server {
     clients: HashMap<ClientId, Attached>,
     /// The client whose request is being answered.
     caller: ClientId,
+    /// Clients detached for asking what they may not too often, until their handle goes.
+    refused_out: HashSet<ClientId>,
     subscribers: Subscribers,
     status: Arc<watch::Sender<Status>>,
     threads: HashMap<String, OpenThread>,
     terminals: Terminals,
+    /// The repository status of the projects clients watch.
+    pulls: crate::project::forge::Tracker,
+    /// Commands users run from code blocks, under way.
+    user_runs: user_runs::UserRuns,
 }
 
 impl Server {
@@ -140,10 +171,13 @@ impl Server {
             runtime: Arc::new(runtime),
             clients: HashMap::new(),
             caller: 0,
+            refused_out: HashSet::new(),
             subscribers,
             status: Arc::new(sender),
             threads: HashMap::new(),
             terminals: Terminals::new(crate::terminal::login_shell()),
+            pulls: crate::project::forge::Tracker::default(),
+            user_runs: user_runs::UserRuns::default(),
         };
         (server, receiver)
     }
@@ -177,35 +211,66 @@ impl Server {
         // The first tick is at once, so runs missed while the app was closed start now.
         let mut timetable = tokio::time::interval(SCHEDULE_PERIOD);
         timetable.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut repositories = tokio::time::interval(crate::project::forge::TRACK_PERIOD);
+        repositories.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut routed = self.runtime.contracts().revision();
         let last = loop {
             tokio::select! {
                 call = calls.recv() => match call {
                     None => break None,
                     Some(Message::Attach { client, source, scope }) => {
-                        self.clients.insert(client, Attached { source, scope });
+                        self.clients.insert(client, Attached::new(source, scope));
                     }
-                    Some(Message::Detach(client)) => self.detach(client).await,
+                    Some(Message::Detach(client)) => {
+                        self.refused_out.remove(&client);
+                        self.detach(client).await
+                    }
                     Some(Message::Call(Call { client, request, reply })) => {
                         // Every request passes here first, whichever part answers it.
                         let listed = match self.admit(client, &request).await {
                             Ok(listed) => listed,
                             Err(refusal) => {
+                                self.count_refusal(client).await;
                                 let _ = reply.send(Response::Error(refusal.to_owned()));
                                 continue;
                             }
                         };
+                        let area = classify(&request).area;
                         match request {
                             Request::Shutdown => break Some(reply),
-                            Request::InstallUpdate { tag } => self.install_update(tag, reply),
-                            Request::Store(request) => self.store(request, reply),
+                            Request::InstallUpdate { tag } => {
+                                self.install_update(tag, self.error_view(client, area), reply)
+                            }
+                            Request::Store(request) => {
+                                self.store(request, self.error_view(client, area), reply)
+                            }
                             Request::Project(ProjectRequest::Repository { id, request }) => {
-                                self.repository(id, request, reply)
+                                self.repository(id, request, self.error_view(client, area), reply)
+                            }
+                            Request::Project(ProjectRequest::RepositoryStatus { id }) => {
+                                self.repository_status(client, id, self.error_view(client, area), reply)
+                            }
+                            Request::Project(ProjectRequest::PullStatus { id, number }) => {
+                                self.pull_status(id, number, reply)
+                            }
+                            Request::Project(ProjectRequest::CreatePull { id, title, body, base }) => {
+                                self.create_pull(id, title, body, base, self.error_view(client, area), reply)
+                            }
+                            Request::Thread(ThreadRequest::RunCommand { thread_id, command, run }) => {
+                                self.run_command(client, thread_id, command, run, reply)
+                            }
+                            Request::Thread(ThreadRequest::StopRun { thread_id, run }) => {
+                                let response = match self.stop_run(client, thread_id, run) {
+                                    true => Response::Done,
+                                    false => Response::Error("the command is not running".into()),
+                                };
+                                let _ = reply.send(response);
                             }
                             request => {
                                 self.caller = client;
                                 let mut response = match self.handle(request).await {
                                     Ok(response) => response,
-                                    Err(error) => Response::Error(format!("{error:#}")),
+                                    Err(error) => Response::Error(self.error_view(client, area).text(&error)),
                                 };
                                 if let Some(ids) = listed {
                                     response = self.cut(&ids, response).await;
@@ -222,6 +287,14 @@ impl Server {
                     self.close_orphans().await;
                 }
                 _ = timetable.tick() => self.run_due_schedules().await,
+                _ = repositories.tick() => {
+                    let revision = self.runtime.contracts().revision();
+                    if revision != routed {
+                        routed = revision;
+                        self.pulls.all_due();
+                    }
+                    self.track_repositories();
+                }
             }
         };
         self.terminals.close_all();
@@ -236,6 +309,54 @@ impl Server {
         if let Some(reply) = last {
             let _ = reply.send(Response::Done);
         }
+    }
+
+    /// How the errors of a request of `client` in `area` read to it: whole for the user's
+    /// own clients, kept to what is meant for a reader (or a reference) for the rest. A
+    /// client that is not attached is no one's own.
+    pub(super) fn error_view(&self, client: ClientId, area: Area) -> ErrorView {
+        let (raw, client) = self
+            .clients
+            .get(&client)
+            .map_or((false, "client".to_owned()), |attached| {
+                (attached.scope.raw_errors(), attached.source.clone())
+            });
+        ErrorView { raw, client, area }
+    }
+
+    /// Notes a refused request of `client`; the one past `REFUSAL_LIMIT` within
+    /// `REFUSAL_WINDOW` detaches it, so its event queue closes.
+    async fn count_refusal(&mut self, client: ClientId) {
+        let Some(attached) = self.clients.get_mut(&client) else {
+            return;
+        };
+        let now = Instant::now();
+        while attached
+            .refusals
+            .front()
+            .is_some_and(|first| now.duration_since(*first) > REFUSAL_WINDOW)
+        {
+            attached.refusals.pop_front();
+        }
+        attached.refusals.push_back(now);
+        if attached.refusals.len() > REFUSAL_LIMIT {
+            warn!(
+                client = attached.source.as_str(),
+                "detached: too many refused requests"
+            );
+            self.detach(client).await;
+            self.refused_out.insert(client);
+        }
+    }
+
+    /// Whether `client` was detached for asking what it may not too often; the transport
+    /// then tells it so and closes.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the transport of phase 3 reads it")
+    )]
+    pub fn refused_too_often(&self, client: ClientId) -> bool {
+        self.refused_out.contains(&client)
     }
 
     pub(super) async fn handle(&mut self, request: Request) -> Result<Response> {

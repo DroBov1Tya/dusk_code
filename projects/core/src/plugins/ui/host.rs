@@ -24,6 +24,8 @@ use crate::plugins::isolation::Isolation;
 pub type ClientId = u64;
 /// The longest widget id an event may name.
 const MAX_WIDGET_ID: usize = 100;
+/// The longest name of a key, such as `forward_delete`.
+const MAX_KEY: usize = 32;
 
 /// The interface of a plugin that is on.
 pub struct UiSpec {
@@ -228,8 +230,17 @@ impl UiHost {
             !widget.is_empty() && widget.len() <= MAX_WIDGET_ID,
             "invalid widget id"
         );
-        if let UiEvent::Input { value } = &event {
-            ensure!(value.chars().count() <= MAX_TEXT, "the input is too long");
+        match &event {
+            UiEvent::Input { value: text } | UiEvent::Text { text } => {
+                ensure!(text.chars().count() <= MAX_TEXT, "the input is too long");
+            }
+            UiEvent::Key { key } => ensure!(
+                !key.is_empty()
+                    && key.len() <= MAX_KEY
+                    && key.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
+                "invalid key"
+            ),
+            _ => {}
         }
         let running = self.running.lock();
         let run = running

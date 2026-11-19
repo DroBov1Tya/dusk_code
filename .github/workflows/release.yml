@@ -3,7 +3,9 @@
 # `beta` a pre-release titled "(beta)", anything else (nightlies, tagged on main) a pre-release;
 # the desktop client also ships: as Duskcode.app in a disk image on macOS, and as an AppImage
 # on Linux amd64 and arm64. Every release carries a CycloneDX SBOM of each shipped program.
-# Started by hand, it only builds, to check the build before a tag.
+# A full release (tagged on `stable` or `beta`) builds every program. A nightly builds only
+# the programs whose code changed since the previous tag (scripts/release-plan.sh) and says
+# so in its notes. Started by hand, it only builds everything, to check the build before a tag.
 name: release
 
 on:
@@ -18,7 +20,55 @@ env:
   TOOLCHAIN: "1.99.1" # the same as ci.yml, so a release is built by the compiler CI tested
 
 jobs:
+  # Which kind of release this is, and which programs it builds.
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      kind: ${{ steps.plan.outputs.kind }}
+      previous: ${{ steps.plan.outputs.previous }}
+      cli: ${{ steps.plan.outputs.cli }}
+      desktop: ${{ steps.plan.outputs.desktop }}
+      web: ${{ steps.plan.outputs.web }}
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # all history and tags: the branches that hold the commit and the diff since the previous tag
+          persist-credentials: false
+      - name: Plan
+        id: plan
+        shell: bash
+        # The kind follows the branch that holds the tagged commit: `stable` is a full
+        # release, `beta` a beta pre-release, any other commit (a nightly on main) a plain
+        # pre-release; a run by hand is `manual`. Only a nightly builds a subset.
+        run: |
+          kind=manual
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            git fetch --no-tags origin '+refs/heads/beta:refs/remotes/origin/beta' '+refs/heads/stable:refs/remotes/origin/stable'
+            kind=nightly
+            if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/stable; then
+              kind=stable
+            elif git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/beta; then
+              kind=beta
+            fi
+          fi
+          scripts/release-plan.sh "$GITHUB_SHA" "$kind" > "$RUNNER_TEMP/plan.txt"
+          { echo "kind=$kind"; cat "$RUNNER_TEMP/plan.txt"; } | tee -a "$GITHUB_OUTPUT"
+          # Read the two flags; the file is not sourced, as it holds a tag name.
+          cli=$(sed -n 's/^cli=//p' "$RUNNER_TEMP/plan.txt")
+          desktop=$(sed -n 's/^desktop=//p' "$RUNNER_TEMP/plan.txt")
+          # Linux builds only the terminal client here (its desktop client is its own job).
+          mac='{"target":"aarch64-apple-darwin","runner":"macos-15"}'
+          linux='{"target":"x86_64-unknown-linux-musl","runner":"ubuntu-24.04"},{"target":"aarch64-unknown-linux-musl","runner":"ubuntu-24.04-arm"}'
+          if [[ "$cli" == true ]]; then targets="[$mac,$linux]"
+          elif [[ "$desktop" == true ]]; then targets="[$mac]"
+          else targets="[]"; fi
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
   create:
+    needs: plan
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
@@ -26,48 +76,53 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # the beta and stable branches that hold the tagged commit decide the kind
+          persist-credentials: false
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        # The kind follows the branch that holds the tagged commit: `stable` is a full
-        # release ("latest"); `beta` is a pre-release titled "(beta)"; any other commit, a
-        # nightly on main, is a plain pre-release. A tag stays vX.Y.Z so it equals the Cargo
+          KIND: ${{ needs.plan.outputs.kind }}
+          PREVIOUS: ${{ needs.plan.outputs.previous }}
+          CLI: ${{ needs.plan.outputs.cli }}
+          DESKTOP: ${{ needs.plan.outputs.desktop }}
+        # `stable` is a full release ("latest"); `beta` is a pre-release titled "(beta)";
+        # a nightly is a plain pre-release. A tag stays vX.Y.Z so it equals the Cargo
         # version (checked in the build jobs) and the updater can still order it; the
         # title, not the tag, says beta. The notes are the version's section of
-        # CHANGELOG.md, or generated when it has none.
+        # CHANGELOG.md, or generated when it has none; a nightly that builds a subset
+        # adds which programs are in it and where the others are.
         run: |
-          git fetch --no-tags origin '+refs/heads/beta:refs/remotes/origin/beta' '+refs/heads/stable:refs/remotes/origin/stable'
           flag=--prerelease
           title="$GITHUB_REF_NAME"
-          if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/stable; then
+          if [[ "$KIND" == stable ]]; then
             flag=--latest
-          elif git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/beta; then
+          elif [[ "$KIND" == beta ]]; then
             title="$GITHUB_REF_NAME (beta)"
           fi
           version="${GITHUB_REF_NAME#v}"
           awk -v head="## $version " 'index($0, head) == 1 { on = 1; next } /^## / { on = 0 } on' \
             CHANGELOG.md > notes.md
-          if [[ -s notes.md ]]; then
-            notes=(--notes-file notes.md)
-          else
-            notes=(--generate-notes)
+          notes=(--notes-file notes.md)
+          [[ -s notes.md ]] || notes+=(--generate-notes)
+          if [[ -n "$PREVIOUS" && ( "$CLI" == false || "$DESKTOP" == false ) ]]; then
+            built=()
+            [[ "$CLI" == true ]] && built+=("duskcode (terminal client)")
+            [[ "$DESKTOP" == true ]] && built+=("Duskcode (desktop client)")
+            printf -v list '%s, ' "${built[@]}"
+            list="${list%, }"
+            {
+              printf '\n**Built in this pre-release:** %s.\n' "${list:-nothing}"
+              printf 'Programs not listed are unchanged since %s and were not rebuilt; take them from that release, or the newest earlier one that has them.\n' "$PREVIOUS"
+            } >> notes.md
           fi
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$title" "${notes[@]}" "$flag"
 
   build:
-    needs: create
-    if: always() && (needs.create.result == 'success' || needs.create.result == 'skipped')
+    needs: [plan, create]
+    if: always() && (needs.create.result == 'success' || needs.create.result == 'skipped') && (needs.plan.outputs.cli == 'true' || needs.plan.outputs.desktop == 'true')
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: aarch64-apple-darwin
-            runner: macos-15
-          - target: x86_64-unknown-linux-musl
-            runner: ubuntu-24.04
-          - target: aarch64-unknown-linux-musl
-            runner: ubuntu-24.04-arm
+        include: ${{ fromJSON(needs.plan.outputs.targets) }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
@@ -99,10 +154,15 @@ jobs:
       - name: Build
         shell: bash
         # The desktop client builds with the terminal one in a single call on macOS, so
-        # cargo shares the dependencies and compiles both at once.
+        # cargo shares the dependencies and compiles both at once; a nightly leaves out
+        # the one that did not change.
+        env:
+          CLI: ${{ needs.plan.outputs.cli }}
+          DESKTOP: ${{ needs.plan.outputs.desktop }}
         run: |
-          packages=(-p dusk_terminal)
-          if [[ "$RUNNER_OS" == macOS ]]; then packages+=(-p dusk_desktop); fi
+          packages=()
+          if [[ "$CLI" == true ]]; then packages+=(-p dusk_terminal); fi
+          if [[ "$RUNNER_OS" == macOS && "$DESKTOP" == true ]]; then packages+=(-p dusk_desktop); fi
           cargo build --release --locked --target ${{ matrix.target }} "${packages[@]}"
       - name: Signing certificate
         # Every release is signed by the same certificate, so macOS keeps the permissions
@@ -135,8 +195,21 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$unlock" "$keychain" >/dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           echo "DUSK_SIGN_IDENTITY=Duskcode Release Signing" >> "$GITHUB_ENV"
-      - name: Package
+      - name: Version
+        id: version
         shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "dusk_core"))')
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "release tag does not match Cargo package version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Package
+        if: needs.plan.outputs.cli == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           name=duskcode-${{ matrix.target }}
           mkdir -p "dist/$name"
@@ -150,28 +223,24 @@ jobs:
           fi
           cp resources/skills/NOTICE.md "dist/$name/SKILLS-NOTICE.md"
           cp -R resources "dist/$name/resources"
-          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "dusk_core"))')
-          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
-            echo "release tag does not match Cargo package version" >&2
-            exit 1
-          fi
-          printf '%s\n' "$version" > "dist/$name/resources/VERSION"
+          printf '%s\n' "$VERSION" > "dist/$name/resources/VERSION"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           "./dist/$name/duskcode" --version
       - name: Desktop app
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.plan.outputs.desktop == 'true'
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          version=$(cat "dist/duskcode-${{ matrix.target }}/resources/VERSION")
           sh scripts/package-macos.sh \
-            "target/${{ matrix.target }}/release/duskcode-gui" "$version" dist
+            "target/${{ matrix.target }}/release/duskcode-gui" "$VERSION" dist
       - name: Upload the desktop app
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        if: runner.os == 'macOS' && needs.plan.outputs.desktop == 'true' && startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" dist/*.dmg --repo "$GITHUB_REPOSITORY"
       - name: Upload
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: needs.plan.outputs.cli == 'true' && startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         # GitHub keeps a SHA-256 digest of every asset; installers check against it.
@@ -181,8 +250,8 @@ jobs:
   # supported, so it runs on the libraries of most desktops. The window's libraries are the
   # machine's own; see scripts/package-linux.sh.
   desktop-linux:
-    needs: create
-    if: always() && (needs.create.result == 'success' || needs.create.result == 'skipped')
+    needs: [plan, create]
+    if: always() && (needs.create.result == 'success' || needs.create.result == 'skipped') && needs.plan.outputs.desktop == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -239,8 +308,8 @@ jobs:
   # embeds the web client), the web client and the desktop client. Dependencies of every
   # target are listed, so one file covers all release platforms.
   sbom:
-    needs: create
-    if: always() && (needs.create.result == 'success' || needs.create.result == 'skipped')
+    needs: [plan, create]
+    if: always() && (needs.create.result == 'success' || needs.create.result == 'skipped') && needs.plan.outputs.web == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write # uploads the SBOM to the release
@@ -264,15 +333,23 @@ jobs:
           tar -xJf "$RUNNER_TEMP/cyclonedx.tar.xz" -C "$RUNNER_TEMP" --strip-components=1 "$name/cargo-cyclonedx"
       - name: SBOM
         shell: bash
+        env:
+          CLI: ${{ needs.plan.outputs.cli }}
+          DESKTOP: ${{ needs.plan.outputs.desktop }}
         run: |
           version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "dusk_core"))')
           # The commit time, so the same commit gives the same file.
           SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) \
             "$RUNNER_TEMP/cargo-cyclonedx" cyclonedx --format json --spec-version 1.5 --target all
           mkdir -p dist
-          cp projects/clients/terminal/dusk_terminal.cdx.json "dist/duskcode-$version.cdx.json"
+          # Only the programs this release ships; the web client goes with either client.
+          if [[ "$CLI" == true ]]; then
+            cp projects/clients/terminal/dusk_terminal.cdx.json "dist/duskcode-$version.cdx.json"
+          fi
           cp projects/clients/browser/dusk_browser.cdx.json "dist/duskcode-web-$version.cdx.json"
-          cp projects/clients/desktop/dusk_desktop.cdx.json "dist/duskcode-desktop-$version.cdx.json"
+          if [[ "$DESKTOP" == true ]]; then
+            cp projects/clients/desktop/dusk_desktop.cdx.json "dist/duskcode-desktop-$version.cdx.json"
+          fi
       - name: Upload
         if: startsWith(github.ref, 'refs/tags/v')
         env:

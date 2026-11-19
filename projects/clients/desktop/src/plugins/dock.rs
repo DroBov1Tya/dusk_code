@@ -2,6 +2,7 @@
 //! open part of its side as a tab, so many plugins never add columns; the strip of tabs
 //! scrolls sideways, and one control folds the dock away and back.
 
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -292,6 +293,7 @@ fn icon_tab(
         .rounded_lg()
         .cursor_pointer()
         .hover(move |tab| tab.bg(hover))
+        .press(hover, cx)
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
         .child(place::icon(part, size::ICON, muted))
         .on_click(cx.listener(move |ws, _, _, cx| {

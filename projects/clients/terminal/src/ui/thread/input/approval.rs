@@ -53,6 +53,8 @@ fn step_lines(asked: &Asked, width: usize) -> Vec<String> {
 
 pub(super) const SEND: &str = " send ";
 
+pub(super) const SKIP: &str = " skip ";
+
 pub(super) const DECLINE: &str = " decline ";
 
 impl InputView<'_> {

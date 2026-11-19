@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// How a server stands, for clients to show.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum McpState {
     /// Switched off in the config.
@@ -13,6 +14,7 @@ pub enum McpState {
     Failed(String),
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpStatus {
     pub name: String,
@@ -20,6 +22,7 @@ pub struct McpStatus {
 }
 
 /// A server as the settings show it: what the config says and how it stands.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpInfo {
     pub name: String,
@@ -34,6 +37,7 @@ pub struct McpInfo {
     pub icon: Option<std::path::PathBuf>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpToolInfo {
     /// `server__tool`, the name its switch goes by.

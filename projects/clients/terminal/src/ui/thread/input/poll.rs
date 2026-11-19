@@ -1,7 +1,7 @@
 //! The question the agent asks, shown over the input.
 
 use super::InputView;
-use super::approval::{DECLINE, SEND};
+use super::approval::{DECLINE, SEND, SKIP};
 use super::layout::{MAX_OWN_LINES, OWN_LEAD, own_lines};
 use crate::app::{App, PollHit, PollTarget};
 use crate::ui::text::format::printable;
@@ -75,7 +75,10 @@ impl InputView<'_> {
             spans.push(Span::styled(number, dim()));
             spans.push(Span::styled(label, style));
         }
-        let hint = format!("  {REPLY_HINT}");
+        let hint = match self.app.poll {
+            Some(_) => format!("  {REPLY_HINT}  Ctrl+S skips"),
+            None => format!("  {REPLY_HINT}"),
+        };
         if used + hint.width() <= width {
             spans.push(Span::styled(hint, dim()));
         }
@@ -144,19 +147,26 @@ impl InputView<'_> {
             }
         }
         let hint = if poll.question.multiple {
-            "space marks  enter sends  tab to the box  esc declines"
+            "space marks  enter sends  ctrl+s skips  tab to the box  esc declines"
         } else {
-            "enter sends  tab to the box  esc declines"
+            "enter sends  ctrl+s skips  tab to the box  esc declines"
         };
         let buttons_row = inner.y + lines.len() as u16;
         let send_left = inner.x + 1;
-        let decline_left = send_left + SEND.width() as u16 + 1;
+        let skip_left = send_left + SEND.width() as u16 + 1;
+        let decline_left = skip_left + SKIP.width() as u16 + 1;
         if buttons_row < inner.bottom() {
             poll.hits.push(PollHit {
                 row: buttons_row,
                 left: send_left,
                 right: send_left + SEND.width() as u16,
                 target: PollTarget::Send,
+            });
+            poll.hits.push(PollHit {
+                row: buttons_row,
+                left: skip_left,
+                right: skip_left + SKIP.width() as u16,
+                target: PollTarget::Skip,
             });
             poll.hits.push(PollHit {
                 row: buttons_row,
@@ -168,6 +178,8 @@ impl InputView<'_> {
         lines.push(Line::from(vec![
             Span::raw(" "),
             Span::styled(SEND, fg(ACCENT).bg(RAISED)),
+            Span::raw(" "),
+            Span::styled(SKIP, fg(TEXT_SOFT).bg(RAISED)),
             Span::raw(" "),
             Span::styled(DECLINE, fg(NEGATIVE).bg(RAISED)),
             Span::styled(format!("  {hint}"), dim()),
@@ -229,6 +241,7 @@ mod tests {
         assert!(drawn.contains("from the agent"), "{drawn}");
         assert!(drawn.contains("[1] Yes  [2] No  [3] Later"), "{drawn}");
         assert!(drawn.contains("Alt+number"), "{drawn}");
+        assert!(drawn.contains("Ctrl+S skips"), "{drawn}");
     }
 
     #[test]

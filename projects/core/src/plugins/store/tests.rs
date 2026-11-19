@@ -62,7 +62,7 @@ fn a_signed_list_is_still_checked() {
         list(&entry("").replace("\"size\": 10", "\"size\": 0")),
         list(&entry("").replace("\"hello\"", "\"../x\"")),
         list(&entry(r#", "secret": 1"#)),
-        list(&entry("")).replace("\"format\": 1", "\"format\": 3"),
+        list(&entry("")).replace("\"format\": 1", "\"format\": 4"),
         list(&entry("")).replace("2030-01-01", "2026-01-01"),
         list(&entry("")).replace("2030-01-01T00:00:00Z", "soon"),
         list(&format!("{}, {}", entry(""), entry(""))),
@@ -169,7 +169,9 @@ async fn the_live_store_installs_a_plugin() {
     use dusk_protocol::plugin::OFFICIAL_SOURCE as OFFICIAL;
     let paths = crate::testing::temp_paths("store-live");
     crate::init::create_private_dir(&super::super::catalog::folder(&paths)).unwrap();
-    let listed = super::list(&paths, &[], Order::Trust, None).await.unwrap();
+    let listed = super::list(&paths, &[], Order::Trust, None, &[], &Here::default())
+        .await
+        .unwrap();
     let telegram = listed
         .listings
         .iter()
@@ -181,6 +183,7 @@ async fn the_live_store_installs_a_plugin() {
         name: "telegram",
         version: &telegram.version,
         permissions: &telegram.permissions,
+        sha256: None,
     };
     install(&paths, &[], &agreed).await.unwrap();
     let changed = ["connect to https://evil.example.com".to_owned()];
@@ -188,7 +191,9 @@ async fn the_live_store_installs_a_plugin() {
     assert!(install(&paths, &[], &agreed).await.is_err());
     let folder = super::super::catalog::folder(&paths).join("telegram");
     assert!(folder.join("bin/telegram").is_file());
-    let listed = super::list(&paths, &[], Order::Trust, None).await.unwrap();
+    let listed = super::list(&paths, &[], Order::Trust, None, &[], &Here::default())
+        .await
+        .unwrap();
     let again = listed
         .listings
         .iter()

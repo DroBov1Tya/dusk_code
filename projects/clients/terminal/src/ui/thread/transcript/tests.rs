@@ -2,7 +2,10 @@ use super::thread_lines;
 use crate::app::Transcript;
 use dusk_protocol::{
     model::ToolCall,
-    thread::{Block, CARD_LINE_CHARS, CARD_TITLE_CHARS, LAYER_SUBTITLE_CHARS, LAYER_TITLE_CHARS},
+    thread::{
+        Block, CARD_LINE_CHARS, CARD_TITLE_CHARS, LAYER_SUBTITLE_CHARS, LAYER_TITLE_CHARS,
+        ThreadEvent,
+    },
     thread::{MAX_CARDS, MAX_LAYERS},
     tools::ToolResult,
 };
@@ -19,16 +22,16 @@ fn shown(arguments: Value) -> Transcript {
     let content = Block::asked(&call).map_or("error: refused".into(), |block| block.text());
     let mut transcript = Transcript::default();
     transcript.add_user("go");
-    transcript.start_tool(call);
-    transcript.finish_tool(
-        "a",
-        ToolResult {
+    transcript.apply(ThreadEvent::ToolStarted(call));
+    transcript.apply(ThreadEvent::ToolFinished {
+        call_id: "a".into(),
+        result: ToolResult {
             is_error: content.starts_with("error:"),
             content,
             exit_code: None,
             artifacts: Vec::new(),
         },
-    );
+    });
     transcript
 }
 
@@ -206,4 +209,51 @@ fn checks_at_their_caps_stay_inside_the_width() {
     for width in [20, 40, 80] {
         screen(&shown(arguments.clone()), width);
     }
+}
+
+/// A Workshop card is a short list in place of its step, every text on one plain line,
+/// with how to add a listing through the Workshop; nothing in it installs.
+#[test]
+fn a_workshop_card_lists_its_rows_and_says_how_to_add_one() {
+    use dusk_protocol::plugin::{Kind, Listing, SUGGEST_TOOL, Suggested, Suggestion};
+    let listing = Listing {
+        source: "official".into(),
+        name: "motion-kit".into(),
+        kind: Kind::Pack,
+        description: "Springs\x1b[2J and \u{202e}easing".into(),
+        skills: vec!["a".into(), "b".into()],
+        ..Listing::default()
+    };
+    let card = Suggestion {
+        label: "Animation skills".into(),
+        listings: vec![Suggested::of(&listing)],
+    };
+    let call = ToolCall {
+        id: "s".into(),
+        name: SUGGEST_TOOL.into(),
+        arguments: json!({ "ids": ["official/motion-kit"], "label": "Animation skills" }),
+    };
+    let mut transcript = Transcript::default();
+    transcript.add_user("go");
+    transcript.apply(ThreadEvent::ToolStarted(call));
+    transcript.apply(ThreadEvent::ToolFinished {
+        call_id: "s".into(),
+        result: ToolResult::text(card.result()),
+    });
+    assert!(matches!(
+        transcript.entries[1],
+        crate::app::Entry::Suggestion(_)
+    ));
+    let wide = screen(&transcript, 100).join("\n");
+    assert!(wide.contains("Animation skills"), "{wide}");
+    assert!(wide.contains("motion-kit  pack"), "{wide}");
+    assert!(wide.contains("2 skills"), "{wide}");
+    assert!(wide.contains("/plugins store <name>"), "{wide}");
+    assert!(!wide.contains(['\x1b', '\u{202e}']), "{wide}");
+    assert!(
+        !wide.contains(SUGGEST_TOOL),
+        "the tool step is gone: {wide}"
+    );
+    // Narrow, every line still fits.
+    screen(&transcript, 20);
 }

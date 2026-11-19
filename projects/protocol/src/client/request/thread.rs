@@ -7,6 +7,7 @@ use crate::config::ApprovalPolicy;
 use crate::tools::Decision;
 /// Opening, feeding and closing threads. Events of an open thread arrive as
 /// `Event::Thread` until `Event::Ended`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadRequest {
     New {
@@ -24,6 +25,13 @@ pub enum ThreadRequest {
     /// A new thread that starts from a /fork summary.
     Fork {
         summary: String,
+        cwd: PathBuf,
+    },
+    /// A new thread that holds another's history up to and including one message; from
+    /// the latest compaction before it when there is one.
+    ForkAt {
+        thread_id: String,
+        message_id: String,
         cwd: PathBuf,
     },
     List,
@@ -61,9 +69,18 @@ pub enum ThreadRequest {
         call_id: String,
     },
     /// Runs a command the user confirmed, in the chat's folder; answers with its output.
+    /// `run` is the client's number for it, so `StopRun` can name it.
     RunCommand {
         thread_id: String,
         command: String,
+        #[serde(default)]
+        run: u64,
+    },
+    /// Kills a command the same client started with `RunCommand`, with everything it
+    /// started; its `RunCommand` then answers with an error.
+    StopRun {
+        thread_id: String,
+        run: u64,
     },
     /// Stops the thread's turn and waits for it to end, so it can be opened again.
     Close {
@@ -80,8 +97,10 @@ pub enum ThreadRequest {
     Delete {
         thread_id: String,
     },
-    /// Answers a tool's request for a yes; `false` when it no longer waits.
+    /// Answers a tool's request for a yes; `false` when it no longer waits or was not
+    /// asked in this chat or an agent thread below it.
     Approve {
+        thread_id: String,
         id: u64,
         decision: Decision,
     },
@@ -100,6 +119,11 @@ pub enum ThreadRequest {
         thread_id: String,
         message_id: String,
         pinned: bool,
+    },
+    /// Answers with `Response::SkillChanges`: what the thread's agents changed in skills,
+    /// oldest first.
+    SkillChanges {
+        thread_id: String,
     },
     /// Answers with `Response::Pins`: the thread's pins, oldest message first.
     Pins {

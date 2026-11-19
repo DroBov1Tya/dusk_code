@@ -5,12 +5,12 @@ use crate::{
     api,
     chat::data::ChatData,
     link::{self, Conn, Handlers},
-    pages::{connectors::Tab, settings::Page},
+    pages::{customize::Tab, settings::Page},
     ui::theme,
 };
 use dusk_protocol::{
     client::{Event, Status},
-    project::Project,
+    project::{Project, RepositoryStatus},
     thread::{Thread, ThreadEvent},
 };
 use leptos::{prelude::*, task::spawn_local};
@@ -23,7 +23,7 @@ pub enum View {
     /// A chat; none is a draft whose thread is made with its first message.
     Chat(Option<String>),
     Settings(Page),
-    Connectors(Tab),
+    Customize(Tab),
     Artifacts,
     Schedules,
     Project(String),
@@ -53,6 +53,8 @@ pub struct AppState {
     pub subagent: RwSignal<Option<(String, String)>>,
     /// Whether an answer is being read aloud.
     pub speaking: RwSignal<bool>,
+    /// The last repository status the core sent, and the project it is of.
+    pub repository: RwSignal<Option<(String, RepositoryStatus)>>,
 }
 
 thread_local! {
@@ -90,6 +92,7 @@ impl AppState {
             theme: RwSignal::new(theme::stored()),
             subagent: RwSignal::new(None),
             speaking: RwSignal::new(false),
+            repository: RwSignal::new(None),
         }
     }
 
@@ -188,7 +191,16 @@ impl AppState {
                     self.fork(thread_id.clone(), summary.clone());
                 }
                 match self.chat(&thread_id) {
-                    Some(chat) => chat.update(|data| data.apply(*event)),
+                    // Streamed text is told to its item alone; the rest to the whole chat.
+                    Some(chat) => {
+                        let applied = chat.try_update_untracked(|data| data.apply(*event));
+                        let told = applied.is_some_and(|applied| {
+                            chat.with_untracked(|data| data.told(&applied))
+                        });
+                        if !told {
+                            chat.notify();
+                        }
+                    }
                     None if !listed => self.refresh(),
                     None => {}
                 }
@@ -205,11 +217,15 @@ impl AppState {
             | Event::PluginNotice { .. }
             // The project page reads the repository when it opens.
             | Event::GitChanged { .. } => {}
+            Event::RepositoryStatus { project_id, status } => {
+                self.repository.set(Some((project_id, *status)))
+            }
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chat(&thread_id) {
                     chat.update(|data| {
                         data.ended = true;
                         data.working = false;
+                        data.live = Default::default();
                     });
                 }
             }
@@ -443,6 +459,32 @@ impl AppState {
                 Ok(thread_id) => {
                     self.chats.update(|chats| {
                         chats.insert(thread_id.clone(), RwSignal::new(ChatData::default()));
+                    });
+                    if self.navigation.get_untracked() == navigation {
+                        self.show(View::Chat(Some(thread_id)));
+                    }
+                    self.refresh();
+                }
+                Err(error) => self.fail(error),
+            }
+        });
+    }
+
+    /// A new chat from `from`'s history up to and including `message_id`, shown once made.
+    pub fn fork_at(self, from: String, message_id: String) {
+        let navigation = self.navigation.get_untracked();
+        spawn_local(async move {
+            let cwd = self.cwd_of(&from);
+            let made = async {
+                let thread_id = api::fork_at(&from, &message_id, cwd).await?;
+                let history = api::messages(&thread_id).await?;
+                api::Res::Ok((thread_id, history))
+            };
+            match made.await {
+                Ok((thread_id, history)) => {
+                    let data = ChatData::from_history(&history);
+                    self.chats.update(|chats| {
+                        chats.insert(thread_id.clone(), RwSignal::new(data));
                     });
                     if self.navigation.get_untracked() == navigation {
                         self.show(View::Chat(Some(thread_id)));

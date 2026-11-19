@@ -1,21 +1,27 @@
-//! What the screen shows of a thread: a list of entries built from the stored history and
-//! then from live events. Thinking, tool calls and summaries fold into one line.
+//! What the screen shows of a thread: the protocol's chat, folded from the stored history
+//! and the live events, drawn as a list of entries. Thinking, tool calls and summaries fold
+//! into one line. The entries are a view of the chat: only the items that changed are
+//! drawn as entries again, and each entry keeps a stamp that changes with it, so the
+//! layout of the ones that did not change is kept.
 
 use ratatui::{
     layout::{Rect, Size},
     text::Line,
 };
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use super::paste;
 use dusk_protocol::{
-    catalog::{SkillSave, SkillSaveAction},
-    model::ToolCall,
-    thread::{Block, JobResult, Message, MessageRole},
-    tools::{Answered, Asked, Card, ToolResult},
+    catalog::{SkillChange, SkillSaveAction},
+    system::now_ms,
+    thread::{
+        ChatLog, JobResult, Message, ThreadEvent, Tool, ToolState,
+        transcript::{INTERRUPTED, Item},
+    },
+    tools::{Answered, Card},
 };
 
 pub enum Entry {
@@ -41,10 +47,10 @@ pub enum Entry {
         text: String,
         open: bool,
     },
+    /// A step, with the pictures `display_image` showed, which stay in sight when it folds.
     Tool {
-        call: ToolCall,
-        /// `None` while the tool runs.
-        result: Option<ToolResult>,
+        tool: Tool,
+        pictures: Vec<Card>,
         open: bool,
     },
     /// What a compaction left in place of the older messages.
@@ -53,7 +59,12 @@ pub enum Entry {
         open: bool,
     },
     Notice {
-        local_id: Option<String>,
+        text: String,
+        tone: Tone,
+    },
+    /// One change an agent made to a skill, under the step that made it.
+    Skill {
+        id: i64,
         text: String,
         tone: Tone,
     },
@@ -64,7 +75,22 @@ pub enum Entry {
         open: bool,
     },
     /// What the agent showed with the `show` tool, in place of that tool step.
-    Block(Block),
+    Block(dusk_protocol::thread::Block),
+    /// The Workshop listings the agent suggested, in place of that tool step.
+    Suggestion(dusk_protocol::plugin::Suggestion),
+}
+
+/// A Workshop card's plain text, for the copy button: its heading and a line a listing.
+fn card_text(card: &dusk_protocol::plugin::Suggestion) -> String {
+    let mut text = card.label.clone();
+    for listing in &card.listings {
+        let kind = format!("{:?}", listing.kind).to_lowercase();
+        text.push_str(&format!(
+            "\n- {} ({kind}): {}",
+            listing.name, listing.description
+        ));
+    }
+    text
 }
 
 /// Thinking and tool calls: the steps an activity line stands for.
@@ -75,55 +101,77 @@ fn is_step(entry: &Entry) -> bool {
 /// Longer agent messages start folded.
 const OPEN_AGENT_LINES: usize = 12;
 
-impl Entry {
-    pub fn from_agent(thread_id: String, text: String) -> Self {
-        let open = text.lines().count() <= OPEN_AGENT_LINES;
-        Self::FromAgent {
-            thread_id,
-            text,
-            open,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tone {
     Info,
     Error,
     Success,
 }
 
+/// A line of this client's own in the chat: what a command said, a message kept unsent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Local {
+    /// The unsent message it stands for.
+    pub local_id: Option<String>,
+    pub text: String,
+    pub tone: Tone,
+}
+
+/// Which entry of which item: what keeps an entry's open state and whether it is hidden
+/// while the entries are drawn again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Key {
+    Item(u64, Part),
+    Skill(i64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Part {
+    Activity,
+    Thinking,
+    Main,
+}
+
 #[derive(Default)]
 pub struct Transcript {
+    /// Boxed: a chat is large, and a transcript is held in place in the app and panels.
+    log: Box<ChatLog<Local>>,
+    /// The chat as entries, in order.
     pub entries: Vec<Entry>,
-    /// When each entry came, in ms since the epoch, at the same index.
-    times: Vec<i64>,
-    /// The time of the stored message being read in; live entries take the clock's.
-    stamp: Option<i64>,
+    keys: Vec<Key>,
+    /// The item each entry draws, at the same index.
+    items: Vec<usize>,
+    /// Changes whenever the entry at the same index does; unique across transcripts.
+    stamps: Vec<u64>,
+    /// The entry each item's entries start at.
+    starts: Vec<usize>,
+    /// The skill changes the entries show, to tell when they changed.
+    skills: Vec<SkillChange>,
+    /// How many entries at the end are skill changes whose step is not in the chat.
+    orphans: usize,
     /// Entries the user hid; each shows as one line until shown again.
-    pub hidden: HashSet<usize>,
+    hidden: HashSet<Key>,
     /// What the agent does now, for the activity line of the run in progress.
     live: Option<String>,
     /// Only the root transcript is connected to the local image store.
     pub images: super::images::Images,
-    /// What the agent asked and the user has not answered yet.
-    asked: Asked,
-    /// Changes when anything but the text of the last entry changes, so the lines of the
-    /// earlier entries can be kept between frames. Unique across transcripts.
-    revision: u64,
+    /// The thread that asked an agent window's agent: its messages read as requests.
+    asker: Option<String>,
 }
 
-/// The drawn lines of every entry but the last, kept until the transcript, the width
-/// or the browsed entry changes, so a frame renders only the entry still being written.
+/// The drawn lines of every entry but the last, kept while the width holds, so a frame
+/// lays out only the entries that changed and the one still being written.
 pub struct Layout {
     pub width: usize,
-    pub revision: u64,
-    pub browsed: Option<usize>,
+    /// What each laid-out entry looked like, from `Transcript::signature`.
+    pub signatures: Vec<u64>,
     pub lines: Vec<Line<'static>>,
     /// Each line as plain text, for copying a selection.
     pub text: Vec<String>,
     /// The line each entry starts on.
     pub starts: Vec<usize>,
+    /// How many lines there were before each entry, with the blank line above it.
+    pub before: Vec<usize>,
     pub images: Vec<ImageSpot>,
 }
 
@@ -146,10 +194,10 @@ pub struct ImageSpot {
     pub artifact: Card,
 }
 
-/// Revisions come from one counter, so a new transcript never matches an old one.
-fn next_revision() -> u64 {
-    static REVISIONS: AtomicU64 = AtomicU64::new(1);
-    REVISIONS.fetch_add(1, Ordering::Relaxed)
+/// Stamps come from one counter, so a new transcript never matches an old one.
+fn next_stamp() -> u64 {
+    static STAMPS: AtomicU64 = AtomicU64::new(1);
+    STAMPS.fetch_add(1, Ordering::Relaxed)
 }
 
 /// What an opened job result shows on screen: this many lines, and no more than this many characters.
@@ -157,16 +205,349 @@ const JOB_LINES: usize = 12;
 const JOB_CHARS: usize = 1200;
 
 impl Transcript {
+    /// The stored messages as entries; system messages are not shown.
+    pub fn from_history(messages: &[Message]) -> Self {
+        let mut transcript = Self {
+            log: Box::new(ChatLog::from_history(messages)),
+            ..Self::default()
+        };
+        transcript.sync();
+        transcript
+    }
+
+    /// For an agent window: messages from `asker`, the thread that asked the agent, read
+    /// as what the user asked.
+    pub fn with_asker(mut self, asker: Option<String>) -> Self {
+        self.asker = asker;
+        self.redraw_all();
+        self
+    }
+
+    /// Folds a live event of the thread into it.
+    /// What the thread does at `now`, as the protocol tells the kinds of work apart; none
+    /// when the chat knows of nothing that runs.
+    pub fn work(&self, now: i64) -> Option<dusk_protocol::thread::Work> {
+        dusk_protocol::thread::activity(&self.log.live, now)
+    }
+
+    /// The user's message went to the agent: no question waits for it.
+    pub fn answered(&mut self) {
+        self.log.live.answered();
+    }
+
+    /// The thread stopped: nothing of it runs.
+    pub fn stopped(&mut self) {
+        self.log.live = Default::default();
+    }
+
+    pub fn apply(&mut self, event: ThreadEvent) {
+        self.log.apply(event, now_ms());
+        self.sync();
+    }
+
     pub fn set_artifact_store(&mut self, store: dusk_core::app::ArtifactStore) {
         self.images = super::images::Images::new(store);
-        self.changed();
+        self.redraw_all();
     }
 
     pub fn set_live(&mut self, live: Option<String>) {
-        if self.live != live {
-            self.live = live;
-            self.changed();
+        self.live = live;
+    }
+
+    /// The user's own message, shown as it is sent; one that answers the agent's question
+    /// keeps the question beside it.
+    pub fn add_user(&mut self, text: &str) {
+        self.log.add_user(text.to_owned(), None, now_ms());
+        self.sync();
+    }
+
+    /// The summary a new thread starts from, as a fork wrote it.
+    pub fn add_summary(&mut self, text: &str) {
+        self.log.push(Item::Summary(text.to_owned()), now_ms());
+        self.sync();
+    }
+
+    pub fn notice(&mut self, text: impl Into<String>, tone: Tone) {
+        self.local(None, text.into(), tone);
+    }
+
+    /// A line of this client's own; `local_id` names the unsent message it stands for.
+    pub fn local(&mut self, local_id: Option<String>, text: String, tone: Tone) {
+        let local = Local {
+            local_id,
+            text,
+            tone,
+        };
+        self.log.push(Item::Local(local), now_ms());
+        self.sync();
+    }
+
+    /// Changes the lines of this client's own that `change` picks.
+    pub fn change_locals(&mut self, mut change: impl FnMut(&mut Local) -> bool) {
+        let picked: Vec<usize> = (0..self.log.items.len())
+            .filter(|&index| matches!(&self.log.items[index], Item::Local(_)))
+            .collect();
+        for index in picked {
+            let mut local = match &self.log.items[index] {
+                Item::Local(local) => local.clone(),
+                _ => continue,
+            };
+            if change(&mut local)
+                && let Some(Item::Local(kept)) = self.log.item_mut(index)
+            {
+                *kept = local;
+            }
         }
+        self.sync();
+    }
+
+    /// The changes of a thread read from the core, each under the step that made it.
+    pub fn add_skill_changes(&mut self, changes: &[SkillChange]) {
+        self.log.skills_loaded(changes.to_vec());
+        self.sync();
+    }
+
+    /// The user stopped the thread: the calls still running stopped with it.
+    pub fn stop_running_tools(&mut self) {
+        self.log.stop_running_tools(INTERRUPTED);
+        self.sync();
+    }
+
+    /// Drops the item the entry at `index` draws, with all its entries.
+    pub fn remove(&mut self, index: usize) {
+        if let Some(&item) = self.items.get(index) {
+            self.log.remove(item);
+            self.sync();
+        }
+    }
+
+    /// When the entry at `index` came, in ms since the epoch.
+    pub fn time(&self, index: usize) -> Option<i64> {
+        self.log.at(*self.items.get(index)?)
+    }
+
+    /// Changes when the entry at `index` does.
+    pub fn stamp(&self, index: usize) -> u64 {
+        self.stamps.get(index).copied().unwrap_or(0)
+    }
+
+    /// Draws every entry again, as when the look of all of them changed.
+    fn redraw_all(&mut self) {
+        self.reproject(0);
+    }
+
+    /// Draws again the entries of the items that changed or came since the last time.
+    fn sync(&mut self) {
+        let items = self.log.items.len();
+        let mut from = self.log.take_changed().unwrap_or(items);
+        // Items that came since are drawn too.
+        from = from.min(self.starts.len());
+        let skills_changed = self.skills != self.log.skill_changes;
+        if skills_changed {
+            // A change shows under its step: draw again from the first step whose
+            // changes differ, or the end.
+            let changed = self
+                .log
+                .skill_changes
+                .iter()
+                .filter(|change| !self.skills.contains(change))
+                .chain(
+                    self.skills
+                        .iter()
+                        .filter(|change| !self.log.skill_changes.contains(change)),
+                )
+                .filter_map(|change| self.step_of(&change.call_id))
+                .min()
+                .unwrap_or(items);
+            from = from.min(changed);
+            self.skills = self.log.skill_changes.clone();
+        }
+        if from < items || self.starts.len() != items || skills_changed {
+            self.reproject(from);
+        }
+    }
+
+    fn step_of(&self, call_id: &str) -> Option<usize> {
+        self.log
+            .items
+            .iter()
+            .position(|item| matches!(item, Item::Tool(tool) if tool.call_id == call_id))
+    }
+
+    /// Draws the entries of item `from` and every item after it again; open entries stay
+    /// open.
+    fn reproject(&mut self, from: usize) {
+        let end = self.entries.len() - self.orphans;
+        let cut = self.starts.get(from).copied().unwrap_or(end).min(end);
+        let mut open: HashMap<Key, bool> = HashMap::new();
+        for (key, entry) in self.keys[cut..].iter().zip(&self.entries[cut..]) {
+            if let Some(was) = open_of(entry) {
+                open.insert(*key, was);
+            }
+        }
+        self.entries.truncate(cut);
+        self.keys.truncate(cut);
+        self.items.truncate(cut);
+        self.stamps.truncate(cut);
+        self.starts.truncate(from);
+        for index in from..self.log.items.len() {
+            self.starts.push(self.entries.len());
+            self.project(index, &open);
+        }
+        // A change whose step is not in the chat shows at its end.
+        let orphans: Vec<Entry> = self
+            .log
+            .skill_changes
+            .iter()
+            .filter(|change| self.step_of(&change.call_id).is_none())
+            .map(skill_entry)
+            .collect();
+        self.orphans = orphans.len();
+        let last = self.log.items.len().saturating_sub(1);
+        for entry in orphans {
+            let Entry::Skill { id, .. } = entry else {
+                continue;
+            };
+            self.put(Key::Skill(id), last, entry, &open);
+        }
+    }
+
+    fn put(&mut self, key: Key, item: usize, mut entry: Entry, open: &HashMap<Key, bool>) {
+        if let (Some(was), Some(now)) = (open.get(&key), open_mut(&mut entry)) {
+            *now = *was;
+        }
+        self.entries.push(entry);
+        self.keys.push(key);
+        self.items.push(item);
+        self.stamps.push(next_stamp());
+    }
+
+    /// A step: after an activity line when it starts a run.
+    fn put_step(&mut self, id: u64, item: usize, entry: Entry, open: &HashMap<Key, bool>) {
+        let in_run = matches!(
+            self.entries.last(),
+            Some(Entry::Activity { .. } | Entry::Reasoning { .. } | Entry::Tool { .. })
+        );
+        if !in_run {
+            let activity = Entry::Activity { open: false };
+            self.put(Key::Item(id, Part::Activity), item, activity, open);
+        }
+        let part = match entry {
+            Entry::Reasoning { .. } => Part::Thinking,
+            _ => Part::Main,
+        };
+        self.put(Key::Item(id, part), item, entry, open);
+    }
+
+    /// The entries of the item at `index`.
+    fn project(&mut self, index: usize, open: &HashMap<Key, bool>) {
+        let id = self.log.id(index);
+        let main = Key::Item(id, Part::Main);
+        let entry = match &self.log.items[index] {
+            Item::User { text, answered, .. } => Entry::User {
+                text: text.clone(),
+                open: false,
+                answered: answered.clone(),
+            },
+            Item::Agent {
+                thread_id, text, ..
+            } => {
+                let from = thread_id.clone().unwrap_or_default();
+                match self.asker.as_ref() == Some(&from) {
+                    true => Entry::User {
+                        text: text.clone(),
+                        open: false,
+                        answered: Vec::new(),
+                    },
+                    false => Entry::FromAgent {
+                        open: text.lines().count() <= OPEN_AGENT_LINES,
+                        thread_id: from,
+                        text: text.clone(),
+                    },
+                }
+            }
+            Item::Job(result) => Entry::Job {
+                result: job_shown(result),
+                open: false,
+            },
+            Item::Assistant { text, reasoning } => {
+                let (text, reasoning) = (text.clone(), reasoning.clone());
+                if !reasoning.is_empty() {
+                    let thinking = Entry::Reasoning {
+                        text: reasoning,
+                        open: false,
+                    };
+                    self.put_step(id, index, thinking, open);
+                }
+                // Models often open with blank lines; a new block does not need them.
+                let text = text.trim_start();
+                if !text.is_empty() {
+                    self.put(main, index, Entry::Answer(text.to_owned()), open);
+                }
+                return;
+            }
+            Item::Summary(text) => Entry::Summary {
+                text: text.clone(),
+                open: false,
+            },
+            Item::Tool(tool) => {
+                let (tool, call_id) = (tool.clone(), tool.call_id.clone());
+                let step = Entry::Tool {
+                    tool,
+                    pictures: Vec::new(),
+                    open: false,
+                };
+                self.put_step(id, index, step, open);
+                let changes: Vec<Entry> = self
+                    .log
+                    .skill_changes_of(&call_id)
+                    .map(skill_entry)
+                    .collect();
+                for change in changes {
+                    let Entry::Skill { id, .. } = change else {
+                        continue;
+                    };
+                    self.put(Key::Skill(id), index, change, open);
+                }
+                return;
+            }
+            Item::Block(block) => Entry::Block(block.clone()),
+            Item::Suggestion(card) => Entry::Suggestion(card.clone()),
+            // A picture `display_image` showed stays with its step.
+            Item::Image {
+                card,
+                call_id: Some(call_id),
+                aside: false,
+            } => {
+                let card = card.clone();
+                let step = self.entries.iter().rposition(
+                    |entry| matches!(entry, Entry::Tool { tool, .. } if tool.call_id == *call_id),
+                );
+                if let Some(step) = step
+                    && let Entry::Tool { pictures, .. } = &mut self.entries[step]
+                    && !pictures.iter().any(|shown| shown.id == card.id)
+                {
+                    pictures.push(card);
+                    self.stamps[step] = next_stamp();
+                }
+                return;
+            }
+            // Sounds, and pictures the model took to see, are not drawn here.
+            Item::Image { .. } | Item::Audio(_) => return,
+            Item::Notice(text) => Entry::Notice {
+                text: text.clone(),
+                tone: Tone::Info,
+            },
+            Item::Error(text) => Entry::Notice {
+                text: text.clone(),
+                tone: Tone::Error,
+            },
+            Item::Local(local) => Entry::Notice {
+                text: local.text.clone(),
+                tone: local.tone,
+            },
+        };
+        self.put(main, index, entry, open);
     }
 
     /// The run under the activity line at `index`: its steps.
@@ -184,9 +565,9 @@ impl Transcript {
         }
         self.live.clone().or_else(|| {
             self.run(index).find_map(|entry| match entry {
-                Entry::Tool {
-                    call, result: None, ..
-                } => Some(call.name.clone()),
+                Entry::Tool { tool, .. } if tool.state == ToolState::Running => {
+                    Some(tool.name.clone())
+                }
                 _ => None,
             })
         })
@@ -204,295 +585,18 @@ impl Transcript {
         matches!(line, Some(Entry::Activity { open: false }))
     }
 
-    pub fn revision(&self) -> u64 {
-        self.revision
-    }
-
-    fn changed(&mut self) {
-        self.revision = next_revision();
-    }
-
-    /// For a change the methods here do not cover; the lines are laid out again.
-    pub fn entries_mut(&mut self) -> &mut Vec<Entry> {
-        self.changed();
-        &mut self.entries
-    }
-
-    /// Drops an entry; the hidden ones after it move up with it.
-    pub fn remove(&mut self, index: usize) {
-        if index >= self.entries.len() {
-            return;
-        }
-        self.entries.remove(index);
-        if index < self.times.len() {
-            self.times.remove(index);
-        }
-        self.hidden = self
-            .hidden
-            .iter()
-            .filter(|&&hidden| hidden != index)
-            .map(|&hidden| if hidden > index { hidden - 1 } else { hidden })
-            .collect();
-        self.changed();
-    }
-
-    /// The stored messages as entries; system messages are not shown.
-    pub fn from_history(messages: &[Message]) -> Self {
-        let mut transcript = Self::default();
-        for message in messages {
-            transcript.stamp = Some(message.created_at);
-            match message.role {
-                MessageRole::User => match &message.from_thread_id {
-                    Some(from) => {
-                        transcript.push(Entry::from_agent(from.clone(), message.content.clone()))
-                    }
-                    None => transcript.add_user(&message.content),
-                },
-                MessageRole::Job => transcript.job_result(&message.content),
-                MessageRole::Assistant => {
-                    if let Some(reasoning) = &message.reasoning {
-                        transcript.add_reasoning(reasoning);
-                    }
-                    transcript.start_answer(&message.content);
-                    for call in &message.tool_calls {
-                        transcript.start_tool(call.clone());
-                    }
-                }
-                MessageRole::Tool => {
-                    // The core starts the result of a call that failed or never finished
-                    // with one of these.
-                    let failed = ["error:", "stopped:", "not run:", "no result:"]
-                        .iter()
-                        .any(|prefix| message.content.starts_with(prefix));
-                    let result = ToolResult {
-                        content: message.content.clone(),
-                        is_error: failed,
-                        exit_code: None,
-                        artifacts: message.artifacts.clone(),
-                    };
-                    let call_id = message.tool_call_id.clone().unwrap_or_default();
-                    transcript.finish_tool(&call_id, result);
-                }
-                // System messages are instructions, not part of the conversation.
-                _ => {}
-            }
-        }
-        transcript.stamp = None;
-        transcript
-    }
-
-    /// When the entry at `index` came, in ms since the epoch.
-    pub fn time(&self, index: usize) -> Option<i64> {
-        self.times.get(index).copied()
-    }
-
-    pub fn push(&mut self, entry: Entry) {
-        let in_run = matches!(
-            self.entries.last(),
-            Some(Entry::Activity { .. } | Entry::Reasoning { .. } | Entry::Tool { .. })
-        );
-        if is_step(&entry) && !in_run {
-            self.entries.push(Entry::Activity { open: false });
-        }
-        self.entries.push(entry);
-        // Also drops the times of entries popped through `entries_mut`.
-        let at = self.stamp.unwrap_or_else(dusk_protocol::system::now_ms);
-        self.times.resize(self.entries.len(), at);
-        self.changed();
-    }
-
-    /// The user's own message; one that answers the agent's question keeps the
-    /// question beside it.
-    pub fn add_user(&mut self, text: &str) {
-        let answered = self.asked.answer(text).unwrap_or_default();
-        self.push(Entry::User {
-            text: text.to_owned(),
-            open: false,
-            answered,
-        });
-    }
-
-    /// A background job's result, folded to one line. Opened, it shows the first lines
-    /// of its output: the model gets all of it; a chatty job must not push the
-    /// conversation off the screen.
-    pub fn job_result(&mut self, content: &str) {
-        let mut result = JobResult::read(content);
-        let mut lines = result.output.lines();
-        let mut text = lines
-            .by_ref()
-            .take(JOB_LINES)
-            .collect::<Vec<_>>()
-            .join("\n");
-        if let Some((end, _)) = text.char_indices().nth(JOB_CHARS) {
-            text.truncate(end);
-            text.push_str("...");
-        }
-        match lines.count() {
-            0 => {}
-            more => text.push_str(&format!("\n[{more} more lines]")),
-        }
-        result.output = text;
-        self.push(Entry::Job {
-            result,
-            open: false,
-        });
-    }
-
-    pub fn notice(&mut self, text: impl Into<String>, tone: Tone) {
-        self.push(Entry::Notice {
-            local_id: None,
-            text: text.into(),
-            tone,
-        });
-    }
-
-    /// Streamed thinking joins the thinking block it continues.
-    pub fn add_reasoning(&mut self, text: &str) {
-        match self.entries.last_mut() {
-            Some(Entry::Reasoning { text: last, .. }) => last.push_str(text),
-            _ => self.push(Entry::Reasoning {
-                text: text.to_owned(),
-                open: false,
-            }),
-        }
-    }
-
-    pub fn add_answer(&mut self, text: &str) {
-        match self.entries.last_mut() {
-            Some(Entry::Answer(last)) => last.push_str(text),
-            _ => self.start_answer(text),
-        }
-    }
-
-    pub fn add_summary(&mut self, text: &str) {
-        match self.entries.last_mut() {
-            Some(Entry::Summary { text: last, .. }) => last.push_str(text),
-            _ => self.push(Entry::Summary {
-                text: text.to_owned(),
-                open: false,
-            }),
-        }
-    }
-
     /// The newest command still running, which the user may send to the background.
     pub fn running_command(&self) -> Option<String> {
-        self.entries.iter().rev().find_map(|entry| match entry {
-            Entry::Tool {
-                call, result: None, ..
-            } if call.name == "run_command" => Some(call.id.clone()),
-            _ => None,
-        })
+        self.entries.iter().rev().find_map(running_command)
     }
 
     /// The command still running at entry `index`, or in the run under the activity line
     /// there.
     pub fn running_command_at(&self, index: usize) -> Option<String> {
-        let running = |entry: &Entry| match entry {
-            Entry::Tool {
-                call, result: None, ..
-            } if call.name == "run_command" => Some(call.id.clone()),
-            _ => None,
-        };
         match self.entries.get(index)? {
-            Entry::Activity { .. } => self.run(index).find_map(running),
-            entry => running(entry),
+            Entry::Activity { .. } => self.run(index).find_map(running_command),
+            entry => running_command(entry),
         }
-    }
-
-    pub fn start_tool(&mut self, call: ToolCall) {
-        self.asked.call(&call);
-        self.push(Entry::Tool {
-            call,
-            result: None,
-            open: false,
-        });
-    }
-
-    pub fn finish_tool(&mut self, call_id: &str, finished: ToolResult) {
-        let mut saved = None;
-        let mut shown = None;
-        let running = self
-            .entries
-            .iter_mut()
-            .enumerate()
-            .rev()
-            .find_map(|(index, entry)| match entry {
-                Entry::Tool { call, result, .. } if call.id == call_id && result.is_none() => {
-                    if !finished.is_error && call.name == "run_command" {
-                        saved = SkillSave::from_result(&finished.content);
-                    }
-                    shown = Block::shown(call, &finished.content).map(|block| (index, block));
-                    Some(result)
-                }
-                _ => None,
-            });
-        if let Some(result) = running {
-            *result = Some(finished);
-        }
-        if let Some((index, block)) = shown {
-            self.show_block(index, block);
-        }
-        if let Some(saved) = saved {
-            let tone = match saved.action {
-                SkillSaveAction::Unchanged => Tone::Info,
-                _ => Tone::Success,
-            };
-            self.notice(saved.notice(), tone);
-        }
-        self.changed();
-    }
-
-    /// A shown block takes the place of its tool step and stands outside the run of steps:
-    /// the steps before it keep their activity line, the steps after it get their own.
-    /// Live and from history the calls start in the same order, so the block lands in the
-    /// same place both ways.
-    fn show_block(&mut self, index: usize, block: Block) {
-        self.entries[index] = Entry::Block(block);
-        if self.entries.get(index + 1).is_some_and(is_step) {
-            self.insert(index + 1, Entry::Activity { open: false });
-        }
-        let before = index.checked_sub(1);
-        if before.is_some_and(|before| matches!(self.entries[before], Entry::Activity { .. })) {
-            self.remove(index - 1);
-        }
-    }
-
-    /// Puts an entry at `index`, as of the entry before it; the hidden ones from there on
-    /// move down with it.
-    fn insert(&mut self, index: usize, entry: Entry) {
-        let at = index
-            .checked_sub(1)
-            .and_then(|before| self.time(before))
-            .unwrap_or_else(dusk_protocol::system::now_ms);
-        self.entries.insert(index, entry);
-        if index <= self.times.len() {
-            self.times.insert(index, at);
-        }
-        self.hidden = self
-            .hidden
-            .iter()
-            .map(|&hidden| if hidden >= index { hidden + 1 } else { hidden })
-            .collect();
-        self.changed();
-    }
-
-    /// A turn that ended while tools ran stopped them; the core stores the same.
-    pub fn stop_running_tools(&mut self) {
-        for entry in &mut self.entries {
-            if let Entry::Tool {
-                result: result @ None,
-                ..
-            } = entry
-            {
-                *result = Some(ToolResult {
-                    content: "stopped: the user interrupted the turn".into(),
-                    is_error: true,
-                    exit_code: None,
-                    artifacts: Vec::new(),
-                });
-            }
-        }
-        self.changed();
     }
 
     /// What the copy button of an entry copies: its whole text, folded or not.
@@ -504,23 +608,30 @@ impl Transcript {
                 dusk_protocol::thread::unmarked(text)
             }
             Entry::Activity { .. } => String::new(),
-            Entry::Reasoning { text, .. } | Entry::Notice { text, .. } => text.clone(),
+            Entry::Reasoning { text, .. }
+            | Entry::Notice { text, .. }
+            | Entry::Skill { text, .. } => text.clone(),
             Entry::Job { result, .. } => format!("{}\n{}", result.title(), result.output),
             Entry::Block(block) => block.text(),
-            Entry::Tool { call, result, .. } => match result {
-                Some(result) => result.content.clone(),
-                None => call.arguments.to_string(),
+            Entry::Suggestion(card) => card_text(card),
+            Entry::Tool { tool, .. } => match tool.state {
+                ToolState::Running => tool.arguments.clone(),
+                _ => tool.output.clone(),
             },
         })
     }
 
     pub fn hide(&mut self, index: usize) {
-        self.hidden.insert(index);
-        self.changed();
+        if let Some(key) = self.keys.get(index) {
+            self.hidden.insert(*key);
+            self.stamps[index] = next_stamp();
+        }
     }
 
     pub fn is_hidden(&self, index: usize) -> bool {
-        self.hidden.contains(&index)
+        self.keys
+            .get(index)
+            .is_some_and(|key| self.hidden.contains(key))
     }
 
     /// A hidden entry opens like a folded one.
@@ -548,20 +659,14 @@ impl Transcript {
     }
 
     pub fn toggle(&mut self, index: usize) {
-        self.changed();
-        if self.hidden.remove(&index) {
+        let Some(key) = self.keys.get(index) else {
+            return;
+        };
+        self.stamps[index] = next_stamp();
+        if self.hidden.remove(key) {
             return;
         }
-        if let Some(
-            Entry::User { open, .. }
-            | Entry::Activity { open }
-            | Entry::Reasoning { open, .. }
-            | Entry::Tool { open, .. }
-            | Entry::Summary { open, .. }
-            | Entry::FromAgent { open, .. }
-            | Entry::Job { open, .. },
-        ) = self.entries.get_mut(index)
-        {
+        if let Some(open) = self.entries.get_mut(index).and_then(open_mut) {
             *open = !*open;
         }
     }
@@ -572,15 +677,23 @@ impl Transcript {
             .entries
             .iter()
             .any(|entry| matches!(entry, Entry::Reasoning { open: true, .. }));
-        for entry in &mut self.entries {
-            match entry {
-                Entry::Reasoning { open, .. } => *open = !any_open,
+        for (index, entry) in self.entries.iter_mut().enumerate() {
+            let changed = match entry {
+                Entry::Reasoning { open, .. } => {
+                    *open = !any_open;
+                    true
+                }
                 // What is opened has to show.
-                Entry::Activity { open } if !any_open => *open = true,
-                _ => {}
+                Entry::Activity { open } if !any_open => {
+                    *open = true;
+                    true
+                }
+                _ => false,
+            };
+            if changed {
+                self.stamps[index] = next_stamp();
             }
         }
-        self.changed();
     }
 
     /// The nearest foldable entry before or after `from`.
@@ -597,161 +710,123 @@ impl Transcript {
             .rev()
             .find(|&index| self.is_foldable(index))
     }
+}
 
-    fn start_answer(&mut self, text: &str) {
-        // Models often open with blank lines; a new block does not need them.
-        let text = text.trim_start();
-        if !text.is_empty() {
-            self.push(Entry::Answer(text.to_owned()));
-        }
+fn open_of(entry: &Entry) -> Option<bool> {
+    match entry {
+        Entry::User { open, .. }
+        | Entry::Activity { open }
+        | Entry::Reasoning { open, .. }
+        | Entry::Tool { open, .. }
+        | Entry::Summary { open, .. }
+        | Entry::FromAgent { open, .. }
+        | Entry::Job { open, .. } => Some(*open),
+        _ => None,
     }
+}
+
+fn open_mut(entry: &mut Entry) -> Option<&mut bool> {
+    match entry {
+        Entry::User { open, .. }
+        | Entry::Activity { open }
+        | Entry::Reasoning { open, .. }
+        | Entry::Tool { open, .. }
+        | Entry::Summary { open, .. }
+        | Entry::FromAgent { open, .. }
+        | Entry::Job { open, .. } => Some(open),
+        _ => None,
+    }
+}
+
+fn running_command(entry: &Entry) -> Option<String> {
+    match entry {
+        Entry::Tool { tool, .. }
+            if tool.state == ToolState::Running && tool.name == "run_command" =>
+        {
+            Some(tool.call_id.clone())
+        }
+        _ => None,
+    }
+}
+
+/// A background job's result, folded to one line. Opened, it shows the first lines of
+/// its output: the model gets all of it; a chatty job must not push the conversation off
+/// the screen.
+fn job_shown(result: &JobResult) -> JobResult {
+    let mut lines = result.output.lines();
+    let mut text = lines
+        .by_ref()
+        .take(JOB_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if let Some((end, _)) = text.char_indices().nth(JOB_CHARS) {
+        text.truncate(end);
+        text.push_str("...");
+    }
+    match lines.count() {
+        0 => {}
+        more => text.push_str(&format!("\n[{more} more lines]")),
+    }
+    JobResult {
+        output: text,
+        ..result.clone()
+    }
+}
+
+/// The row a skill change draws as. Its name and reason are the agent's text, so they
+/// are shown as plain text: control and bidi characters never reach the screen.
+pub fn skill_line(change: &SkillChange) -> String {
+    let action = match change.action {
+        SkillSaveAction::Created => "created",
+        SkillSaveAction::Updated => "improved",
+        SkillSaveAction::Deleted => "deleted",
+    };
+    let skill: String = change
+        .skill
+        .chars()
+        .map(|c| if plain(c) { c } else { '?' })
+        .collect();
+    // A reason is one line; a line break becomes a space so the words stay apart.
+    let reason: String = change
+        .reason
+        .chars()
+        .filter_map(|c| match c {
+            '\n' | '\r' | '\t' => Some(' '),
+            _ if plain(c) => Some(c),
+            _ => None,
+        })
+        .collect();
+    // The terminal has no Undo; it says where to find one.
+    let state = if change.undone {
+        "undone"
+    } else if change.can_undo {
+        "undo in the app"
+    } else {
+        "previous text not kept"
+    };
+    format!("Skill {skill} {action}: {reason} ({state})")
+}
+
+fn skill_entry(change: &SkillChange) -> Entry {
+    Entry::Skill {
+        id: change.id,
+        text: skill_line(change),
+        tone: if change.undone {
+            Tone::Info
+        } else {
+            Tone::Success
+        },
+    }
+}
+
+/// Whether a character can stand in a row as itself: no control, no bidi override.
+fn plain(c: char) -> bool {
+    !c.is_control()
+        && !matches!(
+            c,
+            '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+        )
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::{Value, json};
-
-    fn call(id: &str, name: &str, arguments: Value) -> ToolCall {
-        ToolCall {
-            id: id.into(),
-            name: name.into(),
-            arguments,
-        }
-    }
-
-    fn flow() -> Value {
-        json!({ "flow": { "layers": [
-            { "title": "Parse", "cards": [{ "title": "lexer", "line": "tokens" }] },
-            { "title": "Check", "emphasis": true },
-        ] } })
-    }
-
-    /// What `show` answers: the block's text, or the refusal.
-    fn result(call: &ToolCall) -> ToolResult {
-        let content = Block::asked(call).map_or("error: refused".into(), |block| block.text());
-        ToolResult {
-            is_error: content.starts_with("error:"),
-            content,
-            exit_code: None,
-            artifacts: Vec::new(),
-        }
-    }
-
-    fn message(
-        role: MessageRole,
-        content: &str,
-        calls: Vec<ToolCall>,
-        answers: Option<&str>,
-    ) -> Message {
-        Message {
-            message_id: String::new(),
-            thread_id: String::new(),
-            sequence: 0,
-            role,
-            content: content.into(),
-            reasoning: None,
-            tool_calls: calls,
-            tool_call_id: answers.map(Into::into),
-            artifacts: Vec::new(),
-            from_thread_id: None,
-            from_job_id: None,
-            content_tokens: 0,
-            tool_calls_tokens: 0,
-            reasoning_tokens: 0,
-            created_at: 0,
-        }
-    }
-
-    fn kinds(transcript: &Transcript) -> Vec<&'static str> {
-        let kinds = transcript.entries.iter().map(|entry| match entry {
-            Entry::User { .. } => "user",
-            Entry::Answer(_) => "answer",
-            Entry::Activity { .. } => "activity",
-            Entry::Tool { .. } => "tool",
-            Entry::Block(_) => "block",
-            _ => "other",
-        });
-        kinds.collect()
-    }
-
-    /// The same turn live and from history: a message that calls `calls` at once.
-    fn both_ways(calls: &[ToolCall]) -> (Transcript, Transcript) {
-        let mut live = Transcript::default();
-        live.add_user("go");
-        live.add_answer("Here it is.");
-        for call in calls {
-            live.start_tool(call.clone());
-        }
-        for call in calls {
-            live.finish_tool(&call.id, result(call));
-        }
-        let mut history = vec![
-            message(MessageRole::User, "go", Vec::new(), None),
-            message(MessageRole::Assistant, "Here it is.", calls.to_vec(), None),
-        ];
-        for call in calls {
-            let content = result(call).content;
-            history.push(message(
-                MessageRole::Tool,
-                &content,
-                Vec::new(),
-                Some(&call.id),
-            ));
-        }
-        (live, Transcript::from_history(&history))
-    }
-
-    #[test]
-    fn a_shown_block_is_one_entry_in_place_of_its_step() {
-        let (live, reopened) = both_ways(&[call("a", "show", flow())]);
-        assert_eq!(kinds(&live), ["user", "answer", "block"]);
-        assert_eq!(kinds(&reopened), kinds(&live));
-        let shown = Block::asked(&call("a", "show", flow()));
-        assert!(matches!(&live.entries[2], Entry::Block(block) if Some(block) == shown.as_ref()));
-        assert_eq!(live.text(2), shown.map(|block| block.text()));
-    }
-
-    #[test]
-    fn steps_around_a_block_keep_their_own_activity_lines() {
-        let calls = [
-            call("a", "read_file", json!({ "path": "x" })),
-            call("b", "show", flow()),
-            call("c", "search_files", json!({ "pattern": "y" })),
-        ];
-        let (live, reopened) = both_ways(&calls);
-        let expected = [
-            "user", "answer", "activity", "tool", "block", "activity", "tool",
-        ];
-        assert_eq!(kinds(&live), expected);
-        assert_eq!(kinds(&reopened), expected);
-        assert_eq!(live.run(2).count(), 1);
-        assert_eq!(live.run(5).count(), 1);
-    }
-
-    #[test]
-    fn a_block_that_was_not_shown_stays_a_step() {
-        let out_of_caps = json!({ "flow": { "layers": [{ "title": "only one" }] } });
-        let (live, reopened) = both_ways(&[call("a", "show", out_of_caps)]);
-        assert_eq!(kinds(&live), ["user", "answer", "activity", "tool"]);
-        assert_eq!(kinds(&reopened), kinds(&live));
-    }
-
-    #[test]
-    fn hidden_entries_follow_the_entries_a_block_moves() {
-        let mut transcript = Transcript::default();
-        transcript.add_user("go");
-        transcript.start_tool(call("a", "show", flow()));
-        transcript.start_tool(call("b", "read_file", json!({})));
-        transcript.add_answer("after");
-        transcript.hide(4);
-        transcript.finish_tool("a", result(&call("a", "show", flow())));
-        // user, block, activity, tool, answer: the answer is still the hidden one.
-        assert_eq!(
-            kinds(&transcript),
-            ["user", "block", "activity", "tool", "answer"]
-        );
-        assert!(transcript.is_hidden(4));
-        assert_eq!(transcript.times.len(), transcript.entries.len());
-    }
-}
+mod tests;

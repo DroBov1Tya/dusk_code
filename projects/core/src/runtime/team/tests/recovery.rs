@@ -6,7 +6,7 @@ use std::sync::Arc;
 use super::*;
 use crate::{
     runtime::thread::start::start_member_thread,
-    state::{Claim, timestamp_ms},
+    state::{Claim, TurnAnswer, TurnOutcome, timestamp_ms},
 };
 
 /// A running team with one task, and a member thread made for it, as a stop right
@@ -112,4 +112,108 @@ async fn a_claimed_task_nobody_works_on_reopens_when_its_lease_runs_out() {
     );
     assert_eq!(rig.members().await, [made.as_str()]);
     assert_eq!(rig.uids(&made).await, [format!("card:{id}:2")]);
+}
+
+/// A member's task as a stop of the core leaves it right after its turn ended: the
+/// card read, the turn over, and nothing of the turn's end done to the task.
+async fn stopped_after_the_turn(rig: &Rig, outcome: TurnOutcome) -> (String, String) {
+    let (id, made) = stopped_after_the_thread(rig).await;
+    let state = rig.state();
+    let claim = Claim {
+        owner: &made,
+        at_once: 3,
+        model: None,
+        now: timestamp_ms().unwrap(),
+    };
+    let claimed = state.claim_task(&rig.lead, &id, claim).await.unwrap();
+    let card = super::super::card::uid(&claimed);
+    state
+        .add_message_from(&made, &card, "the card", Some(&rig.lead))
+        .await
+        .unwrap();
+    let turn = state.start_turn(&made).await.unwrap().unwrap();
+    state.start_task(&made, &id, &turn.turn_id).await.unwrap();
+    state.finish_turn(&turn.turn_id, outcome).await.unwrap();
+    (id, made)
+}
+
+#[tokio::test]
+async fn a_task_whose_turn_a_stop_cut_off_returns_to_the_pool_exactly_once() {
+    let rig = Rig::new("team_settle_lost", hang).await;
+    let (id, dead) = stopped_after_the_turn(&rig, TurnOutcome::Interrupted(None)).await;
+    let fresh = restarted(&rig);
+
+    fresh.team_settle(&rig.lead).await;
+
+    // Released and given out again in the same breath, to a thread that has read
+    // nothing; the dead member's thread is not started again.
+    let task = rig.task(&id).await;
+    assert_eq!(task.attempts, 2);
+    assert!(task.owner_thread_id.is_some() && task.owner_thread_id != Some(dead.clone()));
+    assert_eq!(rig.turns(&dead).await, (1, false));
+
+    // Settling again finds nothing left by a stopped core: the task is not released
+    // a second time.
+    fresh.team_settle(&rig.lead).await;
+    fresh.team_settle(&rig.lead).await;
+    let again = rig.task(&id).await;
+    assert_eq!(
+        (again.attempts, again.owner_thread_id),
+        (2, task.owner_thread_id)
+    );
+    assert_eq!(rig.members().await.len(), 2);
+}
+
+#[tokio::test]
+async fn a_turn_that_completed_before_the_stop_is_handed_in_and_not_done_twice() {
+    let rig = Rig::new("team_settle_done", hang).await;
+    let answer = TurnAnswer {
+        content: DONE.into(),
+        reasoning: None,
+    };
+    let (id, made) = stopped_after_the_turn(&rig, TurnOutcome::Completed(answer)).await;
+    let fresh = restarted(&rig);
+
+    fresh.team_settle(&rig.lead).await;
+    fresh.team_settle(&rig.lead).await;
+
+    let task = rig.task(&id).await;
+    assert_eq!((task.status, task.attempts), (PlanStatus::Review, 1));
+    assert_eq!(task.owner_thread_id, Some(made.clone()));
+    // The work was not given out again, and the lead reads of it once.
+    assert_eq!(rig.members().await, [made.as_str()]);
+    assert_eq!(rig.turns(&made).await, (1, false));
+    let lines = rig.lines().await;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("waits for you: no gate. Result: it works now."));
+}
+
+#[tokio::test]
+async fn an_end_cut_off_before_its_work_was_returned_is_finished() {
+    let rig = Rig::new("team_settle_end", hang).await;
+    let (id, made) = stopped_after_the_thread(&rig).await;
+    let now = timestamp_ms().unwrap();
+    let claim = Claim {
+        owner: &made,
+        at_once: 3,
+        model: None,
+        now,
+    };
+    rig.state().claim_task(&rig.lead, &id, claim).await.unwrap();
+    // The end is stored first; the stop came before the tasks at work were returned.
+    sqlx::query("UPDATE teams SET status = 'ended', ended_why = 'stopped', ended_at = ?")
+        .bind(now + 1)
+        .execute(&rig.state().pool)
+        .await
+        .unwrap();
+
+    restarted(&rig).team_settle(&rig.lead).await;
+
+    let task = rig.task(&id).await;
+    assert_eq!(
+        (task.status, task.owner_thread_id),
+        (PlanStatus::Open, None)
+    );
+    assert_eq!(rig.ended().await, Some(TeamEnd::Stopped));
+    assert!(rig.uids(&made).await.is_empty(), "nothing was given out");
 }

@@ -4,17 +4,21 @@
 //! list follows new output while it is scrolled to the end. `row` draws one row, `activity`
 //! a group of steps folded into one, `step` the agent's steps, and `command`, `picture` and `cost` the
 //! cards and notes beside them; `sent_picture` the pictures a user's message carries;
-//! `block` what the model showed with `show`; `working_row` the last row while a turn runs.
+//! `block` what the model showed with `show`; `working_row` the last row while a turn runs;
+//! `texts` the parsed words of the rows, kept while the chat is shown.
 
 mod activity;
 mod block;
 mod command;
 mod cost;
+mod error_row;
 mod feedback;
 mod picture;
 mod row;
 mod sent_picture;
+mod skill_change;
 mod step;
+mod texts;
 mod working_row;
 
 pub use activity::{activity_text, agent_report, notice};
@@ -23,7 +27,9 @@ pub use feedback::{answered, job};
 pub use picture::picture_path;
 pub use row::label;
 pub use sent_picture::SentPicture;
+pub use skill_change::SkillRow;
 pub use step::{run, steps};
+pub use texts::Texts;
 
 use gpui_kit::*;
 
@@ -33,7 +39,8 @@ use crate::{ui::widgets, workspace::Workspace};
 /// Keys of unfolded things share one set: answers by index, runs and steps apart.
 pub(crate) const RUN: usize = 1 << 40;
 pub(crate) const STEP: usize = 1 << 41;
-const ACTIVITY: usize = 1 << 42;
+pub(crate) const ACTIVITY: usize = 1 << 42;
+pub(crate) const SKILL: usize = 1 << 43;
 
 /// One row of the list: a visible item, a turn disclosure, or the working figure.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -57,21 +64,30 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let Some(chat) = ws.chats.get(&shown) else {
         return widgets::muted("Opening...", cx).into_any_element();
     };
-    let rows = transcript_rows(chat);
-    let sent = rows
-        .iter()
-        .enumerate()
-        .filter_map(|(row, entry)| match *entry {
-            Row::Item(index) => match &chat.items[index] {
-                Item::User {
-                    text,
-                    sequence: Some(_),
-                } => Some((row, text.clone())),
+    // The rows change only with the chat's shape: streamed text and timers keep them.
+    let key = (shown.clone(), chat.shape(), chat.working);
+    let fresh = ws.rows_key.as_ref() != Some(&key);
+    let rows = match fresh {
+        true => transcript_rows(chat),
+        false => std::mem::take(&mut ws.rows),
+    };
+    if fresh {
+        ws.sent_rows = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(row, entry)| match *entry {
+                Row::Item(index) => matches!(
+                    chat.items[index],
+                    Item::User {
+                        sequence: Some(_),
+                        ..
+                    }
+                )
+                .then_some((row, index)),
                 _ => None,
-            },
-            _ => None,
-        })
-        .collect();
+            })
+            .collect();
+    }
     // A chat opened from a found message shows that message, not its end.
     let jump = ws
         .jump
@@ -93,8 +109,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let changed_from = ws
         .chats
         .get_mut(&shown)
-        .and_then(|chat| chat.changed_from.take());
-    sync(ws, &shown, &rows, changed_from);
+        .and_then(|chat| chat.take_changed());
+    sync(ws, &shown, &rows, changed_from, fresh);
     if let Some(at) = jump {
         ws.jump = None;
         if let Some(item_ix) = at {
@@ -105,7 +121,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         }
     }
     ws.rows = rows;
-    ws.sent_rows = sent;
+    ws.rows_key = Some(key);
     list(
         ws.list.clone(),
         cx.processor(|ws, ix: usize, _window, cx| ws.transcript_row(ix, cx)),
@@ -129,6 +145,8 @@ fn transcript_rows(chat: &Transcript) -> Vec<Row> {
         for index in start..end {
             let item = &chat.items[index];
             let visible = match item {
+                // A picture the model took to see stays in the right column.
+                Item::Image { aside: true, .. } => false,
                 Item::Assistant { text, .. } => !text.trim().is_empty(),
                 Item::User { sequence, .. } => sequence.is_some(),
                 Item::Tool(_) | Item::Agent { .. } => false,
@@ -154,7 +172,8 @@ fn transcript_rows(chat: &Transcript) -> Vec<Row> {
         }
         start = end;
     }
-    if chat.working {
+    // Agents below the chat may work on after its own turn: the row stays for them.
+    if chat.work(dusk_protocol::system::now_ms()).is_some() {
         rows.push(Row::Working);
     }
     rows
@@ -171,7 +190,10 @@ fn add_activity(rows: &mut Vec<Row>, items: &[Item], start: usize, end: usize) {
         });
     } else {
         for (offset, item) in group.iter().enumerate() {
-            if !matches!(item, Item::Assistant { .. }) {
+            if !matches!(
+                item,
+                Item::Assistant { .. } | Item::Image { aside: true, .. }
+            ) {
                 rows.push(Row::Item(start + offset));
             }
         }
@@ -180,16 +202,19 @@ fn add_activity(rows: &mut Vec<Row>, items: &[Item], start: usize, end: usize) {
 
 /// Tells the list what changed: a new chat is measured anew; rows that came or changed
 /// at the end, where streaming text grows, are measured again.
-fn sync(ws: &mut Workspace, shown: &str, rows: &[Row], changed_from: Option<usize>) {
+fn sync(ws: &mut Workspace, shown: &str, rows: &[Row], changed_from: Option<usize>, fresh: bool) {
     if ws.list_chat.as_deref() != Some(shown) {
         ws.list_chat = Some(shown.to_owned());
+        ws.texts = Texts::default();
         ws.list.reset(rows.len());
         ws.list.set_follow_mode(FollowMode::Tail);
         return;
     }
+    // Rows kept from the last frame are the rows the list has.
+    let previous = if fresh { ws.rows.as_slice() } else { rows };
     sync_list(
         &ws.list,
-        &ws.rows,
+        previous,
         rows,
         changed_from,
         &mut ws.measure_again,
@@ -354,11 +379,18 @@ mod tests {
 
         // No notice per attempt; the one row holds the newest.
         assert_eq!(layout(&chat), [(0, 1)]);
-        assert!(matches!(&chat.retry, Some((retry, _))
-            if retry.text() == "Provider overloaded: timeout; trying again, attempt 3 of 3"));
+        let held = chat.work(dusk_protocol::system::now_ms()).unwrap();
+        assert_eq!(held.kind, dusk_protocol::thread::WorkKind::Held);
+        assert!(
+            held.label
+                .starts_with("Provider overloaded: timeout; trying again, attempt 3 of 3"),
+            "{}",
+            held.label
+        );
 
         chat.apply(ThreadEvent::Model(ModelEvent::Text("hi".into())));
-        assert!(chat.retry.is_none());
+        let after = chat.work(dusk_protocol::system::now_ms()).unwrap();
+        assert_ne!(after.kind, dusk_protocol::thread::WorkKind::Held);
     }
 
     #[test]
@@ -475,8 +507,14 @@ mod tests {
         let mut live = Transcript::default();
         live.apply(ThreadEvent::ToolStarted(call));
         live.apply(ThreadEvent::UserMessage(answer));
-        assert_eq!(live.answered, history.answered);
-        let answers = live.answered.get(&1).unwrap();
+        let answered = |chat: &Transcript| {
+            chat.items.iter().find_map(|item| match item {
+                Item::User { answered, .. } => Some(answered.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(answered(&live), answered(&history));
+        let answers = answered(&live).unwrap_or_default();
         assert_eq!(
             answers[0].options,
             [("First".into(), false), ("Second".into(), true)]
@@ -487,7 +525,7 @@ mod tests {
             "QUESTION: Which?\nANSWER: Second",
             Vec::new(),
         )]);
-        assert!(plain.answered.is_empty());
+        assert_eq!(answered(&plain), Some(Vec::new()));
     }
 
     fn show(id: &str, arguments: serde_json::Value) -> ToolCall {

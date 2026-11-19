@@ -33,6 +33,9 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         update_channel: config.update_channel(),
         approvals: config.approvals(),
         version_control: config.version_control().clone(),
+        arbiter: config.arbiter().clone(),
+        // Only shown; a missing resource must not take the whole settings page with it.
+        arbiter_default_prompt: crate::runtime::arbiter::default_prompt().unwrap_or_default(),
         notifications: config.notifications(),
         sound_notifications: config.sound_notifications(),
         sandbox: runtime.platform().sandbox,

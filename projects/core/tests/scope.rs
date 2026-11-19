@@ -9,9 +9,9 @@ use dusk_core::{
 };
 use dusk_protocol::{
     client::{
-        Answer, CatalogRequest, Command, Event, Hello, PROTOCOL_VERSION, PluginRequest,
-        ProjectRequest, Request, Response, Secret, SettingsRequest, TerminalRequest, ThreadRequest,
-        VoiceRequest, WorkRequest,
+        Answer, CatalogRequest, Command, Event, Hello, PluginRequest, ProjectRequest, Request,
+        Response, Secret, SettingsRequest, TerminalRequest, ThreadRequest, VoiceRequest,
+        WorkRequest,
     },
     plugin::StoreRequest,
     tools::Decision,
@@ -28,6 +28,7 @@ const EVERYTHING: &[Area] = &[
     Area::ThreadCreate,
     Area::ThreadDelete,
     Area::ThreadCommand,
+    Area::ThreadApprove,
     Area::ThreadApprovals,
     Area::Settings,
     Area::PluginEnable,
@@ -61,10 +62,7 @@ async fn core(name: &str) -> Core {
 }
 
 fn attach(core: &Core, name: &str, scope: Scope) -> Client {
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: name.to_owned(),
-    };
+    let hello = Hello::new(name);
     core.hub.attach(hello, scope).unwrap()
 }
 
@@ -74,6 +72,19 @@ fn bound(core: &Core, name: &str, thread_id: &str) -> Client {
         name,
         Scope::threads([thread_id.to_owned()], EVERYTHING),
     )
+}
+
+/// What a client bound to `mine` is answered for one request, from a client of its own:
+/// twenty refusals in a minute detach a client, and after that every request is refused
+/// for that reason alone. It is still attached afterwards, or the answer proved nothing.
+async fn refused_alone(core: &Core, mine: &str, request: Request) -> Response {
+    let client = bound(core, "phone", mine);
+    let answer = client.request(request).await;
+    assert!(
+        client.threads().messages(mine).await.is_ok(),
+        "the client was detached by its refusals"
+    );
+    answer
 }
 
 /// The requests that name a thread: reading it, feeding it, stopping it, going back in
@@ -118,6 +129,7 @@ fn about(thread_id: &str, folder: &Path) -> Vec<Request> {
         ThreadRequest::RunCommand {
             thread_id: id(),
             command: "true".to_owned(),
+            run: 1,
         },
         ThreadRequest::Rename {
             thread_id: id(),
@@ -128,6 +140,11 @@ fn about(thread_id: &str, folder: &Path) -> Vec<Request> {
             policy: None,
         },
         ThreadRequest::Close { thread_id: id() },
+        ThreadRequest::Approve {
+            thread_id: id(),
+            id: 1,
+            decision: Decision::Once,
+        },
         ThreadRequest::Delete { thread_id: id() },
     ]
     .into_iter()
@@ -198,9 +215,11 @@ async fn a_client_bound_to_a_chat_cannot_reach_hear_or_learn_of_another() {
         .into_iter()
         .zip(about("0190-not-a-thread", &core.folder))
     {
-        let refused = phone.request(theirs).await;
+        // One client for each pair: twenty refusals in a minute detach a client.
+        let probe = bound(&core, "probe", &mine);
+        let refused = probe.request(theirs).await;
         assert_eq!(refused, Response::Error(NO_THREAD.to_owned()));
-        assert_eq!(refused, phone.request(absent).await);
+        assert_eq!(refused, probe.request(absent).await);
     }
     let listed = owner.threads().list().await.unwrap();
     let title = |id: &str| {
@@ -312,6 +331,11 @@ fn apart(folder: &Path) -> Vec<Request> {
         Request::Store(StoreRequest::List {
             order: Default::default(),
             category: None,
+            kinds: Vec::new(),
+        }),
+        Request::Store(StoreRequest::Contents {
+            source: word(),
+            name: word(),
         }),
         Request::Store(StoreRequest::UpdateAll),
         Request::SystemReport,
@@ -360,10 +384,6 @@ fn apart(folder: &Path) -> Vec<Request> {
             summary: word(),
             cwd: folder.to_path_buf(),
         }),
-        Request::Thread(ThreadRequest::Approve {
-            id: 1,
-            decision: Decision::Once,
-        }),
     ]
 }
 
@@ -372,7 +392,6 @@ async fn a_client_bound_to_a_chat_reaches_nothing_else_in_the_core() {
     let core = core("areas").await;
     let owner = attach(&core, "owner", Scope::full());
     let mine = owner.threads().start(core.folder.clone()).await.unwrap();
-    let phone = bound(&core, "phone", &mine);
 
     // What answers with more than the chat it names is about no thread either: the
     // context report, and the diff of the chat's whole project.
@@ -387,7 +406,7 @@ async fn a_client_bound_to_a_chat_reaches_nothing_else_in_the_core() {
     ];
     for request in beyond.into_iter().chain(apart(&core.folder)) {
         let shown = format!("{request:?}");
-        let refused = phone.request(request).await;
+        let refused = refused_alone(&core, &mine, request).await;
         assert_eq!(refused, Response::Error(REFUSED.to_owned()), "{shown}");
     }
     assert!(!core.folder.join("x").exists());

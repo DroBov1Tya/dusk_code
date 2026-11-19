@@ -19,7 +19,7 @@ use crate::{
 };
 
 const LEAD: &str = "lead";
-const ON: &str = "mode: ORCHESTRATOR\nlimits:\n  plan_graph: true\n";
+const ON: &str = "mode: TEAM\n";
 
 struct Fixture {
     state: Arc<State>,
@@ -137,7 +137,7 @@ fn spec_bytes(tasks: &Tasks, context: &ToolContext) -> (usize, usize, usize) {
 }
 
 #[tokio::test]
-async fn the_plan_form_is_offered_only_to_a_chat_in_orchestrator_with_the_switch_on() {
+async fn the_plan_form_is_offered_only_to_a_chat_in_team_mode() {
     let on = fixture("plan_offered").await;
     let board = Tasks::new(Arc::clone(&on.state), LEAD.into());
     let board_context = |settings: &str| ToolContext {
@@ -150,14 +150,15 @@ async fn the_plan_form_is_offered_only_to_a_chat_in_orchestrator_with_the_switch
     );
     for settings in [
         "limits:\n  plan_graph: true\n",
-        "mode: PLAN\nlimits:\n  plan_graph: true\n",
+        "mode: PLAN\n",
         "mode: ORCHESTRATOR\n",
+        "mode: TEAM\nlimits:\n  plan_graph: false\n",
     ] {
         let context = board_context(settings);
         assert_eq!(on.tasks.description(&context), board_form.0, "{settings}");
         assert_eq!(on.tasks.offered_parameters(&context), board_form.1);
     }
-    // An agent's tasks (no lead) stay the board under an ORCHESTRATOR chat.
+    // An agent's tasks (no lead) stay the board under a TEAM chat.
     assert_eq!(board.description(&on.context), board_form.0);
     assert_eq!(on.tasks.description(&on.context), text::DESCRIPTION);
     assert_eq!(on.tasks.offered_parameters(&on.context), text::schema());
@@ -203,7 +204,7 @@ async fn add_makes_a_whole_plan_in_one_call() {
     assert_eq!(plan.len(), 7);
     let shorts: Vec<String> = plan
         .iter()
-        .map(|task| format!("#{}", text::short(&task.task_id)))
+        .map(|task| format!("#{}", short_task_id(&task.task_id)))
         .collect();
     assert_eq!(answer, format!("added 7 tasks: {}", shorts.join(" ")));
     assert_eq!(answer.len(), 84);
@@ -420,7 +421,7 @@ async fn show_prints_the_plan_in_lines_within_its_caps() {
     f.drive(&ids[0], "m0", PlanStatus::Done).await;
     f.drive(&ids[1], "m1", PlanStatus::Running).await;
     f.drive(&ids[2], "m2", PlanStatus::Review).await;
-    let s = |index: usize| text::short(&ids[index]).to_owned();
+    let s = |index: usize| short_task_id(&ids[index]).to_owned();
     let shown = f.call(json!({ "action": "show" })).await.unwrap();
     let expected = format!(
         "Plan: 1 of 4 done, 1 running, 1 in review, 1 open.\n\
@@ -496,7 +497,7 @@ async fn review_takes_tasks_in_review_and_answers_a_repeat_as_before() {
         .await
         .unwrap();
     let ids = f.ids().await;
-    let s = |index: usize| text::short(&ids[index]).to_owned();
+    let s = |index: usize| short_task_id(&ids[index]).to_owned();
     f.drive(&ids[0], "m0", PlanStatus::Review).await;
     f.drive(&ids[1], "m1", PlanStatus::Review).await;
 
@@ -542,7 +543,7 @@ async fn fail_and_reopen_repeated_change_nothing_more() {
         .await
         .unwrap();
     let ids = f.ids().await;
-    let id = text::short(&ids[0]).to_owned();
+    let id = short_task_id(&ids[0]).to_owned();
     let fail = json!({ "action": "fail", "id": id, "text": "wrong approach" });
     assert!(f.tasks.repeatable(&fail));
     let answer = f.call(fail.clone()).await.unwrap();
@@ -595,7 +596,7 @@ async fn the_board_works_as_before_and_leaves_given_out_tasks_alone() {
     ] {
         let refused = main.refused(plan_only).await;
         assert!(
-            refused.starts_with("the plan's actions need ORCHESTRATOR"),
+            refused.starts_with("the plan's actions need TEAM mode"),
             "{refused}"
         );
     }
@@ -646,9 +647,19 @@ struct Recorder {
 }
 
 impl TeamRunner for Recorder {
-    fn run<'a>(&'a self, _lead: &'a str, budget: TeamBudget) -> BoxFuture<'a, usize> {
+    fn run<'a>(
+        &'a self,
+        _lead: &'a str,
+        budget: TeamBudget,
+        _progress: Option<crate::tools::Progress>,
+    ) -> BoxFuture<'a, super::team::Started> {
         self.runs.lock().push(budget);
-        Box::pin(async { Ok(2) })
+        Box::pin(async {
+            Ok(super::team::Started {
+                given: 2,
+                gates: super::team::GatesYes::NotAsked,
+            })
+        })
     }
 
     fn stop<'a>(&'a self, _lead: &'a str) -> BoxFuture<'a, ()> {

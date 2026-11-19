@@ -13,12 +13,26 @@
 //! - `picture` — the covers and screenshots of the cards;
 //! - `record` — what the store did here;
 //! - `unpack` — a package into a folder;
-//! - `content`, `pack` — skills, packs and agents, which are plain files.
+//! - `content`, `pack` — skills, packs and agents, which are plain files;
+//! - `contents` — the files of a listing, for a client to look through;
+//! - `guard` — what a source without a key may bring, and what names it may not take;
+//! - `review` — what an install would write and change, asked before an Unverified one.
 
+pub mod add;
+#[cfg(test)]
+mod brings_tests;
 mod content;
 #[cfg(test)]
 mod content_tests;
+pub mod contents;
+#[cfg(test)]
+mod contents_tests;
+#[cfg(test)]
+mod credit_tests;
 mod fetch;
+mod guard;
+#[cfg(test)]
+mod guard_tests;
 pub mod index;
 mod listing;
 mod pack;
@@ -26,10 +40,16 @@ mod picture;
 #[cfg(test)]
 mod picture_tests;
 mod record;
+#[cfg(test)]
+mod repositories_tests;
+pub mod review;
 mod source;
 #[cfg(test)]
 mod tests;
 mod unpack;
+mod upstream;
+#[cfg(test)]
+mod upstream_tests;
 #[cfg(test)]
 mod workshop_dist_tests;
 #[cfg(test)]
@@ -45,11 +65,14 @@ use super::{catalog, manifest::Manifest};
 use crate::{config::Mirror, init::paths::Paths};
 use fetch::Via;
 use index::Entry;
-use record::{Installed, Record};
+use record::Installed;
+pub(crate) use record::Record;
 use source::Fetched;
 
+pub use listing::Here;
 pub use pack::{FILE as PACK_FILE, Pack};
 pub use picture::{cover, screenshot};
+pub use source::{probe, probed};
 
 /// Where the store keeps a package while it is checked, under the plugins folder; the
 /// leading dot keeps it out of the plugins found.
@@ -59,12 +82,15 @@ const STAGING: &str = ".staging";
 static BUSY: LazyLock<Mutex<()>> = LazyLock::new(Mutex::default);
 
 /// What the sources offer, with what is installed here, in `order`; only `category`'s
-/// when it is given. A source that cannot be read is reported beside the rest.
+/// when it is given, and only of `kinds` when they are. A source that cannot be read is
+/// reported beside the rest.
 pub async fn list(
     paths: &Paths,
     mirrors: &[Mirror],
     order: Order,
     category: Option<&str>,
+    kinds: &[Kind],
+    here: &Here,
 ) -> Result<StoreList> {
     let (fetched, failed) = source::read(paths, mirrors).await;
     let record = Record::load(paths)?;
@@ -76,12 +102,27 @@ pub async fn list(
                 .index
                 .plugins
                 .iter()
-                .map(move |entry| listing::listing(paths, record, source, entry))
+                .map(move |entry| listing::listing(paths, record, here, source, entry))
         })
-        .chain(listing::local(paths, &record))
+        .chain(listing::local(paths, &record, here))
         .collect();
     listing::mark_clashes(&mut listings);
-    listings.retain(|listing| category.is_none_or(|category| listing.category == category));
+    let taken = fetched
+        .iter()
+        .filter(|source| source.tier == Tier::Unverified)
+        .map(|source| {
+            let names = listing::taken(paths, &record, &fetched, &source.name);
+            (source.name.clone(), names)
+        })
+        .collect();
+    listing::guard_names(&mut listings, &taken);
+    listings.retain(|listing| {
+        (kinds.is_empty() || kinds.contains(&listing.kind))
+            && category.is_none_or(|category| {
+                listing.category == category
+                    || listing.categories.iter().any(|item| item == category)
+            })
+    });
     listing::sort(&mut listings, order);
     let picks = listing::picks(&listings);
     Ok(StoreList {
@@ -91,6 +132,12 @@ pub async fn list(
     })
 }
 
+/// The repositories the user added, each read now, with its state.
+pub async fn sources(paths: &Paths, mirrors: &[Mirror]) -> Vec<dusk_protocol::plugin::SourceRow> {
+    let (fetched, failed) = source::read(paths, mirrors).await;
+    source::rows(mirrors, &fetched, &failed)
+}
+
 /// What the user agreed to install, as they were shown it.
 pub struct Agreed<'a> {
     pub source: &'a str,
@@ -98,6 +145,8 @@ pub struct Agreed<'a> {
     pub name: &'a str,
     pub version: &'a str,
     pub permissions: &'a [String],
+    /// The `package_sha256` of the review the user saw; an Unverified install needs it.
+    pub sha256: Option<&'a str>,
 }
 
 /// Installs or updates a plugin in the plugins folder, or a skill, pack or agent in the
@@ -112,6 +161,13 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
         return Err(anyhow!("{}: {}", failure.source, failure.error));
     }
     let (source, entry) = pick(&fetched, agreed)?;
+    if source.tier == Tier::Unverified {
+        let record = Record::load(paths)?;
+        let taken = listing::taken(paths, &record, &fetched, &source.name);
+        if let Some(why) = guard::shadow(&entry.name, taken.iter().map(String::as_str)) {
+            anyhow::bail!(why);
+        }
+    }
     put(paths, source, entry).await.map(|()| entry.kind)
 }
 
@@ -123,23 +179,32 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
         .iter()
         .find(|item| item.name == agreed.source)
         .with_context(|| format!("there is no source named {}", agreed.source))?;
-    ensure!(
-        source.tier == agreed.tier,
-        "{} is {:?} now, not {:?} as you saw it; look at the list again",
-        source.name,
-        source.tier,
-        agreed.tier
-    );
     let entry = source
         .index
         .plugins
         .iter()
         .find(|entry| entry.name == name)
         .with_context(|| format!("{} offers no {name}", source.name))?;
+    let tier = listing::tier(source, entry);
+    ensure!(
+        tier == agreed.tier,
+        "{name} of {} is {tier:?} now, not {:?} as you saw it; look at the list again",
+        source.name,
+        agreed.tier
+    );
     ensure!(
         entry.version == agreed.version && entry.consent() == agreed.permissions,
         "the listing of {name} changed since you saw it; look at the list again"
     );
+    // Nothing signed an Unverified list, so the files the user looked at are what they
+    // agreed to, not the version: the list may name other files under the same one.
+    if tier == Tier::Unverified {
+        let pinned = entry.upstream.as_ref().map(upstream::Upstream::digest);
+        ensure!(
+            agreed.sha256.is_some() && agreed.sha256 == pinned.as_deref(),
+            "the files of {name} are not the ones you were shown; look at them again"
+        );
+    }
     Ok((source, entry))
 }
 
@@ -149,6 +214,16 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
 /// updates.
 pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateReport> {
     let (fetched, failed) = source::read(paths, mirrors).await;
+    update_from(paths, &fetched, &failed).await
+}
+
+/// `update_all` with the lists read. Nothing of an Unverified source is updated here:
+/// the user updates it by hand once they saw what changed (`review`).
+async fn update_from(
+    paths: &Paths,
+    fetched: &[Fetched],
+    failed: &[dusk_protocol::plugin::SourceFailure],
+) -> Result<UpdateReport> {
     let names: Vec<String> = Record::load(paths)?.installed.into_keys().collect();
     let mut report = UpdateReport::default();
     for name in names {
@@ -174,6 +249,11 @@ pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateRepor
         if listing::newer(&entry.version, &installed.version).is_none() {
             continue;
         }
+        if source.tier == Tier::Unverified {
+            let why = "from an unverified source; update it by hand once you saw what changed";
+            report.skipped.push((name.clone(), why.to_owned()));
+            continue;
+        }
         let folder = catalog::folder(paths).join(&name);
         // Skills, packs and agents ask for nothing; a list saying they do is refused.
         let more = match entry.kind {
@@ -194,6 +274,50 @@ pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateRepor
         }
     }
     Ok(report)
+}
+
+/// The folders under `skills/` an Unverified source installed, by their name there (`x`
+/// for `skills/x`), with the source's name.
+pub fn unverified_skills(paths: &Paths) -> std::collections::BTreeMap<String, String> {
+    let record = Record::load(paths).unwrap_or_default();
+    record
+        .installed
+        .iter()
+        .filter(|(name, item)| item.unverified() && record.present(paths, name).is_some())
+        .filter_map(|(_, item)| {
+            let folder = item.folder.strip_prefix("skills/")?;
+            Some((folder.to_owned(), item.source.clone()))
+        })
+        .collect()
+}
+
+/// The folder (in `unverified_skills`' terms) and the Unverified source `skill`, a name
+/// in the skill graph, came from, when one did.
+pub fn unverified_source<'a>(
+    unverified: &'a std::collections::BTreeMap<String, String>,
+    skill: &str,
+) -> Option<(&'a str, &'a str)> {
+    unverified
+        .iter()
+        .find(|(folder, _)| {
+            skill == folder.as_str()
+                || skill
+                    .strip_prefix(folder.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+        })
+        .map(|(folder, source)| (folder.as_str(), source.as_str()))
+}
+
+/// The single skills the store installed, by name: their folders are under `skills/` like
+/// the user's own, so only the record tells them apart.
+pub fn installed_skills(paths: &Paths) -> std::collections::BTreeSet<String> {
+    let record = Record::load(paths).unwrap_or_default();
+    record
+        .installed
+        .iter()
+        .filter(|(name, item)| item.kind == Kind::Skill && record.present(paths, name).is_some())
+        .map(|(name, _)| name.clone())
+        .collect()
 }
 
 /// What the store installed as `name`, when it may remove it: it installed it and its
@@ -232,7 +356,6 @@ pub async fn remove(paths: &Paths, name: &str) -> Result<()> {
 /// Downloads, checks and places `entry` from `source`; called under `BUSY`.
 async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
     let name = &entry.name;
-    let download = entry.download_here().map_err(anyhow::Error::msg)?;
     let owner = Record::load(paths)?.installed.get(name).cloned();
     if let Some(owner) = &owner {
         ensure!(
@@ -254,13 +377,13 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
             source.name
         );
     }
-    let package =
-        fetch::fetch_checked(&download.url, download.size, &download.sha256, Via::Package)
-            .await
-            .with_context(|| format!("the package of {name}"))?;
+    let (package, sha256) = fetch_package(entry).await?;
     let placed = entry.clone();
     let folder = match entry.kind {
         Kind::Plugin => {
+            let Package::Archive(package) = package else {
+                anyhow::bail!("a plugin comes only as a package");
+            };
             let root = catalog::folder(paths);
             let owned = owner.is_some();
             tokio::task::spawn_blocking(move || place(&root, &placed, &package, owned))
@@ -272,28 +395,72 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
         _ => {
             let paths = paths.clone();
             let owned = owner.map(|owner| owner.folder);
+            let unverified = source.tier == Tier::Unverified;
             tokio::task::spawn_blocking(move || {
                 crate::init::create_private_dir(&catalog::folder(&paths))?;
-                content::place(&paths, &placed, &package, owned.as_deref())
+                content::place_package(&paths, &placed, &package, owned.as_deref(), unverified)
             })
             .await
             .context("the install stopped")?
             .with_context(|| format!("cannot install {name}"))?
         }
     };
-    let mut installed = Installed::new(source, &entry.version, &download.sha256);
+    let mut installed = Installed::new(source, &entry.version, &sha256);
     installed.kind = entry.kind;
     installed.folder = folder;
+    installed.author = entry.author.clone().unwrap_or_default();
+    installed.license = entry.license.clone().unwrap_or_default();
+    installed.origin = match &entry.upstream {
+        Some(upstream) => format!(
+            "https://github.com/{}/tree/{}",
+            upstream.repo, upstream.commit
+        ),
+        None => entry.source.clone().unwrap_or_default(),
+    };
     Record::update(paths, |record| {
         record.installed.insert(name.clone(), installed);
         Ok(())
     })
 }
 
+/// The package of `entry`, or its files pinned upstream, fetched and checked, with the
+/// hash the record keeps of it.
+async fn fetch_package(entry: &Entry) -> Result<(Package, String)> {
+    let name = &entry.name;
+    Ok(match &entry.upstream {
+        Some(upstream) => {
+            let files = upstream::fetch_all(upstream)
+                .await
+                .with_context(|| format!("the files of {name}"))?;
+            (Package::Files(files), upstream.digest())
+        }
+        None => {
+            let download = entry.download_here().map_err(anyhow::Error::msg)?;
+            let bytes =
+                fetch::fetch_checked(&download.url, download.size, &download.sha256, Via::Package)
+                    .await
+                    .with_context(|| format!("the package of {name}"))?;
+            (Package::Archive(bytes), download.sha256.clone())
+        }
+    })
+}
+
+/// What an install writes: a checked package, or files checked one by one.
+pub enum Package {
+    Archive(Vec<u8>),
+    Files(std::collections::BTreeMap<String, Vec<u8>>),
+}
+
 /// Whether `entry` asks for a permission or a model provider the plugin in `folder` does
-/// not have.
+/// not have, or brings an MCP server or a program it does not.
 fn asks_more(folder: &Path, entry: &Entry) -> Result<bool> {
     let manifest = Manifest::load(folder)?;
+    let (servers, programs) = (servers(&manifest), manifest.programs());
+    if entry.mcp.iter().any(|server| !servers.contains(server))
+        || entry.programs.iter().any(|line| !programs.contains(line))
+    {
+        return Ok(true);
+    }
     let had: Vec<&str> = manifest
         .providers
         .values()
@@ -369,5 +536,73 @@ fn check_manifest(folder: &Path, entry: &Entry) -> Result<()> {
         providers == entry.providers,
         "the package brings other model providers than the list shows"
     );
+    // A list before format 3 cannot say what a plugin runs; the user was shown nothing
+    // of it, as before.
+    if entry.format >= 3 {
+        let mut listed = entry.mcp.clone();
+        listed.sort();
+        ensure!(
+            servers(&manifest) == listed,
+            "the package brings other MCP servers than the list shows"
+        );
+        ensure!(
+            manifest.programs() == entry.programs,
+            "the package runs other programs than the list shows"
+        );
+        let listed: std::collections::BTreeSet<&str> =
+            entry.skills.iter().map(String::as_str).collect();
+        let held = skill_folders(folder)?;
+        ensure!(
+            held.iter()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>()
+                == listed,
+            "the package holds other skills than the list shows"
+        );
+    }
     Ok(())
+}
+
+/// A manifest's MCP servers as a list names them, sorted by name.
+pub fn servers(manifest: &Manifest) -> Vec<index::Server> {
+    use crate::config::McpServerConfig;
+    manifest
+        .mcp
+        .iter()
+        .map(|(name, server)| match server {
+            McpServerConfig::Stdio(stdio) => index::Server {
+                name: name.clone(),
+                command: Some(stdio.command.clone()),
+                args: stdio.args.clone(),
+                url: None,
+            },
+            McpServerConfig::Http(http) => index::Server {
+                name: name.clone(),
+                command: None,
+                args: Vec::new(),
+                url: Some(http.url.clone()),
+            },
+        })
+        .collect()
+}
+
+/// The folders under a plugin's `skills/`, each a skill or a set of them.
+fn skill_folders(folder: &Path) -> Result<Vec<String>> {
+    let skills = folder.join("skills");
+    if fs::symlink_metadata(&skills).is_err() {
+        return Ok(Vec::new());
+    }
+    let mut names = Vec::new();
+    for item in fs::read_dir(&skills).context("cannot list its skills")? {
+        let item = item?;
+        if item.file_type()?.is_dir() {
+            names.push(
+                item.file_name()
+                    .to_str()
+                    .context("a skill's name is not UTF-8")?
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(names)
 }

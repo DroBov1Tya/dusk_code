@@ -3,6 +3,7 @@
 use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::{
+    catalog::SkillChange,
     client::{Request, Response, ThreadRequest},
     config::ApprovalPolicy,
     thread::{LocalUnsent, Message, Pin, Task, Thread},
@@ -34,6 +35,17 @@ impl Threads<'_> {
         self.opened(ThreadRequest::Fork { summary, cwd }).await
     }
 
+    /// A new chat holding `thread_id`'s history up to and including `message_id`.
+    pub async fn fork_at(&self, thread_id: &str, message_id: &str, cwd: PathBuf) -> Result<String> {
+        let (thread_id, message_id) = (thread_id.to_owned(), message_id.to_owned());
+        self.opened(ThreadRequest::ForkAt {
+            thread_id,
+            message_id,
+            cwd,
+        })
+        .await
+    }
+
     pub async fn list(&self) -> Result<Vec<Thread>> {
         match self.call(ThreadRequest::List).await? {
             Response::Threads(threads) => Ok(threads),
@@ -61,6 +73,15 @@ impl Threads<'_> {
         let thread_id = thread_id.to_owned();
         match self.call(ThreadRequest::Tasks { thread_id }).await? {
             Response::Tasks(tasks) => Ok(tasks),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// What the thread's agents changed in skills, oldest first.
+    pub async fn skill_changes(&self, thread_id: &str) -> Result<Vec<SkillChange>> {
+        let thread_id = thread_id.to_owned();
+        match self.call(ThreadRequest::SkillChanges { thread_id }).await? {
+            Response::SkillChanges(changes) => Ok(changes),
             other => Err(unexpected(other)),
         }
     }
@@ -100,15 +121,22 @@ impl Threads<'_> {
     }
 
     /// Runs a command the user confirmed, in the chat's folder; returns its output.
-    pub async fn run_command(&self, thread_id: &str, command: &str) -> Result<String> {
+    pub async fn run_command(&self, thread_id: &str, command: &str, run: u64) -> Result<String> {
         let request = ThreadRequest::RunCommand {
             thread_id: thread_id.to_owned(),
             command: command.to_owned(),
+            run,
         };
         match self.call(request).await? {
             Response::Text(output) => Ok(output),
             other => Err(anyhow::anyhow!("unexpected answer: {other:?}")),
         }
+    }
+
+    /// Kills a command this client started with `run_command`.
+    pub async fn stop_run(&self, thread_id: &str, run: u64) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.done(ThreadRequest::StopRun { thread_id, run }).await
     }
 
     pub async fn cancel(&self, thread_id: &str) -> Result<()> {
@@ -139,8 +167,14 @@ impl Threads<'_> {
     }
 
     /// Answers a tool's request; `false` when it no longer waits.
-    pub async fn approve(&self, id: u64, decision: Decision) -> Result<bool> {
-        match self.call(ThreadRequest::Approve { id, decision }).await? {
+    pub async fn approve(&self, thread_id: &str, id: u64, decision: Decision) -> Result<bool> {
+        let thread_id = thread_id.to_owned();
+        let request = ThreadRequest::Approve {
+            thread_id,
+            id,
+            decision,
+        };
+        match self.call(request).await? {
             Response::Waiting(waiting) => Ok(waiting),
             other => Err(unexpected(other)),
         }

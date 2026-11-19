@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::project::ChangeKind;
 /// One entry of a project folder; hidden and ignored files are left out.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEntry {
     /// Relative to the project folder, with `/` between parts.
@@ -15,6 +16,7 @@ pub struct FileEntry {
 }
 
 /// What kind of file an output is, as the artifacts page groups them.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OutputKind {
     Text,
@@ -24,6 +26,7 @@ pub enum OutputKind {
 }
 
 /// How to preview an output image without opening the original.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OutputPreview {
     #[default]
@@ -33,6 +36,7 @@ pub enum OutputPreview {
 }
 
 /// A file the agents made or keep: under the workspace, the pictures folder or a project.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutputFile {
     /// Absolute and resolved.
@@ -53,6 +57,7 @@ pub const MAX_EDIT_BYTES: u64 = 8 * 1024 * 1024;
 
 /// What a file was on disk at one moment. A client sends back the stamp it read with, so
 /// a file that something else changed meanwhile is not written over.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileStamp {
     /// Unix timestamp in milliseconds.
@@ -61,6 +66,7 @@ pub struct FileStamp {
 }
 
 /// A text file as the editor opens it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileText {
     pub text: String,

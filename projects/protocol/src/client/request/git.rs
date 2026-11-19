@@ -1,16 +1,20 @@
-//! Changing a project's repository, and its pull requests on GitHub.
+//! Changing a project's repository.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// What to do in a saved project's repository. Paths are relative to the project folder;
 /// branch names are letters, digits and `-_./`. Nothing here forces, amends or prunes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GitRequest {
-    /// A new branch from `base`, or from the current commit; the branch is not switched to.
+    /// A new branch from `base`, or from the current commit. With `switch` the work tree
+    /// moves to it, its changes carried along; git refuses when they would be lost.
     CreateBranch {
         name: String,
         base: Option<String>,
+        #[serde(default)]
+        switch: bool,
     },
     Stage {
         paths: Vec<String>,
@@ -49,15 +53,4 @@ pub enum GitRequest {
     /// The current branch to its upstream, or to `origin` as its new upstream; never
     /// forced. A client asks the user first.
     Push,
-    /// Open pull requests, through the GitHub CLI.
-    PullRequests,
-    PullRequest {
-        number: u64,
-    },
-    /// A pull request from the current branch, which must be pushed first.
-    CreatePullRequest {
-        title: String,
-        body: String,
-        base: Option<String>,
-    },
 }

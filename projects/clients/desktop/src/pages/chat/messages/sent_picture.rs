@@ -1,11 +1,12 @@
 //! The pictures a user's message carries, as thumbnails under its words. The bytes come
 //! from the core by the source's name, never from a path; a click opens one large.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::sync::Arc;
 
 use gpui_kit::{component::ActiveTheme, *};
 
-use crate::{modal::Modal, ui::Type, workspace::Workspace};
+use crate::{ui::Type, workspace::Workspace};
 
 /// A thumbnail keeps its size before its picture comes, so the list's cached row height
 /// stays right.
@@ -95,7 +96,7 @@ pub fn sent_pictures(
         return None;
     }
     let theme = cx.theme();
-    let (surface, border, muted) = (theme.muted, theme.border, theme.muted_foreground);
+    let muted = theme.muted_foreground;
     let tiles = names.into_iter().enumerate().map(|(n, name)| {
         let tile = div()
             .id(SharedString::from(format!("{key}-picture-{n}")))
@@ -104,21 +105,21 @@ pub fn sent_pictures(
             .flex_none()
             .rounded_lg()
             .overflow_hidden()
-            .bg(surface)
-            .border_1()
-            .border_color(border);
+            .elevation(Level::Raised, cx);
         match ws.sent_pictures.get(&(thread_id.to_owned(), name.clone())) {
             Some(SentPicture::Ready(image)) => {
                 let large = image.clone();
                 tile.cursor_pointer()
                     .hover(|tile| tile.opacity(0.9))
                     .active(|tile| tile.opacity(0.8))
-                    .child(img(image.clone()).size_full().object_fit(ObjectFit::Cover))
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        ws.modal = Some(Modal::Picture {
-                            image: large.clone().into(),
-                        });
-                        cx.notify();
+                    .child(
+                        img(image.clone())
+                            .size_full()
+                            .rounded_lg()
+                            .object_fit(ObjectFit::Cover),
+                    )
+                    .on_click(cx.listener(move |ws, _, window, cx| {
+                        ws.open_picture(large.clone().into(), window, cx);
                     }))
             }
             Some(SentPicture::Gone) => tile

@@ -39,7 +39,7 @@ pub fn Access(id: Option<String>, chat: ChatSignal) -> impl IntoView {
             <option value="default">"default access"</option>
             <option value="ask">"ask"</option>
             <option value="sandbox">"sandbox"</option>
-            <option value="arbiter">"arbiter"</option>
+            <option value="arbiter">"auto"</option>
             <option value="full_access">"full access"</option>
         </select>
     }

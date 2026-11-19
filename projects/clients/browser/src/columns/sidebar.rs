@@ -2,7 +2,7 @@
 
 use crate::{
     api,
-    pages::{connectors::Tab, project::ProjectDialog, settings::Page},
+    pages::{customize::Tab, project::ProjectDialog, settings::Page},
     state::{AppState, View, state},
     ui::{Icon, IconName, confirm, run},
 };
@@ -88,7 +88,7 @@ pub fn Sidebar() -> impl IntoView {
             <nav class="nav" aria-label="Workspace and account">
                 <div class="sidebar-destinations">
                     <NavButton label="Scheduled tasks" target=View::Schedules />
-                    <NavButton label="Connectors" target=View::Connectors(Tab::Agents) />
+                    <NavButton label="Customize" target=View::Customize(Tab::Agents) />
                     <NavButton label="Artifacts" target=View::Artifacts />
                     <NavButton label="Settings" target=View::Settings(Page::Appearance) />
                 </div>
@@ -163,7 +163,10 @@ fn ChatRow(thread: Thread) -> impl IntoView {
     let current = active.clone();
     let working = {
         let id = id.clone();
-        move || app.chat(&id).is_some_and(|chat| chat.with(|c| c.working))
+        move || {
+            app.chat(&id)
+                .is_some_and(|chat| chat.with(|c| c.working || c.agents_working))
+        }
     };
     let title = chat_title(&thread);
     let open_id = id.clone();

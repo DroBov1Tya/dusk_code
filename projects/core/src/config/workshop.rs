@@ -1,6 +1,7 @@
-//! The `workshop:` section: mirrors the user added beside the official store. A mirror is
-//! read only with the key written here, so a mirror that changes its key stops being
-//! read rather than asking whether to trust the new one.
+//! The `workshop:` section: mirrors the user added beside the official store. A mirror
+//! with a key is read only with the key written here, so a mirror that changes its key
+//! stops being read rather than asking whether to trust the new one. A mirror without a
+//! key is read unsigned and is Unverified: the store takes only pinned skills from it.
 
 use anyhow::{Result, ensure};
 use base64::Engine;
@@ -21,8 +22,8 @@ pub struct Workshop {
     pub sources: Vec<Mirror>,
 }
 
-/// A signed list other than the official one: in `config.yml`, or named by the official
-/// list as verified.
+/// A list other than the official one: in `config.yml`, or named by the official list as
+/// verified, which always names a key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Mirror {
@@ -30,7 +31,9 @@ pub struct Mirror {
     pub name: String,
     /// The `https` address of its `index.json`.
     pub url: String,
-    /// Base64 of its Ed25519 public key; a list it does not sign is refused.
+    /// Base64 of its Ed25519 public key; a list it does not sign is refused. Empty, or
+    /// left out, for an Unverified source whose list nobody signs.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub key: String,
 }
 
@@ -59,6 +62,21 @@ impl Workshop {
 }
 
 impl Mirror {
+    /// No key: its list is read unsigned and everything it offers is Unverified.
+    pub fn is_keyless(&self) -> bool {
+        self.key.is_empty()
+    }
+
+    /// As `check`, and it must have a key: what the official list vouches for is signed.
+    pub fn check_signed(&self) -> Result<()> {
+        ensure!(
+            !self.is_keyless(),
+            "workshop source {} has no key",
+            self.name
+        );
+        self.check()
+    }
+
     pub fn check(&self) -> Result<()> {
         ensure!(
             is_word(&self.name, MAX_NAME)
@@ -82,7 +100,7 @@ impl Mirror {
         );
         let key = base64::engine::general_purpose::STANDARD.decode(&self.key);
         ensure!(
-            key.is_ok_and(|key| key.len() == 32),
+            self.is_keyless() || key.is_ok_and(|key| key.len() == 32),
             "workshop source {} needs the base64 of a 32-byte Ed25519 key",
             self.name
         );

@@ -10,13 +10,14 @@ mod tests;
 
 use super::sections::{
     MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS,
-    MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE, MAX_TEAM_MAX_MINUTES, MAX_TEAM_MAX_STEPS,
-    MAX_TEAM_MAX_TOKENS, MIN_COMPACT_TAIL_TOKENS, MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS,
-    MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS, MIN_TEAM_AT_ONCE, MIN_TEAM_MAX_MINUTES,
+    MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE, MAX_TEAM_GATE_SECONDS, MAX_TEAM_MAX_GATE_RUNS,
+    MAX_TEAM_MAX_MINUTES, MAX_TEAM_MAX_STEPS, MAX_TEAM_MAX_TOKENS, MIN_COMPACT_TAIL_TOKENS,
+    MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS,
+    MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS, MIN_TEAM_MAX_MINUTES,
     MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, is_zero, yes,
 };
 use super::{
-    Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
+    Appearance, ApprovalPolicy, Arbiter, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
     MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
     MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, McpServerConfig, Memory, Plugged,
     PluginConfig, ProviderConfig, Team, ThreadConfig, VersionControl, WorkHistory, Workshop,
@@ -65,6 +66,9 @@ pub struct Config {
     /// Version control settings; clients show this section as "Version control".
     #[serde(default, skip_serializing_if = "VersionControl::is_default")]
     version_control: VersionControl,
+    /// How auto mode's arbiter judges.
+    #[serde(default, skip_serializing_if = "Arbiter::is_default")]
+    arbiter: Arbiter,
     #[serde(default, skip_serializing_if = "Appearance::is_default")]
     appearance: Appearance,
     /// Tools switched on or off by name; a tool not listed is on.
@@ -132,6 +136,13 @@ pub struct Config {
     /// The model a team's members answer on, and one per role.
     #[serde(default, skip_serializing_if = "Team::is_default")]
     team: Team,
+    /// Whether a plugin that provides a contract is asked, such as for a forge's pull
+    /// requests. Off, `provides` is shown and no contract program starts.
+    #[serde(default, skip_serializing_if = "super::sections::is_false")]
+    plugin_contracts: bool,
+    /// The plugin the user chose for a host of a contract.
+    #[serde(default, skip_serializing_if = "super::Contracts::is_default")]
+    contracts: super::Contracts,
     /// What the plugins that are on add; never saved.
     #[serde(skip)]
     plugged: Plugged,
@@ -260,6 +271,7 @@ impl Config {
 
     pub(super) fn validate(&self) -> Result<()> {
         self.workshop.validate()?;
+        self.arbiter.validate().map_err(|error| anyhow!(error))?;
         for endpoint in [&self.voice.stt, &self.voice.tts].into_iter().flatten() {
             crate::voice::check_endpoint(endpoint)?;
         }
@@ -352,6 +364,16 @@ impl Config {
             (MIN_TEAM_MAX_MINUTES..=MAX_TEAM_MAX_MINUTES).contains(&limits.team_max_minutes),
             "limits.team_max_minutes must be between {MIN_TEAM_MAX_MINUTES} and \
              {MAX_TEAM_MAX_MINUTES}"
+        );
+        ensure!(
+            (MIN_TEAM_GATE_SECONDS..=MAX_TEAM_GATE_SECONDS).contains(&limits.team_gate_seconds),
+            "limits.team_gate_seconds must be between {MIN_TEAM_GATE_SECONDS} and \
+             {MAX_TEAM_GATE_SECONDS}"
+        );
+        ensure!(
+            (MIN_TEAM_MAX_GATE_RUNS..=MAX_TEAM_MAX_GATE_RUNS).contains(&limits.team_max_gate_runs),
+            "limits.team_max_gate_runs must be between {MIN_TEAM_MAX_GATE_RUNS} and \
+             {MAX_TEAM_MAX_GATE_RUNS}"
         );
         self.team.validate()?;
         ensure!(

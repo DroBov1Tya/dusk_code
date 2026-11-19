@@ -1,10 +1,10 @@
 //! The controls around the message box: the access inside it, the mode and the model
-//! under it, and how full the context is beside it. Each picker opens upward from its
-//! own control.
+//! under it. Each picker opens upward from its own control.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::{
-    client::{Answer, CHATGPT_USAGE_URL, Command},
+    client::{Answer, Command},
     model::{Effort, ProviderStatus},
 };
 use gpui_kit::{
@@ -62,202 +62,6 @@ pub fn mode(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .children(menu)
 }
 
-/// The ChatGPT plan's reported windows, apart from the model's context meter.
-pub fn quota(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
-    if !ws.status.chatgpt_model {
-        return None;
-    }
-    let windows = ws
-        .status
-        .limits
-        .as_ref()
-        .map_or(&[][..], |limits| limits.plan.as_slice());
-    let usage = Button::new("chatgpt-plan-usage")
-        .small()
-        .ghost()
-        .label("Using ChatGPT plan")
-        .icon(IconName::ExternalLink)
-        .tooltip("Open ChatGPT usage settings")
-        .on_click(cx.listener(|_, _, _, cx| cx.open_url(CHATGPT_USAGE_URL)));
-    let row = div()
-        .pb_1()
-        .flex()
-        .items_center()
-        .flex_wrap()
-        .gap_x_2()
-        .child(usage);
-    let muted = cx.theme().muted_foreground;
-    if windows.is_empty() {
-        return Some(row.child(div().meta().text_color(muted).child("Usage unavailable")));
-    }
-    Some(
-        row.children(windows.iter().enumerate().map(|(index, window)| {
-            let label = plan_window(window.minutes);
-            let text = SharedString::from(format!("{label} {}% used", window.used_percent));
-            let tip = match window.resets_in {
-                Some(seconds) => {
-                    let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
-                    SharedString::from(format!(
-                        "{text}, resets in {}",
-                        dusk_protocol::thread::duration_words(ms)
-                    ))
-                }
-                None => SharedString::from(format!("{text}, last reported by ChatGPT")),
-            };
-            div()
-                .id(("chatgpt-plan-window", index))
-                .flex_none()
-                .meta()
-                .text_color(muted)
-                .child(text)
-                .tooltip(move |window, cx| {
-                    gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
-                })
-        })),
-    )
-}
-
-fn plan_window(minutes: Option<u64>) -> String {
-    match minutes {
-        Some(10_080) => "Weekly".into(),
-        Some(minutes) if minutes.is_multiple_of(1440) => format!("{}d", minutes / 1440),
-        Some(minutes) if minutes.is_multiple_of(60) => format!("{}h", minutes / 60),
-        Some(minutes) => format!("{minutes}m"),
-        None => "Unknown period".into(),
-    }
-}
-
-/// How full the context is: a ring with the share beside it; the counts and the cost
-/// on hover.
-/// How much of its rate limits the current model's account has used, from what the
-/// provider last reported: the tightest of its windows, as a ring like the context's.
-pub fn limits(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
-    if ws.status.chatgpt_model {
-        return None;
-    }
-    let limits = ws.status.limits.as_ref()?;
-    let used = limits.used()?;
-    let theme = cx.theme();
-    let (muted, accent, warning, danger, border) = (
-        theme.muted_foreground,
-        theme.primary,
-        theme.warning,
-        theme.danger,
-        theme.border,
-    );
-    let meter = if used > 0.9 {
-        danger
-    } else if used > 0.7 {
-        warning
-    } else {
-        accent
-    };
-    let tip = SharedString::from(format!("Rate limits: {}", limits.text()));
-    Some(
-        div()
-            .id("limits-ring")
-            .relative()
-            .size(px(super::composer::SIDE_MARK))
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(div().absolute().inset_0().child(super::ring::render(
-                super::composer::SIDE_MARK,
-                used,
-                meter,
-                border,
-            )))
-            .child(
-                div()
-                    .text_size(px(9.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(muted)
-                    .child(format!("{:.0}", used * 100.)),
-            )
-            .tooltip(move |window, cx| {
-                gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
-            }),
-    )
-}
-
-pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
-    let theme = cx.theme();
-    let (muted, accent, warning, danger, border) = (
-        theme.muted_foreground,
-        theme.primary,
-        theme.warning,
-        theme.danger,
-        theme.border,
-    );
-    let (used, limit) = ws
-        .shown_chat()
-        .and_then(|chat| chat.tokens)
-        .unwrap_or((0, ws.status.input_limit));
-    let share = if limit == 0 {
-        0.
-    } else {
-        (used as f32 / limit as f32).min(1.)
-    };
-    let meter = if share > 0.9 {
-        danger
-    } else if share > 0.7 {
-        warning
-    } else {
-        accent
-    };
-    let mut tip = format!(
-        "{} of {} tokens",
-        widgets::short(used),
-        widgets::short(limit)
-    );
-    if let Some(cost) = ws.shown_chat().and_then(|chat| chat.cost.clone()) {
-        tip.push_str(&format!(" \u{00B7} {cost}"));
-    }
-    let tip = SharedString::from(tip);
-    // The share in the ring's middle, the same 32 px as the buttons across the box.
-    div()
-        .id("context-ring")
-        .relative()
-        .size(px(super::composer::SIDE_MARK))
-        .flex()
-        .items_center()
-        .justify_center()
-        // Nearly full, the ring breathes: time to compact, said before the limit says it.
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .child(super::ring::render(
-                    super::composer::SIDE_MARK,
-                    share,
-                    meter,
-                    border,
-                ))
-                .with_animation(
-                    if share > 0.85 {
-                        "context-breath"
-                    } else {
-                        "context-still"
-                    },
-                    Animation::new(std::time::Duration::from_millis(2600)).repeat(),
-                    move |ring, phase| {
-                        let breath = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-                        ring.opacity(if share > 0.85 { 0.5 + breath * 0.5 } else { 1. })
-                    },
-                ),
-        )
-        .child(
-            div()
-                .text_size(px(9.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(muted)
-                .child(format!("{:.0}", share * 100.)),
-        )
-        .tooltip(move |window, cx| {
-            gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
-        })
-}
-
 /// The Models button at the right of the composer's row: one click opens the models and
 /// the effort, upward from the button.
 pub fn models(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Div {
@@ -300,10 +104,7 @@ pub(super) fn picker_panel(cx: &App) -> Div {
         .flex_col()
         .gap_0p5()
         .rounded_xl()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .body()
 }
 
@@ -393,6 +194,7 @@ impl Workspace {
                     balance: None,
                     limits: None,
                     enabled: true,
+                    failure: None,
                 })
             })
             .collect();

@@ -3,8 +3,9 @@
 use std::collections::BTreeSet;
 
 use dusk_protocol::{
-    client::{CatalogRequest, ProjectRequest, Request, SettingsRequest},
+    client::{CatalogRequest, ProjectRequest, Request, SettingsRequest, ThreadRequest},
     plugin::StoreRequest,
+    tools::Decision,
 };
 
 use super::{
@@ -26,8 +27,12 @@ fn bridge_refused(request: &Request) -> bool {
             | Request::Plugin(_)
             | Request::Store(
                 StoreRequest::Install { .. }
+                    | StoreRequest::Review { .. }
                     | StoreRequest::Remove { .. }
                     | StoreRequest::UpdateAll
+                    | StoreRequest::Probe { .. }
+                    | StoreRequest::AddSource { .. }
+                    | StoreRequest::RemoveSource { .. }
             )
             | Request::Settings(SettingsRequest::PluginEnabled { enabled: true, .. })
             | Request::Project(ProjectRequest::WriteFile { .. })
@@ -80,6 +85,7 @@ fn every_area() -> &'static [Area] {
         Area::ThreadCreate,
         Area::ThreadDelete,
         Area::ThreadCommand,
+        Area::ThreadApprove,
         Area::ThreadApprovals,
         Area::Settings,
         Area::PluginEnable,
@@ -104,6 +110,7 @@ fn every_area() -> &'static [Area] {
             | Area::ThreadCreate
             | Area::ThreadDelete
             | Area::ThreadCommand
+            | Area::ThreadApprove
             | Area::ThreadApprovals
             | Area::Settings
             | Area::PluginEnable
@@ -162,6 +169,22 @@ fn a_scope_bound_to_threads_reaches_nothing_but_threads() {
 /// The whole of what a scope for reading and driving shared chats may send. A new request
 /// that lands in these areas fails here until it is added on purpose.
 #[test]
+fn a_thread_bound_scope_without_thread_approve_cannot_answer() {
+    let approve = |thread_id: &str| {
+        Request::Thread(ThreadRequest::Approve {
+            thread_id: thread_id.into(),
+            id: 1,
+            decision: Decision::Once,
+        })
+    };
+    let scope = Scope::threads(["a".to_owned()], &[Area::ThreadRead, Area::ThreadWrite]);
+    assert!(!scope.permits(&approve("a")));
+    let scope = Scope::threads(["a".to_owned()], &[Area::ThreadApprove]);
+    assert!(scope.permits(&approve("a")));
+    assert!(scope.covers("a") && !scope.covers("b"));
+}
+
+#[test]
 fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
     let scope = Scope::threads([THREAD.to_owned()], &[Area::ThreadRead, Area::ThreadWrite]);
     let expected = [
@@ -183,8 +206,10 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.resume",
         "thread.search",
         "thread.send",
+        "thread.skill_changes",
         "thread.stop_agent",
         "thread.tasks",
+        "work.card",
         "work.changed_files",
         "work.confirm_task",
         "work.events",
@@ -249,8 +274,12 @@ fn a_browser_is_refused_this_list_and_no_more() {
         "project.write_file",
         "settings.plugin_enabled.on",
         "shutdown",
+        "store.add_source",
         "store.install",
+        "store.probe",
         "store.remove",
+        "store.remove_source",
+        "store.review",
         "store.update_all",
         "terminal.close",
         "terminal.input",
@@ -259,4 +288,22 @@ fn a_browser_is_refused_this_list_and_no_more() {
     ];
     assert_eq!(refused, BTreeSet::from(expected));
     assert_eq!(allowed.len(), NAMES.len() - expected.len());
+}
+
+#[test]
+fn skill_diff_and_undo_need_catalog_and_no_thread_bound_scope() {
+    use dusk_protocol::client::ThreadRequest;
+    let diff = Request::Catalog(CatalogRequest::SkillDiff { id: 1 });
+    let undo = Request::Catalog(CatalogRequest::UndoSkillChange { id: 1 });
+    for request in [&diff, &undo] {
+        assert_eq!(classify(request).area, Area::Catalog);
+        assert!(!Scope::threads([THREAD.to_owned()], every_area()).permits(request));
+        assert!(!Scope::threads([], &[Area::ThreadRead, Area::ThreadWrite]).permits(request));
+    }
+    let listed = Request::Thread(ThreadRequest::SkillChanges {
+        thread_id: THREAD.to_owned(),
+    });
+    assert!(Scope::threads([THREAD.to_owned()], &[Area::ThreadRead]).permits(&listed));
+    let scope = Scope::threads([THREAD.to_owned()], &[Area::ThreadRead]);
+    assert!(scope.covers(THREAD) && !scope.covers("thread-b"));
 }

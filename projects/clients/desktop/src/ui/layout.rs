@@ -15,7 +15,8 @@ pub enum Part {
     Chats,
     Schedules,
     Artifacts,
-    Connectors,
+    #[serde(alias = "connectors")]
+    Customize,
     Terminal,
     /// A new chat that is kept in memory only.
     Temporary,
@@ -41,6 +42,7 @@ pub enum Part {
     Model,
     History,
     Agents,
+    /// How full the context is: the ring beside the box.
     Context,
 }
 
@@ -88,7 +90,7 @@ impl Default for Layout {
         use Part::*;
         Self {
             rail: vec![
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Plugins, Spacer,
+                NewChat, Search, Divider, Chats, Schedules, Customize, Artifacts, Plugins, Spacer,
                 Temporary, Terminal, Quiet, Settings,
             ],
             header: vec![Review, Search, More, Plugins, SidePanel],
@@ -110,19 +112,19 @@ impl Layout {
         use Part::*;
         let before: [&[Part]; 4] = [
             &[
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
+                NewChat, Search, Divider, Chats, Schedules, Customize, Artifacts, Spacer,
                 Temporary, Terminal, Quiet, Settings,
             ],
             &[
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
-                Terminal, Quiet, Settings,
+                NewChat, Search, Divider, Chats, Schedules, Customize, Artifacts, Spacer, Terminal,
+                Quiet, Settings,
             ],
             &[
-                NewChat, Search, Divider, Chats, Schedules, Artifacts, Connectors, Spacer, Quiet,
+                NewChat, Search, Divider, Chats, Schedules, Artifacts, Customize, Spacer, Quiet,
                 Settings,
             ],
             &[
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer, Quiet,
+                NewChat, Search, Divider, Chats, Schedules, Customize, Artifacts, Spacer, Quiet,
                 Settings,
             ],
         ];
@@ -136,6 +138,11 @@ impl Layout {
         }
         if self.side_left == [History] {
             self.side_left = Self::default().side_left;
+        }
+        // For a while the context ring stood in the panel over the box and the side kept
+        // the subagents alone; a file kept then takes the ring back.
+        if self.side_right == [Agents] {
+            self.side_right = Self::default().side_right;
         }
         self
     }
@@ -164,6 +171,16 @@ mod tests {
     }
 
     #[test]
+    fn the_context_ring_stands_beside_the_box_whichever_file_was_kept() {
+        let with: Layout =
+            serde_json::from_str(r#"{ "side_right": ["agents", "context"] }"#).unwrap();
+        let without: Layout = serde_json::from_str(r#"{ "side_right": ["agents"] }"#).unwrap();
+        for kept in [with, without] {
+            assert_eq!(kept.refreshed().side_right, [Part::Agents, Part::Context]);
+        }
+    }
+
+    #[test]
     fn a_header_shipped_before_takes_the_plugins_button() {
         let old: Layout = serde_json::from_str(
             r#"{ "header": ["review", "search", "more", "simulator", "side_panel"],
@@ -178,5 +195,20 @@ mod tests {
             ..Layout::default()
         };
         assert_eq!(own.refreshed().header, vec![Part::Search]);
+    }
+
+    #[test]
+    fn a_rail_kept_with_connectors_opens_customize() {
+        let kept: Layout =
+            serde_json::from_str(r#"{ "rail": ["chats", "connectors", "settings"] }"#).unwrap();
+        assert_eq!(kept.rail, [Part::Chats, Part::Customize, Part::Settings]);
+        let written = serde_json::to_string(&kept).unwrap();
+        assert!(written.contains(r#""customize""#), "{written}");
+        let shipped: Layout = serde_json::from_str(
+            r#"{ "rail": ["new_chat", "search", "divider", "chats", "schedules", "connectors",
+                          "artifacts", "spacer", "quiet", "settings"] }"#,
+        )
+        .unwrap();
+        assert_eq!(shipped.refreshed().rail, Layout::default().rail);
     }
 }
