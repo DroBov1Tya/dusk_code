@@ -40,6 +40,9 @@ mod source;
 #[cfg(test)]
 mod tests;
 mod unpack;
+mod upstream;
+#[cfg(test)]
+mod upstream_tests;
 #[cfg(test)]
 mod workshop_dist_tests;
 #[cfg(test)]
@@ -271,7 +274,6 @@ pub async fn remove(paths: &Paths, name: &str) -> Result<()> {
 /// Downloads, checks and places `entry` from `source`; called under `BUSY`.
 async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
     let name = &entry.name;
-    let download = entry.download_here().map_err(anyhow::Error::msg)?;
     let owner = Record::load(paths)?.installed.get(name).cloned();
     if let Some(owner) = &owner {
         ensure!(
@@ -293,13 +295,28 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
             source.name
         );
     }
-    let package =
-        fetch::fetch_checked(&download.url, download.size, &download.sha256, Via::Package)
-            .await
-            .with_context(|| format!("the package of {name}"))?;
+    let (package, sha256) = match &entry.upstream {
+        Some(upstream) => {
+            let files = upstream::fetch_all(upstream)
+                .await
+                .with_context(|| format!("the files of {name}"))?;
+            (Package::Files(files), upstream.digest())
+        }
+        None => {
+            let download = entry.download_here().map_err(anyhow::Error::msg)?;
+            let bytes =
+                fetch::fetch_checked(&download.url, download.size, &download.sha256, Via::Package)
+                    .await
+                    .with_context(|| format!("the package of {name}"))?;
+            (Package::Archive(bytes), download.sha256.clone())
+        }
+    };
     let placed = entry.clone();
     let folder = match entry.kind {
         Kind::Plugin => {
+            let Package::Archive(package) = package else {
+                anyhow::bail!("a plugin comes only as a package");
+            };
             let root = catalog::folder(paths);
             let owned = owner.is_some();
             tokio::task::spawn_blocking(move || place(&root, &placed, &package, owned))
@@ -313,20 +330,35 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
             let owned = owner.map(|owner| owner.folder);
             tokio::task::spawn_blocking(move || {
                 crate::init::create_private_dir(&catalog::folder(&paths))?;
-                content::place(&paths, &placed, &package, owned.as_deref())
+                content::place_package(&paths, &placed, &package, owned.as_deref())
             })
             .await
             .context("the install stopped")?
             .with_context(|| format!("cannot install {name}"))?
         }
     };
-    let mut installed = Installed::new(source, &entry.version, &download.sha256);
+    let mut installed = Installed::new(source, &entry.version, &sha256);
     installed.kind = entry.kind;
     installed.folder = folder;
+    installed.author = entry.author.clone().unwrap_or_default();
+    installed.license = entry.license.clone().unwrap_or_default();
+    installed.origin = match &entry.upstream {
+        Some(upstream) => format!(
+            "https://github.com/{}/tree/{}",
+            upstream.repo, upstream.commit
+        ),
+        None => entry.source.clone().unwrap_or_default(),
+    };
     Record::update(paths, |record| {
         record.installed.insert(name.clone(), installed);
         Ok(())
     })
+}
+
+/// What an install writes: a checked package, or files checked one by one.
+pub enum Package {
+    Archive(Vec<u8>),
+    Files(std::collections::BTreeMap<String, Vec<u8>>),
 }
 
 /// Whether `entry` asks for a permission or a model provider the plugin in `folder` does

@@ -99,6 +99,8 @@ pub struct Entry {
     /// there itself, outside the plugin's sandbox, so the user is told.
     #[serde(default)]
     pub providers: Vec<String>,
+    /// Empty only when `upstream` names the files instead.
+    #[serde(default)]
     pub downloads: Vec<Download>,
     #[serde(default)]
     pub category: String,
@@ -138,6 +140,9 @@ pub struct Entry {
     /// hooks), sorted.
     #[serde(default)]
     pub programs: Vec<String>,
+    /// Format 3, a skill or pack: its files at a pinned commit of the author's
+    /// repository, instead of `downloads`.
+    pub upstream: Option<super::upstream::Upstream>,
     /// The list's format, which says what its manifest is checked against.
     #[serde(skip)]
     pub format: u32,
@@ -326,6 +331,16 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
             entry.is_format_2(),
             "fields of format 3 in a format {format} list"
         );
+    }
+    match &entry.upstream {
+        Some(upstream) => {
+            ensure!(
+                matches!(entry.kind, Kind::Skill | Kind::Pack) && entry.downloads.is_empty(),
+                "only a skill or a pack comes from upstream, and then without packages"
+            );
+            upstream.check()?;
+        }
+        None => ensure!(!entry.downloads.is_empty(), "no package"),
     }
     if let Some(page) = &entry.homepage {
         ensure!(page.starts_with("https://"), "the homepage is not https");
@@ -638,6 +653,7 @@ impl Entry {
     /// Nothing format 3 added is set.
     fn is_format_2(&self) -> bool {
         self.mcp.is_empty()
+            && self.upstream.is_none()
             && self.programs.is_empty()
             && (self.kind != Kind::Plugin || self.skills.is_empty())
             && self.author.is_none()

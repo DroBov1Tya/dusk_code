@@ -106,6 +106,10 @@ pub struct Listing {
     /// is on.
     #[serde(default)]
     pub programs: Vec<String>,
+    /// For a skill or pack fetched from its author's repository instead of a package:
+    /// `github.com/owner/name at abc1234`.
+    #[serde(default)]
+    pub upstream: Option<String>,
 }
 
 impl Listing {
