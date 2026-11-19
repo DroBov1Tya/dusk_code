@@ -34,6 +34,17 @@ impl Threads<'_> {
         self.opened(ThreadRequest::Fork { summary, cwd }).await
     }
 
+    /// A new chat holding `thread_id`'s history up to and including `message_id`.
+    pub async fn fork_at(&self, thread_id: &str, message_id: &str, cwd: PathBuf) -> Result<String> {
+        let (thread_id, message_id) = (thread_id.to_owned(), message_id.to_owned());
+        self.opened(ThreadRequest::ForkAt {
+            thread_id,
+            message_id,
+            cwd,
+        })
+        .await
+    }
+
     pub async fn list(&self) -> Result<Vec<Thread>> {
         match self.call(ThreadRequest::List).await? {
             Response::Threads(threads) => Ok(threads),

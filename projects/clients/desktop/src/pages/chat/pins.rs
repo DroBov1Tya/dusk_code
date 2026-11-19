@@ -354,3 +354,23 @@ pub fn button(
             ),
     )
 }
+
+/// The fork button of item `at`: a new chat from the history up to it. None while its
+/// stored message is not known yet.
+pub fn fork_button(
+    ws: &Workspace,
+    shown: &str,
+    at: usize,
+    cx: &mut Context<Workspace>,
+) -> Option<Button> {
+    let message_id = ws.chats.get(shown)?.message_ids.get(&at)?.clone();
+    let thread_id = shown.to_owned();
+    Some(
+        Button::new(SharedString::from(format!("fork-{shown}-{at}")))
+            .ghost()
+            .small()
+            .icon(Icon::default().path(icons::GIT_FORK))
+            .tooltip("Fork from here")
+            .on_click(cx.listener(move |ws, _, _, cx| ws.fork_at(&thread_id, &message_id, cx))),
+    )
+}

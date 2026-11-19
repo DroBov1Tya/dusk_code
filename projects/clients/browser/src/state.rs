@@ -460,6 +460,32 @@ impl AppState {
         });
     }
 
+    /// A new chat from `from`'s history up to and including `message_id`, shown once made.
+    pub fn fork_at(self, from: String, message_id: String) {
+        let navigation = self.navigation.get_untracked();
+        spawn_local(async move {
+            let cwd = self.cwd_of(&from);
+            let made = async {
+                let thread_id = api::fork_at(&from, &message_id, cwd).await?;
+                let history = api::messages(&thread_id).await?;
+                api::Res::Ok((thread_id, history))
+            };
+            match made.await {
+                Ok((thread_id, history)) => {
+                    let data = ChatData::from_history(&history);
+                    self.chats.update(|chats| {
+                        chats.insert(thread_id.clone(), RwSignal::new(data));
+                    });
+                    if self.navigation.get_untracked() == navigation {
+                        self.show(View::Chat(Some(thread_id)));
+                    }
+                    self.refresh();
+                }
+                Err(error) => self.fail(error),
+            }
+        });
+    }
+
     /// Stops using a chat on this page; the core closes it when no client keeps it.
     pub fn close_chat(self, thread_id: String) {
         spawn_local(async move {

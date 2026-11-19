@@ -55,10 +55,15 @@ const PIN_SVG: &[u8] = lucide!(
 /// extended with (agents, skills, MCP servers, plugins).
 pub const GIT_BRANCH: &str = "icons/dusk/git-branch.svg";
 pub const GIT_COMPARE: &str = "icons/dusk/git-compare.svg";
+/// A new chat from one message of another.
+pub const GIT_FORK: &str = "icons/dusk/git-fork.svg";
 pub const BLOCKS: &str = "icons/dusk/blocks.svg";
 
 const GIT_BRANCH_SVG: &[u8] = lucide!(
     r#"<path d="M15 6a9 9 0 0 0-9 9V3" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" />"#
+);
+const GIT_FORK_SVG: &[u8] = lucide!(
+    r#"<circle cx="12" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" /><path d="M12 12v3" />"#
 );
 const GIT_COMPARE_SVG: &[u8] = lucide!(
     r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><path d="M11 18H8a2 2 0 0 1-2-2V9" />"#
@@ -204,6 +209,7 @@ impl AssetSource for Assets {
             POWER => return Ok(Some(Cow::Borrowed(POWER_SVG))),
             PUZZLE => return Ok(Some(Cow::Borrowed(PUZZLE_SVG))),
             GIT_BRANCH => return Ok(Some(Cow::Borrowed(GIT_BRANCH_SVG))),
+            GIT_FORK => return Ok(Some(Cow::Borrowed(GIT_FORK_SVG))),
             GIT_COMPARE => return Ok(Some(Cow::Borrowed(GIT_COMPARE_SVG))),
             GIT_PULL => return Ok(Some(Cow::Borrowed(GIT_PULL_SVG))),
             CHECK_QUEUED => return Ok(Some(Cow::Borrowed(CHECK_QUEUED_SVG))),

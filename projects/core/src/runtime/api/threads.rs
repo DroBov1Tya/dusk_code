@@ -3,7 +3,7 @@
 use crate::runtime::agent::Input;
 use crate::runtime::{Runtime, ThreadHandle};
 use crate::{
-    runtime::thread::start::{FORK_INTRO, project_dir, start_thread},
+    runtime::thread::start::{FORK_INTRO, project_dir, start_fork, start_thread},
     state::{LocalUnsent, Message, State, Task, Thread},
 };
 use anyhow::{Result, ensure};
@@ -166,6 +166,29 @@ impl Runtime {
             .add_system_message(&thread.thread_id, &summary)
             .await?;
         info!("thread {} forked", thread.thread_id);
+        self.launcher
+            .run_thread(thread.thread_id, &thread.workspace, cwd)
+            .await
+    }
+
+    /// A new chat that holds `from`'s history up to and including `message_id`, and the
+    /// task that runs it. Nothing running in `from` comes along.
+    pub async fn fork_thread_at(
+        &self,
+        source: &str,
+        from: &str,
+        message_id: &str,
+        cwd: &Path,
+    ) -> Result<ThreadHandle> {
+        let thread = start_fork(
+            &self.launcher.state,
+            &self.launcher.paths,
+            source,
+            from,
+            message_id,
+        )
+        .await?;
+        info!("thread {} forked from {from}", thread.thread_id);
         self.launcher
             .run_thread(thread.thread_id, &thread.workspace, cwd)
             .await

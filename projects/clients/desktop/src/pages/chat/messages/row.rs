@@ -92,6 +92,8 @@ impl Workspace {
                         );
                         tools =
                             tools.children(crate::pages::chat::pins::button(self, &shown, at, cx));
+                        tools = tools
+                            .children(crate::pages::chat::pins::fork_button(self, &shown, at, cx));
                         // The core refuses to go back inside a turn, so the button waits.
                         if let (Some(sequence), false) = (*sequence, chat.working) {
                             let (thread_id, text) = (shown.clone(), text.clone());
@@ -229,6 +231,9 @@ impl Workspace {
                                             })),
                                     )
                                     .children(crate::pages::chat::pins::button(
+                                        self, &shown, at, cx,
+                                    ))
+                                    .children(crate::pages::chat::pins::fork_button(
                                         self, &shown, at, cx,
                                     )),
                             );

@@ -35,6 +35,15 @@ pub async fn fork(summary: String, cwd: String) -> Res<String> {
     ask!(thread(ThreadRequest::Fork { summary, cwd }), Response::Opened { thread_id } => thread_id)
 }
 
+/// A new chat holding `thread_id`'s history up to and including `message_id`.
+pub async fn fork_at(thread_id: &str, message_id: &str, cwd: String) -> Res<String> {
+    let (thread_id, message_id, cwd) = (thread_id.to_owned(), message_id.to_owned(), cwd.into());
+    ask!(
+        thread(ThreadRequest::ForkAt { thread_id, message_id, cwd }),
+        Response::Opened { thread_id } => thread_id
+    )
+}
+
 pub async fn messages(thread_id: &str) -> Res<Vec<Message>> {
     let thread_id = thread_id.to_owned();
     ask!(thread(ThreadRequest::Messages { thread_id }), Response::Messages(m) => m)

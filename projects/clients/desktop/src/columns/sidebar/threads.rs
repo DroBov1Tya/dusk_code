@@ -331,6 +331,36 @@ impl Workspace {
         );
     }
 
+    /// A new chat that holds `thread_id`'s history up to and including `message_id`,
+    /// shown once the core has made it.
+    pub fn fork_at(&mut self, thread_id: &str, message_id: &str, cx: &mut Context<Self>) {
+        let cwd = self
+            .threads
+            .iter()
+            .find(|thread| thread.id == thread_id)
+            .and_then(|thread| thread.project.clone())
+            .map_or_else(|| self.home.clone(), PathBuf::from);
+        let (from, message_id) = (thread_id.to_owned(), message_id.to_owned());
+        self.core.call(
+            cx,
+            move |client| async move {
+                let threads = client.threads();
+                let thread_id = threads.fork_at(&from, &message_id, cwd).await?;
+                let history = threads.messages(&thread_id).await?;
+                anyhow::Ok((thread_id, history))
+            },
+            |ws, result, cx| match result {
+                Ok((thread_id, history)) => {
+                    ws.chats
+                        .insert(thread_id.clone(), Transcript::from_history(&history));
+                    ws.reload_threads(cx);
+                    ws.show(thread_id, cx);
+                }
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+
     pub fn show(&mut self, thread_id: String, cx: &mut Context<Self>) {
         self.history.moved();
         self.shown = Some(thread_id);

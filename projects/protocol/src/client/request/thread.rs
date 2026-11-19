@@ -26,6 +26,13 @@ pub enum ThreadRequest {
         summary: String,
         cwd: PathBuf,
     },
+    /// A new thread that holds another's history up to and including one message; from
+    /// the latest compaction before it when there is one.
+    ForkAt {
+        thread_id: String,
+        message_id: String,
+        cwd: PathBuf,
+    },
     List,
     /// Searches what was said in every chat; at least three characters.
     Search {

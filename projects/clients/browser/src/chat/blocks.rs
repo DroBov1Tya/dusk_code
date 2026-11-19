@@ -202,7 +202,10 @@ fn item_view(entry: Entry, chat: Chat, thread: Option<String>, read_only: bool) 
     let id = entry.id;
     match entry.item {
         Item::User(text) => view! {
-            <div class="msg user"><div class="bubble">{user_text(&text)}</div></div>
+            <div class="msg user">
+                <div class="bubble">{user_text(&text)}</div>
+                <div class="msg-actions">{fork_button(id, chat, thread.clone())}</div>
+            </div>
         }
         .into_any(),
         Item::Answered(answers) => view! {
@@ -234,7 +237,10 @@ fn item_view(entry: Entry, chat: Chat, thread: Option<String>, read_only: bool) 
             </div>
         }
         .into_any(),
-        Item::Assistant { text, reasoning } => assistant_view(text, reasoning).into_any(),
+        Item::Assistant { text, reasoning } => {
+            let fork = fork_button(id, chat, thread.clone());
+            assistant_view(text, reasoning, fork).into_any()
+        }
         Item::Tool(_) => ().into_any(),
         Item::Block(block) => view! { <ShownBlock block id chat thread read_only /> }.into_any(),
         Item::Image(shown) => view! { <ImageCard shown /> }.into_any(),
@@ -257,7 +263,20 @@ fn user_text(text: &str) -> String {
         .collect()
 }
 
-fn assistant_view(text: String, reasoning: String) -> impl IntoView {
+/// A new chat from the history up to this entry; none while its stored message is not
+/// known yet, as an answer still being written.
+fn fork_button(id: u64, chat: Chat, thread: Option<String>) -> Option<impl IntoView> {
+    let message_id = chat.with_untracked(|c| c.message_ids.get(&id).cloned())?;
+    let thread = thread?;
+    Some(view! {
+        <button class="icon" title="Fork from here" aria-label="Fork from here"
+            on:click=move |_| state().fork_at(thread.clone(), message_id.clone())>
+            <Icon name=IconName::GitFork />
+        </button>
+    })
+}
+
+fn assistant_view(text: String, reasoning: String, fork: Option<impl IntoView>) -> impl IntoView {
     let has_reasoning = !reasoning.is_empty();
     let speak_text = text.clone();
     let copy_text = text.clone();
@@ -290,6 +309,7 @@ fn assistant_view(text: String, reasoning: String) -> impl IntoView {
                 <button class="icon" title="Read aloud" on:click=move |_| voice::speak(speak_text.clone())>
                     <Icon name=IconName::Play />"Listen"
                 </button>
+                {fork}
             </div>
         </div>
     }

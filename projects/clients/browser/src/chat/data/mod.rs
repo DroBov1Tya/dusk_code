@@ -115,6 +115,8 @@ pub struct ChatData {
     pub agent_chats: BTreeMap<String, ChatData>,
     /// Messages this page sent that the core has not taken into the chat yet.
     pub pending: Vec<String>,
+    /// The stored message behind an entry, by entry ID, for forking from it.
+    pub message_ids: BTreeMap<u64, String>,
     /// The stream broke or the thread ended; sending opens it again.
     pub ended: bool,
     asked: Asked,
@@ -155,7 +157,11 @@ impl ChatData {
                     text: message.content.clone(),
                 });
             }
-            MessageRole::User => self.add_user(message.content.clone()),
+            MessageRole::User => {
+                self.add_user(message.content.clone());
+                self.message_ids
+                    .insert(self.next_id, message.message_id.clone());
+            }
             MessageRole::Job => self.push(Item::Job(JobResult::read(&message.content))),
             MessageRole::Assistant => {
                 if !message.content.is_empty() || message.reasoning.is_some() {
@@ -163,6 +169,8 @@ impl ChatData {
                         text: message.content.clone(),
                         reasoning: message.reasoning.clone().unwrap_or_default(),
                     });
+                    self.message_ids
+                        .insert(self.next_id, message.message_id.clone());
                 }
                 for call in &message.tool_calls {
                     self.add_call(call, ToolState::Done);
