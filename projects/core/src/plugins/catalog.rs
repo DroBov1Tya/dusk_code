@@ -463,7 +463,6 @@ pub(super) fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
         && within(&allowed.read, &wanted.read)
         && within(&allowed.sockets, &wanted.sockets)
         && (wanted.project == ProjectAccess::None || allowed.project == wanted.project)
-        && (!wanted.keychain || allowed.keychain)
         && wanted.keys.iter().all(|key| {
             allowed.keys.iter().any(|had| {
                 had.name == key.name
@@ -699,12 +698,8 @@ mod tests {
         assert!(!allowed(&agreed(&one), &two));
         assert!(allowed(&agreed(&two), &two));
         assert!(allowed(&agreed(&two), &one));
-        // Asking for the keychain or a project folder is asking for more, too.
+        // Asking for a project folder is asking for more, too.
         let without = agreed(&one);
-        assert!(!allowed(
-            &without,
-            &manifest("github.com", "keychain: true")
-        ));
         assert!(!allowed(&without, &manifest("github.com", "project: read")));
         // A plugin that provides and was never agreed to is off.
         assert!(!allowed(&PluginConfig::default(), &one));

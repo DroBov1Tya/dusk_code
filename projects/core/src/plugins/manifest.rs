@@ -203,10 +203,14 @@ const MAX_HOSTS: usize = 16;
 const MAX_VERSIONS: usize = 4;
 
 fn check_provides(manifest: &Manifest) -> Result<()> {
+    ensure!(
+        !manifest.permissions.keychain,
+        "permissions keychain is no longer granted: a plugin never reads the keychain"
+    );
     let Some(provides) = &manifest.provides else {
         ensure!(
-            manifest.permissions.project == ProjectAccess::None && !manifest.permissions.keychain,
-            "permissions project and keychain are only for a plugin that provides a contract"
+            manifest.permissions.project == ProjectAccess::None,
+            "permissions project is only for a plugin that provides a contract"
         );
         return Ok(());
     };
@@ -432,6 +436,7 @@ mod tests {
                 "cannot also have mcp",
             ),
             ("platform: {command: [./b]}\n", "cannot also have mcp"),
+            ("permissions: {keychain: true}\n", "no longer granted"),
             (
                 "ui:\n  command: [./u]\n  parts: []\n",
                 "cannot also have mcp",
@@ -444,7 +449,7 @@ mod tests {
         }
         for (yaml, error) in [
             ("permissions: {project: read}\n", "provides"),
-            ("permissions: {keychain: true}\n", "provides"),
+            ("permissions: {keychain: true}\n", "no longer granted"),
             (
                 "provides:\n  command: [./p]\n  speech: {}\n",
                 "does not know the contract `speech`; update duskcode",

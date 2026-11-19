@@ -26,8 +26,8 @@ pub struct Permissions {
     /// Only for a plugin that provides a contract: the folder of the project a call is
     /// about, for that call only.
     pub project: ProjectAccess,
-    /// Only for a plugin that provides a contract (macOS): the login keychain, for an
-    /// item a tool of the user's keeps there.
+    /// No longer granted: a manifest that asks for it is refused. Kept so that such a
+    /// manifest is refused with a reason rather than as an unknown field.
     pub keychain: bool,
 }
 
@@ -83,14 +83,16 @@ impl Permissions {
                 ),
             });
         }
-        if self.keychain {
-            lines.push(
-                "read items of your login keychain that macOS lets it read (gh keeps its token there)"
-                    .into(),
-            );
-        }
         if self.project == ProjectAccess::Read {
             lines.push("read the folder of the project it is asked about, while it answers".into());
+        }
+        if !self.network.is_empty()
+            && (self.project == ProjectAccess::Read || !self.read.is_empty())
+        {
+            // The list limits where it connects, not what it sends there.
+            lines.push(
+                "send what it reads to those addresses, under any account it can use there".into(),
+            );
         }
         lines
     }
@@ -101,11 +103,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn project_and_keychain_have_their_lines_and_default_off() {
+    fn a_project_has_its_line_and_the_network_says_what_it_carries() {
         assert!(Permissions::default().lines().is_empty());
-        let read: Permissions =
-            serde_json::from_str(r#"{"project":"read","keychain":true}"#).unwrap();
-        assert_eq!(read.lines().len(), 2);
+        let read: Permissions = serde_json::from_str(r#"{"project":"read"}"#).unwrap();
+        assert_eq!(read.lines().len(), 1);
+        let sends: Permissions =
+            serde_json::from_str(r#"{"project":"read","network":["https://api.github.com"]}"#)
+                .unwrap();
+        assert!(
+            sends.lines()[2].starts_with("send what it reads"),
+            "{:?}",
+            sends.lines()
+        );
         assert!(serde_json::from_str::<Permissions>(r#"{"project":"write"}"#).is_err());
     }
 }
