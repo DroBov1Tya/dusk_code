@@ -6,12 +6,15 @@
 //! - `guard`: what every request must satisfy (host, origin) and the headers every answer has;
 //! - `files`: the bundle embedded in the binary, and the pictures and sounds of chats;
 //! - `bridge`: one WebSocket stream per attached browser;
+//! - `local`: the core shared by the apps of one user: its run folder, lock and key;
 //! - `server`: the routes, and starting and stopping.
 
 mod auth;
 mod bridge;
 mod files;
 mod guard;
+#[cfg(unix)]
+pub mod local;
 mod server;
 
 pub use server::{Config, DEFAULT_PORT, WebServer, start};

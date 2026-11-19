@@ -35,6 +35,8 @@ pub use crate::{
 };
 use crate::{
     client::{self, Client, Hub},
+    config::Config,
+    platform::temp_folders,
     runtime::Runtime,
 };
 use std::sync::Arc;
@@ -49,4 +51,24 @@ pub async fn start(paths: Paths, state_db: Option<PathBuf>, hello: Hello) -> Res
 /// Starts the core over `paths` for several clients: each one attaches to the hub.
 pub async fn start_hub(paths: Paths, state_db: Option<PathBuf>) -> Result<Arc<Hub>> {
     Ok(Hub::start(Runtime::start(paths, state_db).await?))
+}
+
+/// The folders every command a thread runs may write in (see `Confinement::around`): the
+/// workspace root and the temporary folders. A thread's own working directory adds to
+/// these per command. The core's socket must never lie in one of them.
+pub fn command_writable_folders(paths: &Paths) -> Vec<PathBuf> {
+    let mut folders = vec![paths.workspace_root().to_path_buf()];
+    folders.extend(temp_folders());
+    folders
+}
+
+/// Whether `core.shared` is on in the config file; off when there is no file yet.
+pub fn shared_core(paths: &Paths) -> Result<bool> {
+    let file = paths.config_file();
+    if let Err(error) = std::fs::symlink_metadata(&file)
+        && error.kind() == std::io::ErrorKind::NotFound
+    {
+        return Ok(false);
+    }
+    Ok(Config::load_from(&file)?.shared_core())
 }
