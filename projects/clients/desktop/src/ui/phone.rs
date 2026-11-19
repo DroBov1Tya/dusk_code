@@ -54,11 +54,15 @@ pub fn screen(
         .child(island(inner))
 }
 
-/// Laid over a screen, notes where it was drawn.
+/// Laid over a screen, notes where it was drawn. Pinned to the top left: an absolute
+/// element without a place is put where the flow would put it, below the picture, and
+/// then no press on the screen fell inside it.
 pub fn measure(drawn: &Drawn) -> impl IntoElement {
     let drawn = Rc::clone(drawn);
     canvas(move |bounds, _, _| drawn.set(Some(bounds)), |_, _, _, _| {})
         .absolute()
+        .top_0()
+        .left_0()
         .size_full()
 }
 

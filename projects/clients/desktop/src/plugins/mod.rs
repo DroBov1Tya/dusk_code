@@ -105,6 +105,10 @@ pub struct Plugins {
     screen_focus: HashMap<Slot, FocusHandle>,
     /// The screen a press began on and its last place, while the button is held.
     pressed: Option<(Slot, (u32, u32))>,
+    /// A screen's touches, keys and text wait here and go one at a time, so a lift
+    /// never overtakes its press; text typed meanwhile joins into one paste.
+    screen_queue: std::collections::VecDeque<(Key, String, dusk_protocol::plugin::UiEvent)>,
+    screen_sending: bool,
     /// The text boxes of open parts, by widget.
     fields: HashMap<Slot, fields::Field>,
     /// The list shown as a menu that is open.
@@ -139,6 +143,8 @@ impl Plugins {
             drawn: HashMap::new(),
             screen_focus: HashMap::new(),
             pressed: None,
+            screen_queue: Default::default(),
+            screen_sending: false,
             fields: HashMap::new(),
             open_list: None,
             menu: false,
