@@ -535,6 +535,11 @@ a { text-underline-offset: 3px; }
   display: block; min-height: 56px; max-height: min(220px, 27dvh); padding: var(--s1); font-size: 14px;
 }
 .composer textarea::placeholder { color: var(--muted); }
+.composer .tab-hint {
+  position: absolute; top: 14px; right: 16px; padding: 0 5px; border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent);
+  border-radius: 4px; color: var(--muted); font-size: 11px; line-height: 16px; pointer-events: none;
+}
+.composer.suggesting textarea { padding-right: 48px; }
 .composer-actions { flex-wrap: wrap; }
 .composer-submit {
   display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap;

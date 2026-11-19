@@ -121,6 +121,10 @@ impl App {
         if let Some(Ok(Command::Fork { .. })) = &command {
             self.activity = Activity::Forking;
         }
+        if command.is_none() {
+            // What the user says makes the suggestion stale.
+            self.suggestion.clear();
+        }
         if command.is_some() {
             self.scroll = 0;
             self.transcript.notice(text.trim().to_owned(), Tone::Info);

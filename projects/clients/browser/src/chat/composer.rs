@@ -14,6 +14,9 @@ use std::sync::{
 };
 use wasm_bindgen::JsCast;
 
+/// What the empty box says when no suggestion is there.
+const PLACEHOLDER: &str = "Ask anything. Enter sends, Shift+Enter starts a new line.";
+
 #[derive(Clone, Copy, PartialEq)]
 enum Dictation {
     Idle,
@@ -128,13 +131,44 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
             }
             text.set(String::new());
             pictures.set(Vec::new());
+            // What the user says makes the suggestion stale.
+            chat.update(|c: &mut ChatData| c.suggestion.clear());
             app.send(id.clone(), value, now, attached);
         }
     });
+    // The user's likely next message, greyed where the placeholder sits.
+    let ghost = move || chat.with(|c| c.suggestion.ghost("").map(str::to_owned));
     let on_key = move |ev: leptos::ev::KeyboardEvent| {
         if ev.key() == "Enter" && !ev.shift_key() && !ev.is_composing() {
             ev.prevent_default();
             send.run(false);
+        }
+        let modified = ev.shift_key() || ev.ctrl_key() || ev.alt_key() || ev.meta_key();
+        match ev.key().as_str() {
+            // Over the empty box Tab takes the suggestion in; otherwise it moves focus.
+            "Tab" if !modified => {
+                let typed = text.get_untracked();
+                if let Some(taken) = chat.with_untracked(|c| c.suggestion.accept(&typed)) {
+                    ev.prevent_default();
+                    // The caret goes to the end of what was taken in.
+                    if let Some(area) = area.get_untracked() {
+                        area.set_value(&taken);
+                        let end = taken.encode_utf16().count() as u32;
+                        let _ = area.set_selection_range(end, end);
+                    }
+                    text.set(taken);
+                }
+            }
+            "Escape"
+                if text.with_untracked(String::is_empty)
+                    && chat.with_untracked(|c| c.suggestion.ghost("").is_some()) =>
+            {
+                chat.update(|c: &mut ChatData| {
+                    c.suggestion.dismiss();
+                });
+                ev.prevent_default();
+            }
+            _ => {}
         }
     };
     let stop = Callback::new({
@@ -221,7 +255,7 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
     view! {
         <div class="composer-wrap">
             {panel_open.then(|| view! { <super::panel::Panel /> })}
-            <div class="composer">
+            <div class="composer" class:suggesting=move || ghost().is_some() && text.with(String::is_empty)>
                 <Show when=move || !suggestions().is_empty()>
                     <ul class="suggest">
                         <For each=suggestions key=|(name, _)| *name let:entry>
@@ -235,7 +269,7 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                 <textarea
                     node_ref=area
                     rows="1"
-                    placeholder="Ask anything. Enter sends, Shift+Enter starts a new line."
+                    placeholder=move || ghost().unwrap_or_else(|| PLACEHOLDER.to_owned())
                     prop:value=move || text.get()
                     on:input=move |ev| text.set(event_target_value(&ev))
                     on:keydown=on_key
@@ -252,6 +286,9 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                         super::pictures::add_files(super::pictures::dropped(&ev), drop_id.clone());
                     }
                 ></textarea>
+                <Show when=move || ghost().is_some() && text.with(String::is_empty)>
+                    <kbd class="tab-hint" title="Tab fills it in">"Tab"</kbd>
+                </Show>
                 <div class="composer-actions">
                     <input type="file" accept="image/png,image/jpeg" multiple hidden node_ref=picker
                         on:change=move |ev| {

@@ -352,3 +352,27 @@ fn a_skill_change_replaces_its_row_by_id_and_hangs_on_its_step() {
     assert_eq!(rows.len(), 1);
     assert!(rows[0].undone && !rows[0].can_undo);
 }
+
+#[test]
+fn the_composer_offers_the_chats_own_suggestion_until_the_user_speaks() {
+    let mut chat = ChatData::default();
+    chat.apply(ThreadEvent::Subagent {
+        thread_id: "child".into(),
+        event: Box::new(ThreadEvent::NextSuggested {
+            text: "from a subagent".into(),
+        }),
+    });
+    assert_eq!(chat.suggestion.ghost(""), None);
+    chat.apply(ThreadEvent::NextSuggested {
+        text: "commit it".into(),
+    });
+    assert_eq!(chat.suggestion.ghost(""), Some("commit it"));
+    // Typing hides it and Tab over text keeps its meaning; the empty box shows it again.
+    assert_eq!(chat.suggestion.ghost("c"), None);
+    assert_eq!(chat.suggestion.accept("c"), None);
+    assert_eq!(chat.suggestion.accept("").as_deref(), Some("commit it"));
+    chat.apply(ThreadEvent::Queued {
+        message_id: "m".into(),
+    });
+    assert_eq!(chat.suggestion.ghost(""), None);
+}

@@ -179,12 +179,17 @@ impl InputView<'_> {
         if self.app.input.text.is_empty() {
             let hint = if !self.app.provider_available {
                 "provider unavailable; /connect or /model to choose a provider"
+            } else if let Some(ghost) = self.app.suggestion_ghost() {
+                ghost
             } else if self.app.is_busy() {
                 "write to queue it; Alt+Enter sends now, Esc stops"
             } else {
                 "write, or / for commands"
             };
-            let line = Line::from(vec![prompt, Span::styled(hint, thought())]);
+            let mut line = Line::from(vec![prompt, Span::styled(hint, thought())]);
+            if self.app.provider_available && self.app.suggestion_ghost().is_some() {
+                line.push_span(Span::styled("  Tab", fg(TEXT_SOFT)));
+            }
             frame.render_widget(Paragraph::new(line), text_area);
             show_cursor(frame, self.app, text_area, (0, 0));
             return;

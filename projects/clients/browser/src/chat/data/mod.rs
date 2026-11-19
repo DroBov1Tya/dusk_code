@@ -6,9 +6,9 @@ use dusk_protocol::{
     config::ApprovalPolicy,
     model::{ModelEvent, ToolCall},
     thread::{
-        AgentState, Block, JobResult, Message, MessageRole, Note, Pin, Retry, RetryRow, Task,
-        ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, agent_name, clip, note,
-        retry_row, turn_spend,
+        AgentState, Block, JobResult, Message, MessageRole, Note, Pin, Retry, RetryRow, Suggestion,
+        Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, agent_name, clip,
+        note, retry_row, turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind, Question},
 };
@@ -115,6 +115,8 @@ pub struct ChatData {
     pub title: Option<String>,
     /// Text the core gave back after /undo, for the composer to offer again.
     pub offered: Option<String>,
+    /// The user's likely next message, as the model proposed it, for the composer.
+    pub suggestion: Suggestion,
     /// What each subagent said and did, by its thread ID.
     pub agent_chats: BTreeMap<String, ChatData>,
     /// Messages this page sent that the core has not taken into the chat yet.
@@ -273,6 +275,7 @@ impl ChatData {
     pub fn apply(&mut self, event: ThreadEvent) {
         self.clock = now_ms();
         self.track_turn(&event);
+        self.suggestion.hear(&event);
         if matches!(
             event,
             ThreadEvent::TurnFinished(_) | ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_)
