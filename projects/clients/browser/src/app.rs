@@ -2,10 +2,14 @@
 
 use crate::{
     auth,
-    chat::{Chat, subagent::SubagentWindow},
+    chat::subagent::SubagentWindow,
     columns::Workspace,
     pages::{
-        artifacts::Artifacts, connectors::Connectors, project::ProjectPage, settings::SettingsPage,
+        artifacts::Artifacts,
+        connectors::Connectors,
+        project::ProjectPage,
+        settings::SettingsPage,
+        welcome::{self, ChatOrWelcome, Step},
     },
     state::{AppState, View, state},
     ui::{IconDefinitions, theme},
@@ -96,11 +100,13 @@ fn Shell(auth: RwSignal<Auth>) -> impl IntoView {
         )))
     });
     Effect::new(move |_| theme::apply(&app.theme.get()));
+    let welcome = RwSignal::new(Step::Hidden);
+    welcome::ask(welcome);
     view! {
         <IconDefinitions />
         <Workspace>
             <main class="main">{move || match state().view.get() {
-                View::Chat(id) => view! { <Chat id /> }.into_any(),
+                View::Chat(id) => view! { <ChatOrWelcome id step=welcome /> }.into_any(),
                 View::Settings(page) => view! { <SettingsPage page /> }.into_any(),
                 View::Connectors(tab) => view! { <Connectors tab /> }.into_any(),
                 View::Artifacts => view! { <Artifacts /> }.into_any(),

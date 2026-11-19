@@ -783,3 +783,21 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .ov-at { width: 56px; flex: none; font-size: 12.5px; }
 .overview .grow { flex: 1; } .overview .cut { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .overview .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+
+/* The welcome of a clean install: one large button, then three boxes. */
+.welcome { width: min(420px, 100% - 32px); margin: 14vh auto 0; display: flex; flex-direction: column; align-items: center; gap: var(--s4); text-align: center; }
+.welcome h1 { margin: 0; }
+.welcome.form { align-items: stretch; text-align: left; }
+.welcome.form h2 { margin: 0; }
+.welcome .field { display: flex; flex-direction: column; gap: var(--s1); font-size: 13px; }
+.welcome .field small { font-size: 12px; }
+.welcome-connect { width: 100%; display: flex; flex-direction: column; align-items: center; gap: var(--s1); padding: var(--s4) var(--s6); border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); transition: filter var(--t-open) var(--ease); }
+.welcome-connect b { font-size: 18px; }
+.welcome-connect span { font-size: 13px; opacity: .8; }
+.welcome-connect:hover { filter: brightness(.92); }
+.welcome-connect:active { filter: brightness(.85); }
+.welcome-actions { display: flex; justify-content: space-between; align-items: center; padding-top: var(--s1); }
+.welcome-error p { margin: 0; }
+.welcome-error .small { font-size: 12px; }
+button.link.quiet { color: var(--muted); }
+button.link.quiet:hover { color: var(--fg); }

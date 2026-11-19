@@ -6,3 +6,4 @@ pub mod project;
 pub mod review;
 pub mod schedules;
 pub mod settings;
+pub mod welcome;
