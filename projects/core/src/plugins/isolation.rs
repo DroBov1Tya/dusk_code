@@ -1180,12 +1180,33 @@ mod tests {
         assert!(said.contains("Operation not permitted"), "{line:?}: {said}");
     }
 
+    // On macOS /usr/bin/git is a launcher for the selected developer tools.
+    // Resolve Git before sandboxing so the tests exercise Git directly.
+    fn fixture_git() -> String {
+        #[cfg(target_os = "macos")]
+        {
+            let output = std::process::Command::new("/usr/bin/xcrun")
+                .args(["--find", "git"])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        }
+        #[cfg(not(target_os = "macos"))]
+        "/usr/bin/git".to_owned()
+    }
+
     /// launchd, LaunchServices and Apple events run what they are handed outside the
     /// sandbox, so a call may not reach them; git and a gh-like program still run.
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn a_call_cannot_hand_work_to_the_system() {
-        let Some(setup) = call_setup("call-hand-off", reads_project(), None) else {
+        let git = fixture_git();
+        let permissions = Permissions {
+            exec: vec![git.clone()],
+            ..reads_project()
+        };
+        let Some(setup) = call_setup("call-hand-off", permissions, None) else {
             return;
         };
         let call = setup
@@ -1210,9 +1231,9 @@ mod tests {
         // A gh stand-in in the plugin's folder that runs git in the project.
         let folder = setup.paths.rules_root().join("plugins/p");
         let gh = folder.join("gh");
-        std::fs::write(&gh, "#!/bin/sh\n/usr/bin/git --version && pwd\n").unwrap();
+        std::fs::write(&gh, "#!/bin/sh\n\"$1\" --version && pwd\n").unwrap();
         std::fs::set_permissions(&gh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        let output = run(&call, &[&gh.display().to_string()]).await;
+        let output = run(&call, &[&gh.display().to_string(), &git]).await;
         let printed = String::from_utf8_lossy(&output.stdout);
         assert!(output.status.success(), "{output:?}");
         assert!(printed.starts_with("git version"), "{printed}");
@@ -1229,18 +1250,6 @@ mod tests {
         let worktree = setup.home.join("wt");
         std::fs::create_dir_all(&main).unwrap();
         std::fs::write(main.join("secret"), "main").unwrap();
-        let git = |dir: &Path, args: &[&str]| {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(dir)
-                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-                .args(args)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .unwrap();
-            assert!(status.success(), "git {args:?}");
-        };
         git(&main, &["init", "-q"]);
         git(&main, &["commit", "-q", "--allow-empty", "-m", "x"]);
         let target = worktree.display().to_string();
@@ -1250,7 +1259,8 @@ mod tests {
             .isolation
             .for_call(&setup.home, &worktree, &[])
             .unwrap();
-        let head = ["/usr/bin/git", "-C", &target, "rev-parse", "HEAD"];
+        let git = fixture_git();
+        let head = [git.as_str(), "-C", &target, "rev-parse", "HEAD"];
         let output = run(&call, &head).await;
         assert!(output.status.success(), "{output:?}");
         let secret = main.join("secret").display().to_string();
@@ -1279,7 +1289,7 @@ mod tests {
             .for_call(&setup.home, &forged, others)
             .unwrap();
         let forged_head = [
-            "/usr/bin/git",
+            git.as_str(),
             "-C",
             &forged.display().to_string(),
             "rev-parse",
@@ -1294,7 +1304,7 @@ mod tests {
 
     /// `git` in `dir`, with a name for commits; it must succeed.
     fn git(dir: &Path, args: &[&str]) {
-        let status = std::process::Command::new("git")
+        let status = std::process::Command::new(fixture_git())
             .arg("-C")
             .arg(dir)
             .args(["-c", "user.name=t", "-c", "user.email=t@t"])
@@ -1329,8 +1339,9 @@ mod tests {
             mono.join("a").canonicalize().unwrap(),
             mono.join("b").canonicalize().unwrap(),
         );
+        let git_program = fixture_git();
         let in_a = |args: &[&str]| -> Vec<String> {
-            ["/usr/bin/git", "-C", &a.display().to_string()]
+            [git_program.as_str(), "-C", &a.display().to_string()]
                 .iter()
                 .chain(args)
                 .map(|word| (*word).to_owned())
@@ -1394,7 +1405,7 @@ mod tests {
         let sub = mono.join("sub").canonicalize().unwrap();
         let call = setup.isolation.for_call(home, &sub, &[]).unwrap();
         let sub_head = [
-            "/usr/bin/git",
+            git_program.as_str(),
             "-C",
             &sub.display().to_string(),
             "rev-parse",
