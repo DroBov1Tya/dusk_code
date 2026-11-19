@@ -9,6 +9,8 @@
 //! but stdin, stdout and stderr is first marked to close on exec: one the core holds
 //! without that mark (a leak of a library, one handed down by its own parent) does not
 //! reach the program. The netns step has already handed its sockets over and closed them.
+//! That takes `close_range` (Linux 5.11, older than Landlock); where it is blocked the
+//! program does not start.
 //!
 //! The filter is made in the parent; the child only installs it, last before exec.
 
@@ -81,24 +83,19 @@ unsafe fn close_on_exec_from(first: libc::c_int) -> io::Result<()> {
         if all == 0 {
             return Ok(());
         }
-        let error = io::Error::last_os_error();
-        // Kernels before 5.11 have no close_range, 5.10 not its flag: one at a time.
-        if !matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL)) {
-            return Err(error);
-        }
-        let mut limit: libc::rlimit = std::mem::zeroed();
-        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        let last = limit.rlim_cur.min(libc::c_int::MAX as libc::rlim_t) as libc::c_int;
-        for fd in first..last {
-            let flags = libc::fcntl(fd, libc::F_GETFD);
-            if flags != -1 {
-                libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
-            }
-        }
+        // Every kernel with Landlock has it (5.11); where a container's profile blocks
+        // it, nothing starts: a descriptor left open could reach a Unix socket.
+        Err(io::Error::last_os_error())
     }
-    Ok(())
+}
+
+/// Only the first step of the filter: marking the inherited descriptors, so the probe
+/// can tell a blocked `close_range` from a missing seccomp.
+pub fn close_inherited(command: &mut std::process::Command) {
+    // SAFETY: the closure makes one system call in the forked child.
+    unsafe {
+        command.pre_exec(|| close_on_exec_from(3));
+    }
 }
 
 fn statement(code: u32, k: u32) -> libc::sock_filter {

@@ -50,6 +50,9 @@ pub enum Missing {
     /// One can be made, but not set up: AppArmor's restriction on Ubuntu, or a seccomp
     /// filter of a container.
     Restricted,
+    /// The descriptors the core holds cannot all be closed for the program:
+    /// `close_range` is blocked, as some container profiles do.
+    NoCloseRange,
     /// The kernel cannot filter the sockets a program opens (no seccomp filters, or
     /// none allowed here), so Unix sockets on disk would stay open to it.
     NoFilter,
@@ -64,6 +67,7 @@ impl Missing {
             Self::Restricted => {
                 "unprivileged user namespaces are restricted, as Ubuntu's AppArmor does"
             }
+            Self::NoCloseRange => "it cannot close the core's descriptors: close_range is blocked",
             Self::NoFilter => "it cannot limit the sockets a program opens: no seccomp filter",
         }
     }
@@ -93,6 +97,13 @@ pub fn missing() -> Option<Missing> {
         }) {
             debug!("no network namespace for plugins: {error:#}");
             return Some(Missing::Off);
+        }
+        if let Err(error) = run_true(|command| {
+            super::seccomp::close_inherited(command);
+            Ok(None)
+        }) {
+            debug!("no close_range for plugins: {error:#}");
+            return Some(Missing::NoCloseRange);
         }
         if let Err(error) = run_true(|command| {
             super::seccomp::confine(command)?;
