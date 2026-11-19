@@ -2,13 +2,9 @@
 
 use super::wait::Waited;
 use super::{Agent, Pace, StepEnd};
-use crate::catalog::modes::Modes;
 use crate::plugins::HookEvent;
 use crate::runtime::agent::{Inbox, Keep, Stop};
-use crate::runtime::{
-    ThreadEvent,
-    thread::{Conversation, start::NO_PROMPT},
-};
+use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::state::{AgentPhase, Goal, GoalStatus, PendingMessage, Turn, TurnOutcome, TurnStatus};
 use anyhow::Result;
 use dusk_protocol::thread::TurnWait;
@@ -58,13 +54,11 @@ impl Agent {
     /// edit of the prompt, applies from the next turn. The cached prefix changes once
     /// then, and only then.
     pub(super) async fn follow_mode(&self, conversation: &Conversation) -> Result<()> {
-        let mode = self.config_now().await.mode().to_owned();
-        let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
-        let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
-        if conversation.prompt() != Some(prompt) {
+        let (mode, prompt) = self.mode_prompt().await?;
+        if conversation.prompt() != Some(prompt.as_str()) {
             info!("thread {} takes up the {mode} prompt", self.thread_id);
             self.state
-                .add_system_message(&self.thread_id, prompt)
+                .add_system_message(&self.thread_id, &prompt)
                 .await?;
         }
         Ok(())

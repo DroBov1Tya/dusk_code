@@ -11,10 +11,9 @@ use tracing::warn;
 use super::{Agent, Inbox, Stop};
 use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
-    catalog::modes::Modes,
     config::Limits,
     providers::{ChatMessage, ChatRequest, ProviderErrorKind, provider_error},
-    runtime::thread::start::{NO_PROMPT, read_prompt},
+    runtime::thread::start::read_prompt,
     state::{CallPurpose, Compaction, ModelCall, Turn},
 };
 pub use dusk_protocol::thread::AUTO_COMPACT_PERCENT;
@@ -198,11 +197,9 @@ impl Agent {
         self.tools.refresh_descriptions();
         // The context starts over here, so a chat takes up the prompt of its mode now.
         if self.depth == 0 {
-            let mode = self.config_now().await.mode().to_owned();
-            let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
-            let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
+            let (_, prompt) = self.mode_prompt().await?;
             self.state
-                .add_system_message(&self.thread_id, prompt)
+                .add_system_message(&self.thread_id, &prompt)
                 .await?;
         }
         self.put_away_kept_results(&limits).await;
