@@ -1,4 +1,4 @@
-//! A project's pull requests, as the GitHub CLI reports them.
+//! A project's pull requests and CI, from whichever forge serves its remote.
 
 use serde::{Deserialize, Serialize};
 
@@ -112,26 +112,86 @@ pub struct PullStatus {
     pub files: Option<u64>,
     /// The page on GitHub, https only; empty when GitHub gave none that is safe.
     pub url: String,
+    /// The page of all its checks, https only; empty when the forge gave none that is safe.
+    pub checks_url: String,
     pub checks: Checks,
 }
 
-/// A project's repository at a glance: the work tree's changes and the pull requests
-/// that matter to it. The core keeps it fresh while a client shows it and sends
-/// `Event::RepositoryStatus` when it changes.
+/// A project's repository at a glance. The core keeps it fresh while a client shows it
+/// and sends `Event::RepositoryStatus` when it changes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryStatus {
     /// The name of the repository's top folder; empty outside a repository.
     pub repository: String,
-    /// `owner/repo` of `origin` when it is on github.com; `None` otherwise.
-    pub github: Option<String>,
     /// `None` on a detached head or outside a repository.
     pub branch: Option<String>,
     /// Lines added and removed in the work tree against the last commit.
     pub stat: crate::project::DiffStat,
+    /// Why there is no repository: "Not a git repository". `None` when read.
+    pub unavailable: Option<String>,
+    pub forge: Forge,
+}
+
+/// Where the repository's pull requests come from.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Forge {
+    /// No `origin`, or one whose address has no host the core can read.
+    #[default]
+    None,
+    /// No plugin that is on serves the remote's host.
+    Unserved {
+        host: String,
+        offer: Option<ForgeOffer>,
+    },
+    /// A plugin that is on serves the host, but the tool it uses is missing or not
+    /// signed in.
+    SignIn(ForgeSignIn),
+    Served(Box<ForgeStatus>),
+}
+
+impl Forge {
+    /// The answer of the plugin that serves the remote, when there is one.
+    pub fn served(&self) -> Option<&ForgeStatus> {
+        match self {
+            Forge::Served(status) => Some(status),
+            _ => None,
+        }
+    }
+}
+
+/// A plugin that would serve the host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeOffer {
+    /// The plugin's name, as the Workshop lists it.
+    pub plugin: String,
+    /// Installed but off: "Switch on"; else "Get" opens its Workshop page.
+    pub installed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeSignIn {
+    pub host: String,
+    pub plugin: String,
+    /// What the user can type to fix it, plain, one line, at most 120 characters:
+    /// "gh auth login", or how to install gh. Drawn as text, never run.
+    pub hint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeStatus {
+    /// The plugin that answered.
+    pub plugin: String,
+    /// What the plugin calls the forge, plain, one line, at most 40 characters.
+    pub name: String,
+    /// The repository as the remote names it, such as `owner/repo`.
+    pub repository: String,
+    /// Every pull request's page is this plus its number: a link in a chat that is
+    /// `pull_prefix` + digits is one of this repository's pull requests. Empty until the
+    /// plugin first answered.
+    pub pull_prefix: String,
     /// The current branch's pull requests first, then the other open ones; capped.
     pub pulls: Vec<PullStatus>,
-    /// Why there are no pull requests to show: GitHub CLI missing or signed out, not a
-    /// GitHub remote, or GitHub not answering. Plain, for a quiet note; `None` when read.
+    /// Why there are no pull requests to show, plain, for a quiet note; `None` when read.
     pub unavailable: Option<String>,
 }
 

@@ -9,8 +9,6 @@ use crate::project::git;
 
 pub(super) const PROGRAM: &str = "gh";
 const LIMIT: Duration = Duration::from_secs(60);
-/// What is said when `gh` cannot be used, and nothing else.
-pub(super) const MISSING: &str = "GitHub CLI is not installed or signed in";
 
 /// Runs `gh` in `dir` once it is known to be there and signed in; an error carries
 /// what it said, plain.
@@ -28,11 +26,11 @@ pub(super) async fn output(program: &str, dir: &Path, args: &[&str]) -> Result<S
     Ok(output.stdout)
 }
 
-/// `gh` is installed and signed in; otherwise `MISSING`, whatever the cause.
+/// `gh` is installed and signed in; otherwise an error, whatever the cause.
 pub(super) async fn ready(program: &str, dir: &Path) -> Result<()> {
     match run(program, dir, &["auth", "status"]).await {
         Ok(output) if output.success => Ok(()),
-        _ => bail!(MISSING),
+        _ => bail!("GitHub CLI is not installed or signed in"),
     }
 }
 

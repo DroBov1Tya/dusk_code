@@ -8,6 +8,7 @@ use crate::{
 };
 use dusk_protocol::project::{
     Check, CheckStage, CheckState, FileDiff, FileEntry, GitInfo, Project, PullState, PullStatus,
+    RepositoryStatus,
 };
 use leptos::prelude::*;
 
@@ -207,13 +208,27 @@ fn GitSection(id: String) -> impl IntoView {
             })}
             {move || pulls().map(|status| view! {
                 <ul class="pulls">
-                    {status.pulls.iter().map(|pull| pull_row(&status.repository, pull)).collect_view()}
+                    {served_pulls(&status).iter().map(|pull| pull_row(&status.repository, pull)).collect_view()}
                 </ul>
-                {status.unavailable.clone().map(|reason| view! { <p class="muted">{reason}</p> })}
+                {note(&status).map(|reason| view! { <p class="muted">{reason}</p> })}
             })}
             <DiffView files=diff />
         </Section>
     }
+}
+
+/// The pull requests the forge serves; none when none does.
+pub fn served_pulls(status: &RepositoryStatus) -> &[PullStatus] {
+    status.forge.served().map_or(&[], |served| &served.pulls)
+}
+
+/// Why there are no pull requests to show, when the core said.
+fn note(status: &RepositoryStatus) -> Option<String> {
+    let served = status
+        .forge
+        .served()
+        .and_then(|served| served.unavailable.clone());
+    served.or_else(|| status.unavailable.clone())
 }
 
 /// A pull request: its state, title, number and lines, and its checks as a dot and a

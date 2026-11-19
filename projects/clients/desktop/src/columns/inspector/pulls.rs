@@ -23,10 +23,14 @@ pub fn rows(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         return div();
     };
     let mut column = div().flex().flex_col();
-    for pull in &status.pulls {
+    let served = status.forge.served();
+    for pull in served.iter().flat_map(|served| &served.pulls) {
         column = column.child(row(status, pull, &ws.checks_open, cx));
     }
-    if let Some(reason) = &status.unavailable {
+    let reason = served
+        .and_then(|served| served.unavailable.as_ref())
+        .or(status.unavailable.as_ref());
+    if let Some(reason) = reason {
         column = column.child(
             div()
                 .px_4()

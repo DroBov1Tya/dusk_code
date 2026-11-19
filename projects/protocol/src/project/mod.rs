@@ -40,8 +40,9 @@ pub use files::{
     OutputPreview,
 };
 pub use forge::{
-    Check, CheckStage, CheckState, Checks, PullRequest, PullRequestDetail, PullState, PullStatus,
-    PullSummary, RepositoryStatus, pull_number,
+    Check, CheckStage, CheckState, Checks, Forge, ForgeOffer, ForgeSignIn, ForgeStatus,
+    PullRequest, PullRequestDetail, PullState, PullStatus, PullSummary, RepositoryStatus,
+    pull_number,
 };
 pub use git::{Change, ChangeKind, GitInfo, GitOutcome, GitSummary, Worktree};
 pub use ledger::{EditKind, FileChange, MAX_FILE_CHANGES};

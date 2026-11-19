@@ -970,6 +970,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
         RepositoryStatus,
     };
+    use dusk_protocol::project::{Forge, ForgeStatus};
     let Some(project) = ws.selected_project().cloned() else {
         return;
     };
@@ -986,6 +987,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         removed: 7 * number,
         files: Some(number),
         url: format!("https://github.com/example/repo/pull/{number}"),
+        checks_url: format!("https://github.com/example/repo/pull/{number}/checks"),
         checks,
     };
     let check = |name: &str, stage, started: i64, finished: Option<i64>| Check {
@@ -1066,15 +1068,21 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     );
     ws.repository = Some(RepositoryStatus {
         repository: "dusk_code".to_owned(),
-        github: Some("example/repo".to_owned()),
         branch: Some("pr-status".to_owned()),
         stat: DiffStat {
             files: 23,
             added: 1473,
             removed: 625,
         },
-        pulls,
         unavailable: None,
+        forge: Forge::Served(Box::new(ForgeStatus {
+            plugin: "github".to_owned(),
+            name: "GitHub".to_owned(),
+            repository: "example/repo".to_owned(),
+            pull_prefix: "https://github.com/example/repo/pull/".to_owned(),
+            pulls,
+            unavailable: None,
+        })),
     });
     if let Some(git) = ws.git.as_mut() {
         git.stat = DiffStat {

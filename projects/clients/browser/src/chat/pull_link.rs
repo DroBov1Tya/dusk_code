@@ -25,7 +25,7 @@ pub fn claim(root: &Element) {
         repository
             .as_ref()
             .filter(|(of, _)| *of == project)
-            .map(|(_, status)| status.github.clone())
+            .map(|(_, status)| github(status))
     });
     let root = root.clone();
     leptos::task::spawn_local(async move {
@@ -34,7 +34,7 @@ pub fn claim(root: &Element) {
             Some(github) => github,
             None => match api::repository_status(&project).await {
                 Ok(status) => {
-                    let github = status.github.clone();
+                    let github = github(&status);
                     app.repository.set(Some((project.clone(), status)));
                     github
                 }
@@ -45,6 +45,14 @@ pub fn claim(root: &Element) {
             claim_links(&root, &project, &github);
         }
     });
+}
+
+/// `owner/repo` of the repository the forge serves; `None` when none does.
+fn github(status: &dusk_protocol::project::RepositoryStatus) -> Option<String> {
+    status
+        .forge
+        .served()
+        .map(|served| served.repository.clone())
 }
 
 fn claim_links(root: &Element, project: &str, github: &str) {

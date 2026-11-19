@@ -55,13 +55,13 @@ pub fn ChangesTab(id: String) -> impl IntoView {
             .get()
             .filter(|(of, _)| *of == project && !of.is_empty())
             .map(|(_, status)| status)
-            .filter(|status| !status.pulls.is_empty())
+            .filter(|status| !crate::pages::project::served_pulls(status).is_empty())
     };
     view! {
         <div class="changes">
             {move || pulls().map(|status| view! {
                 <ul class="pulls">
-                    {status.pulls.iter().map(|pull| crate::pages::project::pull_row(&status.repository, pull)).collect_view()}
+                    {crate::pages::project::served_pulls(&status).iter().map(|pull| crate::pages::project::pull_row(&status.repository, pull)).collect_view()}
                 </ul>
             })}
             <div class="row-actions">

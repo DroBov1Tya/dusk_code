@@ -77,11 +77,13 @@ pub fn show(ws: &Workspace, cx: &mut App) {
     links.github = ws
         .repository
         .as_ref()
-        .and_then(|status| status.github.clone());
+        .and_then(|status| status.forge.served())
+        .map(|served| served.repository.clone());
     links.listed = ws
         .repository
         .as_ref()
-        .map(|status: &RepositoryStatus| status.pulls.clone())
+        .and_then(|status: &RepositoryStatus| status.forge.served())
+        .map(|served| served.pulls.clone())
         .unwrap_or_default();
     cx.refresh_windows();
 }
