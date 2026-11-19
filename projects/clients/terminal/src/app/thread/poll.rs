@@ -1,7 +1,7 @@
 //! A question the agent asked, shown above the message box until it is answered. The
 //! options come first and the user's own answer last. A single choice is sent with
 //! Enter on it; with several, Space marks them and Enter sends. Esc or the button
-//! declines, and a message sent from the box declines it as well. A question short enough
+//! declines, Ctrl+S skips only this question, and a message sent from the box declines it as well. A question short enough
 //! to be reply buttons (`Question::light`) is drawn as the reply row instead of the card,
 //! and answered with a number key as well.
 
@@ -25,6 +25,7 @@ pub struct Poll {
 pub enum PollTarget {
     Row(usize),
     Send,
+    Skip,
     Decline,
 }
 
@@ -89,6 +90,7 @@ impl App {
         let on_own = poll.cursor == poll.own_row();
         match key.code {
             KeyCode::Esc => return self.press_poll(PollTarget::Decline),
+            KeyCode::Char('s') if ctrl => return self.press_poll(PollTarget::Skip),
             KeyCode::Tab => poll.active = false,
             KeyCode::Up => poll.cursor = poll.cursor.saturating_sub(1),
             KeyCode::Down => poll.cursor = (poll.cursor + 1).min(poll.last_row()),
@@ -126,6 +128,7 @@ impl App {
                 poll.cursor = row;
                 return Action::None;
             }
+            PollTarget::Skip => poll.question.skipped(),
             PollTarget::Decline => poll.question.declined(""),
             PollTarget::Send => match poll.answer() {
                 Some(text) => text,
@@ -292,6 +295,30 @@ mod tests {
         press(&mut app, KeyCode::Down, KeyModifiers::NONE);
         let action = press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert!(matches!(action, Action::Send(text) if text == asked.answer(&[1], "")));
+    }
+
+    #[test]
+    fn ctrl_s_skips_one_question_and_the_last_sends_every_answer() {
+        let (first, second) = (question(&["a", "b"], true), question(&["c", "d"], true));
+        let mut app = test_app();
+        app.poll = Some(Poll::new(first.clone()));
+        app.polls_waiting.push_back(second.clone());
+        let action = press(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(matches!(action, Action::None));
+        assert_eq!(app.poll.as_ref().map(|poll| &poll.question), Some(&second));
+        assert_eq!(app.poll_answers, [first.skipped()]);
+        // Esc still declines, and the plain letter is the own answer's text, not a skip.
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(
+            app.poll.as_ref().map(|poll| poll.own.text.as_str()),
+            Some("s")
+        );
+        let action = press(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        let want = [first.skipped(), second.skipped()].join("\n\n");
+        assert!(matches!(action, Action::Send(text) if text == want));
+        assert!(app.poll.is_none() && app.poll_answers.is_empty());
     }
 
     #[test]

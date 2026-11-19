@@ -18,6 +18,10 @@ pub const MAX_OPTIONS: usize = 8;
 /// What stands for the answer when the user would not give one.
 pub const DECLINED: &str = "(declined)";
 
+/// What stands for the answer when the user skipped this one question and left it to the
+/// agent; the questions after it are still answered.
+pub const SKIPPED: &str = "(skipped \u{2014} use your own judgement)";
+
 /// A question as the client shows it. The client always adds a field for the user's
 /// own answer below the options.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema, Serialize)]
@@ -66,6 +70,11 @@ impl Question {
             "" => reply,
             message => format!("{reply}\n\n{message}"),
         }
+    }
+
+    /// The message saying the user skipped this question: the agent decides itself.
+    pub fn skipped(&self) -> String {
+        self.reply(SKIPPED)
     }
 
     pub fn reply(&self, answer: &str) -> String {
@@ -127,5 +136,15 @@ mod tests {
         assert!(!question(&[&over, "No"], false).light());
         assert!(!question(&["Yes", "  "], false).light());
         assert!(question(&[&format!(" {edge} "), "No"], false).light());
+    }
+
+    #[test]
+    fn a_skipped_question_leaves_the_decision_to_the_agent() {
+        let asked = question(&["Yes", "No"], false);
+        assert_eq!(
+            asked.skipped(),
+            "QUESTION: Which?\nANSWER: (skipped \u{2014} use your own judgement)"
+        );
+        assert_ne!(asked.skipped(), asked.declined(""));
     }
 }
