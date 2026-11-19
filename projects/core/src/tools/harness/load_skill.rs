@@ -21,7 +21,10 @@ use crate::tools::{
 };
 use crate::{
     BoxFuture,
-    catalog::graph::{Graph, Node, SKILL_FILE},
+    catalog::{
+        graph::{Graph, Node, SKILL_FILE},
+        skills::{BUILTIN_PACK, builtin_dir, is_builtin, pack_in},
+    },
     config::Config,
 };
 
@@ -31,6 +34,11 @@ const GRAPH_TTL: Duration = Duration::from_secs(5);
 /// Each skill listed costs tokens in every request.
 const MAX_LISTED: usize = 60;
 const MAX_LISTED_CHARS: usize = 400;
+
+/// The skill that edits skills; its name is all the reminder needs.
+const EVOLVE: &str = "skill-evolve";
+const REMINDER: &str = "If what worked in this task differs from these steps or beats them, \
+                        update this skill with skill-evolve before you answer.";
 
 pub struct LoadSkill {
     directory: PathBuf,
@@ -72,7 +80,7 @@ impl Tool for LoadSkill {
 
     fn description(&self, context: &ToolContext) -> String {
         let graph = self.graph();
-        let entries = enabled(graph.entries(), &context.config);
+        let entries = enabled(graph.entries(), &context.config, builtin_dir().as_deref());
         format!(
             "Load the instructions of a skill when the task matches its description, and \
              follow them. To use a skill, load it with this tool by name rather than reading \
@@ -114,9 +122,12 @@ impl Tool for LoadSkill {
 
 fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
     let graph = Graph::load(directory, SKILL_FILE);
+    // Read once: every check below needs it, and resolving it validates the resources.
+    let builtin = builtin_dir();
+    let builtin = builtin.as_deref();
     let skill = graph
         .get(name)
-        .filter(|skill| config.skill_enabled(&skill.name))
+        .filter(|skill| skill_on(config, &skill.name, builtin))
         .with_context(|| {
             format!(
                 "no skill named {name} in {}; only the skills listed in this tool's \
@@ -129,19 +140,53 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
     // Skills name their own scripts and references by paths inside their folder.
     let folder = skill.file().parent().unwrap_or(directory).display();
     let instructions = format!("The files of this skill are in {folder}.\n\n{instructions}");
-    let next = enabled(graph.links(skill), config);
-    if next.is_empty() {
-        return Ok(instructions);
+    let next = enabled(graph.links(skill), config, builtin);
+    let mut text = if next.is_empty() {
+        instructions
+    } else {
+        format!("{instructions}\n\nNext skills; load any of them with load_skill:\n{next}")
+    };
+    if wants_reminder(&graph, name, config, builtin) {
+        text.push_str("\n\n");
+        text.push_str(REMINDER);
     }
-    Ok(format!(
-        "{instructions}\n\nNext skills; load any of them with load_skill:\n{next}"
-    ))
+    Ok(text)
+}
+
+/// `Config::skill_enabled` with the built-in folder already resolved.
+fn skill_on(config: &Config, name: &str, builtin: Option<&Path>) -> bool {
+    config.skill_switch(name)
+        && pack_in(name, builtin).is_none_or(|pack| config.pack_enabled(&pack))
+}
+
+/// The reminder goes on a skill the user can edit: not the editing skills themselves,
+/// not a built-in one (a release replaces it), and only while skill-evolve is usable.
+fn wants_reminder(graph: &Graph, name: &str, config: &Config, builtin: Option<&Path>) -> bool {
+    // skill-evolve ships under `resources/skills/`, so it is in the built-in pack: its
+    // own switch and the pack's decide.
+    name != EVOLVE
+        && name != "skill-creator"
+        && config.skill_switch(EVOLVE)
+        && config.pack_enabled(BUILTIN_PACK)
+        && graph.get(EVOLVE).is_some()
+        && is_own(name, builtin)
+}
+
+/// A name with a `/` is a user's own sub-folder: built-in skills are top-level only.
+/// For a top-level one the built-in folder must be known to tell; when it is not, no
+/// reminder is better than one on a built-in skill.
+fn is_own(name: &str, builtin: Option<&Path>) -> bool {
+    name.contains('/') || builtin.is_some_and(|folder| !is_builtin(name, Some(folder)))
 }
 
 /// Switched-off skills are left out, wherever they would be shown.
-fn enabled<'a>(skills: impl Iterator<Item = &'a Node>, config: &Config) -> String {
+fn enabled<'a>(
+    skills: impl Iterator<Item = &'a Node>,
+    config: &Config,
+    builtin: Option<&Path>,
+) -> String {
     let skills: Vec<&Node> = skills
-        .filter(|skill| config.skill_enabled(&skill.name))
+        .filter(|skill| skill_on(config, &skill.name, builtin))
         .collect();
     let mut listed: Vec<String> = skills
         .iter()
@@ -155,4 +200,58 @@ fn enabled<'a>(skills: impl Iterator<Item = &'a Node>, config: &Config) -> Strin
         listed.push(format!("({} more not listed)", skills.len() - MAX_LISTED));
     }
     listed.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{temp_dir, tool_context};
+    use crate::tools::ToolScope;
+
+    fn skills_dir() -> PathBuf {
+        let dir = temp_dir("load_skill_reminder");
+        for name in [EVOLVE, "mine"] {
+            let folder = dir.join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(
+                folder.join(SKILL_FILE),
+                format!("---\nname: {name}\ndescription: d\n---\nSteps.\n"),
+            )
+            .unwrap();
+        }
+        dir
+    }
+
+    fn config(dir: &Path) -> Config {
+        let scope = ToolScope::new(dir, dir).unwrap();
+        (*tool_context(&scope).config).clone()
+    }
+
+    #[test]
+    fn reminder_ends_an_own_skill_only() {
+        let dir = skills_dir();
+        let config = config(&dir);
+        assert!(load(&dir, "mine", &config).unwrap().ends_with(REMINDER));
+        assert!(!load(&dir, EVOLVE, &config).unwrap().contains(REMINDER));
+    }
+
+    #[test]
+    fn no_reminder_when_skill_evolve_is_off() {
+        let dir = skills_dir();
+        let mut config = config(&dir);
+        config.set_skill_enabled(EVOLVE, false);
+        assert!(!load(&dir, "mine", &config).unwrap().contains(REMINDER));
+    }
+
+    #[test]
+    fn no_reminder_when_the_builtin_folder_is_unknown() {
+        let dir = skills_dir();
+        // Unreadable resources: a top-level skill might be built in, so none is
+        // reminded; a sub-folder skill never is.
+        assert!(!is_own("mine", None));
+        assert!(is_own("pack/mine", None));
+        // A readable folder tells built-in from own.
+        assert!(!is_own(EVOLVE, Some(&dir)));
+        assert!(is_own("other", Some(&dir)));
+    }
 }
