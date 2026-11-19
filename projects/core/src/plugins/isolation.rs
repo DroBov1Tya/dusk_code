@@ -292,9 +292,7 @@ impl Isolation {
             "this plugin may not read a project's folder"
         );
         ensure!(self.cwd.is_none(), "this confinement is already one call's");
-        let home = home
-            .canonicalize()
-            .context("cannot resolve the home folder")?;
+        let home = home_folder(home)?;
         let project = project
             .canonicalize()
             .context("cannot resolve the project's folder")?;
@@ -664,6 +662,27 @@ fn locate(program: &str) -> Vec<PathBuf> {
     found
 }
 
+/// The home folder a call hides, resolved; refused when hiding it would hide the whole
+/// system (`/`) or nothing that is there (empty, missing, not a folder).
+fn home_folder(home: &Path) -> Result<PathBuf> {
+    ensure!(
+        !home.as_os_str().is_empty(),
+        "HOME is empty, so a plugin's call cannot be kept out of the home folder"
+    );
+    let resolved = home
+        .canonicalize()
+        .with_context(|| format!("cannot resolve the home folder {}", home.display()))?;
+    ensure!(
+        resolved.is_dir(),
+        "HOME ({}) is not a folder, so a plugin's call cannot be kept out of it",
+        home.display()
+    );
+    ensure!(
+        resolved.parent().is_some(),
+        "HOME is /: hiding it from a plugin's call would hide the whole system"
+    );
+    Ok(resolved)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -865,6 +884,19 @@ mod tests {
             isolation.for_call(home, root, &[]).is_err(),
             "contains home"
         );
+        // A home of / would hide everything; an empty, missing or file home hides
+        // nothing that is there: each is refused, saying why.
+        let file = root.join("a-file");
+        std::fs::write(&file, "").unwrap();
+        for (bad, why) in [
+            (Path::new("/"), "HOME is /"),
+            (Path::new(""), "HOME is empty"),
+            (&*root.join("missing"), "cannot resolve the home folder"),
+            (&*file, "is not a folder"),
+        ] {
+            let error = isolation.for_call(bad, a, &[]).unwrap_err();
+            assert!(format!("{error:#}").contains(why), "{error:#}");
+        }
         assert!(isolation.for_call(home, paths.config_root(), &[]).is_err());
         assert!(
             isolation.for_call(home, &paths.rules_root(), &[]).is_err(),
