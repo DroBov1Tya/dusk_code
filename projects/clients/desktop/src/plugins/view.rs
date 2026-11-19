@@ -2,7 +2,7 @@
 //! markup; each widget that can be used sends its event back under its id.
 
 use dusk_core::app::PhoneDependency;
-use dusk_protocol::plugin::{ButtonIcon, RowLayout, Size, Tone, UiEvent, Widget};
+use dusk_protocol::plugin::{ButtonIcon, RowLayout, Size, Tone, TouchPhase, UiEvent, Widget};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Icon, Sizable,
@@ -15,11 +15,7 @@ use gpui_kit::{
 
 use super::{Key, Slot, lists};
 use crate::{
-    ui::{
-        Type, icons,
-        phone::{self, Gesture},
-        size,
-    },
+    ui::{Type, icons, phone, size},
     workspace::Workspace,
 };
 
@@ -407,23 +403,10 @@ fn screen(
                 .child("Waiting for the screen"),
         ),
     };
-    let (key, widget_id) = (key.clone(), id.to_owned());
-    let on_click = cx.listener(move |ws, event: &ClickEvent, _, cx| {
-        let slot = (key.clone(), widget_id.clone());
-        let Some(drawn) = ws.plugins.drawn.get(&slot) else {
-            return;
-        };
-        let event = match phone::gesture(event, drawn, units) {
-            Some(Gesture::Tap(x, y)) => UiEvent::Tap { x, y },
-            Some(Gesture::Swipe(from, to)) => UiEvent::Swipe { from, to },
-            None => return,
-        };
-        ws.plugin_event(&key, &widget_id, event, cx);
-    });
+    let focus = ws.plugins.screen_focus.get(&slot).cloned();
     if in_phone {
-        let screen = phone::screen(eid(&slot.0, "screen", id), body, units, content, drawn)
-            .cursor_pointer()
-            .on_click(on_click);
+        let screen = phone::screen(eid(&slot.0, "screen", id), body, units, content, drawn);
+        let screen = touchable(screen, &slot, units, focus, cx);
         return div()
             .w_full()
             .flex()
@@ -436,7 +419,7 @@ fn screen(
         .min(units.0)
         .min(room.height * units.0 / units.1)
         .max(1.);
-    div()
+    let screen = div()
         .id(eid(&slot.0, "screen", id))
         .relative()
         .flex_none()
@@ -445,9 +428,152 @@ fn screen(
         .rounded_lg()
         .overflow_hidden()
         .bg(rgb(0x000000))
-        .cursor_pointer()
         .child(content)
-        .child(phone::measure(drawn))
-        .on_click(on_click)
-        .into_any_element()
+        .child(phone::measure(drawn));
+    touchable(screen, &slot, units, focus, cx).into_any_element()
+}
+
+/// A screen the pointer and keys drive: a press, its moves and its lift go to the
+/// plugin as they happen, so a held press is a long press and a drag follows the
+/// pointer; the wheel scrolls, and keys typed while it has focus go to the device.
+fn touchable(
+    screen: Stateful<Div>,
+    slot: &Slot,
+    units: (f32, f32),
+    focus: Option<FocusHandle>,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
+    let touch = |phase: TouchPhase| {
+        let slot = slot.clone();
+        move |ws: &mut Workspace, position: Point<Pixels>, cx: &mut Context<Workspace>| {
+            let Some(drawn) = ws.plugins.drawn.get(&slot) else {
+                return;
+            };
+            let at = match phase {
+                TouchPhase::Down => phone::units_at(drawn, position, units),
+                _ => phone::units_held(drawn, position, units),
+            };
+            let Some((x, y)) = at else { return };
+            match phase {
+                TouchPhase::Down => ws.plugins.pressed = Some((slot.clone(), (x, y))),
+                TouchPhase::Move => match &mut ws.plugins.pressed {
+                    Some((pressed, last)) if *pressed == slot && *last != (x, y) => *last = (x, y),
+                    _ => return,
+                },
+                TouchPhase::Up => match ws.plugins.pressed.take() {
+                    Some((pressed, _)) if pressed == slot => {}
+                    other => {
+                        ws.plugins.pressed = other;
+                        return;
+                    }
+                },
+            }
+            ws.plugin_event(&slot.0, &slot.1, UiEvent::Touch { phase, x, y }, cx);
+        }
+    };
+    let (down, moved, up, up_out) = (
+        touch(TouchPhase::Down),
+        touch(TouchPhase::Move),
+        touch(TouchPhase::Up),
+        touch(TouchPhase::Up),
+    );
+    let focused = focus.clone();
+    let scrolled = slot.clone();
+    let typed = slot.clone();
+    let mut screen = screen
+        .cursor_pointer()
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |ws, event: &MouseDownEvent, window, cx| {
+                if let Some(focus) = &focused {
+                    window.focus(focus, cx);
+                }
+                down(ws, event.position, cx);
+            }),
+        )
+        .on_mouse_move(cx.listener(move |ws, event: &MouseMoveEvent, _, cx| {
+            if event.pressed_button == Some(MouseButton::Left) {
+                moved(ws, event.position, cx);
+            }
+        }))
+        .on_mouse_up(
+            MouseButton::Left,
+            cx.listener(move |ws, event: &MouseUpEvent, _, cx| up(ws, event.position, cx)),
+        )
+        .on_mouse_up_out(
+            MouseButton::Left,
+            cx.listener(move |ws, event: &MouseUpEvent, _, cx| up_out(ws, event.position, cx)),
+        )
+        .on_scroll(cx.listener(move |ws, event: &ScrollEvent, _, cx| {
+            let Some(drawn) = ws.plugins.drawn.get(&scrolled) else {
+                return;
+            };
+            let by = event.delta.pixel_delta(px(16.));
+            let (Some((x, y)), Some((dx, dy))) = (
+                phone::units_at(drawn, event.position, units),
+                phone::units_by(drawn, by, units),
+            ) else {
+                return;
+            };
+            if (dx, dy) != (0, 0) {
+                let event = UiEvent::Scroll { x, y, dx, dy };
+                ws.plugin_event(&scrolled.0, &scrolled.1, event, cx);
+            }
+        }))
+        .on_key_down(cx.listener(move |ws, event: &KeyDownEvent, _, cx| {
+            if let Some(event) = key_event(&event.keystroke, cx) {
+                ws.plugin_event(&typed.0, &typed.1, event, cx);
+                cx.stop_propagation();
+            }
+        }));
+    if let Some(focus) = &focus {
+        screen = screen.track_focus(focus);
+    }
+    screen
+}
+
+/// What a key pressed on a screen sends: a named key, a shortcut the device knows, the
+/// pasteboard's text for a paste, or the text the key types.
+fn key_event(keystroke: &Keystroke, cx: &App) -> Option<UiEvent> {
+    let modifiers = &keystroke.modifiers;
+    let named = |key: &str| Some(UiEvent::Key { key: key.into() });
+    if modifiers.platform {
+        return match (keystroke.key.as_str(), modifiers.shift) {
+            ("a", false) => named("select_all"),
+            ("z", false) => named("undo"),
+            ("z", true) => named("redo"),
+            ("v", false) => cx
+                .read_from_clipboard()
+                .and_then(|item| item.text())
+                .filter(|text| !text.is_empty())
+                .map(|text| UiEvent::Text { text }),
+            _ => None,
+        };
+    }
+    if modifiers.control || modifiers.alt {
+        return None;
+    }
+    let key = match keystroke.key.as_str() {
+        "enter" => "return",
+        "backspace" => "delete",
+        "delete" => "forward_delete",
+        "tab" => "tab",
+        "escape" => "escape",
+        "left" => "left",
+        "right" => "right",
+        "up" => "up",
+        "down" => "down",
+        "home" => "home",
+        "end" => "end",
+        "pageup" => "page_up",
+        "pagedown" => "page_down",
+        _ => {
+            return keystroke
+                .key_char
+                .clone()
+                .filter(|text| !text.is_empty())
+                .map(|text| UiEvent::Text { text });
+        }
+    };
+    named(key)
 }

@@ -125,11 +125,23 @@ impl McpClient {
     /// The text and pictures of the result; a result the server marks as an error is an
     /// error.
     #[tracing::instrument(name = "mcp_call", skip_all, fields(tool = name))]
-    pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<CallOutput> {
+    /// `project` is the chat's folder, told to the server in `_meta` so a tool can keep
+    /// to it, such as a simulator installing only apps built there.
+    pub async fn call_tool(
+        &self,
+        name: &str,
+        arguments: Value,
+        project: Option<&std::path::Path>,
+    ) -> Result<CallOutput> {
         let Value::Object(arguments) = arguments else {
             bail!("arguments must be a JSON object");
         };
-        let params = CallToolRequestParams::new(name.to_owned()).with_arguments(arguments);
+        let mut params = CallToolRequestParams::new(name.to_owned()).with_arguments(arguments);
+        if let Some(project) = project.and_then(|project| project.to_str()) {
+            let mut meta = serde_json::Map::new();
+            meta.insert(PROJECT_META.into(), Value::String(project.to_owned()));
+            params.meta = Some(meta.into());
+        }
         let result = tokio::time::timeout(CALL_TIMEOUT, self.service.call_tool(params))
             .await
             .map_err(|_| anyhow!("the server did not answer in {}s", CALL_TIMEOUT.as_secs()))?
@@ -163,6 +175,9 @@ impl McpClient {
         Ok(CallOutput { text, images })
     }
 }
+
+/// The `_meta` key of the chat's project folder in a tool call.
+pub const PROJECT_META: &str = "dev.duskcode/project";
 
 async fn start_child(config: &StdioServerConfig) -> Result<RunningService<RoleClient, ()>> {
     let mut command = match &config.isolation {

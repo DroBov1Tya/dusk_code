@@ -2,7 +2,7 @@
 //! notes it sends back for the parts this window opened.
 
 use dusk_core::app::PhoneDependency;
-use dusk_protocol::plugin::{Opens, Place, UiEvent, Widget, check_view};
+use dusk_protocol::plugin::{MAX_TEXT, Opens, Place, UiEvent, Widget, check_view};
 use gpui_kit::*;
 
 use super::{Dock, Key};
@@ -167,6 +167,16 @@ impl Workspace {
         event: UiEvent,
         cx: &mut Context<Self>,
     ) {
+        if matches!(
+            event,
+            UiEvent::Touch { .. }
+                | UiEvent::Key { .. }
+                | UiEvent::Text { .. }
+                | UiEvent::Scroll { .. }
+        ) {
+            self.queue_screen_event(key, widget, event, cx);
+            return;
+        }
         let refreshes_phone = widget == "refresh"
             && event == UiEvent::Click
             && PhoneDependency::for_panel(&key.plugin, &key.part).is_some();
@@ -188,6 +198,54 @@ impl Workspace {
                 if let Err(error) = result {
                     ws.fail(error, cx);
                 }
+            },
+        );
+    }
+
+    fn queue_screen_event(
+        &mut self,
+        key: &Key,
+        widget: &str,
+        event: UiEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let queue = &mut self.plugins.screen_queue;
+        if let (Some((last_key, last_widget, UiEvent::Text { text: last })), UiEvent::Text { text }) =
+            (queue.back_mut(), &event)
+            && last_key == key
+            && last_widget == widget
+            && last.chars().count() + text.chars().count() <= MAX_TEXT
+        {
+            last.push_str(text);
+        } else {
+            queue.push_back((key.clone(), widget.to_owned(), event));
+        }
+        self.send_screen_event(cx);
+    }
+
+    fn send_screen_event(&mut self, cx: &mut Context<Self>) {
+        if self.plugins.screen_sending {
+            return;
+        }
+        let Some((key, widget, event)) = self.plugins.screen_queue.pop_front() else {
+            return;
+        };
+        self.plugins.screen_sending = true;
+        self.core.call(
+            cx,
+            move |client| async move {
+                client
+                    .plugins()
+                    .event(&key.plugin, &key.part, &widget, event)
+                    .await
+            },
+            |ws, result, cx| {
+                ws.plugins.screen_sending = false;
+                if let Err(error) = result {
+                    ws.plugins.screen_queue.clear();
+                    ws.fail(error, cx);
+                }
+                ws.send_screen_event(cx);
             },
         );
     }

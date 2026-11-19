@@ -26,6 +26,7 @@ pub use store::{
     Runs, ScreenshotRef, SourceFailure, SourceRow, StoreList, StoreRequest, Tier, UpdateReport,
 };
 pub use view::{
-    ButtonIcon, ListItem, MAX_NODES, MAX_TEXT, RowLayout, Size, Tone, UiEvent, Widget, check_view,
+    ButtonIcon, ListItem, MAX_NODES, MAX_TEXT, RowLayout, Size, Tone, TouchPhase, UiEvent, Widget,
+    check_view,
 };
 pub use wire::{FromPlugin, MAX_FRAME, MAX_LINE, ToPlugin};
