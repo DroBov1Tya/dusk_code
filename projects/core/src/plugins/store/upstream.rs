@@ -15,6 +15,9 @@ use super::fetch::{self, Via};
 const HOST: &str = "https://raw.githubusercontent.com";
 pub const MAX_FILES: usize = 200;
 pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+/// All the files of one item together: far above a skill's text, and low enough that a
+/// list cannot make a review or an install hold hundreds of megabytes.
+pub const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_PATH: usize = 300;
 
 /// Where an entry's files are, as its list names them.
@@ -57,6 +60,14 @@ impl Upstream {
         ensure!(
             (1..=MAX_FILES).contains(&self.files.len()),
             "an upstream names 1 to {MAX_FILES} files"
+        );
+        let total = self
+            .files
+            .iter()
+            .fold(0u64, |total, file| total.saturating_add(file.size));
+        ensure!(
+            total <= MAX_TOTAL_BYTES,
+            "an upstream names {total} bytes; at most {MAX_TOTAL_BYTES} are fetched for one item"
         );
         let mut paths = BTreeSet::new();
         let mut targets = BTreeSet::new();
