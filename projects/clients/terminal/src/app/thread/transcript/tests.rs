@@ -1,6 +1,6 @@
 use super::*;
 use dusk_protocol::{
-    catalog::SkillSave,
+    catalog::{SkillSave, SkillSaveAction},
     model::{ModelEvent, ToolCall},
     thread::{Block, MessageRole},
     tools::ToolResult,
@@ -240,19 +240,19 @@ fn a_skill_line_names_the_change_and_keeps_untrusted_text_plain() {
         "Skill notes/outline created: adds the outline step (undone)"
     );
     shown.skill = "a\x1b[2J\u{202e}b".into();
-    shown.reason = "first\nsecond\u{2067}".into();
+    shown.reason = "first\u{2067}\nsecond".into();
     shown.undone = false;
     shown.can_undo = true;
     shown.action = SkillSaveAction::Updated;
     assert_eq!(
         skill_line(&shown),
-        "Skill a?[2J?b improved: first second (undo in the app)"
+        "Skill a?[2J?b improved: first? (undo in the app)"
     );
     shown.action = SkillSaveAction::Deleted;
     shown.can_undo = false;
     assert_eq!(
         skill_line(&shown),
-        "Skill a?[2J?b deleted: first second (previous text not kept)"
+        "Skill a?[2J?b deleted: first? (previous text not kept)"
     );
 }
 

@@ -109,6 +109,32 @@ pub struct SkillChange {
     pub can_undo: bool,
 }
 
+impl SkillSaveAction {
+    /// How a change's row says it: "created", "improved", "deleted".
+    pub fn verb(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Updated => "improved",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl SkillChange {
+    /// The words of its row: "Skill deploy improved: faster", without the colon when no
+    /// reason was given. The name and reason are the agent's text: `clean` makes each
+    /// plain for the client, and only the reason's first line is shown.
+    pub fn label(&self, clean: impl Fn(&str) -> String) -> String {
+        let skill = clean(&self.skill);
+        let reason = clean(self.reason.lines().next().unwrap_or_default());
+        let verb = self.action.verb();
+        match reason.trim() {
+            "" => format!("Skill {skill} {verb}"),
+            reason => format!("Skill {skill} {verb}: {reason}"),
+        }
+    }
+}
+
 /// A change as lines. The text is skill data: shown as plain text, never as markup.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

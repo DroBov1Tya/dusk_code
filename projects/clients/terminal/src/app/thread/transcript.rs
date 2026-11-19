@@ -15,7 +15,7 @@ use std::{
 
 use super::paste;
 use dusk_protocol::{
-    catalog::{SkillChange, SkillSaveAction},
+    catalog::SkillChange,
     system::now_ms,
     thread::{
         ChatLog, JobResult, Message, ThreadEvent, Tool, ToolState,
@@ -776,26 +776,11 @@ fn job_shown(result: &JobResult) -> JobResult {
 /// The row a skill change draws as. Its name and reason are the agent's text, so they
 /// are shown as plain text: control and bidi characters never reach the screen.
 pub fn skill_line(change: &SkillChange) -> String {
-    let action = match change.action {
-        SkillSaveAction::Created => "created",
-        SkillSaveAction::Updated => "improved",
-        SkillSaveAction::Deleted => "deleted",
+    let clean = |text: &str| {
+        text.chars()
+            .map(|c| if plain(c) { c } else { '?' })
+            .collect()
     };
-    let skill: String = change
-        .skill
-        .chars()
-        .map(|c| if plain(c) { c } else { '?' })
-        .collect();
-    // A reason is one line; a line break becomes a space so the words stay apart.
-    let reason: String = change
-        .reason
-        .chars()
-        .filter_map(|c| match c {
-            '\n' | '\r' | '\t' => Some(' '),
-            _ if plain(c) => Some(c),
-            _ => None,
-        })
-        .collect();
     // The terminal has no Undo; it says where to find one.
     let state = if change.undone {
         "undone"
@@ -804,7 +789,7 @@ pub fn skill_line(change: &SkillChange) -> String {
     } else {
         "previous text not kept"
     };
-    format!("Skill {skill} {action}: {reason} ({state})")
+    format!("{} ({state})", change.label(clean))
 }
 
 fn skill_entry(change: &SkillChange) -> Entry {
