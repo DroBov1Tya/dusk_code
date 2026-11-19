@@ -89,14 +89,14 @@ fn a_users_connector_is_never_replaced_and_a_plugins_goes_with_it() {
     let yours = "mcp:\n  search:\n    command: my-search\n";
     let mut config = Config::parse(yours.as_bytes()).unwrap();
     let theirs = |command: &str| {
-        McpServerConfig::Stdio(StdioServerConfig {
+        McpServerConfig::Stdio(Box::new(StdioServerConfig {
             command: command.into(),
             enabled: true,
             args: Vec::new(),
             env: Default::default(),
             icon: None,
             isolation: None,
-        })
+        }))
     };
     let mut plugged = Plugged::default();
     plugged

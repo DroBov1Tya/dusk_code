@@ -11,7 +11,7 @@ use super::sections::{is_true, yes};
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum McpServerConfig {
-    Stdio(StdioServerConfig),
+    Stdio(Box<StdioServerConfig>),
     Http(HttpServerConfig),
 }
 

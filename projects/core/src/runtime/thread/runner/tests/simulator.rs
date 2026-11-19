@@ -24,14 +24,14 @@ fn call(id: &str, arguments: Value) -> Vec<Step> {
 #[ignore = "needs a booted iOS Simulator and DUSK_IOS_PLUGIN"]
 async fn the_agent_taps_types_and_sees_the_simulator() {
     let program = std::env::var("DUSK_IOS_PLUGIN").expect("DUSK_IOS_PLUGIN");
-    let config = McpServerConfig::Stdio(StdioServerConfig {
+    let config = McpServerConfig::Stdio(Box::new(StdioServerConfig {
         command: program,
         enabled: true,
         args: vec!["mcp".into()],
         env: BTreeMap::new(),
         icon: None,
         isolation: None,
-    });
+    }));
     let client = McpClient::start(&config, None).await.unwrap();
     let tools = client.list_tools().await.unwrap();
     let server = Arc::new(McpServer {
