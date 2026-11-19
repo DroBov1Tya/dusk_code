@@ -42,7 +42,8 @@ impl Server {
             }
             ProjectRequest::Repository { .. }
             | ProjectRequest::RepositoryStatus { .. }
-            | ProjectRequest::PullStatus { .. } => {
+            | ProjectRequest::PullStatus { .. }
+            | ProjectRequest::CreatePull { .. } => {
                 anyhow::bail!("repository requests are answered beside the loop")
             }
             ProjectRequest::PullSummaries => self.pull_summaries().await?,

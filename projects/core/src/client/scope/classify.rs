@@ -270,6 +270,7 @@ fn project(request: &Project) -> Area {
         | Project::Repository { .. }
         | Project::RepositoryStatus { .. }
         | Project::PullStatus { .. }
+        | Project::CreatePull { .. }
         | Project::PullSummaries
         | Project::Files { .. }
         | Project::Outputs

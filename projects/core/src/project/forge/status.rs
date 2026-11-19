@@ -135,6 +135,16 @@ pub(super) async fn read_one(project: &Project, number: u64) -> Option<PullStatu
     one(&text, &remote, number)
 }
 
+/// The pull request of the current branch, as the forge has it; the newest when the
+/// branch has several.
+pub(super) async fn read_current(project: &Project) -> Result<PullStatus> {
+    let fields = format!("--json={FIELDS}");
+    let text = gh(PROGRAM, &project.dir, &["pr", "view", &fields]).await?;
+    let raw: RawPull =
+        serde_json::from_str(&text).context("gh gave a pull request it cannot read")?;
+    Ok(raw.shown())
+}
+
 /// What `gh pr view --json` printed, when it is pull request `number` of `remote`.
 fn one(text: &str, remote: &Remote, number: u64) -> Option<PullStatus> {
     let raw: RawPull = serde_json::from_str(text).ok()?;

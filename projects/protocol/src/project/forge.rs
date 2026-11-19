@@ -10,23 +10,6 @@ pub enum CheckState {
     Failing,
 }
 
-/// Text fields are plain and capped by the core.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PullRequest {
-    pub number: u64,
-    pub title: String,
-    pub author: String,
-    pub branch: String,
-    pub base: String,
-    pub added: u64,
-    pub removed: u64,
-    pub draft: bool,
-    /// All checks together; `None` when there are none.
-    pub checks: Option<CheckState>,
-    /// The page on GitHub, https only.
-    pub url: String,
-}
-
 /// Where one check stands, finer than `CheckState`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CheckStage {
@@ -59,15 +42,6 @@ pub struct Check {
     /// Unix seconds; `None` when not known.
     pub started: Option<i64>,
     pub finished: Option<i64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PullRequestDetail {
-    pub pull: PullRequest,
-    /// `OPEN`, `CLOSED` or `MERGED`.
-    pub state: String,
-    pub body: String,
-    pub checks: Vec<Check>,
 }
 
 /// Where a pull request stands on GitHub.
