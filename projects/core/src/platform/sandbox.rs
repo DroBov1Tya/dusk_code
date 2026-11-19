@@ -28,6 +28,10 @@ pub struct Confinement {
     /// macOS keeps to them; on Linux Landlock does not reach Unix sockets.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub sockets: Vec<PathBuf>,
+    /// May hand work to the system to run outside this confinement (macOS: launchd's
+    /// `launchctl`, LaunchServices' `open`, Apple events). Only macOS can close it.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub hand_off: bool,
 }
 
 /// What a confined program may reach over the network.
@@ -66,6 +70,7 @@ impl Default for Confinement {
             keychain: false,
             programs: Some(Vec::new()),
             sockets: Vec::new(),
+            hand_off: false,
         }
     }
 }
@@ -85,6 +90,7 @@ impl Confinement {
             keychain: true,
             programs: None,
             sockets: Vec::new(),
+            hand_off: true,
         }
     }
 }

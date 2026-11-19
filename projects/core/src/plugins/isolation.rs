@@ -146,6 +146,7 @@ impl Isolation {
                 keychain: false,
                 programs: Some(programs),
                 sockets,
+                hand_off: true,
             },
         })
     }
@@ -177,8 +178,14 @@ impl Isolation {
     /// login keychain open when the plugin asked for it. Hiding home alone would leave
     /// projects outside it open, so each other project is hidden by name.
     ///
-    /// A project under the temporary folders stays writable there, as they are for
-    /// every plugin; projects are not kept there.
+    /// The folders of temporary chats are hidden too, and the program cannot hand work
+    /// to launchd, LaunchServices or Apple events (macOS), which run it unconfined.
+    ///
+    /// Left open, by nature or design: a project under the temporary folders stays
+    /// writable there, as they are for every plugin (projects are not kept there); a
+    /// hard link inside the project to a file elsewhere is read as the project's own;
+    /// the plugin's data folder is the same for every call, so one call can leave a
+    /// file the next reads.
     pub fn for_call(&self, home: &Path, project: &Path, others: &[PathBuf]) -> Result<Isolation> {
         // The second lock after the manifest: a plugin that did not ask for a project
         // folder never gets one, and a call's confinement is never widened again.
@@ -207,6 +214,7 @@ impl Isolation {
             others
                 .iter()
                 .filter_map(|other| other.canonicalize().ok())
+                .chain(crate::runtime::temporary_folders())
                 .filter(|other| *other != project),
         );
         // Reopening this project would open one saved inside it again: neither system
@@ -229,11 +237,18 @@ impl Isolation {
                 granted.display()
             );
         }
+        // A link such as `~/.config/git -> ~/.config` must not reopen the config
+        // folder, home or another project.
+        let safe = |path: &Path| {
+            !path.starts_with(&self.config_root)
+                && !self.config_root.starts_with(path)
+                && !home.starts_with(path)
+                && !overlaps(path)
+        };
         let mut reopened = vec![project.clone()];
         for git in [".gitconfig", ".config/git"] {
             if let Ok(path) = home.join(git).canonicalize()
-                && !path.starts_with(&self.config_root)
-                && !overlaps(&path)
+                && safe(&path)
             {
                 reopened.push(path);
             }
@@ -242,12 +257,14 @@ impl Isolation {
         #[cfg(target_os = "macos")]
         if self.keychain
             && let Ok(path) = home.join("Library/Keychains").canonicalize()
+            && safe(&path)
         {
             reopened.push(path);
         }
         confinement.hidden.extend(hidden);
         confinement.reopened.extend(reopened);
         confinement.keychain = self.keychain;
+        confinement.hand_off = false;
         call.cwd = Some(project);
         Ok(call)
     }
@@ -638,5 +655,69 @@ mod tests {
         };
         assert!(!reach("1.1.1.1", "443").await);
         assert!(reach("127.0.0.1", &broker.port().to_string()).await);
+    }
+
+    /// A temporary chat's folder sits in the temporary folders every plugin may use; a
+    /// call still cannot read it. Linux grants the temporary folders whole, so only
+    /// macOS can close it.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_call_cannot_read_a_temporary_chat() {
+        let Some(setup) = call_setup("call-temporary", reads_project(), None) else {
+            return;
+        };
+        let chat = std::env::temp_dir().join(format!(
+            "duskcode-temp-isolation-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&chat).unwrap();
+        std::fs::write(chat.join("note"), "temporary").unwrap();
+        let call = setup.isolation.for_call(&setup.home, &setup.a, &[]);
+        let read = run(
+            &call.unwrap(),
+            &["/bin/cat", &chat.join("note").display().to_string()],
+        )
+        .await;
+        let _ = std::fs::remove_dir_all(&chat);
+        assert!(!read.status.success(), "a temporary chat was readable");
+    }
+
+    /// launchd, LaunchServices and Apple events run what they are handed outside the
+    /// sandbox, so a call may not reach them; git and a gh-like program still run.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_call_cannot_hand_work_to_the_system() {
+        let Some(setup) = call_setup("call-hand-off", reads_project(), None) else {
+            return;
+        };
+        let call = setup
+            .isolation
+            .for_call(&setup.home, &setup.a, &[])
+            .unwrap();
+        // Refused at exec, before launchd or LaunchServices see anything.
+        let submit = [
+            "/bin/launchctl",
+            "submit",
+            "-l",
+            "dusk.test.never",
+            "--",
+            "/usr/bin/true",
+        ];
+        for line in [&submit[..], &["/usr/bin/open", "-g", "-n", "/usr/bin/true"]] {
+            let output = run(&call, line).await;
+            assert!(!output.status.success(), "{line:?} ran");
+        }
+        let script = "tell application \"Finder\" to get name";
+        let output = run(&call, &["/usr/bin/osascript", "-e", script]).await;
+        assert!(!output.status.success(), "osascript ran");
+        // A gh stand-in in the plugin's folder that runs git in the project.
+        let folder = setup.paths.rules_root().join("plugins/p");
+        let gh = folder.join("gh");
+        std::fs::write(&gh, "#!/bin/sh\n/usr/bin/git --version && pwd\n").unwrap();
+        std::fs::set_permissions(&gh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let output = run(&call, &[&gh.display().to_string()]).await;
+        let printed = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{output:?}");
+        assert!(printed.starts_with("git version"), "{printed}");
     }
 }
