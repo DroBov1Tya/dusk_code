@@ -6,11 +6,13 @@
 //! - `forge`: a forge answer checked against the remote it is about;
 //! - `untrusted`: text from a program made plain and capped.
 
-// Until routing and the forge read through it (tasks 6 and 7 of the contract plan).
-#![allow(dead_code, reason = "routing and the forge call it next")]
-
+// Until the forge reads through the call and checks its answers (task 7 of the plan);
+// routing is in use already.
+#[allow(dead_code, reason = "the forge calls it next")]
 mod call;
+#[allow(dead_code, reason = "the forge maps its answers next")]
 pub mod forge;
+pub mod route;
 pub mod untrusted;
 
 #[cfg(test)]
@@ -114,6 +116,39 @@ impl Contracts {
             self.unsupported.lock().clear();
         }
         *current = new;
+    }
+
+    /// The plugin `host` of `contract` goes to: `chosen` when it serves the host, else
+    /// the best tier, then the name.
+    pub fn route(&self, contract: &str, host: &str, chosen: Option<&str>) -> Option<Arc<Served>> {
+        route::route(&self.served.read(), chosen, contract, host).cloned()
+    }
+
+    /// The plugins that serve `host` of `contract`, by name.
+    pub fn serving(&self, contract: &str, host: &str) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .served
+            .read()
+            .iter()
+            .filter(|served| {
+                route::hosts(served, contract)
+                    .iter()
+                    .any(|name| name == host)
+            })
+            .map(|served| served.plugin.clone())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// The forge hosts `plugin` serves.
+    pub fn served_by(&self, plugin: &str) -> Vec<String> {
+        self.served
+            .read()
+            .iter()
+            .filter(|served| served.plugin == plugin)
+            .flat_map(|served| route::hosts(served, "forge").to_vec())
+            .collect()
     }
 
     /// Changes whenever a plugin, the hosts it serves or its confinement changes.

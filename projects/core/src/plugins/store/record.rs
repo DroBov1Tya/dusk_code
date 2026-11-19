@@ -148,6 +148,16 @@ impl Record {
             .filter(|item| item.path(paths, name).is_dir())
     }
 
+    /// How far `name` is vouched for: a folder the store did not install is `Local`; one
+    /// signed by the key built in is `Official`; any other source is `Community`.
+    pub fn tier(&self, paths: &Paths, name: &str) -> Tier {
+        match self.present(paths, name) {
+            None => Tier::Local,
+            Some(item) if item.key == official_key() => Tier::Official,
+            Some(_) => Tier::Community,
+        }
+    }
+
     /// What `source` installed as `name`, when its folder is still there.
     pub fn installed_from(
         &self,

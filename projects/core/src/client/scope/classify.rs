@@ -228,6 +228,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::SetSecret { .. }
         | Settings::DeleteSecret { .. }
         | Settings::Voice(_)
+        | Settings::SetContractPlugin { .. }
         | Settings::PluginSecret { .. } => Area::Settings,
     }
 }

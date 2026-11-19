@@ -246,7 +246,7 @@ fn check_provides(manifest: &Manifest) -> Result<()> {
 }
 
 /// A lowercase DNS name with a dot: no wildcard, IP literal, port or `localhost`.
-fn is_forge_host(host: &str) -> bool {
+pub(crate) fn is_forge_host(host: &str) -> bool {
     host.len() <= 253
         && host.contains('.')
         && host != "localhost"
