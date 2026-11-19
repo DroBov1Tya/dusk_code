@@ -26,6 +26,53 @@ macro_rules! select_threads {
     };
 }
 
+// The walks of the thread tree. UNION, in each: parent links that loop, which only a
+// damaged database has, end the walk instead of running it for ever.
+
+/// `$rest` over `family(id)`: the thread bound as `?1` and every agent thread under it.
+macro_rules! family {
+    ($rest:literal) => {
+        concat!(
+            "WITH RECURSIVE family(id) AS (SELECT ?1 UNION SELECT threads.id FROM threads ",
+            "JOIN family ON threads.parent_thread_id = family.id) ",
+            $rest
+        )
+    };
+}
+pub(crate) use family;
+
+/// `$rest` over `below(id)`: every agent thread under the thread bound as `?1`, at any
+/// depth, without that thread itself.
+macro_rules! below {
+    ($rest:literal) => {
+        concat!(
+            "WITH RECURSIVE below(id) AS (SELECT id FROM threads WHERE parent_thread_id = ?1 ",
+            "UNION SELECT threads.id FROM threads JOIN below ON threads.parent_thread_id = below.id) ",
+            $rest
+        )
+    };
+}
+pub(crate) use below;
+
+/// The chat `id` belongs to: itself for a chat, the top of its tree for an agent. `None`
+/// for an unknown thread, and for one whose parent links loop.
+pub(crate) async fn chat_of<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    id: &str,
+) -> sqlx::Result<Option<String>> {
+    sqlx::query_scalar(
+        "WITH RECURSIVE above(id, parent) AS (
+            SELECT id, parent_thread_id FROM threads WHERE id = ?
+            UNION
+            SELECT threads.id, threads.parent_thread_id
+            FROM threads JOIN above ON threads.id = above.parent
+         ) SELECT id FROM above WHERE parent IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(executor)
+    .await
+}
+
 impl State {
     pub async fn create_thread(&self, id: &str, source: &str) -> Result<Thread> {
         self.insert_thread(id, source, None, None, None).await
@@ -225,35 +272,19 @@ impl State {
 
     /// The chat a thread belongs to: itself for a chat, the top of its tree for an agent.
     pub async fn root_thread(&self, id: &str) -> Result<String> {
-        // UNION, here and in the walks below: parent links that loop, which only a
-        // damaged database has, end the walk instead of running it for ever.
-        sqlx::query_scalar(
-            "WITH RECURSIVE above(id, parent) AS (
-                SELECT id, parent_thread_id FROM threads WHERE id = ?
-                UNION
-                SELECT threads.id, threads.parent_thread_id
-                FROM threads JOIN above ON threads.id = above.parent
-             ) SELECT id FROM above WHERE parent IS NULL",
-        )
-        .bind(id)
-        .fetch_one(&self.pool)
-        .await
-        .context("find the chat of a thread")
+        chat_of(&self.pool, id)
+            .await
+            .context("find the chat of a thread")?
+            .context("the thread has no chat")
     }
 
     /// Every agent thread below this one, at any depth.
     pub async fn descendant_threads(&self, id: &str) -> Result<Vec<String>> {
-        sqlx::query_scalar(
-            "WITH RECURSIVE below(id) AS (
-                SELECT id FROM threads WHERE parent_thread_id = ?
-                UNION
-                SELECT threads.id FROM threads JOIN below ON threads.parent_thread_id = below.id
-             ) SELECT id FROM below",
-        )
-        .bind(id)
-        .fetch_all(&self.pool)
-        .await
-        .context("list agent threads below")
+        sqlx::query_scalar(below!("SELECT id FROM below"))
+            .bind(id)
+            .fetch_all(&self.pool)
+            .await
+            .context("list agent threads below")
     }
 
     /// Messages other agents sent a thread since the last one a client sent it.
@@ -339,17 +370,6 @@ impl State {
         .rows_affected();
         Ok(rows != 0)
     }
-}
-
-/// `$rest` run over the chat bound first and every agent thread under it.
-macro_rules! family {
-    ($rest:literal) => {
-        concat!(
-            "WITH RECURSIVE family(id) AS (SELECT ? UNION SELECT threads.id FROM threads ",
-            "JOIN family ON threads.parent_thread_id = family.id) ",
-            $rest
-        )
-    };
 }
 
 impl State {
@@ -471,6 +491,25 @@ mod tests {
         assert_eq!(below, ["one", "two"]);
         let depth = tokio::time::timeout(soon, state.thread_depth("two")).await;
         assert_eq!(depth.expect("the count never ends").unwrap(), 2);
+        // Every other walk of the tree shares the same SQL, and ends too.
+        let tokens = tokio::time::timeout(soon, state.thread_tokens("one")).await;
+        tokens.expect("the token sum never ends").unwrap();
+        let wake = tokio::time::timeout(soon, state.goal_wake_state("one")).await;
+        assert_eq!(
+            wake.expect("the wake check never ends").unwrap(),
+            (false, false)
+        );
+        let busy = sqlx::query_scalar::<_, bool>(below!(
+            "SELECT EXISTS(SELECT 1 FROM below WHERE id = 'two')"
+        ))
+        .bind("one")
+        .fetch_one(&state.pool);
+        assert!(tokio::time::timeout(soon, busy).await.unwrap().unwrap());
+        let family = sqlx::query_scalar::<_, String>(family!("SELECT id FROM family ORDER BY id"))
+            .bind("one")
+            .fetch_all(&state.pool);
+        let family = tokio::time::timeout(soon, family).await.unwrap().unwrap();
+        assert_eq!(family, ["one", "two"]);
     }
 
     #[tokio::test]

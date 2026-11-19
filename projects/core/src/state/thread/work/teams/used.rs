@@ -7,7 +7,7 @@ use dusk_protocol::thread::{
 use sqlx::Row;
 
 use super::{MINUTE_MS, State, TeamRun, Tx, error::TeamError, read_run, root_of, stored};
-use crate::state::PlanStatus;
+use crate::state::{PlanStatus, thread::threads::family};
 
 /// What the dispatcher is about to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,24 +64,6 @@ impl Spent {
             Self::Time => TeamEnd::Time,
         }
     }
-}
-
-/// The root thread and every thread under it, as `tree(id)`, for a query that binds the
-/// root as `?1`. UNION and the bound of 32 levels end the walk on parent links that
-/// loop, which only a damaged database has; agents nest far less deep.
-macro_rules! tree {
-    ($rest:literal) => {
-        concat!(
-            "WITH RECURSIVE tree(id, depth) AS (
-                SELECT ?1, 0
-                UNION
-                SELECT threads.id, tree.depth + 1
-                FROM threads JOIN tree ON threads.parent_thread_id = tree.id
-                WHERE tree.depth < 32
-             ) ",
-            $rest
-        )
-    };
 }
 
 // T1 (the dispatcher, the stall rule) and R1 (recovery) are the callers; nothing in the
@@ -190,13 +172,13 @@ pub(super) async fn used(
     now: i64,
 ) -> Result<TeamUsed, TeamError> {
     let until = run.ended_at.unwrap_or(i64::MAX);
-    let (steps, tokens): (i64, i64) = sqlx::query_as(tree!(
+    let (steps, tokens): (i64, i64) = sqlx::query_as(family!(
         "SELECT
              (SELECT COUNT(*) FROM model_usage u
-              WHERE u.thread_id IN (SELECT id FROM tree) AND u.purpose = 'answer'
+              WHERE u.thread_id IN (SELECT id FROM family) AND u.purpose = 'answer'
                 AND u.created_at BETWEEN ?2 AND ?3),
              (SELECT COALESCE(SUM(u.prompt_tokens + u.completion_tokens), 0) FROM model_usage u
-              WHERE u.thread_id IN (SELECT id FROM tree) AND u.created_at BETWEEN ?2 AND ?3)"
+              WHERE u.thread_id IN (SELECT id FROM family) AND u.created_at BETWEEN ?2 AND ?3)"
     ))
     .bind(&run.thread_id)
     .bind(run.started_at)

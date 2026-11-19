@@ -19,6 +19,7 @@ pub use project::{Episode, Recall};
 pub use project::{EpisodeKind, NewEpisode};
 pub use skill_changes::{NewSkillChange, StoredSkillChange};
 pub use thread::MEMBER_SOURCE;
+pub(crate) use thread::below;
 pub use thread::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Delivery,
     Ended, Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt,

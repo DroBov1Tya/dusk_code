@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 
 use sqlx::{Sqlite, Transaction};
+
+use crate::state::thread::threads::chat_of;
 use uuid::Uuid;
 
 use super::{
@@ -257,19 +259,9 @@ pub(in crate::state::thread::work) async fn root_of(
     transaction: &mut Tx<'_>,
     thread: &str,
 ) -> Result<String, PlanError> {
-    // UNION ends the walk on parent links that loop, as `State::root_thread` does.
-    sqlx::query_scalar(
-        "WITH RECURSIVE above(id, parent) AS (
-            SELECT id, parent_thread_id FROM threads WHERE id = ?
-            UNION
-            SELECT threads.id, threads.parent_thread_id
-            FROM threads JOIN above ON threads.id = above.parent
-         ) SELECT id FROM above WHERE parent IS NULL",
-    )
-    .bind(thread)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| PlanError::NoSuchThread(thread.to_owned()))
+    chat_of(&mut **transaction, thread)
+        .await?
+        .ok_or_else(|| PlanError::NoSuchThread(thread.to_owned()))
 }
 
 /// The id of a task of the plan, from the id or the end of it when only one fits.
