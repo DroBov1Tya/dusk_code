@@ -32,6 +32,8 @@ pub type Stamps = HashMap<PathBuf, Stamp>;
 /// What one call starts from: the files and the texts they had. Every call has its own,
 /// so another thread's look cannot hide this call's change.
 pub struct Baseline {
+    /// How many changes had been recorded when it was taken.
+    seq: u64,
     stamps: Stamps,
     texts: HashMap<PathBuf, Arc<str>>,
 }
@@ -52,8 +54,11 @@ struct Cache {
     /// Files not cached (too big, not text, over budget), by the stamp they were seen at,
     /// so they are not read again at every call.
     skipped: HashMap<PathBuf, Stamp>,
-    /// The last change reported for a file, so overlapping calls record it once.
-    recorded: HashMap<PathBuf, Stamp>,
+    /// The last change reported for a file: its stamp, its text and its number, so
+    /// overlapping calls record it once and the next one starts from this text.
+    recorded: HashMap<PathBuf, (Stamp, Arc<str>, u64)>,
+    /// Changes recorded so far.
+    seq: u64,
     bytes: usize,
 }
 
@@ -104,28 +109,41 @@ impl Watch {
         tokio::task::spawn_blocking(move || {
             let mut stamps = Stamps::new();
             walk(&folder, 0, &mut stamps);
-            let mut cache = cache.lock();
-            let gone: Vec<_> = cache
-                .texts
-                .keys()
-                .chain(cache.skipped.keys())
-                .chain(cache.recorded.keys())
-                .filter(|path| !stamps.contains_key(*path))
-                .cloned()
-                .collect();
-            for path in gone {
-                cache.forget(&path);
-                cache.recorded.remove(&path);
-            }
-            for (path, stamp) in &stamps {
-                if cache.knows(path, stamp) {
-                    continue;
+            // Decided under the lock, read without it.
+            let unknown: Vec<_> = {
+                let mut cache = cache.lock();
+                let gone: Vec<_> = cache
+                    .texts
+                    .keys()
+                    .chain(cache.skipped.keys())
+                    .chain(cache.recorded.keys())
+                    .filter(|path| !stamps.contains_key(*path))
+                    .cloned()
+                    .collect();
+                for path in gone {
+                    cache.forget(&path);
+                    cache.recorded.remove(&path);
                 }
-                match read_text(path) {
-                    Some(text) => cache.put(path.clone(), *stamp, text),
+                stamps
+                    .iter()
+                    .filter(|(path, stamp)| !cache.knows(path, stamp))
+                    .map(|(path, stamp)| (path.clone(), *stamp))
+                    .collect()
+            };
+            let read: Vec<_> = unknown
+                .into_iter()
+                .map(|(path, stamp)| {
+                    let text = read_text(&path);
+                    (path, stamp, text)
+                })
+                .collect();
+            let mut cache = cache.lock();
+            for (path, stamp, text) in read {
+                match text {
+                    Some(text) => cache.put(path, stamp, text),
                     None => {
-                        cache.forget(path);
-                        cache.skipped.insert(path.clone(), *stamp);
+                        cache.forget(&path);
+                        cache.skipped.insert(path, stamp);
                     }
                 }
             }
@@ -134,14 +152,19 @@ impl Watch {
                 .iter()
                 .map(|(path, (_, text))| (path.clone(), Arc::clone(text)))
                 .collect();
-            Baseline { stamps, texts }
+            Baseline {
+                seq: cache.seq,
+                stamps,
+                texts,
+            }
         })
         .await
         .ok()
     }
 
     /// The skills created or changed since `before`, by name. A change another call
-    /// reported already is not reported again.
+    /// reported already is not reported again, and one made after another call's report
+    /// of the same file starts from the text that report left.
     pub async fn changed(&self, before: Baseline) -> Vec<Changed> {
         let Some(folder) = self.skills.clone() else {
             return Vec::new();
@@ -156,31 +179,45 @@ impl Watch {
                 .map(|(path, stamp)| (path.clone(), *stamp))
                 .collect();
             paths.sort();
+            // Read without the lock.
+            let read: Vec<_> = paths
+                .into_iter()
+                .map(|(path, stamp)| {
+                    let text = read_text(&path);
+                    (path, stamp, text)
+                })
+                .collect();
             let mut cache = cache.lock();
             let mut found = Vec::new();
-            for (path, stamp) in paths {
-                let Some(text) = read_text(&path) else {
+            for (path, stamp, text) in read {
+                let Some(text) = text else {
                     cache.forget(&path);
                     cache.skipped.insert(path, stamp);
                     continue;
                 };
-                let old = before.texts.get(&path).cloned();
                 let created = !before.stamps.contains_key(&path);
+                let old = match cache.recorded.get(&path) {
+                    Some((_, recorded, seq)) if *seq > before.seq => Some(Arc::clone(recorded)),
+                    _ => before.texts.get(&path).cloned(),
+                };
+                let again = cache
+                    .recorded
+                    .get(&path)
+                    .is_some_and(|(seen, ..)| *seen == stamp);
                 cache.put(path.clone(), stamp, Arc::clone(&text));
                 let Some(skill) = node_name(&folder, SKILL_FILE, &path) else {
                     continue;
                 };
                 // A touched file with the same text is no change.
-                if old.as_deref() == Some(&*text) || Node::check(&text, &skill).is_err() {
+                if again || old.as_deref() == Some(&*text) || Node::check(&text, &skill).is_err() {
                     continue;
                 }
-                if cache.recorded.get(&path) == Some(&stamp) {
-                    continue;
-                }
-                cache.recorded.insert(path, stamp);
+                cache.seq += 1;
+                let seq = cache.seq;
+                cache.recorded.insert(path, (stamp, Arc::clone(&text), seq));
                 found.push(Changed {
                     skill,
-                    created,
+                    created: created && old.is_none(),
                     before: old.map(|text| text.to_string()),
                     after: text.to_string(),
                 });
@@ -250,6 +287,25 @@ mod tests {
         assert_eq!(changes[0].before.as_deref(), Some(skill("one").as_str()));
         // The same change is not recorded a second time.
         assert!(watch.changed(b).await.is_empty());
+    }
+
+    /// Two calls that began at the same text: the later report starts from what the
+    /// earlier one left, so undoing it does not wipe the earlier change.
+    #[tokio::test]
+    async fn a_later_report_starts_from_the_last_recorded_text() {
+        let root = temp_dir("watch_chain");
+        let file = root.join("demo/SKILL.md");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, skill("one")).unwrap();
+        let watch = Watch::new(Some(root));
+        let a = watch.before().await.unwrap();
+        let b = watch.before().await.unwrap();
+        fs::write(&file, skill("two!")).unwrap();
+        assert_eq!(watch.changed(b).await.len(), 1);
+        fs::write(&file, skill("three!!")).unwrap();
+        let later = watch.changed(a).await;
+        assert_eq!(later.len(), 1);
+        assert_eq!(later[0].before.as_deref(), Some(skill("two!").as_str()));
     }
 
     #[tokio::test]

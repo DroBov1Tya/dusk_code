@@ -90,9 +90,6 @@ enum Slot {
     Done(ToolResult, Vec<SkillChange>),
 }
 
-/// A call's result and the skill changes it made.
-type Watched = (ToolResult, Vec<SkillChange>);
-
 /// What a model call came to after its attempts.
 pub struct Called {
     pub output: ModelOutput,
@@ -298,7 +295,10 @@ impl Agent {
                         {
                             Ran::of(result, skills)
                         }
-                        Slot::Done(..) => Ran::cancelled(LADDER_STOPPED),
+                        Slot::Done(_, skills) => Ran {
+                            skills,
+                            ..Ran::cancelled(LADDER_STOPPED)
+                        },
                         Slot::Started(skills) => Ran {
                             skills,
                             ..Ran::cancelled("stopped: the user interrupted the turn")
@@ -381,7 +381,7 @@ impl Agent {
             let baselines = &baselines;
             let work = async move {
                 // Boxed, or the compiler cannot show the spawned turn is `Send`.
-                let calls: Vec<BoxFuture<'_, (usize, Watched)>> = running
+                let calls: Vec<BoxFuture<'_, (usize, ToolResult)>> = running
                     .iter()
                     .map(|&index| {
                         async move {
@@ -397,51 +397,59 @@ impl Agent {
                     .collect();
                 let mut calls = stream::iter(calls).buffer_unordered(TOGETHER);
                 while let Some((index, result)) = calls.next().await {
-                    slots[index] = Slot::Done(result.0, result.1);
+                    slots[index] = Slot::Done(result, Vec::new());
                 }
             };
             inbox.race(work).await.err()
         };
+        // Recorded after the race, so a stop cannot lose a change.
         for (index, slot) in slots.iter_mut().enumerate() {
-            if matches!(slot, Slot::Idle) && started[index].load(Ordering::Relaxed) {
-                // A call cut off may have changed a skill before it was dropped.
-                let before = baselines[index].lock().take();
-                let mut told = Vec::new();
-                if let Some(before) = before {
-                    for (info, _) in self.record_skills(&group[index], before).await {
-                        told.push(info);
-                    }
+            let before = baselines[index].lock().take();
+            let mut told = Vec::new();
+            let mut notice = None;
+            if let Some(before) = before {
+                for (info, line) in self.record_skills(&group[index], before).await {
+                    notice.get_or_insert(line);
+                    told.push(info);
                 }
-                *slot = Slot::Started(told);
+            }
+            match slot {
+                Slot::Done(result, skills) => {
+                    // The last line, where clients look for it.
+                    if let Some(line) = notice {
+                        result.content.push_str(&format!("\n{line}"));
+                    }
+                    *skills = told;
+                }
+                Slot::Idle if started[index].load(Ordering::Relaxed) => {
+                    *slot = Slot::Started(told);
+                }
+                _ => {}
             }
         }
         (slots, stopped)
     }
 
-    /// Runs one call. A call that may write is watched for skill changes, which are
-    /// recorded and named in its result. Its baseline waits in `baseline`, outside this
-    /// future, so a stop that drops the call still finds it.
+    /// Runs one call. A call that may write leaves its skill baseline in `baseline`,
+    /// outside this future, so the changes are recorded after the call whether it ended
+    /// or was stopped (see `run_group`).
     async fn run_call(
         &self,
         call: &ToolCall,
         config: &Arc<Config>,
         baseline: &Mutex<Option<Baseline>>,
-    ) -> Watched {
+    ) -> ToolResult {
         self.emit(ThreadEvent::ToolStarted(call.clone()));
         let progress = Progress {
             call_id: call.id.clone(),
             events: self.events.clone(),
         };
-        let watched = !self.tools.read_only(&call.name, &call.arguments);
-        if watched {
+        if !self.tools.read_only(&call.name, &call.arguments) {
             let start = self.skill_watch.before().await;
             *baseline.lock() = start;
         }
         let mut result = self.tools.call(call, &self.scope, config, progress).await;
-        let Some(before) = baseline.lock().take() else {
-            return (result, Vec::new());
-        };
-        // The notice is the core's alone: a marker the tool printed is not believed.
+        // The notice is the core's alone: a marker a tool printed is not believed.
         if result
             .content
             .lines()
@@ -454,15 +462,7 @@ impl Agent {
                 .collect();
             result.content = kept.join("\n");
         }
-        let mut told = Vec::new();
-        for (info, notice) in self.record_skills(call, before).await {
-            // The last line, where clients look for it.
-            if told.is_empty() {
-                result.content.push_str(&format!("\n{notice}"));
-            }
-            told.push(info);
-        }
-        (result, told)
+        result
     }
 
     /// Records what the call changed in skills, in the main state, and gives each row as

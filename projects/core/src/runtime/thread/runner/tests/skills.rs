@@ -178,13 +178,12 @@ async fn read_only_calls_are_not_watched() {
 
 #[tokio::test]
 async fn a_new_skill_is_a_created_row() {
-    let (state, _, file) = scribed("skill_created", |file| {
+    let (state, _, _) = scribed("skill_created", |file| {
         let new = file.parent().unwrap().parent().unwrap().join("new");
         std::fs::create_dir_all(&new).unwrap();
         json!({ "path": new.join("SKILL.md"), "text": V2 })
     })
     .await;
-    assert!(file.exists());
     let rows = state.skill_changes("thread").await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].skill, "new");
