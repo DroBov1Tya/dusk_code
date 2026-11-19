@@ -19,11 +19,14 @@ impl Runtime {
     /// Every mode with the first sentence of its prompt, for a client to describe it.
     pub fn mode_infos(&self) -> Vec<dusk_protocol::config::ModeInfo> {
         let dir = self.launcher.paths.modes_dir();
-        self.modes()
+        let modes = Modes::new(&dir);
+        modes
+            .list()
             .into_iter()
             .map(|name| {
-                let prompt =
-                    std::fs::read_to_string(dir.join(format!("{name}.md"))).unwrap_or_default();
+                // The prompt the thread uses, so a built-in mode without a file shows
+                // its template's summary.
+                let prompt = modes.prompt(&name).ok().flatten().unwrap_or_default();
                 let flat = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
                 let end = flat.find(". ").map_or(flat.len(), |at| at + 1);
                 let summary = flat[..end].chars().take(200).collect();
