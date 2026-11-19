@@ -2,6 +2,7 @@
 //! and which tools and skills are on.
 //! `LiveConfig` keeps the current copy in memory and writes changes back.
 
+mod contracts;
 mod file;
 pub mod live;
 mod mcp;
@@ -10,6 +11,7 @@ mod providers;
 mod sections;
 mod workshop;
 
+pub use contracts::Contracts;
 pub use dusk_protocol::config::{Arbiter, ContextPolicy, UNKNOWN_WINDOW, VersionControl};
 pub use dusk_protocol::model::Effort;
 pub use file::Config;

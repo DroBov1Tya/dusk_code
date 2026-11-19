@@ -7,11 +7,12 @@
 //! hidden one. What appears there later stays closed.
 //!
 //! Landlock cannot keep a program to one port on this machine, nor stop UDP or a unix
-//! socket, so a confinement that allows only the broker is refused here.
+//! socket, so a confinement that allows only the broker is refused here; a program that
+//! may reach its broker runs in a network namespace of its own instead (`netns`).
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use landlock::{
     ABI, Access, AccessFs, AccessNet, BitFlags, CompatLevel, Compatible, Ruleset, RulesetAttr,
     RulesetCreated, RulesetCreatedAttr, path_beneath_rules,
@@ -40,22 +41,45 @@ pub fn available() -> bool {
 }
 
 pub fn command(program: &Path, arguments: &[String], confinement: &Confinement) -> Result<Command> {
-    let mut rules = Some(rules(confinement)?);
+    // Landlock leaves TCP open in a namespace; outside one that would be the machine's.
+    ensure!(
+        confinement.network != Network::Namespace,
+        "a program kept to its own network namespace starts only in one"
+    );
     let mut sandboxed = Command::new(program);
     sandboxed.args(arguments);
+    confine(&mut sandboxed, confinement)?;
+    Ok(sandboxed)
+}
+
+/// Applies the confinement to `command` just before it runs, after what it was given to
+/// do before.
+pub fn confine(command: &mut Command, confinement: &Confinement) -> Result<()> {
+    // A file removed while the rules are made can fail them (some file systems fail
+    // fstat on its open descriptor then): once more.
+    let mut rules = Some(rules(confinement).or_else(|_| rules(confinement))?);
     // SAFETY: the closure runs in the forked child before exec and only makes the two
     // system calls that restrict it, on a ruleset made in the parent.
     unsafe {
-        sandboxed.pre_exec(move || {
-            if let Some(rules) = rules.take() {
-                rules
-                    .restrict_self()
-                    .map_err(|error| std::io::Error::other(error.to_string()))?;
+        command.pre_exec(move || {
+            if let Some(rules) = rules.take()
+                && let Err(error) = rules.restrict_self()
+            {
+                // errno of the failed call, read before anything else runs; a check
+                // of the crate's own sets none, so EPERM stands in. The error is
+                // leaked: freeing it in the forked child could deadlock, and the
+                // child ends here.
+                let code = std::io::Error::last_os_error()
+                    .raw_os_error()
+                    .filter(|code| *code != 0)
+                    .unwrap_or(nix::libc::EPERM);
+                std::mem::forget(error);
+                return Err(std::io::Error::from_raw_os_error(code));
             }
             Ok(())
         });
     }
-    Ok(sandboxed)
+    Ok(())
 }
 
 fn rules(confinement: &Confinement) -> Result<RulesetCreated> {
@@ -72,6 +96,8 @@ fn rules(confinement: &Confinement) -> Result<RulesetCreated> {
         Network::Open => {}
         // No rule follows: every TCP bind and connect is refused.
         Network::Closed => ruleset = ruleset.handle_access(AccessNet::from_all(NET_ABI))?,
+        // Its own namespace has no interface but loopback, where only the broker listens.
+        Network::Namespace => {}
         Network::Broker(_) => bail!(
             "Landlock cannot keep a program to one port on this machine, so a plugin that \
              connects anywhere does not start on Linux"

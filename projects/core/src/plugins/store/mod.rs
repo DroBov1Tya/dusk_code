@@ -58,7 +58,8 @@ use super::{catalog, manifest::Manifest};
 use crate::{config::Mirror, init::paths::Paths};
 use fetch::Via;
 use index::Entry;
-use record::{Installed, Record};
+use record::Installed;
+pub(crate) use record::Record;
 use source::Fetched;
 
 pub use listing::Here;

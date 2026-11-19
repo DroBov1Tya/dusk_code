@@ -69,7 +69,7 @@ pub struct Policy {
     pub origins: Vec<Origin>,
     pub keys: Vec<Key>,
     /// Off only in tests, which serve on this machine.
-    pub(super) public_only: bool,
+    pub(crate) public_only: bool,
 }
 
 impl Policy {

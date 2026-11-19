@@ -1,10 +1,11 @@
 //! Running the GitHub CLI: an argument vector with every value in `--flag=value` form,
-//! no prompts, no pager, a time limit; and its text made plain.
+//! no prompts, no pager, a time limit. Its text is made plain by `untrusted`.
 
 use std::{path::Path, time::Duration};
 
 use anyhow::{Result, bail};
 
+pub(super) use crate::plugins::contract::untrusted::{link, plain, time};
 use crate::project::git;
 
 pub(super) const PROGRAM: &str = "gh";
@@ -44,41 +45,4 @@ async fn run(program: &str, dir: &Path, args: &[&str]) -> Result<git::Output> {
         .env("GH_PAGER", "cat")
         .env("NO_COLOR", "1");
     git::finish(command, LIMIT).await
-}
-
-/// Untrusted text as plain text: control and direction-changing characters out, capped.
-pub(super) fn plain(text: &str, max: usize) -> String {
-    let mut out: String = text
-        .chars()
-        .filter(|c| (!c.is_control() || *c == '\n') && !is_bidi(*c))
-        .take(max)
-        .collect();
-    if text.chars().count() > max {
-        out.push_str("...");
-    }
-    out
-}
-
-/// Marks that reorder text on screen, so a name could show other than it reads.
-fn is_bidi(c: char) -> bool {
-    matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-}
-
-/// Unix seconds of a time GitHub gives, such as `2026-11-18T12:07:21Z`; `None` for
-/// anything else, and for the zero time it gives a check not started.
-pub(super) fn time(text: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(text)
-        .ok()
-        .map(|time| time.timestamp())
-        .filter(|seconds| *seconds > 0)
-}
-
-/// An https link to GitHub, or nothing.
-pub(super) fn link(url: &str) -> String {
-    let safe = url.starts_with("https://")
-        && url.len() <= 500
-        && url
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "-._~:/?#[]@!$&'()*+,;=%".contains(c));
-    if safe { url.to_owned() } else { String::new() }
 }

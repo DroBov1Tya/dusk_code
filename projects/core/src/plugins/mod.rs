@@ -13,10 +13,12 @@
 //! - `isolation` — how every program of a plugin is confined;
 //! - `lines` — reading a plugin program's lines with a hard cap;
 //! - `broker` — a plugin's only way to the network, which holds its keys;
+//! - `contract` — calling a program that serves a contract, once per call;
 //! - `store` — installing plugins from the signed store.
 
 pub mod broker;
 pub mod catalog;
+pub mod contract;
 pub mod hooks;
 mod install;
 pub mod isolation;
