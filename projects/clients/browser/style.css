@@ -849,10 +849,10 @@ button.link.quiet:hover { color: var(--fg); }
 .pin-row:hover .pin-unpin, .pin-unpin:focus-visible { visibility: visible; }
 
 /* The composer's panel: a tab on the box's edge, in sight while the pointer is over the
-   chat, and the band it opens glued on top of the box. */
+   box or the tab, and the band it opens glued on top of the box. */
 .composer-panel { grid-column: 1 / -1; position: relative; display: flex; flex-direction: column; align-items: center; }
 .composer-tab { width: 36px; height: 14px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--panel); color: var(--muted); opacity: 0; transition: opacity 140ms var(--ease); margin-bottom: -1px; z-index: 1; }
-.chat:hover .composer-tab, .composer-tab:focus-visible, .composer-tab.open { opacity: 1; }
+.composer-tab:hover, .composer-wrap:has(.composer:hover) .composer-tab, .composer-tab:focus-visible, .composer-tab.open { opacity: 1; }
 .composer-tab .glyph { width: 12px; height: 12px; transform: rotate(180deg); }
 .composer-tab.open .glyph { transform: none; }
 .composer-band { align-self: stretch; display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s3); background: var(--panel); border: 1px solid var(--line); border-bottom: 0; border-radius: 16px 16px 0 0; margin-bottom: -12px; padding-bottom: calc(var(--s1) + 12px); animation: rise var(--t-open) var(--ease); }

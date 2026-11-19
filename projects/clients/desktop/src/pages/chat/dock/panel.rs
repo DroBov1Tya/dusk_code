@@ -30,7 +30,7 @@ const TAB_FADE: std::time::Duration = std::time::Duration::from_millis(140);
 /// The tab over the upper edge of whatever stands on top, the band or the box, in the
 /// band's color: it is the band's handle. `border` is the edge's color. A later sibling
 /// of both, so it paints over their edge. It is in sight only while the pointer is over
-/// the chat, the panel is open or the keyboard is on it; out of sight it is still there,
+/// the box, the panel is open or the keyboard is on it; out of sight it is still there,
 /// so Tab reaches it and it shows itself.
 pub fn tab(
     ws: &Workspace,
@@ -79,11 +79,11 @@ pub fn tab(
             }
         }))
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_panel(cx)));
-    let shown = open || focused || ws.dock.chat_hovered;
+    let shown = open || focused || ws.dock.box_hovered;
     let seen = ws.dock.tab_seen;
     let tab = div()
         .absolute()
-        .top(px(1. - TAB.1))
+        .top_0()
         .left_0()
         .right_0()
         .flex()

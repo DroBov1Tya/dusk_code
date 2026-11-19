@@ -202,11 +202,19 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                         .child(
                             // The panel, when open, stands on the card and takes its upper
                             // edge; the tab stands on whichever is on top.
+                            // Its room is padding, so the pointer on the tab is still
+                            // over the box and the tab stays while it is reached for.
                             div()
+                                .id("composer-stack")
                                 .relative()
                                 .flex()
                                 .flex_col()
-                                .when(tab.is_some(), |stack| stack.mt(px(panel::TAB.1 - 1.)))
+                                .when(tab.is_some(), |stack| stack.pt(px(panel::TAB.1 - 1.)))
+                                .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
+                                    ws.dock.box_hovered = *hovered;
+                                    ws.dock.tab_seen |= *hovered;
+                                    cx.notify();
+                                }))
                                 .children(band)
                                 .child(card)
                                 .children(tab),

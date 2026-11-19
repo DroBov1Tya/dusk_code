@@ -78,12 +78,6 @@ pub fn render(
         .size_full()
         .flex()
         .flex_col()
-        // The composer's tab shows itself while the pointer is over the chat.
-        .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
-            ws.dock.chat_hovered = *hovered;
-            ws.dock.tab_seen |= *hovered;
-            cx.notify();
-        }))
         // Files and pictures dragged in from outside go with the next message.
         .drag_over::<ExternalPaths>(|style, _, _, cx| style.bg(cx.theme().primary.opacity(0.06)))
         .on_drop(cx.listener(|ws, paths: &ExternalPaths, _, cx| {
