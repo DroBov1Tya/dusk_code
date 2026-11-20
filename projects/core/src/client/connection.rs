@@ -69,6 +69,15 @@ impl Client {
         self.reads_status
     }
 
+    /// The id the core knows this client by; none for a client over a socket, which
+    /// learned its id in the handshake.
+    pub fn id(&self) -> Option<ClientId> {
+        match &self.link {
+            Link::Local { id, .. } => Some(*id),
+            Link::Remote(_) => None,
+        }
+    }
+
     /// The hub of this process; none for a client over a socket.
     pub fn hub(&self) -> Option<Arc<Hub>> {
         match &self.link {
