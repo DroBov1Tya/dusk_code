@@ -109,7 +109,7 @@ fn is_script(path: &str, bytes: &[u8]) -> bool {
 }
 
 /// The new files against the old, and the text diff of the first instruction file that
-/// changed.
+/// changed, or of the new one whole on a first install.
 pub fn compare(
     package_sha256: String,
     old: &BTreeMap<String, Vec<u8>>,
@@ -147,9 +147,22 @@ pub fn compare(
         .cloned()
         .collect();
     let instructions = |path: &&String| path.ends_with("SKILL.md") || path.ends_with("AGENT.md");
-    if let Some(path) = review.changed.iter().find(instructions).cloned() {
-        let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
-        let (lines, cut) = crate::catalog::history::diff(&text(&old[&path]), &text(&new[&path]));
+    // On an update the instruction file that changed; on a first install the new one,
+    // whole, so its text is read before the yes and not only its name.
+    let shown = review
+        .changed
+        .iter()
+        .find(instructions)
+        .or_else(|| review.added.iter().find(instructions))
+        .cloned();
+    if let Some(path) = shown {
+        let text = |bytes: Option<&Vec<u8>>| {
+            bytes.map_or_else(String::new, |bytes| {
+                String::from_utf8_lossy(bytes).into_owned()
+            })
+        };
+        let (lines, cut) =
+            crate::catalog::history::diff(&text(old.get(&path)), &text(new.get(&path)));
         review.diff = lines;
         review.diff_cut = cut;
         review.diff_path = Some(path);

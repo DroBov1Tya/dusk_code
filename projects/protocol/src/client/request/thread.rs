@@ -129,4 +129,9 @@ pub enum ThreadRequest {
     Pins {
         thread_id: String,
     },
+    /// A client shows the chat to the user: it is read. Clients listing it hear
+    /// `ThreadEvent::Unread(false)` when it was unread.
+    Seen {
+        thread_id: String,
+    },
 }

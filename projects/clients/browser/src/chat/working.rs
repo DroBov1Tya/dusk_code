@@ -54,6 +54,19 @@ pub fn row(chat: &ChatData, now: i64) -> Option<Row> {
     })
 }
 
+/// How long the words of one kind take to give way to the next, as on the desktop.
+const SWAP_MS: i32 = 200;
+
+/// What tells the row's words from the ones before, for the swap. A held turn's words
+/// count down and agents come and go: neither is a change of what the row says.
+fn swap_key(work: &Work) -> String {
+    match work.kind {
+        WorkKind::Held => "held".to_owned(),
+        WorkKind::Agents { .. } => "agents".to_owned(),
+        kind => format!("{kind:?} {}", work.label),
+    }
+}
+
 /// The mark of a kind, in the slot every kind shares.
 fn mark(kind: WorkKind, stalled: bool) -> AnyView {
     match kind {
@@ -110,6 +123,45 @@ pub fn Working(chat: Chat) -> impl IntoView {
     let words = Memo::new(move |_| {
         current.with(|r| r.as_ref().map(|r| r.work.label.clone()).unwrap_or_default())
     });
+    // When the row says something else, the new words take the old ones' place in a
+    // short swap: the old go out over the new coming in, and the room they stand in
+    // eases to the new width, so the counts after it glide. At most one swap runs: words
+    // that come while one does simply take the place of those coming in.
+    let said = Memo::new(move |_| current.with(|r| r.as_ref().map(|r| swap_key(&r.work))));
+    let going = RwSignal::new(None::<String>);
+    let swaps = RwSignal::new(0u32);
+    Effect::new(move |before: Option<(Option<String>, String)>| {
+        let now = (said.get(), words.get());
+        if let Some((was, label)) = before
+            && was.is_some()
+            && now.0.is_some()
+            && was != now.0
+        {
+            let running = going.get_untracked().is_some();
+            let turn = swaps.get_untracked() + 1;
+            swaps.set(turn);
+            going.set((!running).then_some(label));
+            leptos::task::spawn_local(async move {
+                crate::ui::sleep(SWAP_MS).await;
+                if swaps.try_get_untracked() == Some(turn) {
+                    going.set(None);
+                }
+            });
+        }
+        now
+    });
+    // The room is as wide as the words in it, read once they are drawn.
+    let shown = NodeRef::<leptos::html::Span>::new();
+    let width = RwSignal::new(None::<i32>);
+    Effect::new(move |_| {
+        swaps.track();
+        words.track();
+        if let Some(span) = shown.get() {
+            use wasm_bindgen::JsCast;
+            let span: &web_sys::Element = span.unchecked_ref();
+            width.set(Some(span.scroll_width() + 1));
+        }
+    });
     let field =
         move |pick: fn(&Row) -> Option<String>| move || current.with(|r| r.as_ref().and_then(pick));
     let (elapsed, tokens, step) = (
@@ -125,10 +177,19 @@ pub fn Working(chat: Chat) -> impl IntoView {
             </span>
             <span class="sr-only" role="status">{words}</span>
             <span class="working-fields" aria-hidden="true">
-                <span class="working-words"
-                    class:act-shimmer=move || look.get().is_some_and(|(kind, stalled)| kind == WorkKind::Thinking && !stalled)
-                    class:clear=move || look.get().is_some_and(|(kind, _)| kind == WorkKind::WaitingForUser)>
-                    {words}
+                <span class="working-swap" style:width=move || width.get().map(|width| format!("{width}px"))>
+                    {move || going.get().map(|label| view! { <span class="working-words going">{label}</span> })}
+                    {move || {
+                        // Drawn anew for each swap, so its coming in plays once.
+                        let coming = swaps.get() > 0;
+                        view! {
+                            <span class="working-words" class:coming=coming node_ref=shown
+                                class:act-shimmer=move || look.get().is_some_and(|(kind, stalled)| kind == WorkKind::Thinking && !stalled)
+                                class:clear=move || look.get().is_some_and(|(kind, _)| kind == WorkKind::WaitingForUser)>
+                                {words}
+                            </span>
+                        }
+                    }}
                 </span>
                 {move || elapsed().map(|elapsed| view! {
                     <span class="working-dot"></span>
@@ -223,6 +284,27 @@ mod tests {
         assert_eq!(row(&chat, 1_000).unwrap().work.kind, WorkKind::Writing);
         chat.apply(ThreadEvent::Idle);
         assert_eq!(chat.writing(0), None);
+    }
+
+    #[test]
+    fn words_that_only_tick_are_not_a_change_for_the_swap() {
+        let work = |kind, label: &str| Work {
+            kind,
+            label: label.into(),
+            stalled: false,
+        };
+        assert_eq!(
+            swap_key(&work(WorkKind::Held, "Rate limited; continues in 12s")),
+            swap_key(&work(WorkKind::Held, "Rate limited; continues in 11s"))
+        );
+        assert_ne!(
+            swap_key(&work(WorkKind::Steps, "Reading a file")),
+            swap_key(&work(WorkKind::Steps, "Running a command"))
+        );
+        assert_ne!(
+            swap_key(&work(WorkKind::Thinking, "Thinking")),
+            swap_key(&work(WorkKind::Writing, "Writing"))
+        );
     }
 
     #[test]

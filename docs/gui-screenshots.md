@@ -23,6 +23,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `fake=welcome`, `welcome=form`, `welcome=address:URL` | the first screen of a clean install, its form, an address typed in it (`key=enter` connects) |
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
 | `fake=pulls` | four pull requests in Changes, one of each state and checks (a click on a count opens its window of checks), a chat of the chosen project with their icon, and a chat whose links to two of them are drawn as chips (`hover=` on one shows its card); needs `right=all` before it, since reading the column again replaces the fake |
+| `fake=unread` | three loose chats at the top of the sidebar: one unread, one read, one unread whose agent works again |
 | `fake=forge-signin`, `fake=forge-unserved` | the quiet line in Changes when the forge asks to sign in (its hint as a command to copy), or when no plugin serves the host |
 | `fake=plan-limits` | the ChatGPT plan's 5-hour and weekly windows in the limits ring |
 | `fake=store` | fills the Workshop with made-up listings of every tier and kind, packs and a failed source instead of the store's, drawn with the Workshop's real covers and screenshots (`dev/media/`, built in only with the feature) |
@@ -48,6 +49,9 @@ makes a chat to look at.
 
 The window draws no frames of its own, so an animation or a picture decoded after the first
 draw shows only on a second `shot`: take one, `wait`, and take the one to keep.
+
+The working row's words swap faster than a shot is taken: `DUSK_SWAP=MS` holds a swap that many
+milliseconds in (`fake=activity-thinking`, a shot, then `fake=activity-steps` in the same run).
 
 The subagents' mascots move faster than a shot is taken: `DUSK_MASCOT=MS` in the environment holds
 each that many milliseconds into its activity (`fake=agents;modal=agents` shows one of each).

@@ -9,6 +9,7 @@
 //! may ask the general agent, which works like a chat: MAIN mode's prompt and every tool, so
 //! delegating needs no AGENT.md. Depth is bounded, so agents cannot hand work down forever.
 
+use crate::plugins::store::origin::{self, Origins};
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
@@ -211,6 +212,7 @@ impl Tool for AskAgent {
 
     fn description(&self, _context: &ToolContext) -> String {
         let reachable = self.reachable();
+        let origins = Origins::load(&self.launcher.paths);
         let mut agents: Vec<String> = reachable
             .iter()
             .take(MAX_LISTED)
@@ -220,7 +222,10 @@ impl Tool for AskAgent {
                     .chars()
                     .take(MAX_LISTED_CHARS)
                     .collect();
-                format!("- {}: {description}", identity.name)
+                let source = origins
+                    .unverified("agents", &identity.name)
+                    .map(|(_, source)| source);
+                origin::listed(&identity.name, source, &description)
             })
             .collect();
         if reachable.len() > MAX_LISTED {

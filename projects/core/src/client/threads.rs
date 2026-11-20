@@ -222,6 +222,12 @@ impl Threads<'_> {
         }
     }
 
+    /// The chat is shown to the user: it is read.
+    pub async fn seen(&self, thread_id: &str) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.done(ThreadRequest::Seen { thread_id }).await
+    }
+
     async fn opened(&self, request: ThreadRequest) -> Result<String> {
         match self.call(request).await? {
             Response::Opened { thread_id } => Ok(thread_id),

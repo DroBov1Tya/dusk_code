@@ -10,24 +10,22 @@ use crate::config::{Mirror, is_word, live::LiveConfig};
 /// Longest name of a source, as `config::workshop` takes it.
 const MAX_NAME: usize = 32;
 
-/// The source `url` with `key` (empty: Unverified), named `name` or after its address,
-/// checked as `config.yml` would check it, before anything is fetched.
-pub fn proposed(config: &LiveConfig, url: &str, key: &str, name: Option<&str>) -> Result<Mirror> {
+/// The source `url` with `key` (empty: Unverified), checked as `config.yml` would check
+/// it, before anything is fetched. Its name is the core's, from the address, as Settings
+/// gives it; `suggested`, a name the model proposed, is taken only when it is a free name
+/// made of words of the address itself and claims no trust, so a source at
+/// `evil.example` cannot be shown as `anthropic-official`.
+pub fn proposed(
+    config: &LiveConfig,
+    url: &str,
+    key: &str,
+    suggested: Option<&str>,
+) -> Result<Mirror> {
     let mirrors = config.current().workshop().sources.clone();
     let url = source::list_address(url)?;
-    let name = match name {
-        Some(name) => {
-            ensure!(
-                is_word(name, MAX_NAME),
-                "a source's name is up to {MAX_NAME} of a-z, 0-9 and -"
-            );
-            ensure!(
-                !mirrors.iter().any(|item| item.name == name),
-                "a source named {name} is added already"
-            );
-            name.to_owned()
-        }
-        None => source::name_for(&url, &mirrors),
+    let name = match suggested {
+        Some(name) if fits(name, &url, &mirrors) => name.to_owned(),
+        _ => source::name_for(&url, &mirrors),
     };
     let mirror = Mirror {
         name,
@@ -59,6 +57,19 @@ pub async fn add(config: &LiveConfig, mirror: Mirror) -> Result<Index> {
     tracing::info!("workshop repository {} added", mirror.name);
     config.update(|config| config.workshop_mut().sources.push(mirror))?;
     Ok(index)
+}
+
+/// Words a source's name may not use, since a listing shows it as where it comes from.
+const CLAIMS: [&str; 5] = ["official", "verified", "duskcode", "local", "trusted"];
+
+/// Whether a suggested name may stand: a free word whose every part is in the address.
+fn fits(name: &str, url: &str, mirrors: &[Mirror]) -> bool {
+    let address = url.to_ascii_lowercase();
+    is_word(name, MAX_NAME)
+        && !mirrors.iter().any(|item| item.name == name)
+        && name
+            .split('-')
+            .all(|part| !part.is_empty() && !CLAIMS.contains(&part) && address.contains(part))
 }
 
 /// What the owner is asked before a tool adds `mirror`, in a few lines.

@@ -100,6 +100,7 @@ fn Shell(auth: RwSignal<Auth>) -> impl IntoView {
         )))
     });
     Effect::new(move |_| theme::apply(&app.theme.get()));
+    crate::chat::seen::watch(app);
     let welcome = RwSignal::new(Step::Hidden);
     welcome::ask(welcome);
     view! {

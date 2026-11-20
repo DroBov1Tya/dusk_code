@@ -303,4 +303,30 @@ mod tests {
         let older = workspace(&state, &paths, "older").await.unwrap();
         assert_eq!(older, paths.workspace_root().join("older"));
     }
+
+    /// A new chat starts read, and so does a fork of an unread one: nothing in it is new
+    /// to the user who made it.
+    #[tokio::test]
+    async fn a_new_chat_and_a_fork_start_read() {
+        let (state, paths) = (temp_state("start_read").await, temp_paths("start_read"));
+        let cwd = std::env::temp_dir();
+        let chat = start_thread(&state, &paths, "test", "MAIN", &cwd)
+            .await
+            .unwrap();
+        let unread = |id: String| {
+            let state = &state;
+            async move { state.load_thread(&id).await.unwrap().unwrap().unread }
+        };
+        assert!(!unread(chat.thread_id.clone()).await);
+        let message = state
+            .add_user_message(&chat.thread_id, "go", "go")
+            .await
+            .unwrap();
+        assert!(state.mark_unread(&chat.thread_id).await.unwrap());
+        let fork = start_fork(&state, &paths, "test", &chat.thread_id, &message.message_id)
+            .await
+            .unwrap();
+        assert!(!unread(fork.thread_id).await);
+        assert!(unread(chat.thread_id).await, "the original keeps its mark");
+    }
 }

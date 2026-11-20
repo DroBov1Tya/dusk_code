@@ -92,6 +92,9 @@ impl Workspace {
             },
         )
         .detach();
+        // A chat shown while the window was in the back is read once it comes forward.
+        cx.observe_window_activation(window, |_, _, cx| cx.notify())
+            .detach();
         let first = status.borrow().clone();
         let mut workspace = Self {
             core,

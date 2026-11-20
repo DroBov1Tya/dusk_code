@@ -274,6 +274,14 @@
         "name": {
           "type": "string"
         },
+        "source": {
+          "default": null,
+          "description": "Where it came from when the Workshop installed it from a source nobody vouches\nfor: `<source>, unverified`, as a skill's `source` says it. `None` otherwise.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "version": {
           "description": "`None` for the chat and the built-in general agent, which have no AGENT.md.",
           "format": "int64",
@@ -10210,6 +10218,11 @@
             "string",
             "null"
           ]
+        },
+        "unread": {
+          "default": false,
+          "description": "An answer, a question, a request for a yes or the end of a turn arrived since a\nclient last showed the chat (`ThreadRequest::Seen`). Never for an agent's thread.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -11153,6 +11166,19 @@
         },
         {
           "additionalProperties": false,
+          "description": "Something for the user arrived in the chat (true), or a client showed it to them\n(false): its `Thread::unread` changed. Every client listing the chat hears it.",
+          "properties": {
+            "Unread": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "Unread"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "A skill file changed by a tool call of this thread, or such a change was undone.",
           "properties": {
             "SkillChanged": {
@@ -11828,6 +11854,27 @@
           },
           "required": [
             "Pins"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A client shows the chat to the user: it is read. Clients listing it hear\n`ThreadEvent::Unread(false)` when it was unread.",
+          "properties": {
+            "Seen": {
+              "properties": {
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Seen"
           ],
           "type": "object"
         }

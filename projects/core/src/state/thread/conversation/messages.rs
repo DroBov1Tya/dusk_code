@@ -48,34 +48,8 @@ impl State {
         content: &str,
         from: Option<&str>,
     ) -> Result<Message> {
-        ensure!(!request_uid.trim().is_empty(), "request UID is empty");
-        ensure!(!content.trim().is_empty(), "message is empty");
-        let timestamp = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin user message")?;
-        let existing = sqlx::query("SELECT * FROM messages WHERE request_uid = ?")
-            .bind(request_uid)
-            .fetch_optional(&mut *transaction)
-            .await
-            .context("look up request UID")?;
-        if let Some(row) = existing {
-            let message = decode_message(row)?;
-            ensure!(
-                message.thread_id == thread_id && message.content == content,
-                "request UID already belongs to a different message"
-            );
-            return Ok(message);
-        }
-        ensure_thread_exists(&mut transaction, thread_id).await?;
-        let mut new = NewMessage::user(content);
-        new.from_thread_id = from.map(str::to_owned);
-        let message = insert_message(
-            &mut transaction,
-            thread_id,
-            &new,
-            Some(request_uid),
-            timestamp,
-        )
-        .await?;
+        let message = message_from(&mut transaction, thread_id, request_uid, content, from).await?;
         transaction.commit().await.context("commit user message")?;
         Ok(message)
     }
@@ -350,6 +324,61 @@ pub fn calls_of(messages: &[Message]) -> HashMap<&str, (&Message, &ToolCall)> {
         }
     }
     answered
+}
+
+/// Stores a user's or another agent's message inside the caller's transaction; the
+/// request UID makes a second call return the stored message.
+pub(super) async fn message_from(
+    transaction: &mut Transaction<'_, Sqlite>,
+    thread_id: &str,
+    request_uid: &str,
+    content: &str,
+    from: Option<&str>,
+) -> Result<Message> {
+    ensure!(!request_uid.trim().is_empty(), "request UID is empty");
+    ensure!(!content.trim().is_empty(), "message is empty");
+    let timestamp = timestamp_ms()?;
+    let existing = sqlx::query("SELECT * FROM messages WHERE request_uid = ?")
+        .bind(request_uid)
+        .fetch_optional(&mut **transaction)
+        .await
+        .context("look up request UID")?;
+    if let Some(row) = existing {
+        let message = decode_message(row)?;
+        ensure!(
+            message.thread_id == thread_id && message.content == content,
+            "request UID already belongs to a different message"
+        );
+        return Ok(message);
+    }
+    ensure_thread_exists(transaction, thread_id).await?;
+    let mut new = NewMessage::user(content);
+    new.from_thread_id = from.map(str::to_owned);
+    insert_message(transaction, thread_id, &new, Some(request_uid), timestamp).await
+}
+
+/// Stores a background job's result inside the caller's transaction, once per job.
+pub(super) async fn job_message(
+    transaction: &mut Transaction<'_, Sqlite>,
+    thread_id: &str,
+    job_id: &str,
+    content: &str,
+) -> Result<Message> {
+    let existing = sqlx::query("SELECT * FROM messages WHERE from_job_id = ?")
+        .bind(job_id)
+        .fetch_optional(&mut **transaction)
+        .await
+        .context("look up job result")?;
+    if let Some(row) = existing {
+        let message = decode_message(row)?;
+        ensure!(
+            message.thread_id == thread_id && message.content == content,
+            "job completion belongs to a different message"
+        );
+        return Ok(message);
+    }
+    let new = NewMessage::job(job_id, content);
+    insert_message(transaction, thread_id, &new, None, timestamp_ms()?).await
 }
 
 /// Appends a message at the end of the thread inside the caller's transaction.
