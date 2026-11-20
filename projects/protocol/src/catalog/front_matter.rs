@@ -5,10 +5,13 @@ use anyhow::{Context, Result, anyhow};
 const FENCE: &str = "---";
 
 /// Splits `---\n<front>\n---\n<body>` into the front matter between the fences and the
-/// body after them. A line ending may be `\r\n`, and the closing fence may have trailing
-/// blanks; a line that only starts with `---` is not a fence.
+/// body after them. A byte order mark before the first fence is skipped, a line ending
+/// may be `\r\n`, and the closing fence may have trailing blanks; a line that only starts
+/// with `---` is not a fence.
 pub fn split_front_matter(text: &str) -> Result<(&str, &str)> {
     let rest = text
+        .strip_prefix('\u{FEFF}')
+        .unwrap_or(text)
         .strip_prefix(FENCE)
         .and_then(|rest| {
             rest.strip_prefix('\n')
@@ -37,7 +40,15 @@ mod tests {
         assert_eq!((front, body), ("name: a\r\n", "body"));
         let (front, body) = split_front_matter("---\na: 1\n---- rule ----\n---\nb").unwrap();
         assert_eq!((front, body), ("a: 1\n---- rule ----\n", "b"));
+        let (front, body) = split_front_matter("\u{FEFF}---\nname: a\n---\nbody").unwrap();
+        assert_eq!((front, body), ("name: a\n", "body"));
+        assert_eq!(split_front_matter("---\n---\nbody").unwrap(), ("", "body"));
+        assert_eq!(
+            split_front_matter("---\nname: a\n---").unwrap(),
+            ("name: a\n", "")
+        );
         assert!(split_front_matter("no front matter").is_err());
+        assert!(split_front_matter("x\u{FEFF}---\na\n---\n").is_err());
         assert!(split_front_matter("---\nname: a\n").is_err());
     }
 }
