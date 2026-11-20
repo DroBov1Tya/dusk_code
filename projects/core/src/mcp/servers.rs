@@ -199,6 +199,7 @@ impl McpServers {
                     .map_or(McpState::Off, |status| status.state.clone()),
                 tools: self.tool_infos(name, config),
                 icon: None,
+                added_from: None,
             })
             .collect()
     }

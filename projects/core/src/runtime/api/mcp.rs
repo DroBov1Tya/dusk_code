@@ -20,9 +20,24 @@ impl Runtime {
         let icons = self.launcher.paths.config_root().join(ICONS_DIR);
         let mut infos = self.launcher.mcp.infos(&config);
         let servers = config.all_mcp();
+        let added = crate::plugins::store::connector::all_added(self.paths());
         for info in &mut infos {
-            let name = servers.get(&info.name).and_then(|server| server.icon());
+            let server = servers.get(&info.name);
+            let name = server.and_then(|server| server.icon());
             info.icon = name.and_then(|name| icon_file(&icons, name));
+            // Only the user's own servers can be one the store added, and only unchanged.
+            let own = config.mcp().get(&info.name);
+            info.added_from = added.get(&info.name).and_then(|added| {
+                let same = own.is_some_and(|server| {
+                    crate::plugins::store::connector::target(server) == added.target
+                });
+                same.then(|| dusk_protocol::config::AddedFrom {
+                    source: added.source.clone(),
+                    tier: added
+                        .tier
+                        .unwrap_or(dusk_protocol::plugin::Tier::Unverified),
+                })
+            });
         }
         infos
     }
@@ -46,11 +61,31 @@ impl Runtime {
                 .config
                 .update(|config| config.set_mcp_server(old, None))?;
             self.launcher.mcp.restart(old, None);
+            self.forget_connector(old, None)?;
             return Ok(None);
         }
         let (name, server) = parse_mcp_server(text)?;
+        if let Some(old) = old {
+            let kept = (old == name).then_some(&server);
+            self.forget_connector(old, kept)?;
+        }
         self.put_mcp_server(old, &name, server)?;
         Ok(Some(name))
+    }
+
+    /// A server the store added stops being the store's once the user removes it,
+    /// renames it or points it elsewhere in the settings (`kept` is what it becomes, under
+    /// its own name): the Workshop then never shows a server set up by hand as Added, and
+    /// its Remove never deletes one.
+    fn forget_connector(&self, name: &str, kept: Option<&McpServerConfig>) -> Result<()> {
+        use crate::plugins::store::connector;
+        let Some(added) = connector::added(self.paths(), name)? else {
+            return Ok(());
+        };
+        if kept.is_none_or(|server| connector::target(server) != added.target) {
+            connector::forget(self.paths(), name)?;
+        }
+        Ok(())
     }
 
     /// Writes `server` as `name` in place of `old` and starts it again: the one way an

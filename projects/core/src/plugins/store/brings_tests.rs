@@ -35,7 +35,7 @@ const MANIFEST: &str = "name: bot\nversion: 1.0.0\nmcp:\n  search:\n    command:
 #[test]
 fn nothing_a_plugin_brings_installs_until_it_is_agreed_to() {
     let (index, key) = read(&list(3, &format!("{CREDIT}{BRINGS}"))).unwrap();
-    let consent = index.plugins[0].consent();
+    let consent = index.plugins[0].consent(dusk_protocol::plugin::Tier::Official);
     assert!(consent[0].contains("./bin/bot"), "{consent:?}");
     assert!(consent[1].contains("search") && consent[1].contains("--fast"));
 
@@ -78,7 +78,11 @@ fn nothing_a_plugin_brings_installs_until_it_is_agreed_to() {
 
     // A list before format 3 says nothing of servers; such a plugin installs as before.
     let (old, _) = read(&list(2, "")).unwrap();
-    assert!(old.plugins[0].consent().is_empty());
+    assert!(
+        old.plugins[0]
+            .consent(dusk_protocol::plugin::Tier::Official)
+            .is_empty()
+    );
     assert!(
         read(&list(2, BRINGS)).is_err(),
         "format 3 fields in format 2"
@@ -127,6 +131,7 @@ fn a_users_connector_is_never_replaced_and_a_plugins_goes_with_it() {
     let here = Here {
         yours: [("search".to_owned(), "search-server".to_owned())].into(),
         on: ["bot".to_owned()].into(),
+        plugin_servers: Default::default(),
     };
     let shown = listing::listing(
         &paths,

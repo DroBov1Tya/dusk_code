@@ -47,6 +47,7 @@ fn added(url: &str) -> Installed {
         license: String::new(),
         origin: String::new(),
         target: url.into(),
+        tier: Some(dusk_protocol::plugin::Tier::Verified),
     }
 }
 
@@ -130,13 +131,14 @@ async fn removing_takes_out_only_the_server_the_store_added_unchanged() {
             .is_none()
     );
 
-    // Pointed elsewhere by the user since: the server is theirs now and stays.
+    // Pointed elsewhere by the user since: the server is theirs now, the store forgot
+    // it, and the Workshop's Remove leaves it.
     runtime
         .add_connector("tracker", server(HERE), added(HERE))
         .unwrap();
     let theirs = "tracker:\n  url: http://127.0.0.1:9/theirs\n";
     runtime.save_mcp_server(Some("tracker"), theirs).unwrap();
-    assert!(runtime.remove_connector("tracker").unwrap());
+    assert!(!runtime.remove_connector("tracker").unwrap());
     let config = runtime.config().current();
     assert_eq!(
         config.mcp()["tracker"].target(),
@@ -147,4 +149,107 @@ async fn removing_takes_out_only_the_server_the_store_added_unchanged() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn a_server_the_user_deleted_and_set_up_again_is_theirs() {
+    let runtime = runtime("connector_stale").await;
+    runtime
+        .add_connector("tracker", server(HERE), added(HERE))
+        .unwrap();
+    let shown = runtime.mcp_servers();
+    let from = shown[0].added_from.as_ref().expect("its origin");
+    assert_eq!(from.label(), "From official \u{b7} Verified");
+
+    // Deleted in the settings, then set up by hand at the same address.
+    runtime.save_mcp_server(Some("tracker"), "").unwrap();
+    assert!(
+        connector::added(runtime.paths(), "tracker")
+            .unwrap()
+            .is_none()
+    );
+    let mine = format!("tracker:\n  url: {HERE}\n");
+    runtime.save_mcp_server(None, &mine).unwrap();
+    assert!(runtime.mcp_servers()[0].added_from.is_none());
+    // The Workshop's Remove does not touch it, and no source takes it over.
+    assert!(!runtime.remove_connector("tracker").unwrap());
+    assert!(runtime.config().current().mcp().contains_key("tracker"));
+    assert!(
+        runtime
+            .add_connector("tracker", server(HERE), added(HERE))
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn another_source_never_replaces_the_server_one_source_added() {
+    let runtime = runtime("connector_other_source").await;
+    runtime
+        .add_connector("tracker", server(HERE), added(HERE))
+        .unwrap();
+    let mut other = added(HERE);
+    other.source = "friends".into();
+    other.url = "https://friends.example.com/index.json".into();
+    let error = runtime
+        .add_connector("tracker", server(HERE), other)
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("of yours"), "{error:#}");
+    let record = connector::added(runtime.paths(), "tracker")
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.source, "official");
+}
+
+#[tokio::test]
+async fn renaming_or_moving_it_in_the_settings_makes_it_the_users() {
+    let runtime = runtime("connector_renamed").await;
+    runtime
+        .add_connector("tracker", server(HERE), added(HERE))
+        .unwrap();
+    // Its key filled in, same address: still the store's.
+    fill_in(&runtime, "tracker", HERE);
+    assert!(
+        connector::added(runtime.paths(), "tracker")
+            .unwrap()
+            .is_some()
+    );
+    // Pointed elsewhere: the user's.
+    fill_in(&runtime, "tracker", MOVED);
+    assert!(
+        connector::added(runtime.paths(), "tracker")
+            .unwrap()
+            .is_none()
+    );
+
+    runtime.save_mcp_server(Some("tracker"), "").unwrap();
+    runtime
+        .add_connector("tracker", server(HERE), added(HERE))
+        .unwrap();
+    let renamed = format!("issues:\n  url: {HERE}\n");
+    runtime.save_mcp_server(Some("tracker"), &renamed).unwrap();
+    assert!(
+        connector::added(runtime.paths(), "tracker")
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn a_connector_never_takes_the_name_of_a_plugins_server() {
+    let runtime = runtime("connector_plugin_server").await;
+    let folder = crate::plugins::catalog::folder(runtime.paths()).join("bot");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("plugin.yml"),
+        "name: bot\nversion: 1.0.0\nmcp:\n  tracker:\n    url: https://mcp.example.com/mcp\n",
+    )
+    .unwrap();
+    let error = runtime
+        .add_connector("tracker", server(HERE), added(HERE))
+        .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("a plugin here brings"),
+        "{error:#}"
+    );
+    assert!(runtime.config().current().mcp().get("tracker").is_none());
 }

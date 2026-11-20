@@ -248,6 +248,22 @@
       ],
       "type": "object"
     },
+    "AddedFrom": {
+      "description": "Where a store-added MCP server came from, shown beside it.",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier"
+        }
+      },
+      "required": [
+        "source",
+        "tier"
+      ],
+      "type": "object"
+    },
     "AgentNode": {
       "description": "One agent in the tree a client draws: the chat at the root, then whom each may ask.",
       "properties": {
@@ -3944,6 +3960,18 @@
     "McpInfo": {
       "description": "A server as the settings show it: what the config says and how it stands.",
       "properties": {
+        "added_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AddedFrom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Workshop source that added it and the tier its listing had, while it is the\nserver that source added; none for a server set up by hand or a plugin's."
+        },
         "icon": {
           "default": null,
           "description": "Its picture, a file the core found in the config's `icons` folder.",

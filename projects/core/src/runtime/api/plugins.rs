@@ -60,7 +60,7 @@ impl Runtime {
                     .filter(|plugin| plugin.enabled)
                     .map(|plugin| plugin.name)
                     .collect();
-                let here = store::Here::of(&self.config().current(), on);
+                let here = store::Here::of(&self.config().current(), self.paths(), on);
                 let category = category.as_deref();
                 let list =
                     store::list(self.paths(), &mirrors, order, category, &kinds, &here).await?;
@@ -188,20 +188,30 @@ impl Runtime {
         mut server: crate::config::McpServerConfig,
         added: crate::plugins::store::Installed,
     ) -> Result<()> {
-        use crate::plugins::store::connector;
+        use crate::plugins::store::{connector, listing_plugin_servers};
+        ensure!(
+            !listing_plugin_servers(self.paths()).contains(name),
+            "a plugin here brings an MCP server named {name}; a connector may not take it"
+        );
         let config = self.config().current();
         let old = match config.mcp().get(name) {
             None => None,
             Some(old) => {
-                let ours = connector::added(self.paths(), name)?
-                    .is_some_and(|before| before.target == old.target());
+                // Ours only when this source added exactly this server: a server the
+                // user set up by hand, or another source's, is never replaced.
+                let ours = connector::added(self.paths(), name)?.is_some_and(|before| {
+                    before.source == added.source
+                        && before.key == added.key
+                        && before.url == added.url
+                        && before.target == connector::target(old)
+                });
                 ensure!(
                     ours,
                     "a connector of yours is named {name}; rename or remove it to add this one"
                 );
                 // Keys the user typed went to that address or program; one the listing
                 // moved elsewhere starts without them.
-                if server.target() == old.target() {
+                if connector::target(&server) == connector::target(old) {
                     connector::keep_secrets(&mut server, old);
                 }
                 Some(name)
@@ -223,7 +233,7 @@ impl Runtime {
         if config
             .mcp()
             .get(name)
-            .is_some_and(|server| server.target() == added.target)
+            .is_some_and(|server| connector::target(server) == added.target)
         {
             self.save_mcp_server(Some(name), "")?;
         }

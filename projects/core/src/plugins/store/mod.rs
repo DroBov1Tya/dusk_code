@@ -76,7 +76,7 @@ pub use record::Installed;
 pub(crate) use record::Record;
 use source::Fetched;
 
-pub use listing::Here;
+pub use listing::{Here, plugin_servers as listing_plugin_servers};
 pub use pack::{FILE as PACK_FILE, Pack};
 pub use picture::{cover, screenshot};
 pub use source::{probe, probed};
@@ -199,10 +199,14 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
         if let Some(why) = server.unfit(tier) {
             anyhow::bail!("{} cannot be added: {why}", entry.name);
         }
+        if let Some(url) = &server.url {
+            connector::resolves_publicly(url).await?;
+        }
         let config = server.config();
         let mut added = Installed::new(source, &entry.version, "");
         added.kind = Kind::Connector;
-        added.target = config.target();
+        added.target = connector::target(&config);
+        added.tier = Some(tier);
         added.author = entry.author.clone().unwrap_or_default();
         added.origin = entry.source.clone().unwrap_or_default();
         return Ok(Placed::Server {
@@ -237,7 +241,7 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
         agreed.tier
     );
     ensure!(
-        entry.version == agreed.version && entry.consent() == agreed.permissions,
+        entry.version == agreed.version && entry.consent(tier) == agreed.permissions,
         "the listing of {name} changed since you saw it; look at the list again"
     );
     // Nothing signed an Unverified list, so the files the user looked at are what they

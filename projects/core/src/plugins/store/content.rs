@@ -82,7 +82,9 @@ pub fn files_of(
     unverified: bool,
 ) -> Result<Files> {
     ensure!(
-        entry.consent().is_empty(),
+        entry
+            .consent(dusk_protocol::plugin::Tier::Official)
+            .is_empty(),
         "a skill, pack or agent asks for no permissions; the list says it does"
     );
     ensure!(

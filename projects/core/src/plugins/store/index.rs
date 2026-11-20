@@ -665,15 +665,16 @@ pub fn brings(programs: &[String], servers: &[Server]) -> Vec<String> {
 
 impl Entry {
     /// What the user agrees to by installing it, one line each: first one per program,
-    /// then one per MCP server, in their order, as `Listing::permissions` says.
-    pub fn consent(&self) -> Vec<String> {
+    /// then one per MCP server, in their order, as `Listing::permissions` says. `tier` is
+    /// the one the listing earns: a connector's claims read as claims below Verified.
+    pub fn consent(&self, tier: dusk_protocol::plugin::Tier) -> Vec<String> {
         if let Some(server) = self
             .server
             .as_ref()
             .filter(|_| self.kind == Kind::Connector)
         {
             let mut lines = brings(&[], &[server.server(&self.name)]);
-            lines.extend(server.consent(&self.name));
+            lines.extend(server.consent(&self.name, tier));
             return lines;
         }
         let mut lines = brings(&self.programs, &self.mcp);

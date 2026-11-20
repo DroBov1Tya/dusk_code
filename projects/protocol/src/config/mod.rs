@@ -15,7 +15,7 @@ mod voice;
 mod voice_models;
 
 pub use arbiter::{Arbiter, MAX_ARBITER_PROMPT_CHARS};
-pub use mcp::{McpInfo, McpState, McpStatus, McpToolInfo};
+pub use mcp::{AddedFrom, McpInfo, McpState, McpStatus, McpToolInfo};
 pub use memory::{Memory, WorkHistory, default_memory_chars, yes};
 pub use mention::{MAX_NAME_CHARS, ME, Profile, ProfileFile, Snippet, find, is_name, is_name_char};
 pub use panel::{ModeInfo, Settings, ToolInfo, ToolKind};

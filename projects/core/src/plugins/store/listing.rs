@@ -30,6 +30,9 @@ pub struct Here {
     pub yours: BTreeMap<String, String>,
     /// The plugins that are on.
     pub on: BTreeSet<String>,
+    /// The names of the MCP servers the plugins in the plugins folder bring, on or off:
+    /// a connector may never take one.
+    pub plugin_servers: BTreeSet<String>,
 }
 
 impl Here {
@@ -55,18 +58,28 @@ impl Here {
 }
 
 impl Here {
-    /// What every page of the store is listed against: `config`'s servers, and the
-    /// plugins switched on.
-    pub fn of(config: &crate::config::Config, on: BTreeSet<String>) -> Self {
+    /// What every page of the store is listed against: `config`'s servers, the plugins
+    /// switched on and the servers of every plugin here.
+    pub fn of(config: &crate::config::Config, paths: &Paths, on: BTreeSet<String>) -> Self {
         Self {
             yours: config
                 .mcp()
                 .iter()
-                .map(|(name, server)| (name.clone(), server.target()))
+                .map(|(name, server)| (name.clone(), super::connector::target(server)))
                 .collect(),
             on,
+            plugin_servers: plugin_servers(paths),
         }
     }
+}
+
+/// The names of the MCP servers of every plugin in the plugins folder.
+pub fn plugin_servers(paths: &Paths) -> BTreeSet<String> {
+    catalog::plugin_folders(&catalog::folder(paths))
+        .into_iter()
+        .filter_map(|folder| Manifest::load(&folder).ok())
+        .flat_map(|manifest| manifest.mcp.into_keys())
+        .collect()
 }
 
 pub fn listing(
@@ -90,7 +103,7 @@ pub fn listing(
     Listing {
         connectors: here.connectors(&entry.name, installed.is_some(), &entry.mcp),
         programs: entry.programs.clone(),
-        permissions: entry.consent(),
+        permissions: entry.consent(base.tier),
         update: installed
             .as_deref()
             .and_then(|installed| newer(&entry.version, installed)),
@@ -123,7 +136,8 @@ fn connector(
     server: &super::connector::Spec,
 ) -> Listing {
     let name = &entry.name;
-    let target = server.config().target();
+    let config = server.config();
+    let target = config.target();
     let added = record
         .connectors
         .get(name)
@@ -135,12 +149,12 @@ fn connector(
         (None, false) => ConnectorState::NotAdded,
     };
     let tier = tier(source, entry);
-    let unfit = match state {
+    let unfit = taken_name(here, source, name, added.is_some()).or_else(|| match state {
         ConnectorState::Yours => Some(format!(
             "a connector of yours is named {name}; rename or remove it to add this one"
         )),
         _ => server.unfit(tier),
-    };
+    });
     let base = listing_of_kind(source, entry, tier);
     Listing {
         connectors: vec![Connector {
@@ -151,7 +165,7 @@ fn connector(
             },
             state,
         }],
-        permissions: entry.consent(),
+        permissions: entry.consent(tier),
         update: installed
             .as_deref()
             .and_then(|installed| newer(&entry.version, installed)),
@@ -161,6 +175,29 @@ fn connector(
         origin: entry.source.clone(),
         ..base
     }
+}
+
+/// Why a connector may not take `name`: a plugin here brings a server of that name, or,
+/// from a source other than the official one, the name is close to a server already
+/// set up, which it could pass for. Its own server, once added, does not count.
+fn taken_name(here: &Here, source: &Fetched, name: &str, added: bool) -> Option<String> {
+    if here.plugin_servers.contains(name) {
+        return Some(format!(
+            "a plugin here brings an MCP server named {name}; a connector may not take it"
+        ));
+    }
+    if source.name == dusk_protocol::plugin::OFFICIAL_SOURCE {
+        return None;
+    }
+    let near = here
+        .yours
+        .keys()
+        .filter(|other| !(added && other.as_str() == name) && other.as_str() != name)
+        .chain(&here.plugin_servers)
+        .find(|other| super::guard::close(name, other))?;
+    Some(format!(
+        "{name} is too close to the MCP server {near} set up here; this source may not take it"
+    ))
 }
 
 /// The fields every listing of a list's entry shows the same way.

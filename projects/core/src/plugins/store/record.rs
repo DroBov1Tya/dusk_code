@@ -88,6 +88,10 @@ pub struct Installed {
     /// changed since is theirs, not the store's to remove.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub target: String,
+    /// For a connector: the tier its listing earned when it was added, shown beside its
+    /// server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<Tier>,
 }
 
 fn is_plugin(kind: &Kind) -> bool {
@@ -128,6 +132,7 @@ impl Installed {
             license: String::new(),
             origin: String::new(),
             target: String::new(),
+            tier: None,
         }
     }
 

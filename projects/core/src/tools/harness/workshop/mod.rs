@@ -28,7 +28,7 @@ async fn read(paths: &Paths, config: &Config) -> Result<StoreList> {
         .filter(|(_, plugin)| plugin.enabled)
         .map(|(name, _)| name.clone())
         .collect();
-    let here = store::Here::of(config, on);
+    let here = store::Here::of(config, paths, on);
     let mirrors = &config.workshop().sources;
     let list = store::list(paths, mirrors, Order::Trust, None, &[], &here).await?;
     if list.listings.is_empty() && !list.failed.is_empty() {

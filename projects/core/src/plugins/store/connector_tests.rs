@@ -151,7 +151,21 @@ fn an_unverified_source_keeps_only_remote_connectors() {
         key: String::new(),
     };
     let (fetched, _) = settle(None, vec![(mirror, Ok(index))]);
-    let consent = fetched[0].index.plugins[0].consent();
+    let consent = fetched[0].index.plugins[0].consent(Tier::Unverified);
+    // Nobody vouches for the source: its claims read as claims, and the sign-in names
+    // the host it goes to.
+    assert!(
+        consent
+            .iter()
+            .any(|line| line.starts_with("the source says") && line.contains("nobody checked")),
+        "{consent:?}"
+    );
+    assert!(
+        consent
+            .iter()
+            .any(|line| line.contains("sign in at mcp.example.com")),
+        "{consent:?}"
+    );
     let agreed = Agreed {
         source: "loose",
         tier: Tier::Unverified,
@@ -203,6 +217,7 @@ fn its_listing_says_what_it_reaches_and_whether_it_is_here() {
                 .map(|(name, target)| ((*name).to_owned(), (*target).to_owned()))
                 .collect(),
             on: Default::default(),
+            plugin_servers: Default::default(),
         };
         listing::listing(&paths, record, &here, &fetched[0], entry)
     };
@@ -291,4 +306,180 @@ fn adding_it_again_keeps_what_the_user_filled_in() {
         panic!("a remote server");
     };
     assert_eq!(http.headers["Authorization"], "Bearer t");
+}
+
+#[test]
+fn an_address_is_plain_ascii_on_a_public_name_as_it_is_reached() {
+    use super::connector::check::check_url;
+    for url in [
+        "https://mcp.example.com/mcp",
+        "https://mcp.stripe.com",
+        "https://api.githubcopilot.com/mcp/",
+    ] {
+        check_url(url).unwrap_or_else(|error| panic!("{url}: {error:#}"));
+    }
+    for url in [
+        // A Cyrillic o, and the punycode it becomes.
+        "https://mcp.n\u{043e}tion.com/mcp",
+        "https://mcp.xn--ntion-4ve.com/mcp",
+        // Written otherwise than it is reached.
+        "https://MCP.Example.com/mcp",
+        "https://mcp.example.com:8443/mcp",
+        "https://203.0.113.9/mcp",
+        "https://[2001:db8::1]/mcp",
+        "https://printer.lan/mcp",
+        "https://wiki.corp/mcp",
+        "https://box.home.arpa/mcp",
+        "https://db.internal/mcp",
+        "https://app.localhost/mcp",
+        "https://nas.local/mcp",
+        "https://router/mcp",
+    ] {
+        assert!(check_url(url).is_err(), "{url}");
+    }
+    assert_eq!(
+        super::connector::host("https://mcp.example.com/mcp?x=1"),
+        Some("mcp.example.com")
+    );
+}
+
+#[test]
+fn a_package_is_a_registry_name_at_one_exact_version() {
+    use super::connector::check::{npm_package, pypi_package};
+    for good in [
+        "@playwright/mcp@0.0.86",
+        "plain-name@1.2.3",
+        "a.b_c~d@10.0.0-beta.2",
+        "@scope/x@1.0.0+build.5",
+    ] {
+        npm_package(good).unwrap_or_else(|error| panic!("{good}: {error:#}"));
+    }
+    for bad in [
+        "pkg@1",
+        "pkg@1.0",
+        "pkg@1.x",
+        "pkg@latest",
+        "pkg@^1.2.3",
+        "pkg@>=1.0.0",
+        "pkg@1.2.3 || 2.0.0",
+        "pkg",
+        "../evil@1.0.0",
+        "/tmp/evil@1.0.0",
+        "./evil@1.0.0",
+        "evil/repo@1.0.0",
+        "@scope/a/b@1.0.0",
+        "Upper@1.0.0",
+        ".hidden@1.0.0",
+        "_private@1.0.0",
+        "npm:other@1.0.0",
+        "git+https://example.com/x.git@1.0.0",
+        "file:x@1.0.0",
+        "https://example.com/x.tgz@1.0.0",
+        "x.tgz@",
+    ] {
+        assert!(npm_package(bad).is_err(), "{bad}");
+    }
+    for good in [
+        "mcp-server-fetch==2026.11.18",
+        "x==1.0.0rc1",
+        "x2==1.2.3.post1",
+    ] {
+        pypi_package(good).unwrap_or_else(|error| panic!("{good}: {error:#}"));
+    }
+    for bad in [
+        "x==1",
+        "x==1.0",
+        "x>=1.0.0",
+        "x==1.0.*",
+        "x",
+        "Mcp_Server==1.0.0",
+        "mcp_server==1.0.0",
+        "x[extra]==1.0.0",
+        "../x==1.0.0",
+        "x==1.0.0a1rc2",
+    ] {
+        assert!(pypi_package(bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_secret_may_not_be_what_the_runner_or_the_transport_reads() {
+    use super::connector::check::secret_name;
+    for (name, header) in [
+        ("Authorization", true),
+        ("X-Api-Key", true),
+        ("GITHUB_TOKEN", false),
+        ("monday_token", false),
+    ] {
+        secret_name(name, header).unwrap_or_else(|error| panic!("{name}: {error:#}"));
+    }
+    for name in [
+        "NODE_OPTIONS",
+        "npm_config_registry",
+        "NPM_CONFIG_REGISTRY",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+        "PATH",
+        "HOME",
+        "SHELL",
+        "UV_INDEX_URL",
+        "PIP_INDEX_URL",
+    ] {
+        assert!(secret_name(name, false).is_err(), "{name}");
+    }
+    for name in ["Host", "Cookie", "Proxy-Authorization", "Mcp-Session-Id"] {
+        assert!(secret_name(name, true).is_err(), "{name}");
+    }
+}
+
+#[test]
+fn a_connector_never_takes_a_plugins_server_nor_passes_for_one_of_yours() {
+    let mirror = Mirror {
+        name: "friends".into(),
+        url: "https://friends.example.com/index.json".into(),
+        key: String::new(),
+    };
+    let entries = [
+        remote("acme", "https://mcp.example.com/mcp", "none"),
+        remote("linnear", "https://mcp.example.com/mcp", "none"),
+    ];
+    let (fetched, _) = settle(None, vec![(mirror, Ok(parse(&list(3, &entries)).unwrap()))]);
+    let paths = crate::testing::temp_paths("store-connector-taken");
+    let here = Here {
+        yours: [("linear".to_owned(), "https://mcp.linear.app/mcp".to_owned())].into(),
+        on: Default::default(),
+        plugin_servers: ["acme".to_owned()].into(),
+    };
+    let shown = |index: usize| {
+        listing::listing(
+            &paths,
+            &Record::default(),
+            &here,
+            &fetched[0],
+            &fetched[0].index.plugins[index],
+        )
+    };
+    let plugin = shown(0).unfit.unwrap();
+    assert!(plugin.contains("a plugin here brings"), "{plugin}");
+    let near = shown(1).unfit.unwrap();
+    assert!(
+        near.contains("too close to the MCP server linear"),
+        "{near}"
+    );
+    // From the official list a plugin's server is still never taken.
+    let official = official(parse(&list(3, &entries[..1])).unwrap());
+    let shown = listing::listing(
+        &paths,
+        &Record::default(),
+        &here,
+        &official[0],
+        &official[0].index.plugins[0],
+    );
+    assert!(
+        shown
+            .unfit
+            .is_some_and(|why| why.contains("a plugin here brings"))
+    );
 }
