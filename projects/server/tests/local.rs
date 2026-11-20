@@ -5,7 +5,7 @@
 use std::{
     fs,
     os::unix::fs::{FileTypeExt, PermissionsExt},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -50,7 +50,11 @@ impl Drop for Core {
 fn run_files() -> (PathBuf, RunFiles) {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("dl-{}-{n}", std::process::id()));
+    run_files_in(&std::env::temp_dir().join(format!("dl-{}-{n}", std::process::id())))
+}
+
+fn run_files_in(root: &Path) -> (PathBuf, RunFiles) {
+    let root = root.to_path_buf();
     let dir = root.join("run");
     fs::create_dir_all(&dir).unwrap();
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
@@ -65,6 +69,10 @@ fn run_files() -> (PathBuf, RunFiles) {
 
 async fn core() -> Core {
     let (root, files) = run_files();
+    core_with(root, files).await
+}
+
+async fn core_with(root: PathBuf, files: RunFiles) -> Core {
     let lock = CoreLock::try_take(&files).unwrap().unwrap();
     let key = write_key(&lock, &files).unwrap();
     let paths = Paths::new(root.join("config"), root.join("work"));
@@ -340,6 +348,16 @@ async fn a_hello_of_another_version_is_refused_with_versions() {
     }
 }
 
+/// The protocol of an app one release older than this core, whether or not the core still
+/// accepts it; `None`, with the reason said, where no older protocol can be written.
+fn older_app() -> Option<u32> {
+    let older = PROTOCOL_VERSION.checked_sub(1);
+    if older.is_none() {
+        eprintln!("skipped: protocol {PROTOCOL_VERSION} has no older protocol to send");
+    }
+    older
+}
+
 /// The handshake of a key holder that speaks `protocol`.
 async fn handshake_as(core: &Core, protocol: u32, then: Then) -> Greeting {
     let mut peer = core.connect().await;
@@ -364,7 +382,8 @@ async fn handshake_as(core: &Core, protocol: u32, then: Then) -> Greeting {
 async fn a_key_holder_of_another_version_may_stop_but_not_attach() {
     let mut core = core().await;
     // It learns the versions from a core that proved itself, and is not attached.
-    for protocol in [OLDEST_PROTOCOL, PROTOCOL_VERSION + 1] {
+    let others = [older_app(), Some(PROTOCOL_VERSION + 1)];
+    for protocol in others.into_iter().flatten() {
         let last = handshake_as(&core, protocol, Then::Attach).await;
         let Greeting::Refused {
             code, core: info, ..
@@ -581,10 +600,145 @@ async fn a_handover_whose_asker_left_is_withdrawn() {
 
 #[tokio::test]
 async fn an_older_app_may_not_stop_or_hand_over() {
+    let Some(older) = older_app() else {
+        return;
+    };
     let core = core().await;
     for then in [Then::Stop, Then::Handover] {
-        let last = handshake_as(&core, OLDEST_PROTOCOL, then).await;
+        let last = handshake_as(&core, older, then).await;
         assert_eq!(refused(&last), Refusal::Version, "{then:?}");
     }
     assert!(core.hub.handover_requests().borrow().is_none());
+}
+
+/// Run by `scripts/peer-check.sh` in a Linux container: the core of user A serves in
+/// `$DUSK_PEER_DIR/a`; user B tries it first through the private folder, then through a
+/// folder and socket opened up for this check only. B must be stopped by the folder, then
+/// dropped by its uid without a byte, and the drop logged once.
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "needs a second user; run by scripts/peer-check.sh"]
+async fn peer_check_serve_as_owner() {
+    let shared = PathBuf::from(std::env::var("DUSK_PEER_DIR").expect("DUSK_PEER_DIR"));
+    let log = Log::default();
+    let _logging = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_writer(log.clone())
+            .with_ansi(false)
+            .finish(),
+    );
+    let core = core_with_root(&shared.join("a")).await;
+    let run = core.files.dir.clone();
+    let mark = |name: &str| fs::write(shared.join(name), "").unwrap();
+    let wait = |name: &'static str| {
+        let path = shared.join(name);
+        async move {
+            for _ in 0..600 {
+                if path.exists() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            panic!("{name} never came");
+        }
+    };
+    fs::write(shared.join("socket"), core.socket().to_str().unwrap()).unwrap();
+    mark("ready-closed");
+    wait("tried-closed").await;
+    // For this check only: a folder and a socket another user can reach.
+    fs::set_permissions(&run, fs::Permissions::from_mode(0o711)).unwrap();
+    fs::set_permissions(core.socket(), fs::Permissions::from_mode(0o666)).unwrap();
+    mark("ready-open");
+    wait("tried-open").await;
+    // The owner still gets in.
+    let (_, last, _) = handshake(&core, &core.key, Then::Attach).await;
+    assert!(matches!(last, Greeting::Welcome { .. }), "{last:?}");
+    let text = log.text();
+    let drops = text
+        .matches("a socket client of another or unknown user is dropped")
+        .count();
+    assert_eq!(drops, 1, "{text}");
+    println!("owner: B was dropped and logged once");
+}
+
+/// The other half of `peer_check_serve_as_owner`, run as user B.
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "needs a second user; run by scripts/peer-check.sh"]
+async fn peer_check_connect_as_stranger() {
+    let shared = PathBuf::from(std::env::var("DUSK_PEER_DIR").expect("DUSK_PEER_DIR"));
+    let wait = |name: &'static str| {
+        let path = shared.join(name);
+        async move {
+            for _ in 0..600 {
+                if path.exists() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            panic!("{name} never came");
+        }
+    };
+    wait("ready-closed").await;
+    let socket = PathBuf::from(fs::read_to_string(shared.join("socket")).unwrap());
+    let closed = UnixStream::connect(&socket).await;
+    assert_eq!(
+        closed.err().map(|error| error.kind()),
+        Some(std::io::ErrorKind::PermissionDenied)
+    );
+    println!("stranger: refused by the folder");
+    fs::write(shared.join("tried-closed"), "").unwrap();
+    wait("ready-open").await;
+    for attempt in 0..3 {
+        let mut stream = UnixStream::connect(&socket).await.expect("reachable now");
+        let hello = hello(Some(Claim::Key), &nonce());
+        let mut line = serde_json::to_string(&hello).unwrap();
+        line.push('\n');
+        // The core may already have closed; what it sends back is what matters.
+        let _ = stream.write_all(line.as_bytes()).await;
+        let mut heard = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(5), async {
+            use tokio::io::AsyncReadExt;
+            stream.read_to_end(&mut heard).await
+        })
+        .await
+        .expect("closed within 5 s");
+        assert!(read.is_ok() || heard.is_empty(), "{read:?}");
+        assert!(heard.is_empty(), "attempt {attempt} heard {heard:?}");
+    }
+    println!("stranger: dropped without a byte, three times");
+    fs::write(shared.join("tried-open"), "").unwrap();
+}
+
+async fn core_with_root(root: &Path) -> Core {
+    fs::create_dir_all(root).unwrap();
+    let (root, files) = run_files_in(root);
+    core_with(root, files).await
+}
+
+/// What the core logged, for counting lines.
+#[derive(Clone, Default)]
+struct Log(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl Log {
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+    }
+}
+
+impl std::io::Write for Log {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Log {
+    type Writer = Log;
+
+    fn make_writer(&'a self) -> Log {
+        self.clone()
+    }
 }
