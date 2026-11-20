@@ -51,20 +51,12 @@ pub(super) fn quoted(text: &str, max: usize) -> String {
 /// part of unknown length, is what gets cut.
 fn line(head: &str, text: &str, tail: &str) -> String {
     let room = MAX_LINE.saturating_sub(head.len() + tail.len());
-    let mut end = text.len().min(room);
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{head}{}{tail}", &text[..end])
+    format!("{head}{}{tail}", &text[..text.floor_char_boundary(room)])
 }
 
 /// `text` at `MAX_LINE` bytes at most, never inside a character.
 fn cut(text: &str) -> &str {
-    let mut end = text.len().min(MAX_LINE);
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    &text[..end]
+    &text[..text.floor_char_boundary(MAX_LINE)]
 }
 
 pub(super) fn review_line(folded: &str, task: &PlanTask, result: &str, why: &str) -> String {

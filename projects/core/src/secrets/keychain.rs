@@ -1,9 +1,6 @@
 //! The machine's keychain, through the keyring crate: one item, the vault.
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::Path, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use sha2::{Digest, Sha256};
@@ -26,18 +23,13 @@ pub struct Keychain;
 fn service_for(root: &Path) -> String {
     // A link or a relative path to the same folder is the same install.
     let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    let standard = std::env::var_os("HOME")
-        .map(|home| PathBuf::from(home).join(".config/duskcode"))
+    let standard = crate::init::paths::standard_config_root()
         .map(|path| std::fs::canonicalize(&path).unwrap_or(path));
     if standard.as_deref() == Some(root.as_path()) {
         return SERVICE.to_owned();
     }
     let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
-    let short: String = digest
-        .iter()
-        .take(4)
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let short = dusk_protocol::text::hex(&digest[..4]);
     format!("{SERVICE}-{short}")
 }
 

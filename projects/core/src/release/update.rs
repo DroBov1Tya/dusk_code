@@ -14,9 +14,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use dusk_protocol::text::sha256_hex;
 use reqwest::Client;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
 use crate::{config::Config, init::paths::Paths};
@@ -250,7 +250,7 @@ pub async fn install_with_progress(
     // Once started, this block finishes replacement and cleanup even if the caller exits.
     tokio::task::spawn_blocking(move || {
         ensure!(
-            hex(&Sha256::digest(&archive)) == expected,
+            sha256_hex(&archive) == expected,
             "the download does not match its checksum; nothing was changed"
         );
         progress.send_modify(|value| value.stage = InstallStage::Installing);
@@ -343,10 +343,6 @@ pub(super) async fn release(client: &Client, tag: &str) -> Result<Release> {
 /// Where a release keeps the asset `name`.
 pub(super) fn asset_url(tag: &str, name: &str) -> String {
     format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}")
-}
-
-pub(super) fn sha256_hex(bytes: &[u8]) -> String {
-    hex(&Sha256::digest(bytes))
 }
 
 async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -> Result<T> {
@@ -460,10 +456,6 @@ pub(super) fn version(tag: &str) -> Option<(u64, u64, u64)> {
     parts.next().is_none().then_some(version)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,7 +466,6 @@ mod tests {
         assert_eq!(version("v1.2"), None);
         assert_eq!(version("1.2.3"), None);
         assert_eq!(version("v1.2.3.4"), None);
-        assert_eq!(hex(&[0, 255, 16]), "00ff10");
     }
 
     /// An answer that says it is past the cap is refused before its body is read.

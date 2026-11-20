@@ -29,7 +29,7 @@ use tracing_subscriber::{
 
 use crate::{
     config::{Config, Traces},
-    init::paths::Paths,
+    init::{create_private_dir, files::open_no_follow, paths::Paths},
 };
 
 const MAX_BYTES: u64 = 10 * 1024 * 1024;
@@ -148,19 +148,6 @@ fn tracer_provider(traces: &Traces) -> Result<SdkTracerProvider> {
     .map_err(|_| anyhow!("cannot set up the trace exporter"))?
 }
 
-fn create_private_dir(directory: &Path) -> Result<()> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(directory)
-        .with_context(|| format!("cannot create {}", directory.display()))
-}
-
 /// The log file to append to, private to the user, the old one set aside when large.
 fn open(path: &Path) -> Result<File> {
     if fs::metadata(path).is_ok_and(|metadata| metadata.len() > MAX_BYTES) {
@@ -174,7 +161,6 @@ fn open(path: &Path) -> Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options
-        .open(path)
-        .with_context(|| format!("cannot open {}", path.display()))
+    // A link planted at the log's path is not followed.
+    open_no_follow(&mut options, path).with_context(|| format!("cannot open {}", path.display()))
 }

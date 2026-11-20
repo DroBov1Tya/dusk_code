@@ -10,7 +10,7 @@ use std::path::{Component, Path};
 
 #[cfg(test)]
 pub use compare::Diff;
-pub use compare::{Edit, compare, sha256};
+pub use compare::{Edit, compare};
 pub use snapshot::{Snapshot, Stamp, take, take_for};
 
 /// Whether the text of a project file may be kept and diffed: not for `.env` files or

@@ -2,18 +2,21 @@
 
 use std::{
     collections::BTreeMap,
-    fs::{self, DirBuilder, OpenOptions},
+    fs,
     io::{ErrorKind, Write},
     path::Path,
 };
 
-use anyhow::{Context, Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, bail};
 
 use tracing::{info, warn};
 
 use crate::{
     catalog::modes::{self, Modes},
-    init::paths::Paths,
+    init::{
+        files::{create_private_dir, new_private_file},
+        paths::Paths,
+    },
     release::shipped::{self, LOCK_FILE, Synced},
 };
 
@@ -186,26 +189,6 @@ fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
     Ok(())
 }
 
-pub fn create_private_dir(directory: &Path) -> Result<()> {
-    let mut builder = DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(directory)
-        .map_err(|_| anyhow!("cannot create application directory"))?;
-    let metadata = fs::symlink_metadata(directory)
-        .map_err(|_| anyhow!("cannot inspect application directory"))?;
-    ensure!(
-        metadata.is_dir(),
-        "application directory must not be a symlink"
-    );
-    Ok(())
-}
-
 /// Creates the config template if the file is missing. Returns whether it was created.
 fn ensure_config(path: &Path) -> Result<bool> {
     let directory = path.parent().context("config directory is missing")?;
@@ -215,17 +198,16 @@ fn ensure_config(path: &Path) -> Result<bool> {
 
 /// Creates a mode 0600 file with `contents` if the path is free. Returns whether it was created.
 fn create_private_file(path: &Path, contents: &[u8]) -> Result<bool> {
-    let mut options = OpenOptions::new();
-    // create_new never follows or replaces an existing path, including symlinks.
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = match options.open(path) {
+    // A new file never follows or replaces an existing path, including symlinks.
+    let mut file = match new_private_file(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => return Ok(false),
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == ErrorKind::AlreadyExists) =>
+        {
+            return Ok(false);
+        }
         Err(_) => bail!("cannot create application file"),
     };
     let written = file.write_all(contents).and_then(|()| file.sync_all());
@@ -278,10 +260,7 @@ mod tests {
         let old_compact = "older compaction text";
         fs::write(root.join("COMPACT.md"), old_compact).unwrap();
         // COMPACT.md is an old shipped file the user never changed.
-        let hash: String = <sha2::Sha256 as sha2::Digest>::digest(old_compact.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let hash = dusk_protocol::text::sha256_hex(old_compact.as_bytes());
         let lock = format!("{{\"COMPACT.md\": \"{hash}\"}}");
         fs::write(root.join(LOCK_FILE), lock).unwrap();
         initialize(&paths).unwrap();

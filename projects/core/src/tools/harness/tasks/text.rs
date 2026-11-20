@@ -1,7 +1,10 @@
 //! What the lead reads of the plan form: the description and schema it is offered,
 //! and the plan as `show` prints it.
 
-use dusk_protocol::thread::{GoalCheck, Team, TeamStatus};
+use dusk_protocol::{
+    text::is_plain,
+    thread::{GoalCheck, Team, TeamStatus},
+};
 use serde_json::{Value, json};
 
 use crate::state::{PlanStatus, PlanTask, WaitsOn, short_task_id};
@@ -101,8 +104,9 @@ const LINE_NOTE: usize = 60;
 /// Dependencies named on a line.
 const LINE_AFTER: usize = 4;
 
-/// Model or member text on one line: line breaks become spaces, other control
-/// characters `?`, and at most `max` characters, with `…` when cut. For display only;
+/// Model or member text on one line: line breaks become spaces, other control characters
+/// and the characters that hide or reorder text (`dusk_protocol::text::is_plain`) `?`, and
+/// at most `max` characters, with `…` when cut. For display only;
 /// what is stored is never cut.
 pub fn plain(text: &str, max: usize) -> String {
     let mut out = String::new();
@@ -113,7 +117,7 @@ pub fn plain(text: &str, max: usize) -> String {
         }
         out.push(match c {
             '\n' | '\r' | '\t' => ' ',
-            c if c.is_control() => '?',
+            c if !is_plain(c) => '?',
             c => c,
         });
     }

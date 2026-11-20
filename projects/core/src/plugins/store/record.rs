@@ -10,10 +10,12 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use base64::Engine;
-use dusk_protocol::plugin::{Kind, OFFICIAL_SOURCE, Tier};
-use sha2::{Digest, Sha256};
+use dusk_protocol::{
+    plugin::{Kind, OFFICIAL_SOURCE, Tier},
+    text::sha256_hex,
+};
 
-use super::{fetch::hex, index::PUBLIC_KEY, source::Fetched};
+use super::{index::PUBLIC_KEY, source::Fetched};
 use crate::init::paths::Paths;
 
 const FILE: &str = "store.json";
@@ -97,7 +99,7 @@ pub fn fingerprint(key: &str) -> String {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(key)
         .unwrap_or_else(|_| key.as_bytes().to_vec());
-    hex(&Sha256::digest(bytes))
+    sha256_hex(&bytes)
 }
 
 impl Installed {

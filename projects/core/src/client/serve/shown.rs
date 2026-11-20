@@ -48,7 +48,7 @@ fn reference() -> String {
     if getrandom::fill(&mut bytes).is_err() {
         bytes = std::process::id().to_le_bytes();
     }
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    dusk_protocol::text::hex(&bytes)
 }
 
 /// How the errors of one client's request read to it; kept for answers made beside the loop.

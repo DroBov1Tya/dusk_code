@@ -1,7 +1,7 @@
 //! Coloured labels inside a message's text, written `{{tone: label}}`. The tone is one of
 //! a fixed set each client maps to its theme; the model never names a colour.
 
-use crate::thread::block::is_plain;
+use crate::text::is_plain;
 
 /// How long a label may be; a longer one stays the text it was written as.
 pub const MAX_MARK_CHARS: usize = 40;

@@ -478,6 +478,19 @@ fn a_third_party_text_cannot_close_itself() {
     assert_eq!(lines[1..lines.len() - 1], ["Steps.", "More steps."]);
 }
 
+/// Text hidden in tags or turned around by bidi controls does not reach the model; the
+/// joiners of a real word stay.
+#[test]
+fn a_third_party_text_holds_no_hidden_character() {
+    let text = "Run it\u{E0069}\u{E0067}\u{E006E}\u{202E}.\nMi\u{200C}khaham \u{2028}done";
+    let wrapped = super::origin::wrap("skill", "hub", text);
+    let lines: Vec<&str> = wrapped.lines().collect();
+    assert_eq!(
+        lines[1..lines.len() - 1],
+        ["Run it.", "Mi\u{200C}khaham done"]
+    );
+}
+
 /// What a review names covers where and as what the files land, not the files alone: the
 /// same files under another kind, or a pack whose written pack.yml says otherwise, are
 /// not what the user saw.

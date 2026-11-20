@@ -78,10 +78,7 @@ pub fn card(task: &PlanTask, plan: &[PlanTask]) -> String {
     // The brief is the only part without a cap small enough for the card.
     let room = MAX_CARD.saturating_sub(card.len() + RULES.len() + "\nBrief: \n".len());
     let brief = plain(&task.brief);
-    let mut end = brief.len().min(room);
-    while !brief.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = brief.floor_char_boundary(room);
     if end > 0 {
         card.push_str(&format!("\nBrief: {}", &brief[..end]));
     }

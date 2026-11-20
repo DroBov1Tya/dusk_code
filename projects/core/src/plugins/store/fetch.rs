@@ -11,11 +11,11 @@
 use std::{sync::Arc, sync::LazyLock, time::Duration};
 
 use anyhow::{Context, Result, anyhow, ensure};
+use dusk_protocol::text::sha256_hex;
 use reqwest::{
     Client, Url,
     redirect::{Attempt, Policy},
 };
-use sha2::{Digest, Sha256};
 
 use crate::{
     net::{
@@ -85,7 +85,7 @@ pub async fn fetch_checked(url: &str, size: u64, sha256: &str, via: Via) -> Resu
         body.len()
     );
     ensure!(
-        hex(&Sha256::digest(&body)) == sha256,
+        sha256_hex(&body) == sha256,
         "{url} is not the file the list names"
     );
     Ok(body)
@@ -106,10 +106,6 @@ pub fn beside(index_url: &str, path: &str) -> Result<String> {
         "the cover is outside its list's folder"
     );
     Ok(url.into())
-}
-
-pub fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// https, and an address written as a number must be a public one: the resolver below

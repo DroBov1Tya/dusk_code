@@ -10,9 +10,10 @@ use std::{
 use anyhow::{Context, Result, ensure};
 
 use super::{
-    files::{copy_hash, executable, open_regular_input, private_dir, sync_directory},
+    files::{copy_hash, executable, open_regular_input, sync_directory},
     manifest::{Entry, Kind, Manifest, validate_path},
 };
+use crate::init::files::new_private_dir;
 
 pub fn verify_tree(root: &Path, name: &str, manifest: &Manifest) -> Result<()> {
     inspect_tree_path(root)?;
@@ -121,7 +122,7 @@ pub fn directory_tree(path: &Path) -> Result<()> {
                 current.display()
             ),
             Err(error) if error.kind() == ErrorKind::NotFound => {
-                private_dir(&current)?;
+                new_private_dir(&current)?;
                 sync_directory(current.parent().context("new directory has no parent")?)?;
             }
             Err(error) => return Err(error).context("inspect directory"),

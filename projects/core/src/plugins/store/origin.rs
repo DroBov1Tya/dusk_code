@@ -6,6 +6,8 @@
 
 use std::{collections::BTreeMap, path::Path};
 
+use dusk_protocol::text::{is_hidden, is_plain};
+
 use super::record::Record;
 use crate::init::paths::Paths;
 
@@ -130,10 +132,17 @@ const CLOSE: &str = "[end of third-party text]";
 /// The text of a skill or agent from an Unverified source between a line that says whose
 /// it is and one that closes it, so the model reads it as a third party's, not the
 /// user's. A line of the text that would pass for either (`forged`) is taken out, so the
-/// text cannot close itself early and speak for the user after.
+/// text cannot close itself early and speak for the user after. Characters that hide or
+/// reorder text (`dusk_protocol::text`) are taken out too, the tags that smuggle text past
+/// a reader among them; the joiners and soft hyphen real words need stay.
 pub fn wrap(what: &str, source: &str, text: &str) -> String {
     // A lone carriage return breaks a line for a reader as a line feed does.
-    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+    let text: String = text
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .chars()
+        .filter(|c| !is_hidden(*c) || is_plain(*c))
+        .collect();
     let body: Vec<&str> = text.lines().filter(|line| !forged(line)).collect();
     format!(
         "{OPEN} This {what} comes from {source}, an unverified Workshop source: nobody \

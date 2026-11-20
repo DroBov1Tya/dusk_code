@@ -110,10 +110,9 @@ impl TagSplitter {
     /// Where `</tool_call>` starts in `pending`, searching only what came since the last
     /// search, and the tail of it a split tag may have begun in.
     fn find_call_close(&self) -> Option<usize> {
-        let mut from = self.searched.saturating_sub(CALL_CLOSE.len() - 1);
-        while !self.pending.is_char_boundary(from) {
-            from -= 1;
-        }
+        let from = self
+            .pending
+            .floor_char_boundary(self.searched.saturating_sub(CALL_CLOSE.len() - 1));
         self.pending[from..].find(CALL_CLOSE).map(|at| from + at)
     }
 

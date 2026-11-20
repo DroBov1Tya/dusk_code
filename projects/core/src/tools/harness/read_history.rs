@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use anyhow::{Result, bail, ensure};
+use dusk_protocol::text::clip_chars;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -341,10 +342,7 @@ fn describe(message: &Message) -> String {
 }
 
 fn clip(text: &str) -> String {
-    match text.char_indices().nth(MAX_MESSAGE_CHARS) {
-        Some((end, _)) => format!("{}... [cut]", &text[..end]),
-        None => text.to_owned(),
-    }
+    clip_chars(text, MAX_MESSAGE_CHARS, "... [cut]")
 }
 
 #[cfg(test)]

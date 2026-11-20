@@ -22,17 +22,22 @@ use super::{
     MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, McpServerConfig, Memory, Plugged,
     PluginConfig, ProviderConfig, Team, ThreadConfig, VersionControl, WorkHistory, Workshop,
 };
-use crate::release::update::Channel;
+use crate::{
+    init::files::{open_no_follow, read_bounded},
+    release::update::Channel,
+};
 use anyhow::{Context, Result, anyhow, ensure};
 use dusk_protocol::config::VoiceSettings;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fmt,
-    fs::{self, File},
-    io::Read,
+    fs::{self, OpenOptions},
     path::Path,
 };
+
+/// The largest config file read; a settings file is a few kilobytes.
+const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
 /// MCP server names are this long at most.
 const MAX_MCP_NAME: usize = 24;
@@ -199,17 +204,17 @@ fn read_private_file(path: &Path) -> Result<Vec<u8>> {
         "config must be a regular file, not a symlink"
     );
     ensure_private(&metadata)?;
-    let file = File::open(path).map_err(|_| anyhow!("cannot open config file"))?;
+    // Not following a link swapped in since the check, nor blocking on a FIFO.
+    let file = open_no_follow(OpenOptions::new().read(true), path)
+        .map_err(|_| anyhow!("cannot open config file"))?;
     let metadata = file
         .metadata()
         .map_err(|_| anyhow!("cannot inspect open config file"))?;
     ensure!(metadata.is_file(), "config must be a regular file");
     ensure_private(&metadata)?;
-    let mut bytes = Vec::new();
-    (&file)
-        .read_to_end(&mut bytes)
-        .map_err(|_| anyhow!("cannot read config file"))?;
-    Ok(bytes)
+    read_bounded(file, MAX_CONFIG_BYTES).map_err(|_| {
+        anyhow!("cannot read config file: not a regular file of at most {MAX_CONFIG_BYTES} bytes")
+    })
 }
 
 fn ensure_private(metadata: &fs::Metadata) -> Result<()> {
