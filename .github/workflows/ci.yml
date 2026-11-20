@@ -59,7 +59,10 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-24.04-arm
     name: check (${{ matrix.target }})
-    runs-on: ${{ matrix.runner }}
+    # With the repository variable MAC_SELF_HOSTED=true the macOS check runs on the owner's
+    # Mac (a self-hosted runner), except for pull requests from forks: the repository is
+    # public, and a fork's code must never run on that machine.
+    runs-on: ${{ (matrix.target == 'aarch64-apple-darwin' && vars.MAC_SELF_HOSTED == 'true' && !github.event.pull_request.head.repo.fork) && fromJSON('["self-hosted","macOS","ARM64"]') || matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
