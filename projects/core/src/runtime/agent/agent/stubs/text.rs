@@ -142,12 +142,7 @@ fn last_line(content: &str) -> Option<String> {
 /// quotes are then the only ones it holds, so neither its number nor its retrieval call
 /// can be forged.
 fn plain(text: &str) -> String {
-    let whole = message::plain::plain(text);
-    let mut clipped: String = whole.chars().take(CLIP_CHARS).collect();
-    if whole.chars().nth(CLIP_CHARS).is_some() {
-        clipped.push_str("...");
-    }
-    clipped
+    dusk_protocol::text::clip_chars(&message::plain::plain(text), CLIP_CHARS, "...")
 }
 
 #[cfg(test)]
