@@ -518,7 +518,10 @@ fn activity(ws: &mut Workspace, shown: &str, kind: &str, turn: dusk_protocol::th
         }
     };
     let started = ThreadEvent::TurnStarted(turn);
-    chat.apply(started.clone());
+    // One kind after another in the same turn, so the row's words swap as they do live.
+    if !chat.working {
+        chat.apply(started.clone());
+    }
     let steps = chat.items.len();
     let events = match kind {
         "thinking" => vec![ThreadEvent::Model(ModelEvent::Reasoning(
