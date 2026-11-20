@@ -1,6 +1,6 @@
 //! What happens in a thread: the events it tells a client, its messages, turns, tasks,
 //! the link that names it,
-//! the team that runs its plan, token counts, goal and context, the Overview, its pins, the blocks it shows, and the steps of the transcript a
+//! the team that runs its plan and its page laid out, token counts, goal and context, the Overview, its pins, the blocks it shows, and the steps of the transcript a
 //! client folds them into.
 
 mod block;
@@ -18,6 +18,7 @@ mod suggestion;
 mod summary;
 mod task;
 mod team;
+pub mod team_layout;
 mod tokens;
 pub mod transcript;
 mod turn;

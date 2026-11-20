@@ -177,6 +177,7 @@ impl Workspace {
             limit_edit,
             context_open: HashSet::new(),
             context_load: Default::default(),
+            team_page: Default::default(),
             overview: Default::default(),
             models_open: HashSet::new(),
             sent_pictures: HashMap::new(),

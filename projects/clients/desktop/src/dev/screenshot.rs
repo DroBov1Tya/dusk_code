@@ -264,6 +264,10 @@ fn act(
                     ws.overview.back = Some(Center::Chat);
                     Center::Overview
                 }
+                "team" => {
+                    ws.team_page.back = Some(Center::Chat);
+                    Center::Team
+                }
                 _ => Center::Chat,
             };
             if ws.center == Center::Schedules {
@@ -609,6 +613,18 @@ fn act(
         }
         "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
         "fake" if value == "team" || value == "team-ended" => super::team::fake(ws, value, cx),
+        "fake" if value.starts_with("team-") => super::team_sizes::fake(ws, value, cx),
+        // The Team page's layers, and a long plan's done waves shown.
+        "layer" => {
+            use crate::pages::team::Layer;
+            match value {
+                "people" => ws.team_page.layer = Layer::People,
+                "plan" => ws.team_page.layer = Layer::Plan,
+                "unfold" => ws.team_page.unfold = true,
+                _ => ws.team_page.layer = Layer::Both,
+            }
+            cx.notify();
+        }
         // The transcript scrolled so its Nth row is at the top.
         "scroll" => {
             ws.list.scroll_to(ListOffset {

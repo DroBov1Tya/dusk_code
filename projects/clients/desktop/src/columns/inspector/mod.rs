@@ -125,6 +125,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             let body = match module {
                 Right::Arbiter => arbiter_summary(ws, cx),
                 Right::Overview => overview_column(ws, cx),
+                Right::Team => crate::pages::team::module::render(ws, cx),
                 Right::Screenshots => screenshots::render(ws, cx),
                 Right::Git => git::render(ws, cx),
                 Right::Files => files::render(ws, cx),
@@ -168,6 +169,7 @@ fn title(module: Right) -> &'static str {
     match module {
         Right::Arbiter => "Arbiter",
         Right::Overview => "Overview",
+        Right::Team => "Team",
         Right::Screenshots => "Screenshots",
         Right::Git => "Changes",
         Right::Files => "Files",
@@ -183,6 +185,7 @@ fn module_icon(module: Right) -> Icon {
     match module {
         Right::Arbiter => IconName::Eye.into(),
         Right::Overview => IconName::LayoutDashboard.into(),
+        Right::Team => IconName::Bot.into(),
         Right::Screenshots => IconName::Frame.into(),
         Right::Git => Icon::default().path(crate::ui::icons::GIT_BRANCH),
         Right::Files => IconName::Folder.into(),
@@ -215,6 +218,7 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
             }
         }),
         Right::Files | Right::Plan => None,
+        Right::Team => crate::pages::team::module::summary(ws),
         Right::Touched => Some(ws.touched.len().to_string()),
         Right::Todo => chat.map(|chat| {
             let items = chat.tasks.iter().flat_map(|task| &task.items);
@@ -300,6 +304,7 @@ impl Workspace {
                     || chat.is_some_and(|chat| !chat.exchanges.is_empty())
             }
             Right::Overview => chat.is_some(),
+            Right::Team => crate::pages::team::module::has_content(self),
             Right::Screenshots => chat.is_some_and(|chat| chat.screenshots().next().is_some()),
             Right::Git => self
                 .git
@@ -351,7 +356,7 @@ impl Workspace {
             Right::Sources => self.load_sources(cx),
             Right::Plan => self.load_plan(cx),
             Right::Touched => self.load_touched(cx),
-            Right::Arbiter | Right::Screenshots | Right::Todo => {}
+            Right::Arbiter | Right::Screenshots | Right::Todo | Right::Team => {}
         }
     }
 }

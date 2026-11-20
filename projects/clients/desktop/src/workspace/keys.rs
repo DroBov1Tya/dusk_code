@@ -216,6 +216,10 @@ impl Workspace {
             self.close_overview(cx);
             return true;
         }
+        if self.center == Center::Team {
+            self.close_team(cx);
+            return true;
+        }
         false
     }
 }
