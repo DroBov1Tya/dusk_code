@@ -10,7 +10,7 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use dusk_core::{
@@ -216,25 +216,41 @@ async fn a_client_with_the_key_attaches_and_lists_threads() {
 }
 
 #[tokio::test]
-async fn a_wrong_proof_is_refused_and_counted() {
+async fn a_wrong_proof_is_refused_and_learns_nothing() {
     let core = core().await;
     let key_hex: String = core.key.iter().map(|b| format!("{b:02x}")).collect();
-    for _ in 0..5 {
-        let (mut peer, last, _) = handshake(&core, &[7; 32], Then::Attach).await;
-        assert_eq!(refused(&last), Refusal::Auth);
-        let Greeting::Refused { reason, .. } = &last else {
-            unreachable!()
-        };
-        assert_eq!(reason, &Refusal::Auth.to_string());
-        assert!(peer.ends().await);
-        // What a client without the key heard holds nothing it could use.
-        assert!(!peer.heard.contains(&key_hex));
-    }
-    // Then even the key holder waits.
-    let mut peer = core.connect().await;
-    peer.say_json(&hello(Some(Claim::Key), &nonce())).await;
-    assert_eq!(refused(&peer.greeting().await), Refusal::Cooldown);
+    let (mut peer, last, _) = handshake(&core, &[7; 32], Then::Attach).await;
+    let Greeting::Refused { code, reason, .. } = &last else {
+        panic!("refused, not {last:?}");
+    };
+    assert_eq!(
+        (*code, reason.as_str()),
+        (Refusal::Auth, Refusal::Auth.to_string().as_str())
+    );
     assert!(peer.ends().await);
+    // What a client without the key heard holds nothing it could use.
+    assert!(!peer.heard.contains(&key_hex));
+}
+
+#[tokio::test]
+async fn bad_proofs_neither_delay_nor_lock_out_a_good_client() {
+    let core = core().await;
+    let bad = |_| async {
+        let (_, last, _) = handshake(&core, &[7; 32], Then::Attach).await;
+        assert_eq!(refused(&last), Refusal::Auth);
+        Instant::now()
+    };
+    let good = async {
+        let (_, last, _) = handshake(&core, &core.key, Then::Attach).await;
+        assert!(matches!(last, Greeting::Welcome { .. }), "{last:?}");
+        Instant::now()
+    };
+    let (refusals, welcomed) = tokio::join!(futures::future::join_all((0..5).map(bad)), good);
+    // Each bad one waits for its own refusal; the good one is not held behind them.
+    assert!(refusals.iter().all(|refused| *refused > welcomed));
+    // Nor is the next one after them.
+    let (_, last, _) = handshake(&core, &core.key, Then::Attach).await;
+    assert!(matches!(last, Greeting::Welcome { .. }), "{last:?}");
 }
 
 #[tokio::test]
@@ -426,8 +442,10 @@ async fn the_sixty_fifth_connection_is_dropped() {
         assert!(matches!(peer.greeting().await, Greeting::Challenge { .. }));
         waiting.push(peer);
     }
+    // Turned away with the reason, then let go.
     let mut extra = core.connect().await;
-    assert_eq!(extra.line().await, None);
+    assert_eq!(refused(&extra.greeting().await), Refusal::Full);
+    assert!(extra.ends().await);
     drop(waiting);
 }
 
@@ -475,14 +493,98 @@ async fn the_socket_goes_on_stop_and_a_stale_one_is_replaced_by_the_lock_holder(
     assert_eq!(fs::metadata(&socket).unwrap().mode() & 0o777, 0o600);
     let (_, last, _) = handshake(&core, &core.key, Then::Attach).await;
     assert!(matches!(last, Greeting::Welcome { .. }));
-    // Dropping the handle stops serving too.
+    // Dropping the handle removes the socket at once.
     drop(serving);
-    for _ in 0..100 {
-        if !socket.exists() {
-            break;
-        }
-        tokio::task::yield_now().await;
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
     assert!(!socket.exists());
+}
+
+#[tokio::test]
+async fn a_stopped_core_never_removes_the_socket_of_the_next() {
+    let mut core = core().await;
+    let socket = core.socket();
+    let first = core.serving.take().unwrap();
+    // Another serve on the same path replaces the first socket; stopping the first after
+    // that leaves the second alone.
+    let second = serve(
+        &core.lock,
+        Arc::clone(&core.hub),
+        core.files.clone(),
+        core.key,
+        OwnerKind::Tui,
+    )
+    .await
+    .unwrap();
+    first.stop().await;
+    assert!(socket.exists());
+    let (_, last, _) = handshake(&core, &core.key, Then::Attach).await;
+    assert!(matches!(last, Greeting::Welcome { .. }), "{last:?}");
+    // The same when the first is dropped, not stopped, and its task runs later.
+    drop(second);
+    let third = serve(
+        &core.lock,
+        Arc::clone(&core.hub),
+        core.files.clone(),
+        core.key,
+        OwnerKind::Tui,
+    )
+    .await
+    .unwrap();
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert!(socket.exists());
+    let (_, last, _) = handshake(&core, &core.key, Then::Attach).await;
+    assert!(matches!(last, Greeting::Welcome { .. }), "{last:?}");
+    drop(third);
+}
+
+#[tokio::test]
+async fn a_handover_waits_for_the_owner() {
+    let core = core().await;
+    for (yes, wanted) in [(true, true), (false, false)] {
+        let owner = async {
+            let mut asked = core.hub.handover_requests();
+            let version = asked.wait_for(Option::is_some).await.unwrap().clone();
+            assert_eq!(version, Some(format!("protocol {PROTOCOL_VERSION}")));
+            core.hub.answer_handover(yes);
+        };
+        let ((_, last, _), ()) = tokio::join!(handshake(&core, &core.key, Then::Handover), owner);
+        match wanted {
+            true => assert!(matches!(last, Greeting::Welcome { .. }), "{last:?}"),
+            false => assert_eq!(refused(&last), Refusal::Declined),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_handover_whose_asker_left_is_withdrawn() {
+    let core = core().await;
+    let mut peer = core.connect().await;
+    let nc = nonce();
+    peer.say_json(&hello(Some(Claim::Key), &nc)).await;
+    let Greeting::Challenge { nonce: ns, .. } = peer.greeting().await else {
+        panic!("a challenge");
+    };
+    let proof = Proof {
+        proof: client_proof(&core.key, "key", &nc, &ns),
+        then: Then::Handover,
+    };
+    peer.say_json(&proof).await;
+    let mut asked = core.hub.handover_requests();
+    asked.wait_for(Option::is_some).await.unwrap();
+    drop(peer);
+    tokio::time::timeout(Duration::from_secs(5), asked.wait_for(Option::is_none))
+        .await
+        .expect("withdrawn within 5 s")
+        .unwrap();
+}
+
+#[tokio::test]
+async fn an_older_app_may_not_stop_or_hand_over() {
+    let core = core().await;
+    for then in [Then::Stop, Then::Handover] {
+        let last = handshake_as(&core, OLDEST_PROTOCOL, then).await;
+        assert_eq!(refused(&last), Refusal::Version, "{then:?}");
+    }
+    assert!(core.hub.handover_requests().borrow().is_none());
 }

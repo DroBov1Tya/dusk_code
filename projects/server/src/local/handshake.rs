@@ -3,7 +3,10 @@
 //! The key itself never crosses the socket, and nothing is computed over a nonce of the
 //! wrong shape.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result, bail};
 use dusk_core::{
@@ -14,12 +17,13 @@ use dusk_protocol::client::{
     Claim, CoreInfo, Event, Greeting, Hello, OLDEST_PROTOCOL, OwnerKind, PROTOCOL_VERSION, Proof,
     Refusal, Then, client_proof, core_proof, nonce_is_valid, proof_matches, try_nonce,
 };
+use parking_lot::Mutex;
 use serde::Deserialize;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::lines::Lines;
-use crate::{auth::Limiter, stream::Frames};
+use crate::stream::Frames;
 
 /// How long a client has for each of its two handshake lines.
 pub(super) const HANDSHAKE: Duration = Duration::from_secs(5);
@@ -30,16 +34,54 @@ const HANDOVER: Duration = Duration::from_secs(120);
 /// The longest handshake line a client may send; both are far shorter.
 pub(super) const MAX_HELLO: usize = 4096;
 
+/// What a failed proof costs the connection that sent it, before its refusal. The key is
+/// 32 random bytes, so this is not against guessing: it only makes a loop of bad proofs
+/// slow, and it never touches another connection.
+pub(super) const FAILED_PROOF_DELAY: Duration = Duration::from_secs(1);
+
+/// How often failed proofs are reported in the log at most.
+const FAILURE_REPORT: Duration = Duration::from_secs(60);
+
 /// The proof id of the core's key.
 const KEY_ID: &str = "key";
 
 /// What the core answers with: whom it serves, and what it checks clients against.
 pub(super) struct Gate {
     pub hub: Arc<Hub>,
-    pub key: [u8; 32],
+    pub key: Key,
     pub owner: OwnerKind,
-    /// Failed proofs; five in a minute and every handshake waits.
-    pub failures: Limiter,
+    /// Failed proofs, counted for the log only: they never refuse another client, or any
+    /// process of this user could lock the user's own apps out.
+    pub failures: Failures,
+}
+
+/// The core's key; never shown, whatever derives `Debug` around it.
+pub(super) struct Key(pub [u8; 32]);
+
+impl std::fmt::Debug for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Key(..)")
+    }
+}
+
+/// Failed proofs since the last report, and when that report was.
+#[derive(Default)]
+pub(super) struct Failures(Mutex<(u64, Option<Instant>)>);
+
+impl Failures {
+    /// Counts one, and reports the count at most once a minute.
+    fn failed(&self) {
+        let mut state = self.0.lock();
+        state.0 += 1;
+        let due = state.1.is_none_or(|last| last.elapsed() >= FAILURE_REPORT);
+        if due {
+            warn!(
+                count = state.0,
+                "socket clients failed to prove they hold the core key"
+            );
+            *state = (0, Some(Instant::now()));
+        }
+    }
 }
 
 /// A client let in to be carried by the pump.
@@ -54,9 +96,6 @@ pub(super) struct Admitted {
 struct Version {
     protocol: u32,
 }
-
-/// The limiter keeps one count for the socket: every peer on it is this user.
-const PEER: &str = "socket";
 
 impl Gate {
     /// Runs the handshake; `Some` when the client is attached and the stream goes on.
@@ -96,27 +135,32 @@ impl Gate {
                 }
             };
         }
-        if self.failures.blocked(PEER).is_some() {
-            return self.refuse_plain(lines, Refusal::Cooldown).await;
-        }
         if !nonce_is_valid(&hello.nonce) {
             return self.refuse_plain(lines, Refusal::Auth).await;
         }
         let ns = try_nonce().map_err(|error| anyhow::anyhow!("no randomness: {error}"))?;
         let challenge = Greeting::Challenge {
-            proof: core_proof(&self.key, KEY_ID, &hello.nonce, &ns),
+            proof: core_proof(&self.key.0, KEY_ID, &hello.nonce, &ns),
             nonce: ns.clone(),
         };
         say(lines, &challenge).await?;
-        let Ok(proof) = serde_json::from_str::<Proof>(&read(lines).await?) else {
-            self.failures.failed(PEER);
+        let expected = client_proof(&self.key.0, KEY_ID, &hello.nonce, &ns);
+        let proof = serde_json::from_str::<Proof>(&read(lines).await?)
+            .ok()
+            .filter(|proof| proof_matches(&expected, &proof.proof));
+        let Some(proof) = proof else {
+            self.failures.failed();
+            debug!(name = %hello.client, "a socket client failed to prove it holds the key");
+            tokio::time::sleep(FAILED_PROOF_DELAY).await;
             return self.refuse_plain(lines, Refusal::Auth).await;
         };
-        let expected = client_proof(&self.key, KEY_ID, &hello.nonce, &ns);
-        if !proof_matches(&expected, &proof.proof) {
-            self.failures.failed(PEER);
-            info!(name = %hello.client, "a socket client failed to prove it holds the key");
-            return self.refuse_plain(lines, Refusal::Auth).await;
+        // An older app never stops or hands over a newer core; the app's own rule, held
+        // here too.
+        let older = hello.protocol < PROTOCOL_VERSION;
+        if older && matches!(proof.then, Then::Stop | Then::Handover) {
+            return self
+                .refuse(lines, Refusal::Version, versions(hello.protocol))
+                .await;
         }
         match proof.then {
             Then::Attach => self.attach(lines, hello).await,
@@ -143,7 +187,7 @@ impl Gate {
         // version learns the core's and decides what to do from there.
         if hello.protocol != PROTOCOL_VERSION {
             let reason = format!(
-                "the core speaks {PROTOCOL_VERSION}, this app {}",
+                "the core speaks {PROTOCOL_VERSION}, this client {}; update duskcode",
                 hello.protocol
             );
             return self.refuse(lines, Refusal::Version, reason).await;
@@ -166,17 +210,24 @@ impl Gate {
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
     {
-        // The hello names no app version; its protocol is what the owner is told.
+        // The frozen hello carries no app version, so the owner is told the protocol, as
+        // `protocol N`; the owner's dialog words it.
         let asking = format!("protocol {}", hello.protocol);
         info!(name = %hello.client, %asking, "a newer app asks for the core");
         let answer = self.hub.ask_handover(asking);
-        match tokio::time::timeout(HANDOVER, answer).await {
-            Ok(Ok(true)) => {
-                self.welcome(lines, 0).await?;
-                Ok(None)
-            }
-            _ => self.refuse_plain(lines, Refusal::Declined).await,
+        let accepted = tokio::select! {
+            answer = answer => answer.unwrap_or(false),
+            // The asking app says nothing more; a line or its leaving ends the wait.
+            _ = lines.next() => false,
+            () = tokio::time::sleep(HANDOVER) => false,
+        };
+        if !accepted {
+            // An ask nobody waits for any more must not stay up in the owner's window.
+            self.hub.withdraw_handover();
+            return self.refuse_plain(lines, Refusal::Declined).await;
         }
+        self.welcome(lines, 0).await?;
+        Ok(None)
     }
 
     fn info(&self) -> CoreInfo {
@@ -187,6 +238,18 @@ impl Gate {
             owner: self.owner,
             busy: *self.hub.busy().borrow(),
         }
+    }
+
+    /// `Refused { Full }` as one line, for a client turned away before its handshake.
+    pub(super) fn full_line(&self) -> String {
+        let refused = Greeting::Refused {
+            code: Refusal::Full,
+            reason: Refusal::Full.to_string(),
+            core: self.info(),
+        };
+        let mut line = serde_json::to_string(&refused).unwrap_or_default();
+        line.push('\n');
+        line
     }
 
     async fn welcome<S>(&self, lines: &mut Lines<S>, client_id: u64) -> Result<()>
@@ -260,4 +323,92 @@ where
     tokio::time::timeout(HANDSHAKE, lines.send(text))
         .await
         .context("the client does not read")?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dusk_core::app::{Paths, start_hub};
+    use dusk_protocol::client::nonce;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, duplex};
+
+    async fn gate(name: &str) -> Gate {
+        let root = std::env::temp_dir().join(format!("dusk-hs-{}-{name}", std::process::id()));
+        let paths = Paths::new(root.join("config"), root.join("work"));
+        let hub = start_hub(paths, Some(root.join("state.db"))).await.unwrap();
+        Gate {
+            hub,
+            key: Key([3; 32]),
+            owner: OwnerKind::Tui,
+            failures: Failures::default(),
+        }
+    }
+
+    fn lines() -> (Lines<DuplexStream>, DuplexStream) {
+        let (near, far) = duplex(1 << 16);
+        (Lines::new(near, MAX_HELLO), far)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_client_that_says_too_little_is_let_go_after_five_seconds() {
+        let gate = gate("silent").await;
+        tokio::time::pause();
+        // Nothing at all, half a hello, and a hello with no proof after it.
+        let key_hello = serde_json::to_string(&Hello {
+            auth: Some(Claim::Key),
+            nonce: nonce(),
+            ..Hello::new("app")
+        })
+        .unwrap();
+        for said in [
+            String::new(),
+            r#"{"protocol":37"#.to_owned(),
+            key_hello + "\n",
+        ] {
+            let (mut lines, mut far) = lines();
+            far.write_all(said.as_bytes()).await.unwrap();
+            let start = tokio::time::Instant::now();
+            assert!(gate.admit(&mut lines).await.is_err(), "{said}");
+            assert!(start.elapsed() >= HANDSHAKE, "{said}");
+            assert!(start.elapsed() < HANDSHAKE * 2, "{said}");
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_failed_proof_costs_its_connection_a_delay() {
+        let gate = gate("delay").await;
+        tokio::time::pause();
+        let (mut lines, far) = lines();
+        let (read, mut write) = tokio::io::split(far);
+        let mut read = BufReader::new(read);
+        let hello = Hello {
+            auth: Some(Claim::Key),
+            nonce: nonce(),
+            ..Hello::new("app")
+        };
+        let client = async move {
+            let mut line = serde_json::to_string(&hello).unwrap();
+            line.push('\n');
+            write.write_all(line.as_bytes()).await.unwrap();
+            let mut challenge = String::new();
+            read.read_line(&mut challenge).await.unwrap();
+            let start = tokio::time::Instant::now();
+            write
+                .write_all(b"{\"proof\":\"00\",\"then\":\"Attach\"}\n")
+                .await
+                .unwrap();
+            let mut answer = String::new();
+            read.read_line(&mut answer).await.unwrap();
+            (start.elapsed(), answer)
+        };
+        let (admitted, (waited, answer)) = tokio::join!(gate.admit(&mut lines), client);
+        assert!(matches!(admitted, Ok(None)));
+        assert!(waited >= FAILED_PROOF_DELAY, "{waited:?}");
+        assert!(answer.contains(r#""code":"Auth""#), "{answer}");
+    }
+
+    #[test]
+    fn the_key_is_never_shown() {
+        assert_eq!(format!("{:?}", Key([9; 32])), "Key(..)");
+    }
 }
