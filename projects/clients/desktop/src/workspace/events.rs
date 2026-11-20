@@ -4,7 +4,7 @@ use dusk_protocol::client::{Event, Status};
 use gpui_kit::*;
 use tokio::sync::{mpsc, watch};
 
-use super::Workspace;
+use super::{Workspace, seen};
 
 impl Workspace {
     pub fn pump_events(
@@ -56,6 +56,9 @@ impl Workspace {
                     &*event
                 {
                     self.rates.insert(thread_id.clone(), *tokens_per_sec);
+                }
+                if let dusk_protocol::thread::ThreadEvent::Unread(unread) = &*event {
+                    seen::heard(self, &thread_id, *unread);
                 }
                 let titled = matches!(
                     *event,
@@ -127,6 +130,8 @@ impl Workspace {
                 jpeg,
             } => self.plugin_frame(plugin, part, widget, jpeg, cx),
             Event::PluginNotice { plugin, text } => self.plugin_notice(&plugin, &text, cx),
+            // The app shows the stop when the core's side of the connection ends.
+            Event::CoreStopping { .. } => {}
             Event::GitChanged { project_id } => self.git_changed(&project_id, cx),
             Event::RepositoryStatus { project_id, status } => {
                 self.repository_changed(&project_id, *status, cx)

@@ -143,6 +143,42 @@ impl ToolContext {
     }
 }
 
+/// The sources of chats nobody who may change the settings is there to answer: the
+/// timetable's runs, a headless `duskcode run` (`cli`) and the evals' tasks.
+pub(crate) const UNATTENDED: [&str; 3] = ["schedule", "cli", "evals"];
+
+impl ToolContext {
+    /// Asks the owner for a change of the settings, in every mode (`Approvals::ask_owner`).
+    /// Refused at once where the owner cannot answer: no approvals here, a chat the
+    /// timetable or a headless run started, or one an API token started, whose client
+    /// may not answer it; the call would otherwise wait for good.
+    pub async fn ask_owner(&self, request: Request) -> Result<()> {
+        let nobody = "needs the owner's yes, and nobody who may give it can answer in this \
+                      chat; ask the user to do it in the app";
+        let approvals = self
+            .approvals
+            .as_ref()
+            .with_context(|| format!("{} {nobody}", request.what()))?;
+        let state = self
+            .state
+            .as_ref()
+            .with_context(|| format!("{} {nobody}", request.what()))?;
+        let chat = state.root_thread(&self.thread_id).await?;
+        let thread = state
+            .load_thread(&chat)
+            .await?
+            .with_context(|| format!("no chat {chat}"))?;
+        anyhow::ensure!(
+            thread.owner.is_none() && !UNATTENDED.contains(&thread.source.as_str()),
+            "{} {nobody}",
+            request.what()
+        );
+        approvals
+            .ask_owner(&self.thread_id, request, self.progress.clone())
+            .await
+    }
+}
+
 /// Where a running call reports what happens inside it, such as a subagent at work.
 #[derive(Clone)]
 pub struct Progress {

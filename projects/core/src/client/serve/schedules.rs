@@ -164,3 +164,13 @@ impl Server {
         Ok(thread_id)
     }
 }
+
+#[cfg(test)]
+mod unattended_tests {
+    /// A tool that needs the owner refuses at once in the timetable's chats, by their
+    /// source, instead of waiting for an answer nobody gives.
+    #[test]
+    fn the_timetable_s_chats_are_known_as_unattended() {
+        assert!(crate::tools::UNATTENDED.contains(&super::SOURCE));
+    }
+}

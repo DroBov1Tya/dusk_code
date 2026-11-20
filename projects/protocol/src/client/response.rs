@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::catalog::{NodeText, SkillChange, SkillDiff, SkillPack};
-use crate::client::Answer;
+use crate::client::{Answer, AttachedClient};
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
     Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile,
@@ -18,6 +18,8 @@ use crate::thread::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
+    /// The clients attached to the core.
+    Clients(Vec<AttachedClient>),
     Opened {
         thread_id: String,
     },

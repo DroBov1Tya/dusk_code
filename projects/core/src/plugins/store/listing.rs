@@ -78,7 +78,7 @@ pub fn listing(
             .as_deref()
             .and_then(|installed| newer(&entry.version, installed)),
         installed,
-        unfit: entry.download_here().err(),
+        unfit: entry.unfit(),
         tier: tier(source, entry),
         source: source.name.clone(),
         kind: entry.kind,
@@ -162,7 +162,10 @@ pub fn taken(
             .filter(|(_, item)| item.source != source)
             .map(|(name, _)| name.clone()),
     );
+    // The official list's names as last read stay taken while it cannot be read now.
+    names.extend(record.official_names.iter().cloned());
     names.insert(crate::catalog::skills::BUILTIN_PACK.to_owned());
+    names.extend(crate::catalog::agents::builtin_names());
     let builtin = crate::catalog::skills::builtin_dir();
     for (part, root) in [
         ("skills", builtin.clone()),
@@ -182,6 +185,32 @@ pub fn taken(
         }
     }
     names
+}
+
+/// Why a listing of a source other than the official one may not be installed under its
+/// name: an agent named as, or close to, an agent duskcode brings would replace it.
+pub fn reserved(source: &str, entry_kind: Kind, name: &str) -> Option<String> {
+    if source == dusk_protocol::plugin::OFFICIAL_SOURCE || entry_kind != Kind::Agent {
+        return None;
+    }
+    let builtin = crate::catalog::agents::builtin_names();
+    let found = builtin
+        .iter()
+        .find(|other| super::guard::close(name, other))?;
+    Some(format!(
+        "{name} is, or is close to, the built-in agent {found}; only duskcode's own list may \
+         bring an agent of that name"
+    ))
+}
+
+/// Marks a listing of another source than the official one that would take a built-in
+/// agent's name as unfit.
+pub fn guard_agents(listings: &mut [Listing]) {
+    for listing in listings.iter_mut() {
+        if let Some(why) = reserved(&listing.source, listing.kind, &listing.name) {
+            listing.unfit = Some(why);
+        }
+    }
 }
 
 /// Marks an Unverified listing whose name is, or is close to, one of `taken` as unfit:

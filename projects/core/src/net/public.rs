@@ -241,6 +241,24 @@ mod tests {
     }
 
     #[test]
+    fn other_ways_to_write_an_ipv4_address_are_not_public() {
+        for address in [
+            // IPv4-compatible (deprecated), here 127.0.0.1.
+            "::7f00:1",
+            "::a00:1",
+            // IPv4-translated (SIIT), here 127.0.0.1 and 8.8.8.8: refused whatever it carries.
+            "::ffff:0:7f00:1",
+            "::ffff:0:808:808",
+            // NAT64 carrying a fake IP, 198.18.0.1.
+            "64:ff9b::c612:1",
+            // ORCHIDv2, inside the IETF protocol assignments.
+            "2001:20::1",
+        ] {
+            assert!(!public(address), "{address}");
+        }
+    }
+
+    #[test]
     fn public_addresses_pass() {
         for address in [
             "1.1.1.1",
@@ -273,6 +291,11 @@ mod tests {
         assert!(!may_connect("example.com", &[]));
         assert!(may_connect("example.com", &at(&["8.8.8.8"])));
         assert!(!may_connect("example.com", &at(&["8.8.8.8", "127.0.0.1"])));
+        // Only a plain IPv4 answer counts as fake: one carried in IPv6 is judged as it is.
+        assert!(!may_connect("example.com", &at(&["::ffff:198.18.0.7"])));
+        assert!(!may_connect("example.com", &at(&["64:ff9b::c612:7"])));
+        // A mapped public address leads to that address and passes, as display_image takes it.
+        assert!(may_connect("example.com", &at(&["::ffff:8.8.8.8"])));
     }
 
     #[tokio::test]

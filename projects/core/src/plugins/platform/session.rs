@@ -1,7 +1,11 @@
 //! One run of a platform's program, bridged to its thread: events go out as lines,
 //! what the user did comes back in.
 
-use std::{collections::BTreeMap, process::Stdio};
+use std::{
+    collections::BTreeMap,
+    process::Stdio,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use parking_lot::RwLock;
@@ -46,6 +50,32 @@ fn at_work(event: &ThreadEvent) -> bool {
     )
 }
 
+/// How often dropped lines are reported: a plugin that writes nothing but bad lines
+/// would otherwise fill the log with one warning each.
+const DROP_REPORT_EVERY: Duration = Duration::from_secs(60);
+
+/// Counts the platform's lines that were dropped, and says when to report them.
+#[derive(Default)]
+struct Dropped {
+    since_report: u64,
+    reported_at: Option<Instant>,
+}
+
+impl Dropped {
+    /// Counts one dropped line; answers how many to report now, the first at once and
+    /// then at most one report a `DROP_REPORT_EVERY`.
+    fn count(&mut self, now: Instant) -> Option<u64> {
+        self.since_report += 1;
+        let due = self
+            .reported_at
+            .is_none_or(|at| now.duration_since(at) >= DROP_REPORT_EVERY);
+        due.then(|| {
+            self.reported_at = Some(now);
+            std::mem::take(&mut self.since_report)
+        })
+    }
+}
+
 /// One run of a platform's program, bridged to its thread.
 pub(super) struct Session<'a> {
     launcher: &'a Launcher,
@@ -81,6 +111,7 @@ impl<'a> Session<'a> {
         let stdin = child.stdin.take().context("no stdin")?;
         let mut stdout = BufReader::new(child.stdout.take().context("no stdout")?);
         let mut lines = Lines::new(MAX_LINE_BYTES);
+        let mut dropped = Dropped::default();
         let thread = open_thread(launcher, &spec.plugin, None).await?;
         let mut session = Session {
             launcher,
@@ -103,7 +134,9 @@ impl<'a> Session<'a> {
                         // A line past the cap is no message of the protocol: dropped
                         // unread, and the session goes on.
                         Line::TooLong => {
-                            warn!("plugin {}: a line over the limit was dropped", spec.plugin);
+                            if let Some(count) = dropped.count(Instant::now()) {
+                                warn!("plugin {}: {count} line(s) over the limit dropped", spec.plugin);
+                            }
                             continue;
                         }
                     };
@@ -112,7 +145,11 @@ impl<'a> Session<'a> {
                             statuses.write().insert(spec.plugin.clone(), text);
                         }
                         Ok(input) => session.take(input).await?,
-                        Err(error) => warn!("plugin {}: not a message: {error}", spec.plugin),
+                        Err(error) => {
+                            if let Some(count) = dropped.count(Instant::now()) {
+                                warn!("plugin {}: {count} line(s) dropped, the last not a message: {error}", spec.plugin);
+                            }
+                        }
                     }
                 }
                 event = session.thread.output.next_event() => match event {
@@ -455,6 +492,20 @@ mod tests {
     use super::*;
     use crate::tools::Request;
     use dusk_protocol::tools::ApprovalStep;
+
+    /// A plugin that writes only bad lines gets one warning a minute, not one a line,
+    /// and each warning counts every line dropped since the last.
+    #[test]
+    fn dropped_lines_are_reported_at_most_once_a_minute() {
+        let start = Instant::now();
+        let mut dropped = Dropped::default();
+        assert_eq!(dropped.count(start), Some(1));
+        for second in 1..60 {
+            assert_eq!(dropped.count(start + Duration::from_secs(second)), None);
+        }
+        assert_eq!(dropped.count(start + DROP_REPORT_EVERY), Some(60));
+        assert_eq!(dropped.count(start + DROP_REPORT_EVERY), None);
+    }
 
     fn batch(steps: usize, typed: usize) -> ApprovalRequest {
         let text = "x".repeat(typed);

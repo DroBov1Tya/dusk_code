@@ -98,6 +98,7 @@ pub fn classify(request: &Request) -> Access<'_> {
         Request::SystemReport => apart(Area::System),
         Request::InstallUpdate { .. } => apart(Area::Update),
         Request::Shutdown => apart(Area::Shutdown),
+        Request::Clients | Request::Disconnect { .. } => apart(Area::Clients),
     }
 }
 
@@ -114,7 +115,9 @@ fn thread(request: &Thread) -> Access<'_> {
         | Thread::SkillChanges { thread_id }
         | Thread::LocalUnsent { thread_id }
         | Thread::GetApprovals { thread_id }
-        | Thread::Pins { thread_id } => of(Area::ThreadRead, thread_id),
+        | Thread::Pins { thread_id }
+        // Showing a chat is reading it, and what it changes is only whether it is read.
+        | Thread::Seen { thread_id } => of(Area::ThreadRead, thread_id),
         Thread::Resume { thread_id, .. }
         | Thread::ResendLocalUnsent { thread_id, .. }
         | Thread::Send { thread_id, .. }

@@ -143,6 +143,9 @@ pub struct Transcript {
     /// When each step of the running turn finished, by call, so its check or cross
     /// settles in once.
     pub settled: BTreeMap<String, Instant>,
+    /// What the working row and the running turn's headings said on the last frame, so
+    /// a change of words is a short swap and not a cut.
+    pub swaps: super::activity::RowSwaps,
     next_run: u64,
 }
 
@@ -208,7 +211,10 @@ impl Transcript {
                 self.settled.insert(call_id.clone(), Instant::now());
             }
             // Only a step that finishes in sight settles in; the last turn's stand.
-            ThreadEvent::TurnStarted(_) => self.settled.clear(),
+            ThreadEvent::TurnStarted(_) => {
+                self.settled.clear();
+                self.swaps.clear();
+            }
             _ => {}
         }
         self.log.apply(event, now_ms());

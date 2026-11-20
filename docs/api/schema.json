@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 36,
+  "x-protocol": 37,
   "x-oldest": 36,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -273,6 +273,14 @@
         },
         "name": {
           "type": "string"
+        },
+        "source": {
+          "default": null,
+          "description": "Where it came from when the Workshop installed it from a source nobody vouches\nfor: `<source>, unverified`, as a skill's `source` says it. `None` otherwise.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "version": {
           "description": "`None` for the chat and the built-in general agent, which have no AGENT.md.",
@@ -624,6 +632,41 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "AttachedClient": {
+      "properties": {
+        "id": {
+          "description": "Never reused within a run; what `Request::Disconnect` names.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "label": {
+          "description": "What the client called itself in its hello, such as `tui`.",
+          "type": "string"
+        },
+        "scope": {
+          "description": "What it may do: `full`, `web` or `threads`.",
+          "type": "string"
+        },
+        "since": {
+          "description": "When it attached, in seconds since the Unix epoch.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "transport": {
+          "description": "How it is connected, such as `in-process` or `socket`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "transport",
+        "scope",
+        "since"
+      ],
       "type": "object"
     },
     "Balance": {
@@ -2505,6 +2548,27 @@
           },
           "required": [
             "PluginNotice"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The core is about to stop, for every client; sent before the events close.",
+          "properties": {
+            "CoreStopping": {
+              "properties": {
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "CoreStopping"
           ],
           "type": "object"
         }
@@ -6460,8 +6524,36 @@
         },
         {
           "const": "Shutdown",
-          "description": "Closes every thread and stops the core; the last request a client sends.",
+          "description": "Closes every thread and stops the core for every attached client; the last\nrequest a client sends. Full access only.",
           "type": "string"
+        },
+        {
+          "const": "Clients",
+          "description": "The clients attached to the core now.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Detaches client `id`, closing its events. Full access only.",
+          "properties": {
+            "Disconnect": {
+              "properties": {
+                "id": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Disconnect"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -6638,6 +6730,22 @@
             "Done"
           ],
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The clients attached to the core.",
+          "properties": {
+            "Clients": {
+              "items": {
+                "$ref": "#/$defs/AttachedClient"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "Clients"
+          ],
+          "type": "object"
         },
         {
           "additionalProperties": false,
@@ -10110,6 +10218,11 @@
             "string",
             "null"
           ]
+        },
+        "unread": {
+          "default": false,
+          "description": "An answer, a question, a request for a yes or the end of a turn arrived since a\nclient last showed the chat (`ThreadRequest::Seen`). Never for an agent's thread.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -11053,6 +11166,19 @@
         },
         {
           "additionalProperties": false,
+          "description": "Something for the user arrived in the chat (true), or a client showed it to them\n(false): its `Thread::unread` changed. Every client listing the chat hears it.",
+          "properties": {
+            "Unread": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "Unread"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "A skill file changed by a tool call of this thread, or such a change was undone.",
           "properties": {
             "SkillChanged": {
@@ -11728,6 +11854,27 @@
           },
           "required": [
             "Pins"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A client shows the chat to the user: it is read. Clients listing it hear\n`ThreadEvent::Unread(false)` when it was unread.",
+          "properties": {
+            "Seen": {
+              "properties": {
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Seen"
           ],
           "type": "object"
         }

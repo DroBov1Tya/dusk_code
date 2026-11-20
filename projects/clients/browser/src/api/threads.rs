@@ -141,3 +141,11 @@ pub async fn set_pinned(
         Response::Pins(p) => p
     )
 }
+
+/// The chat is shown to the user: it is read.
+pub async fn seen(thread_id: &str) -> Res<()> {
+    done(thread(ThreadRequest::Seen {
+        thread_id: thread_id.to_owned(),
+    }))
+    .await
+}

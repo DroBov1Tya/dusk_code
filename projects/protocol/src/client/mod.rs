@@ -1,6 +1,7 @@
 //! How a client talks to the core: the hello, the requests it makes, the responses, the events
 //! and the status it draws from, and the slash commands it sends as messages.
 
+mod attached;
 mod command;
 mod event;
 mod frame;
@@ -10,6 +11,7 @@ mod response;
 mod secret;
 mod status;
 
+pub use attached::AttachedClient;
 pub use command::{Answer, COMMANDS, Command, parse};
 pub use event::Event;
 pub use frame::{RequestFrame, ServerFrame};

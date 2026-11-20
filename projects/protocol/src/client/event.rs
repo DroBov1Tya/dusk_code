@@ -42,4 +42,6 @@ pub enum Event {
     },
     /// A plugin's short note, or why its interface stopped.
     PluginNotice { plugin: String, text: String },
+    /// The core is about to stop, for every client; sent before the events close.
+    CoreStopping { reason: String },
 }

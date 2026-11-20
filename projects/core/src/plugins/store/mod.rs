@@ -16,7 +16,8 @@
 //! - `content`, `pack` — skills, packs and agents, which are plain files;
 //! - `contents` — the files of a listing, for a client to look through;
 //! - `guard` — what a source without a key may bring, and what names it may not take;
-//! - `review` — what an install would write and change, asked before an Unverified one.
+//! - `review` — what an install would write and change, asked before an Unverified one;
+//! - `origin` — which skills and agents here came from an Unverified source.
 
 pub mod add;
 #[cfg(test)]
@@ -35,6 +36,7 @@ mod guard;
 mod guard_tests;
 pub mod index;
 mod listing;
+pub mod origin;
 mod pack;
 mod picture;
 #[cfg(test)]
@@ -116,6 +118,7 @@ pub async fn list(
         })
         .collect();
     listing::guard_names(&mut listings, &taken);
+    listing::guard_agents(&mut listings);
     listings.retain(|listing| {
         (kinds.is_empty() || kinds.contains(&listing.kind))
             && category.is_none_or(|category| {
@@ -161,6 +164,9 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
         return Err(anyhow!("{}: {}", failure.source, failure.error));
     }
     let (source, entry) = pick(&fetched, agreed)?;
+    if let Some(why) = listing::reserved(&source.name, entry.kind, &entry.name) {
+        anyhow::bail!(why);
+    }
     if source.tier == Tier::Unverified {
         let record = Record::load(paths)?;
         let taken = listing::taken(paths, &record, &fetched, &source.name);
@@ -199,7 +205,10 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
     // Nothing signed an Unverified list, so the files the user looked at are what they
     // agreed to, not the version: the list may name other files under the same one.
     if tier == Tier::Unverified {
-        let pinned = entry.upstream.as_ref().map(upstream::Upstream::digest);
+        let pinned = entry
+            .upstream
+            .as_ref()
+            .map(|upstream| upstream.digest(entry));
         ensure!(
             agreed.sha256.is_some() && agreed.sha256 == pinned.as_deref(),
             "the files of {name} are not the ones you were shown; look at them again"
@@ -276,38 +285,6 @@ async fn update_from(
     Ok(report)
 }
 
-/// The folders under `skills/` an Unverified source installed, by their name there (`x`
-/// for `skills/x`), with the source's name.
-pub fn unverified_skills(paths: &Paths) -> std::collections::BTreeMap<String, String> {
-    let record = Record::load(paths).unwrap_or_default();
-    record
-        .installed
-        .iter()
-        .filter(|(name, item)| item.unverified() && record.present(paths, name).is_some())
-        .filter_map(|(_, item)| {
-            let folder = item.folder.strip_prefix("skills/")?;
-            Some((folder.to_owned(), item.source.clone()))
-        })
-        .collect()
-}
-
-/// The folder (in `unverified_skills`' terms) and the Unverified source `skill`, a name
-/// in the skill graph, came from, when one did.
-pub fn unverified_source<'a>(
-    unverified: &'a std::collections::BTreeMap<String, String>,
-    skill: &str,
-) -> Option<(&'a str, &'a str)> {
-    unverified
-        .iter()
-        .find(|(folder, _)| {
-            skill == folder.as_str()
-                || skill
-                    .strip_prefix(folder.as_str())
-                    .is_some_and(|rest| rest.starts_with('/'))
-        })
-        .map(|(folder, source)| (folder.as_str(), source.as_str()))
-}
-
 /// The single skills the store installed, by name: their folders are under `skills/` like
 /// the user's own, so only the record tells them apart.
 pub fn installed_skills(paths: &Paths) -> std::collections::BTreeSet<String> {
@@ -339,7 +316,8 @@ pub fn check_removable(paths: &Paths, name: &str) -> Result<Kind> {
 /// wrote and the user did not edit since.
 pub async fn remove(paths: &Paths, name: &str) -> Result<()> {
     let _busy = BUSY.lock().await;
-    match check_removable(paths, name)? {
+    let kind = check_removable(paths, name)?;
+    match kind {
         Kind::Plugin => {
             let folder = catalog::folder(paths).join(name);
             fs::remove_dir_all(&folder)
@@ -348,7 +326,25 @@ pub async fn remove(paths: &Paths, name: &str) -> Result<()> {
         _ => content::remove(paths, name)?,
     }
     Record::update(paths, |record| {
-        record.installed.remove(name);
+        let Some(item) = record.installed.remove(name) else {
+            return Ok(());
+        };
+        // Files the user edited stay; they are still that source's, not the user's own.
+        let stays = kind != Kind::Plugin
+            && item.source != dusk_protocol::plugin::OFFICIAL_SOURCE
+            && item.path(paths, name).is_dir();
+        if stays {
+            tracing::info!(
+                "{name} removed; the files you edited stay in {}, still marked as from {}",
+                item.folder,
+                item.source
+            );
+            let left = record::Left {
+                source: item.source.clone(),
+                unverified: item.unverified(),
+            };
+            record.left.insert(item.folder.clone(), left);
+        }
         Ok(())
     })
 }
@@ -418,6 +414,7 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
         None => entry.source.clone().unwrap_or_default(),
     };
     Record::update(paths, |record| {
+        record.left.remove(&installed.folder);
         record.installed.insert(name.clone(), installed);
         Ok(())
     })
@@ -432,7 +429,7 @@ async fn fetch_package(entry: &Entry) -> Result<(Package, String)> {
             let files = upstream::fetch_all(upstream)
                 .await
                 .with_context(|| format!("the files of {name}"))?;
-            (Package::Files(files), upstream.digest())
+            (Package::Files(files), upstream.digest(entry))
         }
         None => {
             let download = entry.download_here().map_err(anyhow::Error::msg)?;

@@ -81,10 +81,7 @@ async fn complete_with(
         "GitHub has no tree for {tag} ({})",
         response.status()
     );
-    let tree: Tree = response
-        .json()
-        .await
-        .context("unexpected answer from GitHub")?;
+    let tree: Tree = super::update::read_json(response).await?;
     ensure!(
         !tree.truncated,
         "the repository tree for {tag} is too large to check"

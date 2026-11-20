@@ -58,7 +58,12 @@ async fn main() -> Result<()> {
         .transpose()?;
     // Keep a shared lock for the full process lifetime, including log initialization.
     let _restore_guard = dusk_core::app::RestoreGuard::startup(&paths, state_db.as_deref())?;
-    let telemetry = match dusk_core::app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "tui") {
+    let telemetry = match dusk_core::app::init_logs(
+        &paths,
+        env!("CARGO_CRATE_NAME"),
+        "tui",
+        dusk_core::app::LogRole::Owner,
+    ) {
         Ok(telemetry) => Some(telemetry),
         Err(error) => {
             eprintln!("duskcode: no log files: {error:#}");
@@ -71,7 +76,7 @@ async fn main() -> Result<()> {
     // Started before the screen is taken, so a first-start message stays readable.
     let hello = Hello::new(session::THREAD_SOURCE);
     let hub = dusk_core::app::start_hub(paths, state_db).await?;
-    let mut client = hub.attach(hello, dusk_core::client::Scope::full())?;
+    let mut client = hub.attach_owner(hello, dusk_core::client::Scope::full())?;
     let web = match web {
         Some(options) => {
             let server = cli::web::start(Arc::clone(&hub), options).await?;
