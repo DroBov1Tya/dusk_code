@@ -55,11 +55,9 @@ pub fn paths(word: &str, cwd: &Path) -> PathCompletion {
     completion
 }
 
+/// `folder` from `cwd`; one under `~/` from HOME, `None` without it.
 fn resolve(folder: &str, cwd: &Path) -> Option<PathBuf> {
-    if let Some(rest) = folder.strip_prefix("~/") {
-        return std::env::var_os("HOME").map(|home| PathBuf::from(home).join(rest));
-    }
-    Some(cwd.join(folder))
+    crate::init::paths::home_path(folder).map(|path| cwd.join(path))
 }
 
 #[cfg(test)]

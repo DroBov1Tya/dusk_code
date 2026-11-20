@@ -173,12 +173,23 @@ pub fn is_plain_folder_name(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
-/// A leading `~/` as people write it; the rest stays as typed.
-pub fn expand_home(path: &str) -> std::path::PathBuf {
-    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
-        (Some(rest), Some(home)) => std::path::PathBuf::from(home).join(rest),
-        _ => std::path::PathBuf::from(path),
+/// A leading `~/` as people write it; the rest stays as typed. `None` when the path needs
+/// the home folder and HOME is not set.
+pub fn home_path(path: &str) -> Option<PathBuf> {
+    match path.strip_prefix("~/") {
+        Some(rest) => Some(PathBuf::from(std::env::var_os("HOME")?).join(rest)),
+        None => Some(PathBuf::from(path)),
     }
+}
+
+/// `home_path`, or the path as typed when HOME is not set.
+pub fn expand_home(path: &str) -> PathBuf {
+    home_path(path).unwrap_or_else(|| PathBuf::from(path))
+}
+
+/// The config folder of the standard install, `~/.config/duskcode`; `None` without HOME.
+pub fn standard_config_root() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(CONFIG_ROOT))
 }
 
 #[cfg(test)]
