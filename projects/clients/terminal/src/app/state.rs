@@ -167,7 +167,7 @@ pub struct App {
     /// The MCP servers of the config, as the core last reported them.
     pub mcp: Vec<McpStatus>,
     pub turn_started_at: Option<i64>,
-    pub last_turn_duration_ms: Option<u64>,
+    pub last_turn_duration_ms: Option<i64>,
     /// What the running turn has used so far, as the core counted it.
     pub turn_spend: Option<dusk_protocol::thread::TurnSpend>,
     /// What the core last said about itself: model, settings, MCP, updates.
@@ -420,9 +420,9 @@ impl App {
             .unwrap_or_default()
     }
 
-    pub fn elapsed_ms(&self) -> Option<u64> {
+    pub fn elapsed_ms(&self) -> Option<i64> {
         self.turn_started_at
-            .map(|started| now_ms().saturating_sub(started).max(0) as u64)
+            .map(|started| now_ms().saturating_sub(started).max(0))
             .or(self.last_turn_duration_ms)
     }
 

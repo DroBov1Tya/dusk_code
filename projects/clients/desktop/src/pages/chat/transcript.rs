@@ -22,11 +22,6 @@ pub type Log = ChatLog<CommandRun>;
 /// A subagent of the chat, as the right column and the agents window show it.
 pub use dusk_protocol::thread::Subagent as Agent;
 
-/// How long `agent` worked, until now while it still does.
-pub fn run_time(agent: &Agent) -> std::time::Duration {
-    std::time::Duration::from_millis(agent.run_ms(now_ms()).max(0) as u64)
-}
-
 pub struct CommandRun {
     pub id: u64,
     pub command: String,

@@ -144,12 +144,12 @@ impl PlanWindow {
     /// "Weekly"; the provider gives no other.
     pub fn name(&self) -> String {
         match self.minutes {
+            Some(0) | None => "Plan limit".into(),
             Some(300) => "5-hour limit".into(),
             Some(10_080) => "Weekly".into(),
             Some(m) if m.is_multiple_of(1440) => format!("{}-day limit", m / 1440),
             Some(m) if m.is_multiple_of(60) => format!("{}-hour limit", m / 60),
             Some(m) => format!("{m}-minute limit"),
-            None => "Plan limit".into(),
         }
     }
 }
@@ -327,6 +327,7 @@ mod tests {
             Some(120),
             Some(90),
             None,
+            Some(0),
         ]
         .into_iter()
         .map(|minutes| {
@@ -346,6 +347,7 @@ mod tests {
                 "2-day limit",
                 "2-hour limit",
                 "90-minute limit",
+                "Plan limit",
                 "Plan limit"
             ]
         );

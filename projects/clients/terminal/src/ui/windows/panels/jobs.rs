@@ -25,7 +25,7 @@ pub fn jobs(view: &JobsView, width: usize) -> Vec<Line<'static>> {
         .map(|(index, job)| {
             let (mark, color) = job_mark(job);
             let end = job.finished_at.unwrap_or(now);
-            let time = clock_words(end.saturating_sub(job.started_at).max(0) as u64);
+            let time = clock_words(end.saturating_sub(job.started_at));
             selectable(
                 vec![
                     Span::styled(format!(" {mark} "), fg(color)),

@@ -39,7 +39,7 @@ impl Sidebar<'_> {
             .iter()
             .take(MAX_JOB_ROWS)
             .map(|job| {
-                let time = clock_words(now.saturating_sub(job.started_at).max(0) as u64);
+                let time = clock_words(now.saturating_sub(job.started_at));
                 Line::from(vec![
                     Span::styled(format!("{ON} "), fg(ACCENT)),
                     Span::styled(

@@ -104,7 +104,7 @@ per_thread! {
     agent_scroll: usize,
     goal: Option<Goal>,
     turn_started_at: Option<i64>,
-    last_turn_duration_ms: Option<u64>,
+    last_turn_duration_ms: Option<i64>,
     turn_spend: Option<dusk_protocol::thread::TurnSpend>,
     turn_running: bool,
     compacting: bool,

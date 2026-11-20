@@ -118,3 +118,43 @@ pub enum LogKind {
     Stopped,
     Failed,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summaries_count_in_the_plural_unless_one() {
+        let activity = Activity {
+            tool_runs: 1,
+            by_tool: Vec::new(),
+            agents_asked: 2,
+        };
+        assert_eq!(activity.summary(), "1 tool run \u{00B7} 2 agents asked");
+        let path = ChangedPath {
+            path: "a".into(),
+            added: 1,
+            removed: 0,
+        };
+        let changes = ChangeSum {
+            files: 3,
+            added: 40,
+            removed: 2,
+            newest: vec![path.clone(), path],
+        };
+        assert_eq!(changes.summary(), "3 files \u{00B7} +40 \u{2212}2");
+        assert_eq!(changes.more(), 1);
+        let one = ChangeSum {
+            files: 1,
+            ..ChangeSum::default()
+        };
+        assert_eq!(one.summary(), "1 file \u{00B7} +0 \u{2212}0");
+        assert_eq!(one.more(), 1);
+        let listed = ChangeSum {
+            files: 0,
+            newest: changes.newest.clone(),
+            ..ChangeSum::default()
+        };
+        assert_eq!(listed.more(), 0);
+    }
+}

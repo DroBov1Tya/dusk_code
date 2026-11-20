@@ -107,7 +107,7 @@ impl App {
                 self.turn_running = false;
                 self.last_turn_duration_ms = turn
                     .finished_at
-                    .map(|finished| finished.saturating_sub(turn.started_at).max(0) as u64);
+                    .map(|finished| finished.saturating_sub(turn.started_at).max(0));
                 self.turn_started_at = None;
                 self.output_samples.clear();
                 match turn.status {
@@ -116,7 +116,7 @@ impl App {
                     TurnStatus::Failed => {}
                     _ => {
                         if let Some(ms) = self.last_turn_duration_ms {
-                            let took = dusk_protocol::thread::duration_words(ms as i64);
+                            let took = dusk_protocol::thread::duration_words(ms);
                             self.transcript
                                 .notice(format!("Worked for {took}"), Tone::Info);
                         }

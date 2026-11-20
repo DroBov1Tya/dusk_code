@@ -4,7 +4,10 @@
 //! it runs. A figure that works moves; one that is done rests. A click opens its chat.
 
 use crate::ui::press::Press;
-use dusk_protocol::thread::{AgentState, clock_words};
+use dusk_protocol::{
+    system::now_ms,
+    thread::{AgentState, clock_words},
+};
 
 use gpui_kit::{
     component::{
@@ -269,10 +272,7 @@ fn figure(
                                 .meta()
                                 .flex_none()
                                 .text_color(muted)
-                                .child(clock_words(
-                                    crate::pages::chat::transcript::run_time(agent).as_millis()
-                                        as u64,
-                                )),
+                                .child(clock_words(agent.run_ms(now_ms()))),
                         ),
                 )
                 .children(progress.and_then(|p| p.said).map(|said| {

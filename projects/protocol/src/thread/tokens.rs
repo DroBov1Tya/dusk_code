@@ -40,7 +40,9 @@ impl ThreadTokens {
 
     /// The share of the prompt tokens served from the cache, from 0 to 100.
     pub fn cached_percent(&self) -> u64 {
-        self.spent.cached_prompt_tokens.saturating_mul(100) / self.spent.prompt_tokens.max(1)
+        let cached = u128::from(self.spent.cached_prompt_tokens) * 100;
+        let share = cached / u128::from(self.spent.prompt_tokens.max(1));
+        u64::try_from(share).unwrap_or(u64::MAX)
     }
 
     /// Spent tokens per finished task; none before one is done.
@@ -90,7 +92,8 @@ pub fn short_size(bytes: u64) -> String {
     }
     let mut value = bytes as f64 / 1024.;
     let mut unit = 0;
-    while value >= 1024. && unit + 1 < UNITS.len() {
+    // Move up while the number would read 1024.0 or more at one decimal.
+    while (value * 10.).round() >= 10_240. && unit + 1 < UNITS.len() {
         value /= 1024.;
         unit += 1;
     }
@@ -178,9 +181,40 @@ mod short_count_tests {
         use super::short_size;
         assert_eq!(short_size(0), "0 B");
         assert_eq!(short_size(1023), "1023 B");
+        assert_eq!(short_size(1024), "1.0 KB");
         assert_eq!(short_size(1536), "1.5 KB");
+        assert_eq!(short_size(1_048_524), "1023.9 KB");
+        assert_eq!(short_size(1_048_575), "1.0 MB");
+        assert_eq!(short_size(1_048_576), "1.0 MB");
+        assert_eq!(short_size((1 << 30) - 1), "1.0 GB");
+        assert_eq!(short_size((1 << 40) - 1), "1.0 TB");
         assert_eq!(short_size(5 * 1024 * 1024), "5.0 MB");
         assert_eq!(short_size(3 << 40), "3.0 TB");
         assert_eq!(short_size(u64::MAX), "16777216.0 TB");
+    }
+
+    #[test]
+    fn thread_figures_hold_with_nothing_counted() {
+        use super::ThreadTokens;
+        use crate::model::Usage;
+        let mut tokens = ThreadTokens::default();
+        assert_eq!(tokens.spent_tokens(), 0);
+        assert_eq!(tokens.cached_percent(), 0, "no prompt is no share");
+        assert_eq!(tokens.per_task(0), None);
+        assert_eq!(tokens.per_task(3), Some(0));
+        tokens.spent = Usage {
+            prompt_tokens: 900,
+            cached_prompt_tokens: 600,
+            completion_tokens: 300,
+            ..Usage::default()
+        };
+        assert_eq!(tokens.spent_tokens(), 1_200);
+        assert_eq!(tokens.cached_percent(), 66, "rounded down");
+        assert_eq!(tokens.per_task(0), None, "before a task is done");
+        assert_eq!(tokens.per_task(5), Some(240));
+        tokens.spent.prompt_tokens = u64::MAX;
+        tokens.spent.cached_prompt_tokens = u64::MAX;
+        assert_eq!(tokens.spent_tokens(), u64::MAX);
+        assert_eq!(tokens.cached_percent(), 100);
     }
 }

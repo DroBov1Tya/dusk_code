@@ -306,4 +306,71 @@ mod tests {
             json!({ "ended": "quiet" })
         );
     }
+
+    fn team(status: TeamStatus, members: &[TaskStatus]) -> Team {
+        Team {
+            thread_id: "t".into(),
+            status,
+            budget: TeamBudget::new(2, 100, 5_000, 60).unwrap(),
+            used: TeamUsed {
+                at_once: 1,
+                steps: 80,
+                tokens: 1_250,
+                minutes: 12,
+            },
+            members: members
+                .iter()
+                .map(|status| TeamMember {
+                    thread_id: "m".into(),
+                    name: "Ember".into(),
+                    role: None,
+                    model: None,
+                    task_id: "x".into(),
+                    status: *status,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_team_says_its_state_minutes_and_members_at_work() {
+        let members = [
+            TaskStatus::Open,
+            TaskStatus::Claimed,
+            TaskStatus::Running,
+            TaskStatus::Review,
+        ];
+        let running = team(TeamStatus::Running, &members);
+        assert_eq!(running.state_word(), "running");
+        assert_eq!(running.progress_note(), "running \u{00B7} 12 min");
+        assert_eq!(running.at_work(), 2);
+        let ended = team(TeamStatus::Ended(TeamEnd::Done), &[]);
+        assert_eq!(ended.progress_note(), "ended \u{00B7} 12 min");
+        assert_eq!(ended.at_work(), 0);
+        let texts: Vec<String> = running
+            .budget_parts()
+            .iter()
+            .map(BudgetPart::text)
+            .collect();
+        assert_eq!(texts, ["80 of 100", "1.3k of 5k", "12 of 60 min"]);
+        let names = running.budget_parts().map(|part| part.name);
+        assert_eq!(names, ["Steps", "Tokens", "Time"]);
+    }
+
+    #[test]
+    fn a_budget_part_is_near_from_eighty_percent_and_never_past_full() {
+        let part = |used, all| BudgetPart {
+            name: "Steps",
+            used,
+            all,
+            minutes: false,
+        };
+        assert!(!part(79, 100).near());
+        assert!(part(80, 100).near(), "exactly 80% is near");
+        assert_eq!(part(80, 100).share(), 0.8);
+        assert_eq!(part(150, 100).share(), 1.);
+        assert_eq!(part(0, 0).share(), 0.);
+        assert_eq!(part(5, 0).share(), 1., "nothing to spend is spent");
+        assert_eq!(part(1_500, 2_000).text(), "1.5k of 2k");
+    }
 }

@@ -125,7 +125,7 @@ impl TurnFailure {
 
 /// How long a turn took, as every client says it: "8s", "2m 14s", "1h 3m".
 pub fn duration_words(ms: i64) -> String {
-    let seconds = (ms.max(0) + 500) / 1000;
+    let seconds = ms.max(0).saturating_add(500) / 1000;
     match seconds {
         0..60 => format!("{seconds}s"),
         60..3600 => format!("{}m {}s", seconds / 60, seconds % 60),
@@ -153,8 +153,8 @@ pub fn ago_words(ms: i64) -> String {
 }
 
 /// A running clock: `01:24`, or `1:02:03` from an hour on.
-pub fn clock_words(ms: u64) -> String {
-    let seconds = ms / 1_000;
+pub fn clock_words(ms: i64) -> String {
+    let seconds = ms.max(0) / 1_000;
     let minutes = seconds / 60;
     if minutes >= 60 {
         format!("{}:{:02}:{:02}", minutes / 60, minutes % 60, seconds % 60)
@@ -183,6 +183,32 @@ mod wait_tests {
         assert_eq!(clock_words(6_000), "00:06");
         assert_eq!(clock_words(84_000), "01:24");
         assert_eq!(clock_words(3_723_000), "1:02:03");
+    }
+
+    #[test]
+    fn times_move_up_a_unit_exactly_at_its_boundary() {
+        let (minute, hour, day) = (60_000, 3_600_000, 86_400_000);
+        for (ms, age) in [
+            (i64::MIN, "now"),
+            (-hour, "now"),
+            (minute - 1, "now"),
+            (minute, "1m"),
+            (hour - 1, "59m"),
+            (hour, "1h"),
+            (day - 1, "23h"),
+            (day, "1d"),
+            (i64::MAX, "106751991167d"),
+        ] {
+            assert_eq!(age_words(ms), age, "{ms}");
+        }
+        assert_eq!(ago_words(-day), "just now", "a time in the future is now");
+        assert_eq!(ago_words(day), "1d ago");
+        assert_eq!(clock_words(-1), "00:00");
+        assert_eq!(clock_words(59_999), "00:59");
+        assert_eq!(clock_words(60_000), "01:00");
+        assert_eq!(clock_words(hour - 1), "59:59");
+        assert_eq!(clock_words(hour), "1:00:00");
+        assert_eq!(clock_words(25 * hour), "25:00:00");
     }
 
     fn turn(waiting: Option<TurnWait>) -> Turn {
@@ -257,5 +283,19 @@ mod duration_tests {
         assert_eq!(duration_words(134_000), "2m 14s");
         assert_eq!(duration_words(3_780_000), "1h 3m");
         assert_eq!(duration_words(-5), "0s");
+        assert_eq!(duration_words(59_499), "59s");
+        assert_eq!(duration_words(59_500), "1m 0s");
+        assert_eq!(duration_words(3_599_499), "59m 59s");
+        assert_eq!(duration_words(3_599_500), "1h 0m");
+        assert_eq!(duration_words(90_000_000), "25h 0m");
+    }
+
+    #[test]
+    fn seconds_from_a_provider_saturate_instead_of_wrapping() {
+        use super::duration_words_secs;
+        assert_eq!(duration_words_secs(0), "0s");
+        assert_eq!(duration_words_secs(60), "1m 0s");
+        assert_eq!(duration_words_secs(7_800), "2h 10m");
+        assert_eq!(duration_words_secs(u64::MAX), duration_words(i64::MAX));
     }
 }

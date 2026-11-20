@@ -116,7 +116,7 @@ fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'
             .started_at
             .map(|start| {
                 let end = item.finished_at.unwrap_or(now);
-                format!(" {}", clock_words(end.saturating_sub(start).max(0) as u64))
+                format!(" {}", clock_words(end.saturating_sub(start)))
             })
             .unwrap_or_default();
         lines.push(Line::from(vec![

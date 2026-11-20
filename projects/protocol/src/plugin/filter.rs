@@ -196,4 +196,57 @@ mod tests {
         let all = StoreFilter::new(None, "", &[Tier::Local], &[Kind::Pack], None);
         assert_eq!(all.local_packs(&packs, &[]).len(), 1);
     }
+
+    #[test]
+    fn tiers_and_kinds_keep_only_what_is_chosen() {
+        let listings = [
+            listing("a", Kind::Skill, Tier::Official, &[]),
+            listing("b", Kind::Skill, Tier::Community, &[]),
+            listing("c", Kind::Agent, Tier::Official, &[]),
+        ];
+        let names = |filter: StoreFilter| -> Vec<String> {
+            filter
+                .visible(&listings)
+                .iter()
+                .map(|l| l.name.clone())
+                .collect()
+        };
+        assert_eq!(names(StoreFilter::default()), ["a", "b", "c"]);
+        let official = [Tier::Official];
+        assert_eq!(
+            names(StoreFilter::new(None, "", &official, &[], None)),
+            ["a", "c"]
+        );
+        let agents = [Kind::Agent];
+        assert_eq!(names(StoreFilter::new(None, "", &[], &agents, None)), ["c"]);
+        assert_eq!(
+            names(StoreFilter::new(None, "", &official, &[Kind::Skill], None)),
+            ["a"]
+        );
+        assert_eq!(
+            names(StoreFilter::new(Some(Scope::Agents), "", &[], &[], None)),
+            ["c"]
+        );
+        assert!(StoreFilter::new(None, "  ", &[], &[], None).browsing(Order::Trust));
+    }
+
+    #[test]
+    fn categories_list_the_fixed_ones_in_order_then_others_by_name() {
+        let filed = |category: &str, more: &[&str]| Listing {
+            category: category.into(),
+            categories: more.iter().map(|c| c.to_string()).collect(),
+            ..Listing::default()
+        };
+        let listings = [
+            filed("security", &["zines", "coding"]),
+            filed("", &["art"]),
+            filed("coding", &[]),
+            filed("", &[""]),
+        ];
+        assert_eq!(
+            categories(&listings),
+            ["coding", "security", "art", "zines"]
+        );
+        assert!(categories(&[]).is_empty());
+    }
 }

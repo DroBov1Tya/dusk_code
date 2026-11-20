@@ -52,7 +52,7 @@ pub fn card(ws: &Workspace, key: &str, clip: &Clip, cx: &mut Context<Workspace>)
         .map_or(0., |length| {
             (position.as_secs_f32() / length.as_secs_f32()).clamp(0., 1.)
         });
-    let clock = |time: Duration| clock_words(time.as_millis().try_into().unwrap_or(u64::MAX));
+    let clock = |time: Duration| clock_words(time.as_millis().try_into().unwrap_or(i64::MAX));
     let times = match length {
         Some(length) => format!("{} / {}", clock(position), clock(length)),
         None => clock(position),

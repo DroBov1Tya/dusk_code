@@ -429,4 +429,94 @@ mod tests {
         assert!(TaskStatus::parse("paused").is_err());
         assert!(serde_json::from_value::<TaskStatus>(json!("paused")).is_err());
     }
+
+    #[test]
+    fn plan_counts_sum_saturate_and_name_only_what_is_there() {
+        let counts = PlanCounts {
+            open: 1,
+            claimed: 2,
+            running: 3,
+            blocked: 4,
+            review: 5,
+            done: 6,
+            failed: 7,
+        };
+        assert_eq!(counts.total(), 28);
+        assert_eq!(counts.at_work(), 5);
+        assert_eq!(counts.shares(), [6, 10, 11, 1]);
+        assert_eq!(
+            counts.summary(),
+            "6 of 28 done \u{00B7} 3 running \u{00B7} 2 claimed \u{00B7} 5 in review \
+             \u{00B7} 4 blocked \u{00B7} 7 failed"
+        );
+        let full = PlanCounts {
+            open: u32::MAX,
+            done: 1,
+            claimed: u32::MAX,
+            ..PlanCounts::default()
+        };
+        assert_eq!(full.total(), u32::MAX);
+        assert_eq!(full.at_work(), u32::MAX);
+        assert_eq!(PlanCounts::default().total(), 0);
+        assert_eq!(PlanCounts::default().summary(), "0 of 0 done");
+        let some = PlanCounts {
+            done: 2,
+            blocked: 1,
+            ..PlanCounts::default()
+        };
+        assert_eq!(some.summary(), "2 of 3 done \u{00B7} 1 blocked");
+    }
+
+    #[test]
+    fn the_current_task_is_the_first_running_else_the_first_not_over() {
+        let task = |id: &str, status: TaskStatus| Task {
+            task_id: id.into(),
+            status,
+            ..Task::default()
+        };
+        let number = |tasks: &[Task]| current_task(tasks).map(|(n, t)| (n, t.task_id.clone()));
+        assert_eq!(number(&[]), None);
+        let over = [task("a", TaskStatus::Done), task("b", TaskStatus::Failed)];
+        assert_eq!(number(&over), None);
+        let waiting = [
+            task("a", TaskStatus::Done),
+            task("b", TaskStatus::Blocked),
+            task("c", TaskStatus::Open),
+        ];
+        assert_eq!(number(&waiting), Some((2, "b".into())));
+        let running = [
+            task("a", TaskStatus::Open),
+            task("b", TaskStatus::Running),
+            task("c", TaskStatus::Running),
+        ];
+        assert_eq!(number(&running), Some((2, "b".into())));
+    }
+
+    #[test]
+    fn a_member_word_says_a_claimed_task_still_waits() {
+        let words: Vec<&str> = [
+            TaskStatus::Open,
+            TaskStatus::Claimed,
+            TaskStatus::Running,
+            TaskStatus::Blocked,
+            TaskStatus::Review,
+            TaskStatus::Done,
+            TaskStatus::Failed,
+        ]
+        .into_iter()
+        .map(TaskStatus::member_word)
+        .collect();
+        assert_eq!(
+            words,
+            [
+                "waits",
+                "waits",
+                "running",
+                "blocked",
+                "in review",
+                "done",
+                "failed"
+            ]
+        );
+    }
 }
