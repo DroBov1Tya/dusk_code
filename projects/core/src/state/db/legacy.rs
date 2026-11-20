@@ -351,12 +351,7 @@ pub async fn convert_unreleased(pool: &SqlitePool) -> Result<()> {
                 .fetch_optional(&mut *transaction)
                 .await
                 .context("read the migration record")?;
-        let hex = recorded.map(|bytes| {
-            bytes
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        });
+        let hex = recorded.map(|bytes| dusk_protocol::text::hex(&bytes));
         if hex.as_deref() != Some(checksum) {
             continue;
         }

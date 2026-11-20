@@ -1,5 +1,6 @@
-use super::proof::{hex, hmac_sha256};
+use super::proof::hmac_sha256;
 use super::*;
+use crate::text::hex;
 
 #[test]
 fn hmac_matches_rfc_4231_case_2() {

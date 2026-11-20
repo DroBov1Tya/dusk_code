@@ -5,6 +5,8 @@ use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+use crate::text::hex;
+
 const CORE_LABEL: &str = "duskcode-core\n";
 const CLIENT_LABEL: &str = "duskcode-client\n";
 
@@ -69,8 +71,4 @@ pub(super) fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
         <Hmac<Sha256> as KeyInit>::new_from_slice(key).expect("HMAC takes a key of any length");
     mac.update(message);
     mac.finalize().into_bytes().into()
-}
-
-pub(super) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

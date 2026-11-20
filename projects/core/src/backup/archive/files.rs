@@ -155,11 +155,7 @@ pub fn copy_hash(input: &mut impl Read, output: &mut impl Write) -> Result<(u64,
             .checked_add(bytes as u64)
             .context("file size overflow")?;
     }
-    let hash = hash
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let hash = dusk_protocol::text::hex(&hash.finalize());
     Ok((copied, hash))
 }
 

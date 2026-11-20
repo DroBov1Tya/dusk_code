@@ -278,10 +278,7 @@ mod tests {
         let old_compact = "older compaction text";
         fs::write(root.join("COMPACT.md"), old_compact).unwrap();
         // COMPACT.md is an old shipped file the user never changed.
-        let hash: String = <sha2::Sha256 as sha2::Digest>::digest(old_compact.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let hash = dusk_protocol::text::sha256_hex(old_compact.as_bytes());
         let lock = format!("{{\"COMPACT.md\": \"{hash}\"}}");
         fs::write(root.join(LOCK_FILE), lock).unwrap();
         initialize(&paths).unwrap();

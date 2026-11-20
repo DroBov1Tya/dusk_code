@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use sha2::{Digest, Sha256};
+use dusk_protocol::text::sha256_hex;
 
 use crate::{init::paths::Paths, release::resources};
 
@@ -52,12 +52,12 @@ pub fn write_wanted(
     let root = paths.rules_root();
     for (relative, bytes) in wanted {
         let target = root.join(relative);
-        let on_disk = fs::read(&target).ok().map(|disk| hash(&disk));
+        let on_disk = fs::read(&target).ok().map(|disk| sha256_hex(&disk));
         let ours = record.get(relative);
         // Missing, or still as the plugin wrote it: the plugin's version goes in, unless
         // the file already holds it, as on every scan when nothing changed.
         if on_disk.is_none() || on_disk.as_ref() == ours {
-            let new = hash(bytes);
+            let new = sha256_hex(bytes);
             if on_disk.as_ref() != Some(&new) {
                 crate::init::create_private_dir(target.parent().context("no folder")?)?;
                 crate::init::files::write_private(&target, bytes)?;
@@ -72,7 +72,11 @@ pub fn write_wanted(
         .collect();
     for relative in gone {
         let target = root.join(&relative);
-        if fs::read(&target).ok().map(|disk| hash(&disk)).as_ref() == record.get(&relative)
+        if fs::read(&target)
+            .ok()
+            .map(|disk| sha256_hex(&disk))
+            .as_ref()
+            == record.get(&relative)
             && fs::remove_file(&target).is_ok()
         {
             remove_empty_parents(&root, &target);
@@ -132,13 +136,6 @@ fn write_record(file: &Path, record: &BTreeMap<PathBuf, String>) -> Result<()> {
         text.push_str(&format!("{hash} {path}\n"));
     }
     crate::init::files::write_private(file, text.as_bytes())
-}
-
-fn hash(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[cfg(test)]

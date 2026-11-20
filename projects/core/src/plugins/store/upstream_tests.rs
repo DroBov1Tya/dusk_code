@@ -1,11 +1,6 @@
 //! Files from upstream: exactly the pinned ones, or nothing.
 
-use sha2::{Digest, Sha256};
-
-use super::{
-    fetch::hex,
-    upstream::{Upstream, UpstreamFile, assemble},
-};
+use super::upstream::{Upstream, UpstreamFile, assemble};
 
 fn pinned(files: &[(&str, &[u8])]) -> Upstream {
     Upstream {
@@ -16,7 +11,7 @@ fn pinned(files: &[(&str, &[u8])]) -> Upstream {
             .map(|(path, body)| UpstreamFile {
                 path: format!("skills/x/{path}"),
                 to: format!("x/{path}"),
-                sha256: hex(&Sha256::digest(body)),
+                sha256: dusk_protocol::text::sha256_hex(body),
                 size: body.len() as u64,
             })
             .collect(),

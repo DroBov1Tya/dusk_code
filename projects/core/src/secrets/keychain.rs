@@ -33,11 +33,7 @@ fn service_for(root: &Path) -> String {
         return SERVICE.to_owned();
     }
     let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
-    let short: String = digest
-        .iter()
-        .take(4)
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let short = dusk_protocol::text::hex(&digest[..4]);
     format!("{SERVICE}-{short}")
 }
 

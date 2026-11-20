@@ -3,7 +3,7 @@
 use std::{fs, io::Write, path::PathBuf};
 
 use anyhow::{Context, Result, ensure};
-use sha2::{Digest, Sha256};
+use dusk_protocol::text::sha256_hex;
 use uuid::Uuid;
 
 use crate::init::files::read_regular;
@@ -34,7 +34,7 @@ impl ArtifactStore {
             "image artifact is incomplete"
         );
         ensure!(
-            digest(&bytes) == artifact.sha256,
+            sha256_hex(&bytes) == artifact.sha256,
             "image artifact is damaged"
         );
         Ok(bytes)
@@ -86,7 +86,7 @@ impl ArtifactStore {
         );
         artifact.id = Uuid::now_v7().to_string();
         artifact.byte_len = bytes.len() as u64;
-        artifact.sha256 = digest(bytes);
+        artifact.sha256 = sha256_hex(bytes);
         fs::create_dir_all(&self.root).context("create image artifact store")?;
         let directory = self.root.join(&artifact.id);
         fs::create_dir(&directory).context("create image artifact directory")?;
@@ -109,7 +109,7 @@ impl ArtifactStore {
         );
         card.id = Uuid::now_v7().to_string();
         card.byte_len = bytes.len() as u64;
-        card.sha256 = digest(bytes);
+        card.sha256 = sha256_hex(bytes);
         fs::create_dir_all(&self.root).context("create artifact store")?;
         let directory = self.root.join(&card.id);
         fs::create_dir(&directory).context("create audio artifact directory")?;
@@ -147,13 +147,6 @@ impl ArtifactStore {
 /// Whether `id` can be a card's ID: hex digits and dashes only, so it names no path.
 pub fn is_card_id(id: &str) -> bool {
     !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
-}
-
-fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 fn write_new(path: &std::path::Path, bytes: &[u8]) -> Result<()> {

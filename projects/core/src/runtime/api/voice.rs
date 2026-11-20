@@ -19,10 +19,7 @@ fn speech_key(endpoint: &dusk_protocol::config::VoiceEndpoint, text: &str) -> St
         hash.update((part.len() as u64).to_le_bytes());
         hash.update(part.as_bytes());
     }
-    hash.finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    dusk_protocol::text::hex(&hash.finalize())
 }
 
 impl Runtime {

@@ -142,11 +142,9 @@ impl fmt::Debug for Gate {
 
 /// A fresh random capability token.
 pub fn new_token() -> Result<Secret> {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(|error| anyhow::anyhow!("no randomness: {error}"))?;
-    Ok(Secret(
-        bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
-    ))
+    let token = dusk_protocol::client::try_nonce()
+        .map_err(|error| anyhow::anyhow!("no randomness: {error}"))?;
+    Ok(Secret(token))
 }
 
 /// Accepts until dropped; the connections it serves, tunnels among them, end with it.
