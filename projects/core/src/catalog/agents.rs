@@ -211,9 +211,11 @@ impl Agents {
                 enabled: config.agent_enabled(GENERAL_AGENT),
                 links: Vec::new(),
                 children: Vec::new(),
+                source: None,
             });
         }
-        children.extend(branches(None, &placed, &identities, config));
+        let origins = crate::plugins::store::origin::Origins::beside(&self.directory);
+        children.extend(branches(None, &placed, &identities, config, &origins));
         AgentTree {
             root: AgentNode {
                 name: "chat".into(),
@@ -222,6 +224,7 @@ impl Agents {
                 enabled: true,
                 links: Vec::new(),
                 children,
+                source: None,
             },
             problems: self.problems.read().clone(),
             skipped: self.skipped.read().clone(),
@@ -248,6 +251,7 @@ fn branches(
     placed: &[(&str, Option<&str>)],
     all: &[Identity],
     config: &Config,
+    origins: &crate::plugins::store::origin::Origins,
 ) -> Vec<AgentNode> {
     placed
         .iter()
@@ -262,7 +266,10 @@ fn branches(
                 .into_iter()
                 .map(Into::into)
                 .collect(),
-            children: branches(Some(&identity.name), placed, all, config),
+            children: branches(Some(&identity.name), placed, all, config, origins),
+            source: origins
+                .unverified("agents", &identity.name)
+                .map(|(_, source)| format!("{source}, unverified")),
         })
         .collect()
 }
@@ -536,6 +543,24 @@ mod tests {
         );
         assert_eq!(origins.unverified("agents", "mine"), None);
         assert_eq!(origins.unverified("skills", "far"), None);
+        // The user's own view of the agents marks it too.
+        let config = crate::testing::temp_live_config("agents-unverified").current();
+        let tree = agents.tree(&config);
+        let node = |name: &str| {
+            tree.root
+                .children
+                .iter()
+                .find(|node| node.name == name)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(node("far").source.as_deref(), Some("hub, unverified"));
+        assert!(
+            node("far")
+                .about()
+                .starts_with("from hub, unverified \u{b7} ")
+        );
+        assert_eq!(node("mine").source, None);
     }
 
     /// An agent a store put here under a built-in agent's name from any source but the

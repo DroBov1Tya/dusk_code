@@ -274,6 +274,14 @@
         "name": {
           "type": "string"
         },
+        "source": {
+          "default": null,
+          "description": "Where it came from when the Workshop installed it from a source nobody vouches\nfor: `<source>, unverified`, as a skill's `source` says it. `None` otherwise.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "version": {
           "description": "`None` for the chat and the built-in general agent, which have no AGENT.md.",
           "format": "int64",
