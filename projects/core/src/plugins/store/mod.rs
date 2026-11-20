@@ -316,7 +316,8 @@ pub fn check_removable(paths: &Paths, name: &str) -> Result<Kind> {
 /// wrote and the user did not edit since.
 pub async fn remove(paths: &Paths, name: &str) -> Result<()> {
     let _busy = BUSY.lock().await;
-    match check_removable(paths, name)? {
+    let kind = check_removable(paths, name)?;
+    match kind {
         Kind::Plugin => {
             let folder = catalog::folder(paths).join(name);
             fs::remove_dir_all(&folder)
@@ -325,7 +326,25 @@ pub async fn remove(paths: &Paths, name: &str) -> Result<()> {
         _ => content::remove(paths, name)?,
     }
     Record::update(paths, |record| {
-        record.installed.remove(name);
+        let Some(item) = record.installed.remove(name) else {
+            return Ok(());
+        };
+        // Files the user edited stay; they are still that source's, not the user's own.
+        let stays = kind != Kind::Plugin
+            && item.source != dusk_protocol::plugin::OFFICIAL_SOURCE
+            && item.path(paths, name).is_dir();
+        if stays {
+            tracing::info!(
+                "{name} removed; the files you edited stay in {}, still marked as from {}",
+                item.folder,
+                item.source
+            );
+            let left = record::Left {
+                source: item.source.clone(),
+                unverified: item.unverified(),
+            };
+            record.left.insert(item.folder.clone(), left);
+        }
         Ok(())
     })
 }
@@ -395,6 +414,7 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
         None => entry.source.clone().unwrap_or_default(),
     };
     Record::update(paths, |record| {
+        record.left.remove(&installed.folder);
         record.installed.insert(name.clone(), installed);
         Ok(())
     })

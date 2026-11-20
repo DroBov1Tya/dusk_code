@@ -35,6 +35,19 @@ pub struct Record {
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub official_names: std::collections::BTreeSet<String>,
     pub installed: BTreeMap<String, Installed>,
+    /// Folders of items removed from a source other than the official one that still
+    /// hold files the user edited, by their folder under the rules folder: what is left
+    /// stays that source's, never the user's own, while the folder is there.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub left: BTreeMap<String, Left>,
+}
+
+/// Where the files left in a removed item's folder came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Left {
+    pub source: String,
+    /// Nothing signed the list it came from.
+    pub unverified: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

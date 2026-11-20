@@ -588,3 +588,38 @@ fn a_forged_marker_is_found_however_it_is_dressed() {
     let lines: Vec<&str> = wrapped.lines().collect();
     assert_eq!(lines[1..lines.len() - 1], ["One.", "Two."]);
 }
+
+/// Removing an Unverified item whose files the user edited keeps those files, and they
+/// stay marked as that source's: they never turn into the user's own.
+#[tokio::test]
+async fn an_edited_unverified_item_stays_marked_after_removal() {
+    use super::origin::Origins;
+    let paths = crate::testing::temp_paths("guard-left");
+    std::fs::create_dir_all(paths.config_root()).unwrap();
+    let source = read_keyless(&[pinned("loose", "skill")]);
+    let entry = &source.index.plugins[0];
+    let files = Package::Files(BTreeMap::from([(
+        "loose/SKILL.md".to_owned(),
+        b"---\nname: loose\ndescription: d\n---\nSteps.\n".to_vec(),
+    )]));
+    let folder = content::place_package(&paths, entry, &files, None, true).unwrap();
+    let mut installed = Installed::new(&source, "1.0.0", SHA);
+    installed.kind = Kind::Skill;
+    installed.folder = folder.clone();
+    Record::update(&paths, |record| {
+        record.installed.insert("loose".into(), installed);
+        Ok(())
+    })
+    .unwrap();
+    let file = paths.rules_root().join(&folder).join("SKILL.md");
+    std::fs::write(&file, "---\nname: loose\ndescription: d\n---\nMine now.\n").unwrap();
+    super::remove(&paths, "loose").await.unwrap();
+    assert!(file.exists());
+    assert_eq!(
+        Origins::load(&paths).unverified("skills", "loose"),
+        Some(("skills/loose", "loose"))
+    );
+    // Once the folder is gone, nothing is left to mark.
+    std::fs::remove_dir_all(paths.rules_root().join(&folder)).unwrap();
+    assert_eq!(Origins::load(&paths).unverified("skills", "loose"), None);
+}

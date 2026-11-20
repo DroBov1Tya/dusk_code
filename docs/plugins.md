@@ -719,7 +719,8 @@ own folder, never to built-in skills such as `skill-evolve` or to your own: thos
 only skills `load_skill` offers after it. Its text may still name another skill, which the
 model may load as it may any skill listed; the marker is what tells it whose words those
 are. When the store's record cannot be read, everything the store installed counts as
-from an unknown, unverified source. No source but the official one may bring an agent
+from an unknown, unverified source. Removing such an item keeps the files you edited, and they stay
+marked as that source's, not your own, while their folder is there. No source but the official one may bring an agent
 named as, or close to, an agent duskcode brings (`general` and the shipped ones).
 Its scripts are plain text, written readable and writable by you only, and run under the
 permission mode you chose, like any command.

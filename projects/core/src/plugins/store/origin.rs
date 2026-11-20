@@ -37,6 +37,17 @@ impl Origins {
                 return Self::written(paths);
             }
         };
+        let left = record
+            .left
+            .iter()
+            .filter(|(folder, _)| paths.rules_root().join(folder).is_dir())
+            .map(|(folder, left)| {
+                let origin = Origin {
+                    source: left.source.clone(),
+                    unverified: left.unverified,
+                };
+                (folder.clone(), origin)
+            });
         let items = record
             .installed
             .iter()
@@ -48,6 +59,7 @@ impl Origins {
                 };
                 (item.folder.clone(), origin)
             })
+            .chain(left)
             .collect();
         Self { items }
     }
