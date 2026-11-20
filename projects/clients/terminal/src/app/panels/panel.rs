@@ -84,6 +84,8 @@ pub struct OverviewView {
     pub stopping: bool,
     /// The running team's budget being changed.
     pub budget: Option<BudgetEdit>,
+    /// The member row chosen with tab, which enter opens.
+    pub member: Option<usize>,
 }
 
 impl OverviewView {
@@ -94,6 +96,7 @@ impl OverviewView {
             row: 0,
             stopping: false,
             budget: None,
+            member: None,
         }
     }
 }

@@ -52,8 +52,8 @@ pub use task::{
 };
 pub use team::{
     BUDGET_FIELDS, BUDGET_NEAR, BudgetPart, MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MAX_TEAM_MINUTES,
-    MAX_TEAM_STEPS, MAX_TEAM_TOKENS, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed,
-    find_task, task_in_work, team_call_id,
+    MAX_TEAM_STEPS, MAX_TEAM_TOKENS, MemberRow, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus,
+    TeamUsed, find_task, short_model, task_in_work, team_call_id,
 };
 pub use tokens::{
     AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, plural, short_count, short_size,

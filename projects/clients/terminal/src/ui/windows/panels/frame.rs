@@ -219,7 +219,12 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             let hints = match (&view.budget, view.stopping) {
                 (Some(_), _) => "up/down field  type to change  enter save  esc cancel",
                 (None, true) => "s again stops the team  any other key keeps it running",
-                (None, false) if running => "up/down scroll  s stop team  b budget  esc close",
+                (None, false) if running => {
+                    "up/down scroll  tab member  enter open  s stop  b budget  esc close"
+                }
+                (None, false) if app.team.is_some() => {
+                    "up/down scroll  tab member  enter open its chat  esc close"
+                }
                 (None, false) => "up/down scroll  any other key closes",
             };
             ("overview", hints, overview(app, view), None)

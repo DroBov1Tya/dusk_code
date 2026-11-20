@@ -448,7 +448,27 @@ impl App {
                     return Action::None;
                 }
                 let stopping = std::mem::take(&mut view.stopping);
+                let members = self.team.as_ref().map_or(0, |team| team.members.len());
                 match (key.code, team) {
+                    (KeyCode::Tab, _) if members > 0 => {
+                        view.member = Some(view.member.map_or(0, |at| (at + 1) % members));
+                    }
+                    (KeyCode::BackTab, _) if members > 0 => {
+                        view.member = Some(
+                            view.member
+                                .map_or(members - 1, |at| (at + members - 1) % members),
+                        );
+                    }
+                    (KeyCode::Enter, _) if view.member.is_some() => {
+                        let chosen = self
+                            .team
+                            .as_ref()
+                            .zip(view.member)
+                            .and_then(|(team, at)| team.members.get(at));
+                        if let Some(member) = chosen {
+                            return Action::OpenAgent(member.thread_id.clone());
+                        }
+                    }
                     (KeyCode::Char('s'), Some(_)) if stopping => return Action::StopTeam,
                     (KeyCode::Char('s'), Some(_)) => view.stopping = true,
                     (KeyCode::Char('b'), Some(team)) => {
@@ -512,4 +532,105 @@ fn scroll(row: &mut usize, code: KeyCode, up: bool, down: bool) -> bool {
         _ => return false,
     };
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent};
+    use dusk_protocol::thread::{
+        ContextReport, Overview, TaskStatus, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus,
+        TeamUsed,
+    };
+
+    use crate::app::{Action, App, OverviewView, Panel, tabs::tests::app};
+
+    fn team(status: TeamStatus) -> Team {
+        let member = |thread: &str| TeamMember {
+            thread_id: thread.into(),
+            name: thread.into(),
+            role: None,
+            model: None,
+            task_id: format!("task-{thread}"),
+            status: TaskStatus::Running,
+        };
+        Team {
+            thread_id: "lead".into(),
+            status,
+            budget: TeamBudget::new(3, 400, 4_000_000, 120).unwrap(),
+            used: TeamUsed::default(),
+            members: vec![member("m1"), member("m2")],
+        }
+    }
+
+    fn overview(status: TeamStatus) -> App {
+        let mut app = app();
+        app.team = Some(team(status));
+        let report = ContextReport {
+            total: 0,
+            limit: 0,
+            sections: Vec::new(),
+            sources: Vec::new(),
+        };
+        app.panel = Some(Panel::Overview(Box::new(OverviewView::new(
+            Overview::default(),
+            report,
+        ))));
+        app
+    }
+
+    fn press(app: &mut App, code: KeyCode) -> Action {
+        app.panel_key(KeyEvent::from(code))
+    }
+
+    /// Stopping a team takes a second `s`; any other key between takes the first back.
+    #[test]
+    fn a_team_stops_only_on_a_second_s() {
+        let mut app = overview(TeamStatus::Running);
+        assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
+        assert!(matches!(press(&mut app, KeyCode::Char('x')), Action::None));
+        assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
+        assert!(matches!(
+            press(&mut app, KeyCode::Char('s')),
+            Action::StopTeam
+        ));
+        // An ended team has nothing to stop: `s` closes the panel as any key does.
+        let mut ended = overview(TeamStatus::Ended(TeamEnd::Steps));
+        press(&mut ended, KeyCode::Char('s'));
+        assert!(ended.panel.is_none());
+    }
+
+    /// `b` opens the budget in its fields; what is typed is read back by the protocol.
+    #[test]
+    fn the_budget_is_edited_field_by_field() {
+        let mut app = overview(TeamStatus::Running);
+        press(&mut app, KeyCode::Char('b'));
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Char('0'));
+        let Action::SetTeamBudget(budget) = press(&mut app, KeyCode::Enter) else {
+            panic!("no budget to save");
+        };
+        assert_eq!(budget.steps(), 4_000);
+        press(&mut app, KeyCode::Char('x'));
+        assert!(matches!(press(&mut app, KeyCode::Enter), Action::None));
+        let Some(Panel::Overview(view)) = &app.panel else {
+            panic!("the Overview closed");
+        };
+        assert!(
+            view.budget
+                .as_ref()
+                .is_some_and(|edit| edit.error.is_some())
+        );
+    }
+
+    /// Tab chooses a member and enter opens its chat.
+    #[test]
+    fn a_member_opens_from_the_overview() {
+        let mut app = overview(TeamStatus::Running);
+        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::Tab);
+        let Action::OpenAgent(thread) = press(&mut app, KeyCode::Enter) else {
+            panic!("no member opened");
+        };
+        assert_eq!(thread, "m2");
+    }
 }

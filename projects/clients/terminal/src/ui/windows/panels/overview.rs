@@ -36,8 +36,21 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     }
     if let Some(team) = app.team.as_ref().filter(|team| !team.members.is_empty()) {
         heading(&mut lines, "members", format!("{} at work", team.at_work()));
-        for member in &team.members {
-            lines.push(member_line(member, "   "));
+        // Each with its task, model and spend under it; tab chooses one, enter opens it.
+        for (index, row) in team.member_rows(&app.tasks).iter().enumerate() {
+            let chosen = view.member == Some(index);
+            let mut line = member_line(
+                &team.members[index],
+                if chosen { " \u{203A} " } else { "   " },
+            );
+            if chosen {
+                line = line.style(bold(TEXT));
+            }
+            lines.push(line);
+            lines.push(Line::from(Span::styled(
+                format!("     {}", printable(&row.line())),
+                dim(),
+            )));
         }
     }
     if app.tokens.model_calls > 0 {

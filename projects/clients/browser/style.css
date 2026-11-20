@@ -918,6 +918,12 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .ov-row { height: 32px; display: flex; align-items: center; gap: 8px; font-size: 13.75px; }
 .ov-row + .ov-row { border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
 .ov-row .name { font-weight: 500; }
+.ov-member { width: calc(100% + 12px); display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px 6px; margin: 0 -6px; background: none; border: 0; border-radius: 8px; text-align: left; font-size: 13.75px; color: inherit; }
+.ov-member:hover { background: var(--raised); }
+.ov-member + .ov-member { border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
+.ov-member-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ov-member-text .name { font-weight: 500; }
+.ov-member-text .cut { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 .ov-budget-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s2); }
 .ov-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }

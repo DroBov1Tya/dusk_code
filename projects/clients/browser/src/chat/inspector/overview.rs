@@ -10,7 +10,7 @@ use crate::{
 };
 use dusk_protocol::thread::{
     BUDGET_FIELDS, BudgetPart, ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG,
-    Overview, PlanCounts, Team, TeamBudget, ThreadTokens, plural,
+    Overview, PlanCounts, Task, Team, TeamBudget, ThreadTokens, plural,
 };
 use leptos::prelude::*;
 
@@ -118,7 +118,13 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
                     let narrow = !wide.get();
                     view! {
                         {progress(a.plan, a.team.as_ref(), id.get_value())}
-                        {a.team.as_ref().and_then(members)}
+                        {a.team.as_ref().and_then(|team| {
+                            let tasks = app
+                                .chat(&id.get_value())
+                                .map(|chat| chat.with(|c| c.tasks.clone()))
+                                .unwrap_or_default();
+                            members(team, &tasks, id.get_value())
+                        })}
                         {usage().and_then(|usage| tokens(usage, a.plan))}
                         <section class="ov-sec">
                             <Head title="Context" aside=String::new() />
@@ -271,28 +277,33 @@ fn budget_row(part: BudgetPart) -> impl IntoView {
     }
 }
 
-fn members(team: &Team) -> Option<AnyView> {
+/// The team's members with their tasks, models and spend; a click opens a member's chat
+/// as a subagent's opens.
+fn members(team: &Team, tasks: &[Task], parent: String) -> Option<AnyView> {
     if team.members.is_empty() {
         return None;
     }
-    let at_work = team.at_work();
+    let app = state();
     let rows = team
-        .members
-        .iter()
+        .member_rows(tasks)
+        .into_iter()
         .map(|member| {
-            let (word, class) = (member.status.member_word(), tone_text(member.status.tone()));
-            let role = member.role.clone().unwrap_or_else(|| "general".into());
+            let class = tone_text(member.status.tone());
+            let line = member.line();
+            let open = (parent.clone(), member.thread_id.clone());
             view! {
-                <div class="ov-row">
+                <button class="ov-member" on:click=move |_| app.subagent.set(Some(open.clone()))>
                     <span class=format!("ov-glyph {class}")><Icon name=IconName::Bot /></span>
-                    <span class="name">{member.name.clone()}</span>
-                    <span class="muted cut grow">{role}</span>
-                    <span class=class>{word}</span>
-                </div>
+                    <span class="ov-member-text">
+                        <span class="name">{member.name}</span>
+                        <span class="muted cut">{line}</span>
+                    </span>
+                    <span class=class>{member.status.member_word()}</span>
+                </button>
             }
         })
         .collect_view();
-    let aside = format!("{at_work} of {} at work", team.members.len());
+    let aside = format!("{} of {} at work", team.at_work(), team.members.len());
     Some(
         view! { <section class="ov-sec"><Head title="Members" aside=aside />{rows}</section> }
             .into_any(),
