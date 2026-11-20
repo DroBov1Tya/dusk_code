@@ -776,9 +776,14 @@ fn job_shown(result: &JobResult) -> JobResult {
 /// The row a skill change draws as. Its name and reason are the agent's text, so they
 /// are shown as plain text: control and bidi characters never reach the screen.
 pub fn skill_line(change: &SkillChange) -> String {
+    // A tab reads as a space; any other control or bidi character is marked.
     let clean = |text: &str| {
         text.chars()
-            .map(|c| if plain(c) { c } else { '?' })
+            .map(|c| match c {
+                '\t' => ' ',
+                c if plain(c) => c,
+                _ => '?',
+            })
             .collect()
     };
     // The terminal has no Undo; it says where to find one.

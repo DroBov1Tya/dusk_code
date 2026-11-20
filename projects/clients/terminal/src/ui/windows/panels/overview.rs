@@ -20,19 +20,13 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     if let Some(counts) = app.plan.filter(|counts| counts.total() > 0) {
         heading(&mut lines, "progress", plan_line(counts, app.team.as_ref()));
         if let Some(team) = &app.team {
-            let (budget, used) = (team.budget, team.used);
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "   steps {} of {} {DOT} tokens {} of {} {DOT} time {} of {} min",
-                    used.steps,
-                    budget.steps(),
-                    compact_number(used.tokens),
-                    compact_number(budget.tokens()),
-                    used.minutes,
-                    budget.minutes()
-                ),
-                dim(),
-            )));
+            let parts: Vec<String> = team
+                .budget_parts()
+                .iter()
+                .map(|part| format!("{} {}", part.name.to_lowercase(), part.text()))
+                .collect();
+            let budget = format!("   {}", parts.join(&format!(" {DOT} ")));
+            lines.push(Line::from(Span::styled(budget, dim())));
         }
     }
     if let Some(team) = app.team.as_ref().filter(|team| !team.members.is_empty()) {
