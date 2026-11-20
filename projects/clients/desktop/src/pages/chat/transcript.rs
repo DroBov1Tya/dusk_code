@@ -3,7 +3,7 @@
 //! the arbiter's exchanges, when rows arrived, the state of skill rows and questions).
 
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     ops::{Deref, DerefMut},
     time::Instant,
 };
@@ -11,7 +11,7 @@ use std::{
 use dusk_protocol::{
     system::now_ms,
     thread::{ChatLog, Message, ThreadEvent, transcript},
-    tools::{Card, Question},
+    tools::{Card, QuestionQueue},
 };
 
 /// An item of the chat; a command the user ran from an answer is this window's own.
@@ -21,11 +21,6 @@ pub type Log = ChatLog<CommandRun>;
 
 /// A subagent of the chat, as the right column and the agents window show it.
 pub use dusk_protocol::thread::Subagent as Agent;
-
-/// How long `agent` worked, until now while it still does.
-pub fn run_time(agent: &Agent) -> std::time::Duration {
-    std::time::Duration::from_millis(agent.run_ms(now_ms()).max(0) as u64)
-}
 
 pub struct CommandRun {
     pub id: u64,
@@ -133,10 +128,8 @@ pub struct Transcript {
     pub access: Option<dusk_protocol::config::ApprovalPolicy>,
     /// What each skill change's row shows of its requests, by change ID.
     pub skill_rows: BTreeMap<i64, super::messages::SkillRow>,
-    /// What the agent asked and nobody answered yet, in order; the first one shows.
-    pub questions: VecDeque<Question>,
-    /// The answers given so far; they go to the agent together, after the last one.
-    pub answers: Vec<String>,
+    /// What the agent asked and nobody answered yet, and the answers given so far.
+    pub questions: QuestionQueue,
     /// What passed between the agents and the arbiter, oldest first.
     pub exchanges: Vec<Exchange>,
     /// When the arbiter last answered, for its pulse.
@@ -174,24 +167,21 @@ impl Transcript {
     /// Answers the question shown. Gives the message for the agent once every question
     /// asked has its answer: a second question must not take the place of the first.
     pub fn answer(&mut self, chosen: &[usize], own: &str) -> Option<String> {
-        let question = self.questions.pop_front()?;
-        self.record(question.answer(chosen, own))
+        let sent = self.questions.answer(chosen, own);
+        self.answered(sent)
     }
 
     /// Skips the question shown: its answer is the skip reply, the next one shows.
     pub fn skip(&mut self) -> Option<String> {
-        let question = self.questions.pop_front()?;
-        self.record(question.skipped())
+        let sent = self.questions.skip();
+        self.answered(sent)
     }
 
-    fn record(&mut self, reply: String) -> Option<String> {
-        self.answers.push(reply);
-        if self.questions.is_empty() {
+    fn answered(&mut self, sent: Option<String>) -> Option<String> {
+        if sent.is_some() {
             self.log.live.answered();
         }
-        self.questions
-            .is_empty()
-            .then(|| std::mem::take(&mut self.answers).join("\n\n"))
+        sent
     }
 
     pub fn from_history(history: &[Message]) -> Self {
@@ -208,7 +198,9 @@ impl Transcript {
         let ended = matches!(event, ThreadEvent::TurnFinished(_) | ThreadEvent::Idle);
         let was_working = self.log.working;
         match &event {
-            ThreadEvent::Question(question) => self.questions.push_back(question.clone()),
+            ThreadEvent::Question(question) => {
+                self.questions.ask(question.clone());
+            }
             ThreadEvent::Undone { .. } => {
                 if let Some(at) = self.log.rollback_at {
                     self.arrived.retain(|index, _| *index < at);

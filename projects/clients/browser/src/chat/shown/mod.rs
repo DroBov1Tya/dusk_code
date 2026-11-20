@@ -6,7 +6,7 @@ mod checks;
 mod choices;
 mod flow;
 
-pub use choices::{ReplyRow, question_labels};
+pub use choices::{ReplyRow, plain, question_labels};
 
 use crate::state::Chat;
 use dusk_protocol::thread::Block;

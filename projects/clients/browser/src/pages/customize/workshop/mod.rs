@@ -18,11 +18,11 @@ mod suggested;
 
 pub use suggested::SuggestedCard;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use dusk_protocol::{
     catalog::SkillPack,
-    plugin::{Kind, Listing, Order, Scope, StoreList, Tier},
+    plugin::{Kind, Listing, Order, Scope, StoreFilter, StoreList, Tier, categories},
 };
 use leptos::{html, prelude::*};
 use wasm_bindgen::{JsCast, closure::Closure};
@@ -225,11 +225,21 @@ impl Shop {
 
     /// Nothing narrows the list and it is in trust order: the storefront, not results.
     fn browsing(self) -> bool {
-        self.query.with(|query| query.trim().is_empty())
-            && self.category.with(Option::is_none)
-            && self.tiers.with(Vec::is_empty)
-            && self.kinds.with(Vec::is_empty)
-            && self.order.get() == Order::Trust
+        self.filtered(|filter| filter.browsing(self.order.get()))
+    }
+
+    /// Looks at the list through the shelf, search and filters as the page has them now.
+    fn filtered<R>(self, look: impl FnOnce(&StoreFilter) -> R) -> R {
+        let (query, tiers, kinds) = (self.query.get(), self.tiers.get(), self.kinds.get());
+        let category = self.category.get();
+        let filter = StoreFilter::new(
+            Some(self.scope),
+            &query,
+            &tiers,
+            &kinds,
+            category.as_deref(),
+        );
+        look(&filter)
     }
 }
 
@@ -278,24 +288,24 @@ fn shots_key(listing: &Listing) -> String {
 
 /// "Workshop  Discover | Installed" of a tab of Customize.
 #[component]
-pub fn ViewSwitch(discover: RwSignal<bool>) -> impl IntoView {
+pub fn ViewSwitch(discover: RwSignal<Option<bool>>, discovering: Signal<bool>) -> impl IntoView {
     view! {
         <div class="shelf-head" role="group" aria-label="Workshop">
             <h3>"Workshop"</h3>
-            <button class="tab" class:active=move || discover.get()
-                on:click=move |_| discover.set(true)>"Discover"</button>
-            <button class="tab" class:active=move || !discover.get()
-                on:click=move |_| discover.set(false)>"Installed"</button>
+            <button class="tab" class:active=move || discovering.get()
+                on:click=move |_| discover.set(Some(true))>"Discover"</button>
+            <button class="tab" class:active=move || !discovering.get()
+                on:click=move |_| discover.set(Some(false))>"Installed"</button>
         </div>
     }
 }
 
 /// An empty Installed list, with the way to the tab's Discover.
-pub fn nothing_installed(scope: Scope, discover: RwSignal<bool>) -> impl IntoView {
+pub fn nothing_installed(scope: Scope, discover: RwSignal<Option<bool>>) -> impl IntoView {
     view! {
         <div class="row-actions">
             <p class="muted">{format!("Nothing installed yet. Discover {} in the Workshop.", scope.noun())}</p>
-            <button class="ghost" on:click=move |_| discover.set(true)>"Discover"</button>
+            <button class="ghost" on:click=move |_| discover.set(Some(true))>"Discover"</button>
         </div>
     }
 }
@@ -357,7 +367,13 @@ fn storefront(shop: Shop) -> impl IntoView {
     let Some(list) = shop.list.get() else {
         return view! { <p class="muted">"Reading the store..."</p> }.into_any();
     };
-    let shown = visible(shop, &list.listings);
+    let shown: Vec<Listing> = shop.filtered(|filter| {
+        filter
+            .visible(&list.listings)
+            .into_iter()
+            .cloned()
+            .collect()
+    });
     let failed = list
         .failed
         .iter()
@@ -450,6 +466,19 @@ fn items(shop: Shop, shelf: Shelf, list: &StoreList, shown: &[Listing]) -> Vec<I
     }
 }
 
+/// Packs here that no listing names, unless a filter leaves them out.
+fn local_packs(shop: Shop, listings: &[Listing]) -> Vec<SkillPack> {
+    shop.packs.with(|packs| {
+        shop.filtered(|filter| {
+            filter
+                .local_packs(packs, listings)
+                .into_iter()
+                .cloned()
+                .collect()
+        })
+    })
+}
+
 fn capsules(shop: Shop, items: Vec<Item>) -> impl IntoView {
     items
         .into_iter()
@@ -525,56 +554,4 @@ fn heading(shelf: Option<Shelf>, title: &str, count: usize, end: Option<AnyView>
             <span class="grow"></span>{end}
         </div>
     }
-}
-
-/// The shelf's listings left after the search, tiers and kinds, in the core's order.
-fn visible(shop: Shop, listings: &[Listing]) -> Vec<Listing> {
-    let query = shop.query.get().trim().to_lowercase();
-    let (tiers, kinds) = (shop.tiers.get(), shop.kinds.get());
-    listings
-        .iter()
-        .filter(|listing| shop.scope.holds(listing))
-        .filter(|listing| tiers.is_empty() || tiers.contains(&listing.tier))
-        .filter(|listing| kinds.is_empty() || kinds.contains(&listing.kind))
-        .filter(|listing| {
-            query.is_empty()
-                || [&listing.name, &listing.description, &listing.tags.join(" ")]
-                    .iter()
-                    .any(|text| text.to_lowercase().contains(&query))
-        })
-        .cloned()
-        .collect()
-}
-
-/// Packs here that no listing names, unless a filter leaves them out.
-fn local_packs(shop: Shop, listings: &[Listing]) -> Vec<SkillPack> {
-    let listed: BTreeSet<&str> = listings
-        .iter()
-        .filter(|listing| listing.kind == Kind::Pack)
-        .map(|listing| listing.name.as_str())
-        .collect();
-    let query = shop.query.get().trim().to_lowercase();
-    let (tiers, kinds) = (shop.tiers.get(), shop.kinds.get());
-    let shown = shop.scope.kinds().contains(&Kind::Pack)
-        && (tiers.is_empty() || tiers.contains(&Tier::Local))
-        && (kinds.is_empty() || kinds.contains(&Kind::Pack))
-        && shop.category.get().is_none();
-    if !shown {
-        return Vec::new();
-    }
-    shop.packs
-        .get()
-        .into_iter()
-        .filter(|pack| !listed.contains(pack.name.as_str()))
-        .filter(|pack| query.is_empty() || pack.name.to_lowercase().contains(&query))
-        .collect()
-}
-
-fn categories(listings: &[Listing]) -> Vec<String> {
-    let set: BTreeSet<&str> = listings
-        .iter()
-        .map(|listing| listing.category.as_str())
-        .filter(|category| !category.is_empty())
-        .collect();
-    set.into_iter().map(str::to_owned).collect()
 }

@@ -193,6 +193,18 @@ impl TaskStatus {
         }
     }
 
+    /// How a team member's state reads beside its name: a claimed task still "waits".
+    pub fn member_word(self) -> &'static str {
+        match self {
+            Self::Open | Self::Claimed => "waits",
+            Self::Running => "running",
+            Self::Blocked => "blocked",
+            Self::Review => "in review",
+            Self::Done => "done",
+            Self::Failed => "failed",
+        }
+    }
+
     pub fn parse(text: &str) -> Result<Self> {
         Ok(match text {
             "open" => Self::Open,
@@ -250,6 +262,72 @@ pub struct PlanCounts {
     pub review: u32,
     pub done: u32,
     pub failed: u32,
+}
+
+impl PlanCounts {
+    pub fn total(&self) -> u32 {
+        [
+            self.open,
+            self.claimed,
+            self.running,
+            self.blocked,
+            self.review,
+            self.done,
+            self.failed,
+        ]
+        .into_iter()
+        .fold(0, u32::saturating_add)
+    }
+
+    /// Tasks a member holds: claimed or running.
+    pub fn at_work(&self) -> u32 {
+        self.claimed.saturating_add(self.running)
+    }
+
+    /// The progress bar's shares in its order: done, at work or in review, blocked or
+    /// failed, open.
+    pub fn shares(&self) -> [u32; 4] {
+        [
+            self.done,
+            self.at_work().saturating_add(self.review),
+            self.blocked.saturating_add(self.failed),
+            self.open,
+        ]
+    }
+
+    /// "3 of 7 done · 1 running · 1 blocked": the parts that are not zero after the done.
+    pub fn summary(&self) -> String {
+        let mut text = format!("{} of {} done", self.done, self.total());
+        for (count, word) in [
+            (self.running, "running"),
+            (self.claimed, "claimed"),
+            (self.review, "in review"),
+            (self.blocked, "blocked"),
+            (self.failed, "failed"),
+        ] {
+            if count > 0 {
+                text.push_str(&format!(" \u{00B7} {count} {word}"));
+            }
+        }
+        text
+    }
+}
+
+/// The task a plan strip names, with its number from 1: the first running, else the
+/// first that is not over.
+pub fn current_task(tasks: &[Task]) -> Option<(usize, &Task)> {
+    let numbered = || {
+        tasks
+            .iter()
+            .enumerate()
+            .map(|(index, task)| (index + 1, task))
+    };
+    numbered()
+        .find(|(_, task)| task.status == TaskStatus::Running)
+        .or_else(|| {
+            numbered()
+                .find(|(_, task)| !matches!(task.status, TaskStatus::Done | TaskStatus::Failed))
+        })
 }
 
 #[cfg(test)]
@@ -350,5 +428,95 @@ mod tests {
         }
         assert!(TaskStatus::parse("paused").is_err());
         assert!(serde_json::from_value::<TaskStatus>(json!("paused")).is_err());
+    }
+
+    #[test]
+    fn plan_counts_sum_saturate_and_name_only_what_is_there() {
+        let counts = PlanCounts {
+            open: 1,
+            claimed: 2,
+            running: 3,
+            blocked: 4,
+            review: 5,
+            done: 6,
+            failed: 7,
+        };
+        assert_eq!(counts.total(), 28);
+        assert_eq!(counts.at_work(), 5);
+        assert_eq!(counts.shares(), [6, 10, 11, 1]);
+        assert_eq!(
+            counts.summary(),
+            "6 of 28 done \u{00B7} 3 running \u{00B7} 2 claimed \u{00B7} 5 in review \
+             \u{00B7} 4 blocked \u{00B7} 7 failed"
+        );
+        let full = PlanCounts {
+            open: u32::MAX,
+            done: 1,
+            claimed: u32::MAX,
+            ..PlanCounts::default()
+        };
+        assert_eq!(full.total(), u32::MAX);
+        assert_eq!(full.at_work(), u32::MAX);
+        assert_eq!(PlanCounts::default().total(), 0);
+        assert_eq!(PlanCounts::default().summary(), "0 of 0 done");
+        let some = PlanCounts {
+            done: 2,
+            blocked: 1,
+            ..PlanCounts::default()
+        };
+        assert_eq!(some.summary(), "2 of 3 done \u{00B7} 1 blocked");
+    }
+
+    #[test]
+    fn the_current_task_is_the_first_running_else_the_first_not_over() {
+        let task = |id: &str, status: TaskStatus| Task {
+            task_id: id.into(),
+            status,
+            ..Task::default()
+        };
+        let number = |tasks: &[Task]| current_task(tasks).map(|(n, t)| (n, t.task_id.clone()));
+        assert_eq!(number(&[]), None);
+        let over = [task("a", TaskStatus::Done), task("b", TaskStatus::Failed)];
+        assert_eq!(number(&over), None);
+        let waiting = [
+            task("a", TaskStatus::Done),
+            task("b", TaskStatus::Blocked),
+            task("c", TaskStatus::Open),
+        ];
+        assert_eq!(number(&waiting), Some((2, "b".into())));
+        let running = [
+            task("a", TaskStatus::Open),
+            task("b", TaskStatus::Running),
+            task("c", TaskStatus::Running),
+        ];
+        assert_eq!(number(&running), Some((2, "b".into())));
+    }
+
+    #[test]
+    fn a_member_word_says_a_claimed_task_still_waits() {
+        let words: Vec<&str> = [
+            TaskStatus::Open,
+            TaskStatus::Claimed,
+            TaskStatus::Running,
+            TaskStatus::Blocked,
+            TaskStatus::Review,
+            TaskStatus::Done,
+            TaskStatus::Failed,
+        ]
+        .into_iter()
+        .map(TaskStatus::member_word)
+        .collect();
+        assert_eq!(
+            words,
+            [
+                "waits",
+                "waits",
+                "running",
+                "blocked",
+                "in review",
+                "done",
+                "failed"
+            ]
+        );
     }
 }

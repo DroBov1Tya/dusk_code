@@ -2,11 +2,11 @@
 
 use ratatui::text::{Line, Span};
 
-use dusk_protocol::thread::JobInfo;
+use dusk_protocol::thread::{JobInfo, clock_words};
 
 use super::frame::selectable;
 use crate::app::JobsView;
-use crate::ui::text::format::{format_duration, one_line, printable};
+use crate::ui::text::format::{one_line, printable};
 use crate::ui::windows::{
     theme::{ACCENT, DONE, DOT, FAILED, NEGATIVE, ON, POSITIVE, TEXT, TEXT_MUTED, bold, dim, fg},
     wrap,
@@ -25,7 +25,7 @@ pub fn jobs(view: &JobsView, width: usize) -> Vec<Line<'static>> {
         .map(|(index, job)| {
             let (mark, color) = job_mark(job);
             let end = job.finished_at.unwrap_or(now);
-            let time = format_duration(end.saturating_sub(job.started_at).max(0) as u64);
+            let time = clock_words(end.saturating_sub(job.started_at));
             selectable(
                 vec![
                     Span::styled(format!(" {mark} "), fg(color)),

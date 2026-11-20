@@ -13,7 +13,7 @@ use crate::{
     state::{Chat, state},
     ui::{Icon, IconName},
 };
-use dusk_protocol::thread::{ChatLog, Part as TextPart, Tool, ToolState, split};
+use dusk_protocol::thread::{ChatLog, Tool, ToolState, labelled};
 use dusk_protocol::tools::Card;
 use leptos::{html, prelude::*};
 use std::collections::HashMap;
@@ -442,19 +442,9 @@ fn item_view(
 
 /// A message as the user wrote it: each paste and kept file as a short label.
 fn user_text(text: &str) -> String {
-    split(text)
-        .into_iter()
-        .map(|part| match part {
-            TextPart::Text(text) => text.to_owned(),
-            TextPart::Pasted(pasted) => {
-                format!("[pasted {} lines]", pasted.lines().count().max(1))
-            }
-            TextPart::Source(name) => format!("[{name}]"),
-            TextPart::Sound { path, .. } => {
-                format!("[{}]", path.rsplit('/').next().unwrap_or(path))
-            }
-        })
-        .collect()
+    labelled(text, |pasted| {
+        format!("pasted {} lines", pasted.lines().count().max(1))
+    })
 }
 
 /// A new chat from the history up to this item; none while its stored message is not

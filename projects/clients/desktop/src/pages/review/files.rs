@@ -20,7 +20,7 @@ pub fn stat(files: usize, added: u64, removed: u64, muted: Hsla, ok: Hsla, bad: 
         .child(
             div()
                 .text_color(muted)
-                .child(format!("{files} file{}", if files == 1 { "" } else { "s" })),
+                .child(dusk_protocol::thread::plural(files, "file")),
         )
         .child(div().text_color(ok).child(format!("+{added}")))
         .child(div().text_color(bad).child(format!("\u{2212}{removed}")))

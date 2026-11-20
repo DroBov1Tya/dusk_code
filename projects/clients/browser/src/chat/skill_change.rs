@@ -1,9 +1,9 @@
 //! The row an agent's skill change leaves under its step: what changed and why, the diff
 //! on request, and Undo. Everything the core sends is skill data, drawn as text nodes.
 
-use super::blocks::Source;
+use super::{blocks::Source, shown::plain};
 use crate::{api, state::Chat};
-use dusk_protocol::catalog::{DiffKind, SkillChange, SkillDiff, SkillSaveAction};
+use dusk_protocol::catalog::{DiffKind, SkillDiff};
 use leptos::prelude::*;
 
 /// Fetches the thread's recorded changes; live events may have come first, so each is put
@@ -13,16 +13,6 @@ pub fn load(thread_id: String, chat: Chat) {
         async move { api::skill_changes(&thread_id).await },
         move |changes| chat.update(|c| c.skills_loaded(changes)),
     );
-}
-
-/// The label of a row: what happened to the skill and the reason the agent gave.
-pub fn label(change: &SkillChange) -> String {
-    let what = match change.action {
-        SkillSaveAction::Created => "created",
-        SkillSaveAction::Updated => "improved",
-        SkillSaveAction::Deleted => "deleted",
-    };
-    format!("Skill {} {what}: {}", change.skill, change.reason)
 }
 
 /// The rows under the step `call_id`.
@@ -85,7 +75,7 @@ fn Row(id: i64, source: Source) -> impl IntoView {
                     <button class="ghost" aria-expanded=move || open.get().to_string() on:click=toggle>
                         {move || if open.get() { "Hide diff" } else { "Diff" }}
                     </button>
-                    <span class="grow">{label(&change)}</span>
+                    <span class="grow">{change.label(plain)}</span>
                     {undone.then(|| view! { <span class="muted">"undone"</span> })}
                     {(!undone && !can_undo).then(|| view! { <span class="muted">"previous text not kept"</span> })}
                     {can_undo.then(|| view! {

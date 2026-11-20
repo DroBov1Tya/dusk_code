@@ -101,6 +101,22 @@ pub fn plain(message: &str) -> String {
         .collect()
 }
 
+/// The message for a preview: each paste as `[its label]`, each source and sound as
+/// `[its file name]`. The clients name a paste each their own way.
+pub fn labelled(message: &str, paste_label: impl Fn(&str) -> String) -> String {
+    split(message)
+        .into_iter()
+        .map(|part| match part {
+            Part::Text(text) => text.to_owned(),
+            Part::Pasted(text) => format!("[{}]", paste_label(text)),
+            Part::Source(name) => format!("[{name}]"),
+            Part::Sound { path, .. } => {
+                format!("[{}]", path.rsplit(['/', '\\']).next().unwrap_or(path))
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +137,14 @@ mod tests {
             ]
         ));
         assert_eq!(plain(&message), "hear /tmp/my voice.m4a now");
+        let label = |text: &str| format!("{} lines", text.lines().count());
+        assert_eq!(labelled(&message, label), "hear [my voice.m4a] now");
+        let message = format!("see {} and {}", wrap("a\nb"), source_tag("notes.md"));
+        assert_eq!(labelled(&message, label), "see [2 lines] and [notes.md]");
+        assert_eq!(
+            labelled("C:\\x <sound>1 C:\\a\\b.wav</sound>", label),
+            "C:\\x [b.wav]"
+        );
         // Half a tag is the text it was.
         assert!(matches!(
             split("<sound>x</sound>").as_slice(),
