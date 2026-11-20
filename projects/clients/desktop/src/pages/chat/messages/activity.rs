@@ -77,7 +77,20 @@ pub fn turn_activity(
             .min_w_0()
             .truncate()
             .text_color(cx.theme().foreground)
-            .child(title),
+            // The phrase of a turn under way changes with its steps: one takes the
+            // other's place in a short swap, as the working row's words do.
+            .child(match ws.chats.get(shown).filter(|chat| chat.working) {
+                Some(chat) if !matches!(span, Some((_, Some(_)))) => {
+                    crate::pages::chat::activity::phrase_swapping(
+                        SharedString::from(format!("heading-{start}")),
+                        title.into(),
+                        &chat.swaps,
+                        cx,
+                    )
+                    .into_any_element()
+                }
+                _ => title.into_any_element(),
+            }),
     )
     // A step of it runs: the heading carries the step's live mark.
     .children(
