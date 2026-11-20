@@ -64,7 +64,15 @@ impl TokenFile {
     fn write(&self, bytes: &[u8]) -> Result<()> {
         let folder = self.path.parent().context("token folder is missing")?;
         create_private_dir(folder)?;
-        write_private(&self.path, bytes)
+        write_private(&self.path, bytes)?;
+        // The fixed staging file older versions could leave behind holds a token.
+        match std::fs::remove_file(self.path.with_extension("json.tmp")) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                tracing::warn!("cannot remove an old token staging file: {error}");
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }
 

@@ -174,22 +174,31 @@ pub fn is_plain_folder_name(name: &str) -> bool {
 }
 
 /// A leading `~/` as people write it; the rest stays as typed. `None` when the path needs
-/// the home folder and HOME is not set.
+/// the home folder and HOME is not set or not absolute.
 pub fn home_path(path: &str) -> Option<PathBuf> {
     match path.strip_prefix("~/") {
-        Some(rest) => Some(PathBuf::from(std::env::var_os("HOME")?).join(rest)),
+        Some(rest) => Some(home()?.join(rest)),
         None => Some(PathBuf::from(path)),
     }
 }
 
-/// `home_path`, or the path as typed when HOME is not set.
+/// `home_path`, or the path as typed when it has no home folder to use.
 pub fn expand_home(path: &str) -> PathBuf {
     home_path(path).unwrap_or_else(|| PathBuf::from(path))
 }
 
-/// The config folder of the standard install, `~/.config/duskcode`; `None` without HOME.
+/// The config folder of the standard install, `~/.config/duskcode`; `None` without an
+/// absolute HOME.
 pub fn standard_config_root() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(CONFIG_ROOT))
+    home().map(|home| home.join(CONFIG_ROOT))
+}
+
+/// HOME when it is an absolute path, as `Paths::from_home` requires; a relative one would
+/// resolve against whatever folder the process is in.
+fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|home| home.is_absolute())
 }
 
 #[cfg(test)]

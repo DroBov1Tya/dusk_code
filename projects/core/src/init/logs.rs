@@ -29,7 +29,7 @@ use tracing_subscriber::{
 
 use crate::{
     config::{Config, Traces},
-    init::{create_private_dir, paths::Paths},
+    init::{create_private_dir, files::open_no_follow, paths::Paths},
 };
 
 const MAX_BYTES: u64 = 10 * 1024 * 1024;
@@ -161,7 +161,6 @@ fn open(path: &Path) -> Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options
-        .open(path)
-        .with_context(|| format!("cannot open {}", path.display()))
+    // A link planted at the log's path is not followed.
+    open_no_follow(&mut options, path).with_context(|| format!("cannot open {}", path.display()))
 }

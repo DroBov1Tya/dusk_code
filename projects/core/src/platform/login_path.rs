@@ -94,7 +94,8 @@ mod tests {
 
     #[tokio::test]
     async fn reads_a_path_from_the_shell() {
-        if std::env::var_os("SHELL").is_none() {
+        // Nothing is run without a shell named by its full path.
+        if super::user_shell().is_none() {
             return;
         }
         super::load().await;

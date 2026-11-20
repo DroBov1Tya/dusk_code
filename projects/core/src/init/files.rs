@@ -115,7 +115,7 @@ pub fn create_private_dir(directory: &Path) -> Result<()> {
     private_dir_builder()
         .recursive(true)
         .create(directory)
-        .map_err(|_| anyhow!("cannot create application directory"))?;
+        .context("cannot create application directory")?;
     let metadata = fs::symlink_metadata(directory)
         .map_err(|_| anyhow!("cannot inspect application directory"))?;
     ensure!(
