@@ -2,6 +2,7 @@
 //! once; after the first turn the model names the thread from that message.
 
 use anyhow::{Context, Result};
+use dusk_protocol::text::clip_chars;
 use tracing::warn;
 
 use crate::runtime::{
@@ -143,8 +144,5 @@ fn one_line(text: &str) -> String {
 }
 
 fn clip(text: &str, chars: usize) -> String {
-    match text.char_indices().nth(chars) {
-        Some((end, _)) => text[..end].to_owned(),
-        None => text.to_owned(),
-    }
+    clip_chars(text, chars, "")
 }

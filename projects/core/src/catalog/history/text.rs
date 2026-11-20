@@ -3,8 +3,8 @@
 /// Longest reason kept, in characters.
 pub const MAX_REASON_CHARS: usize = 200;
 
-/// The first line of `text` as plain data: control characters and bidi marks (which can
-/// reorder what a reader sees) removed, trimmed, cut at `max_chars`.
+/// The first line of `text` as plain data: control characters and the characters that
+/// hide or reorder what a reader sees (`dusk_protocol::text::is_plain`) removed, trimmed, cut at `max_chars`.
 pub fn plain_line(text: &str, max_chars: usize) -> String {
     let first = text.split(['\n', '\r']).next().unwrap_or("");
     let clean: String = first.chars().filter(|c| plain_char(*c, false)).collect();
@@ -19,12 +19,7 @@ pub fn plain_diff_line(line: &str) -> String {
 }
 
 fn plain_char(c: char, keep_tab: bool) -> bool {
-    (keep_tab && c == '\t')
-        || !(c.is_control()
-            || matches!(
-                c,
-                '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
-            ))
+    (keep_tab && c == '\t') || dusk_protocol::text::is_plain(c)
 }
 
 #[cfg(test)]

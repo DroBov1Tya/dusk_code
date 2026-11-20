@@ -18,7 +18,7 @@ use anyhow::Result;
 
 pub use self::clean::bounded;
 use self::clean::{Field, Secrets, clean, scrub};
-use super::ledger::{may_keep_text, sha256};
+use super::ledger::may_keep_text;
 use crate::state::{EpisodeKind, NewEpisode, State};
 
 /// Changed files an episode names, at most.
@@ -129,7 +129,9 @@ async fn store(state: &State, origin: &Origin<'_>, facts: &Facts<'_>) -> Result<
         thread_id: origin.thread_id.map(str::to_owned),
         turn_id: origin.turn_id.map(str::to_owned),
         kind,
-        signature: sha256(format!("{}\n{key}", self::kind(facts)).as_bytes()),
+        signature: dusk_protocol::text::sha256_hex(
+            format!("{}\n{key}", self::kind(facts)).as_bytes(),
+        ),
         tool: clean(origin.tool, &secrets, Field::Tool),
         model: clean(origin.model, &secrets, Field::Model),
         problem: clean(problem, &secrets, Field::Problem),

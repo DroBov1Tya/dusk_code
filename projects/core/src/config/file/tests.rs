@@ -451,3 +451,23 @@ fn contract_keys_round_trip_and_old_files_still_load() {
     assert_eq!(again.chosen("forge", "other.example.com"), None);
     assert_eq!(again.chosen("unknown", "github.com"), None);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_config_file_is_read_bounded_and_never_through_a_link() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let directory = crate::testing::temp_dir("config_read_bounded");
+    fs::create_dir_all(&directory).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+    let path = directory.join("config.yml");
+    let mut huge = PROVIDERS.to_owned();
+    huge.push_str(&format!("# {}\n", "x".repeat(MAX_CONFIG_BYTES as usize)));
+    fs::write(&path, huge).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(Config::load_from(&path).is_err());
+    fs::write(&path, PROVIDERS).unwrap();
+    assert!(Config::load_from(&path).is_ok());
+    let link = directory.join("linked.yml");
+    symlink(&path, &link).unwrap();
+    assert!(Config::load_from(&link).is_err());
+}

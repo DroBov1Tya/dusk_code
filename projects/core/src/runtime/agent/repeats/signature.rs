@@ -15,6 +15,7 @@
 //! Tool output is untrusted: only its last few KiB are read, every pass is linear, and
 //! nothing here panics on any text.
 
+use dusk_protocol::text::clip_chars;
 use serde_json::Value;
 
 use crate::tools::console::command_line::{Reading, program_name, run_words, split};
@@ -165,31 +166,17 @@ fn tail(output: &str) -> &str {
     if output.len() <= TAIL_BYTES {
         return output;
     }
-    let mut start = output.len() - TAIL_BYTES;
-    while !output.is_char_boundary(start) {
-        start += 1;
-    }
-    let cut = &output[start..];
+    let cut = &output[output.ceil_char_boundary(output.len() - TAIL_BYTES)..];
     // The first line was most likely cut in half.
     cut.split_once('\n').map_or(cut, |(_, rest)| rest)
 }
 
 fn head(text: &str, bytes: usize) -> &str {
-    if text.len() <= bytes {
-        return text;
-    }
-    let mut end = bytes;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    &text[..end]
+    &text[..text.floor_char_boundary(bytes)]
 }
 
 fn truncate(text: &str, chars: usize) -> String {
-    match text.char_indices().nth(chars) {
-        Some((end, _)) => format!("{}…", &text[..end]),
-        None => text.to_owned(),
-    }
+    clip_chars(text, chars, "…")
 }
 
 /// One line with its incidental details made alike; see the module's doc.

@@ -83,7 +83,7 @@ pub fn short_task_id(id: &str) -> &str {
 
 /// At most 80 characters of text that came from outside, for an error message.
 pub(super) fn shown(text: &str) -> String {
-    text.chars().take(80).collect()
+    dusk_protocol::text::clip_chars(text, 80, "")
 }
 
 impl fmt::Display for PlanError {

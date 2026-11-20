@@ -3,8 +3,7 @@
 
 use std::{path::Path, sync::Arc, time::Duration};
 
-use dusk_protocol::project::EditKind;
-use sha2::{Digest, Sha256};
+use dusk_protocol::{project::EditKind, text::sha256_hex};
 use similar::TextDiff;
 
 use super::{Snapshot, Stamp, may_keep_text, seen};
@@ -97,7 +96,7 @@ fn edit(
             *reads += 1;
             read_after(root, &absolute, stamp)
         });
-    let hash_after = bytes.as_deref().map(sha256);
+    let hash_after = bytes.as_deref().map(sha256_hex);
     let new_text: Option<String> = match after {
         None => Some(String::new()),
         Some(_) => bytes
@@ -138,14 +137,6 @@ fn read_after(root: &Path, absolute: &Path, stamp: Stamp) -> Option<Vec<u8>> {
         return None;
     }
     read_regular(absolute, MAX_READ_BYTES).ok()
-}
-
-/// SHA-256 in hex: `hash_after` and an episode's signature.
-pub fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 /// A unified diff without file headers, the row names the file, cut to the caps.
