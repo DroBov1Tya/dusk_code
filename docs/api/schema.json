@@ -626,6 +626,41 @@
       },
       "type": "object"
     },
+    "AttachedClient": {
+      "properties": {
+        "id": {
+          "description": "Never reused within a run; what `Request::Disconnect` names.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "label": {
+          "description": "What the client called itself in its hello, such as `tui`.",
+          "type": "string"
+        },
+        "scope": {
+          "description": "What it may do: `full`, `web` or `threads`.",
+          "type": "string"
+        },
+        "since": {
+          "description": "When it attached, in seconds since the Unix epoch.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "transport": {
+          "description": "How it is connected, such as `in-process` or `socket`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "transport",
+        "scope",
+        "since"
+      ],
+      "type": "object"
+    },
     "Balance": {
       "description": "Money left on a provider account, as the provider wrote it.",
       "properties": {
@@ -2505,6 +2540,27 @@
           },
           "required": [
             "PluginNotice"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The core is about to stop, for every client; sent before the events close.",
+          "properties": {
+            "CoreStopping": {
+              "properties": {
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "CoreStopping"
           ],
           "type": "object"
         }
@@ -6465,8 +6521,36 @@
         },
         {
           "const": "Shutdown",
-          "description": "Closes every thread and stops the core; the last request a client sends.",
+          "description": "Closes every thread and stops the core for every attached client; the last\nrequest a client sends. Full access only.",
           "type": "string"
+        },
+        {
+          "const": "Clients",
+          "description": "The clients attached to the core now.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Detaches client `id`, closing its events. Full access only.",
+          "properties": {
+            "Disconnect": {
+              "properties": {
+                "id": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Disconnect"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -6643,6 +6727,22 @@
             "Done"
           ],
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The clients attached to the core.",
+          "properties": {
+            "Clients": {
+              "items": {
+                "$ref": "#/$defs/AttachedClient"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "Clients"
+          ],
+          "type": "object"
         },
         {
           "additionalProperties": false,

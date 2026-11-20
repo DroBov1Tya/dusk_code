@@ -307,11 +307,11 @@ async fn a_card_delivered_again_is_dropped() {
             .unwrap();
         rig.pass().await;
     }
-    assert_eq!(rig.uids(&member).await, [format!("card:{}:1", ids[0])]);
     until("the member read its card", || async {
         !rig.state().has_pending(&member).await.unwrap()
     })
     .await;
+    assert_eq!(rig.uids(&member).await, [format!("card:{}:1", ids[0])]);
     let messages = rig.state().list_messages(&member).await.unwrap();
     let cards: Vec<_> = messages
         .iter()
@@ -347,8 +347,12 @@ async fn a_task_the_lead_sends_back_wakes_the_same_member_once() {
     rig.launcher().team_changed(&rig.lead).await;
     rig.pass().await;
 
+    // The hand-in sets Review before it tells the lead, so wait for the line too.
+    let waits = |line: &String| line.contains("waits for you");
     until("the member handed in again", || async {
-        rig.status(&ids[0]).await == PlanStatus::Review && rig.turns(&member).await == (2, false)
+        rig.status(&ids[0]).await == PlanStatus::Review
+            && rig.turns(&member).await == (2, false)
+            && rig.lines().await.iter().filter(|line| waits(line)).count() >= 2
     })
     .await;
     let task = rig.task(&ids[0]).await;
@@ -360,7 +364,6 @@ async fn a_task_the_lead_sends_back_wakes_the_same_member_once() {
         uids,
         [format!("card:{}:1", ids[0]), format!("rework:{}:1", ids[0])]
     );
-    let waits = |line: &String| line.contains("waits for you");
     assert_eq!(
         rig.lines().await.iter().filter(|line| waits(line)).count(),
         2

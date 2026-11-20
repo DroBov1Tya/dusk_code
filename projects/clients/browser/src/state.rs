@@ -215,6 +215,8 @@ impl AppState {
             | Event::PluginView { .. }
             | Event::PluginFrame { .. }
             | Event::PluginNotice { .. }
+            // The page notices the closing socket itself.
+            | Event::CoreStopping { .. }
             // The project page reads the repository when it opens.
             | Event::GitChanged { .. } => {}
             Event::RepositoryStatus { project_id, status } => {

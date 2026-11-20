@@ -17,8 +17,8 @@ use super::sections::{
     MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, is_zero, yes,
 };
 use super::{
-    Appearance, ApprovalPolicy, Arbiter, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
-    MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
+    Appearance, ApprovalPolicy, Arbiter, ContextPolicy, CoreSection, Effort, Limits, Logging,
+    MAX_ATTEMPTS, MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
     MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, McpServerConfig, Memory, Plugged,
     PluginConfig, ProviderConfig, Team, ThreadConfig, VersionControl, WorkHistory, Workshop,
 };
@@ -141,6 +141,9 @@ pub struct Config {
     /// The model a team's members answer on, and one per role.
     #[serde(default, skip_serializing_if = "Team::is_default")]
     team: Team,
+    /// Whether apps share one core.
+    #[serde(default, skip_serializing_if = "CoreSection::is_default")]
+    core: CoreSection,
     /// Whether a plugin that provides a contract is asked, such as for a forge's pull
     /// requests. Off, `provides` is shown and no contract program starts.
     #[serde(default, skip_serializing_if = "super::sections::is_false")]
@@ -267,6 +270,11 @@ impl Config {
             .map_err(|error| anyhow!("invalid configuration YAML: {}", what_is_wrong(&error)))?;
         config.validate()?;
         Ok(config)
+    }
+
+    /// Whether the first app serves the core to the apps started after it.
+    pub fn shared_core(&self) -> bool {
+        self.core.shared
     }
 
     pub fn to_yaml(&self) -> Result<String> {

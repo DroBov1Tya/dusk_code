@@ -110,9 +110,12 @@ fn a_name_with_a_newline_is_refused() {
 
 #[test]
 fn a_hello_without_auth_or_nonce_still_parses() {
-    let json = format!(r#"{{"protocol":{PROTOCOL_VERSION},"client":"tui"}}"#);
-    let hello: Hello = serde_json::from_str(&json).unwrap();
-    assert_eq!(hello, Hello::new("tui"));
+    let hello: Hello = serde_json::from_str(r#"{"protocol":36,"client":"tui"}"#).unwrap();
+    let expected = Hello {
+        protocol: 36,
+        ..Hello::new("tui")
+    };
+    assert_eq!(hello, expected);
 }
 
 /// These literals are the frozen wire format: two versions of duskcode say them to each
