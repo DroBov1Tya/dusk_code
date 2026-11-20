@@ -2,7 +2,7 @@
 //! ended, and the task the plan names as in work.
 
 use super::{Team, TeamEnd, TeamStatus};
-use crate::thread::{Task, current_task};
+use crate::thread::{Task, Tone, current_task};
 
 impl TeamEnd {
     /// Why it ended, as a client says it after "ended": "ran out of steps".
@@ -24,6 +24,27 @@ impl Team {
         match self.status {
             TeamStatus::Running => None,
             TeamStatus::Ended(end) => Some(end),
+        }
+    }
+
+    /// The tone its `progress_note` is drawn in: quiet while it runs, success when every
+    /// task is done, a warning for any other end.
+    pub fn tone(&self) -> Tone {
+        match self.ended() {
+            None => Tone::Neutral,
+            Some(TeamEnd::Done) => Tone::Success,
+            Some(_) => Tone::Warning,
+        }
+    }
+}
+
+/// What a plan's folded line says after its counts, in its tone: how an ended team ended,
+/// else the task in work ("#3 Remove expired entries"), else nothing.
+pub fn plan_aside(tasks: &[Task], team: Option<&Team>) -> Option<(String, Tone)> {
+    match team.filter(|team| team.ended().is_some()) {
+        Some(team) => Some((team.progress_note(), team.tone())),
+        None => {
+            task_in_work(tasks, team).map(|(number, task)| (task.numbered(number), Tone::Neutral))
         }
     }
 }

@@ -216,7 +216,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         ),
         Panel::Overview(view) => {
             let running = app.team.as_ref().is_some_and(|team| team.ended().is_none());
-            let hints = match (&view.budget, view.stopping) {
+            let hints = match (&view.budget, view.stopping.is_some()) {
                 (Some(_), _) => "up/down field  type to change  enter save  esc cancel",
                 (None, true) => "s again stops the team  any other key keeps it running",
                 (None, false) if running => {

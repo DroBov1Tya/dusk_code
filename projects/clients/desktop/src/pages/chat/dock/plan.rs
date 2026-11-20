@@ -6,7 +6,7 @@ use crate::ui::elevation::{Elevation, Level};
 use crate::ui::press::Press;
 use std::ops::Range;
 
-use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus, TeamEnd, task_in_work};
+use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus, plan_aside};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
     prelude::FluentBuilder,
@@ -66,28 +66,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .team
         .as_ref()
         .is_some_and(|team| team.ended().is_some());
-    let ended = chat.team.as_ref().and_then(|team| {
-        let end = team.ended()?;
-        let color = match end {
-            TeamEnd::Done => theme.success,
-            _ => theme.warning,
-        };
-        Some(
-            div()
-                .meta()
-                .text_color(color)
-                .truncate()
-                .child(team.progress_note()),
-        )
-    });
-    let current = ended.or_else(|| {
-        task_in_work(&chat.tasks, chat.team.as_ref()).map(|(number, task)| {
-            div()
-                .meta()
-                .text_color(muted)
-                .truncate()
-                .child(task.numbered(number))
-        })
+    let current = plan_aside(&chat.tasks, chat.team.as_ref()).map(|(text, tone)| {
+        div()
+            .meta()
+            .text_color(widgets::tone(tone, cx))
+            .truncate()
+            .child(text)
     });
     let line = div()
         .id("plan-line")

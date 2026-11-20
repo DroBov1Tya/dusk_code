@@ -80,8 +80,9 @@ pub struct OverviewView {
     pub context: ContextReport,
     /// The line kept in view while scrolling.
     pub row: usize,
-    /// `s` was pressed once: a second stops the team, any other key keeps it.
-    pub stopping: bool,
+    /// When `s` was pressed once: a second within a few seconds stops the team, any other
+    /// key keeps it.
+    pub stopping: Option<std::time::Instant>,
     /// The running team's budget being changed.
     pub budget: Option<BudgetEdit>,
     /// The member row chosen with tab, which enter opens.
@@ -94,7 +95,7 @@ impl OverviewView {
             overview,
             context,
             row: 0,
-            stopping: false,
+            stopping: None,
             budget: None,
             member: None,
         }

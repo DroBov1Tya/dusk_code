@@ -616,11 +616,15 @@ fn a_team_s_members_are_the_chat_s_agents() {
     assert_eq!((m2.task_id.as_deref(), m2.started_at), (Some("t5"), 4));
     assert!(m2.working());
 
-    // A team that ended cancelled its members at work.
-    let mut ended = team(&[("m2", "t5", TaskStatus::Running)]);
-    ended.status = crate::thread::TeamStatus::Ended(crate::thread::TeamEnd::Steps);
+    // A team that ended cancelled its members at work. The core gives their tasks back
+    // without an owner, so the roster it sends then leaves m2 out; m2 stops all the same,
+    // and the chat keeps every member it learned.
+    let mut ended = team(&[("m1", "t1", TaskStatus::Review)]);
+    ended.status = crate::thread::TeamStatus::Ended(crate::thread::TeamEnd::Stopped);
     chat.apply(ThreadEvent::Team(ended), 5);
     assert!(chat.agents.values().all(|agent| !agent.working()));
+    assert_eq!(chat.agents.len(), 4);
+    assert_eq!(chat.agent("m2").unwrap().ended_at, Some(5));
 }
 
 fn suggestion() -> Suggestion {

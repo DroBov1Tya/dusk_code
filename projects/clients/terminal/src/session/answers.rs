@@ -251,7 +251,8 @@ pub async fn refresh_overview(client: &Client, app: &mut App) {
         Err(error) => return app.error(format!("cannot read the plan: {error:#}")),
     }
     match work.team(&thread_id).await {
-        Ok(team) => app.team = team,
+        Ok(Some(team)) => app.team_heard(team, true),
+        Ok(None) => app.team = None,
         Err(error) => return app.error(format!("cannot read the team: {error:#}")),
     }
     if matches!(app.panel, Some(Panel::Overview(_))) {

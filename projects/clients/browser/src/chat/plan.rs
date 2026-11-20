@@ -9,7 +9,7 @@ use crate::{
     ui::{Icon, IconName, run, tone_text},
 };
 use dusk_protocol::thread::{
-    GoalCheck, PlanCounts, Task, TaskCard, TaskStatus, TeamEnd, WorkKind, task_card, task_in_work,
+    GoalCheck, PlanCounts, Task, TaskCard, TaskStatus, WorkKind, plan_aside, task_card,
 };
 use leptos::prelude::*;
 
@@ -31,33 +31,23 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
             move |(c, team)| {
                 counts.set(Some(c));
                 if let Some(team) = team {
-                    chat.update(|chat| chat.set_team(team, super::data::now_ms()));
+                    chat.update(|chat| chat.team_answer(team, super::data::now_ms()));
                 }
             },
         );
     });
     let shown = move || !tasks.with(Vec::is_empty) || counts.get().is_some_and(|c| c.total() > 0);
     // An ended team says how it ended in the place of a task in work: none is.
-    let current = move || {
-        chat.with(
-            |c| match c.team.as_ref().and_then(|team| Some((team.ended()?, team))) {
-                Some((end, team)) => {
-                    let tone = if end == TeamEnd::Done {
-                        "tone-good"
-                    } else {
-                        "tone-warn"
-                    };
-                    (team.progress_note(), tone)
-                }
-                None => (
-                    task_in_work(&c.tasks, c.team.as_ref())
-                        .map(|(n, t)| t.numbered(n))
-                        .unwrap_or_default(),
-                    "muted",
-                ),
-            },
-        )
-    };
+    let current = Memo::new(move |_| {
+        chat.with(|c| {
+            let ended = c.team.as_ref().is_some_and(|t| t.ended().is_some());
+            let (text, tone) = plan_aside(&c.tasks, c.team.as_ref())
+                .map_or((String::new(), "muted"), |(text, tone)| {
+                    (text, tone_text(tone))
+                });
+            (text, tone, ended)
+        })
+    });
     let id = StoredValue::new(id);
     // While the plan is written, its label carries the light.
     let planning = Memo::new(move |_| {
@@ -89,8 +79,7 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
                         None => view! { <span class="plan-placeholder"></span> }.into_any(),
                     }}
                     {move || {
-                        let (text, tone) = current();
-                        let ended = chat.with(|c| c.team.as_ref().is_some_and(|t| t.ended().is_some()));
+                        let (text, tone, ended) = current.get();
                         view! { <span class=format!("plan-current {tone}") class:ended=ended>{text}</span> }
                     }}
                     <Show when=move || counts.get().is_some()>{bar(counts)}</Show>

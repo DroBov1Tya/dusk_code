@@ -1,7 +1,7 @@
 //! A task of the plan as a card: what it is, how it stands and why, what it waits on and
 //! what it spent. Only the task's current state: the core keeps no history of it yet.
 
-use super::{members::short_model, plan::find_task};
+use super::{members::short_model, plan::find_task, roster::role_name};
 use crate::thread::{GoalCheck, Task, TaskOwner, TaskStatus, WaitsOn, plural};
 
 /// A task as its card shows it. Every text that came from the lead, a member or a
@@ -23,7 +23,7 @@ pub struct TaskCard {
 /// The card of the task `task_id` of `tasks`, the plan as the chat holds it.
 pub fn task_card(tasks: &[Task], task_id: &str) -> Option<TaskCard> {
     let (number, task) = find_task(tasks, task_id)?;
-    let role = task.role.as_deref().unwrap_or("general");
+    let role = role_name(task.role.as_deref());
     let mut head = vec![task.status.member_word().to_owned(), role.to_owned()];
     head.extend(task.model.as_deref().map(short_model));
     let named = |id: &str| match find_task(tasks, id) {

@@ -5,13 +5,15 @@ mod budget;
 mod card;
 mod members;
 mod plan;
+mod roster;
 mod status;
 
 pub use budget::BUDGET_FIELDS;
 pub use card::{TaskCard, task_card};
 pub use members::{MemberRow, short_model};
 pub use plan::find_task;
-pub use status::task_in_work;
+pub use roster::{GENERAL_ROLE, Joining, KnownAgent, TeamChange, role_name};
+pub use status::{plan_aside, task_in_work};
 
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -211,8 +213,12 @@ impl Team {
         }
     }
 
-    /// Members whose task is claimed or running.
+    /// Members whose task is claimed or running; none once the team ended, whatever a
+    /// task's last status says.
     pub fn at_work(&self) -> usize {
+        if self.ended().is_some() {
+            return 0;
+        }
         self.members
             .iter()
             .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))

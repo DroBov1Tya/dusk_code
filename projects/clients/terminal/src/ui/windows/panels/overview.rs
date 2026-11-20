@@ -5,15 +5,14 @@
 use ratatui::text::{Line, Span};
 
 use dusk_protocol::thread::{
-    BUDGET_FIELDS, LogKind, PlanCounts, Team, TeamEnd, TeamMember, ThreadTokens, plural,
+    BUDGET_FIELDS, LogKind, PlanCounts, Team, TeamMember, ThreadTokens, plural, role_name,
 };
 
 use super::context::context;
 use crate::app::{App, BudgetEdit, OverviewView, compact_number};
 use crate::ui::text::format::printable;
 use crate::ui::windows::theme::{
-    ACCENT, DONE, DOT, FAILED, NEGATIVE, ON, POSITIVE, TEXT, TEXT_MUTED, WARNING, bold, dim, fg,
-    tone_fg,
+    ACCENT, DONE, DOT, FAILED, NEGATIVE, ON, POSITIVE, TEXT, TEXT_MUTED, bold, dim, fg, tone_fg,
 };
 
 pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
@@ -112,21 +111,16 @@ pub fn plan_line(counts: PlanCounts) -> String {
 
 /// `running · 23 min`, or how the team ended and why, in a warning once it did.
 pub fn status_line(team: &Team, indent: &str) -> Line<'static> {
-    let color = match team.ended() {
-        None => TEXT_MUTED,
-        Some(TeamEnd::Done) => POSITIVE,
-        Some(_) => WARNING,
-    };
     Line::from(Span::styled(
         format!("{indent}{}", team.progress_note()),
-        fg(color),
+        fg(tone_fg(team.tone())),
     ))
 }
 
 /// `● Ember-0c coder running`, the dot in the colour of its task's state.
 pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
     let (word, color) = (member.status.member_word(), tone_fg(member.status.tone()));
-    let role = member.role.as_deref().unwrap_or("general");
+    let role = role_name(member.role.as_deref());
     Line::from(vec![
         Span::styled(format!("{indent}{ON} "), fg(color)),
         Span::styled(printable(&member.name), bold(TEXT)),

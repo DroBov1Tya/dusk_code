@@ -128,9 +128,10 @@ impl Workspace {
                 match result {
                     Ok((counts, team)) => {
                         // The strip says how the team stands, in a chat opened after it
-                        // started too; its events keep it current from here.
+                        // started too; its events keep it current from here, and an
+                        // answer older than the last of them is dropped.
                         if let (Some(team), Some(chat)) = (team, ws.chats.get_mut(&asked)) {
-                            chat.set_team(team, dusk_protocol::system::now_ms());
+                            chat.team_answer(team, dusk_protocol::system::now_ms());
                         }
                         // The bar eases from the shares it showed for the same chat.
                         ws.dock.counts_before = match &ws.dock.counts {

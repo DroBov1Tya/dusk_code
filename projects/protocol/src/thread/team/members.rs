@@ -1,7 +1,7 @@
 //! A team's members as rows: who, as what, on which model, on which task, at what cost,
 //! and how its task stands.
 
-use super::{Team, plan::find_task};
+use super::{Team, plan::find_task, roster::role_name};
 use crate::thread::{Task, TaskStatus};
 
 /// One member as a row shows it. The task's words are model text: plain text.
@@ -59,7 +59,7 @@ impl Team {
                 MemberRow {
                     thread_id: member.thread_id.clone(),
                     name: member.name.clone(),
-                    role: member.role.clone().unwrap_or_else(|| "general".into()),
+                    role: role_name(member.role.as_deref()).to_owned(),
                     model: model.map(short_model),
                     task: task.map(|(number, task)| task.numbered(number)),
                     spend: task.and_then(|(_, task)| task.spend()),

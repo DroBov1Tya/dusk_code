@@ -8,6 +8,7 @@ use crate::app::{
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dusk_protocol::{client::Command, release::InstallStage, thread::TeamBudget};
+use std::time::{Duration, Instant};
 
 impl App {
     pub(super) fn panel_key(&mut self, key: KeyEvent) -> Action {
@@ -447,7 +448,11 @@ impl App {
                     }
                     return Action::None;
                 }
-                let stopping = std::mem::take(&mut view.stopping);
+                // A first `s` holds for a few seconds. A second one sooner than a hand
+                // presses twice is the key's own repeat and confirms nothing.
+                let armed = view.stopping.take().map(|at| at.elapsed());
+                let stopping = armed.is_some_and(|since| since <= STOP_HOLDS);
+                let repeat = armed.is_some_and(|since| since < STOP_REPEAT);
                 let members = self.team.as_ref().map_or(0, |team| team.members.len());
                 match (key.code, team) {
                     (KeyCode::Tab, _) if members > 0 => {
@@ -469,8 +474,11 @@ impl App {
                             return Action::OpenAgent(member.thread_id.clone());
                         }
                     }
+                    (KeyCode::Char('s'), Some(_)) if repeat => {
+                        view.stopping = Some(armed_at(armed))
+                    }
                     (KeyCode::Char('s'), Some(_)) if stopping => return Action::StopTeam,
-                    (KeyCode::Char('s'), Some(_)) => view.stopping = true,
+                    (KeyCode::Char('s'), Some(_)) => view.stopping = Some(Instant::now()),
                     (KeyCode::Char('b'), Some(team)) => {
                         view.budget = Some(BudgetEdit {
                             fields: team.budget.fields(),
@@ -523,6 +531,19 @@ impl App {
 }
 
 /// Moves a text panel's top row; any key but the scrolling ones answers false, to close.
+/// How long a first `s` waits for the second that stops the team.
+const STOP_HOLDS: Duration = Duration::from_secs(4);
+/// A second `s` sooner than this is the key's auto-repeat.
+const STOP_REPEAT: Duration = Duration::from_millis(300);
+
+/// When a first `s` that `armed` long ago was pressed, so a repeat keeps its time.
+fn armed_at(armed: Option<Duration>) -> Instant {
+    let now = Instant::now();
+    armed
+        .and_then(|since| now.checked_sub(since))
+        .unwrap_or(now)
+}
+
 fn scroll(row: &mut usize, code: KeyCode, up: bool, down: bool) -> bool {
     *row = match code {
         _ if up => row.saturating_sub(1),
@@ -582,13 +603,27 @@ mod tests {
         app.panel_key(KeyEvent::from(code))
     }
 
-    /// Stopping a team takes a second `s`; any other key between takes the first back.
+    /// Moves the first `s` back in time, as a hand pressing again later would find it.
+    fn armed_ago(app: &mut App, ago: std::time::Duration) {
+        if let Some(Panel::Overview(view)) = &mut app.panel {
+            view.stopping = view.stopping.and_then(|at| at.checked_sub(ago));
+        }
+    }
+
+    /// Stopping a team takes a second `s` pressed apart from the first: its auto-repeat
+    /// does not count, any other key takes the first back, and so does waiting too long.
     #[test]
     fn a_team_stops_only_on_a_second_s() {
+        use std::time::Duration;
         let mut app = overview(TeamStatus::Running);
         assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
         assert!(matches!(press(&mut app, KeyCode::Char('x')), Action::None));
         assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
+        // A held key repeats at once: still armed, not stopped.
+        assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
+        armed_ago(&mut app, Duration::from_secs(10));
+        assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
+        armed_ago(&mut app, Duration::from_secs(1));
         assert!(matches!(
             press(&mut app, KeyCode::Char('s')),
             Action::StopTeam
@@ -632,5 +667,67 @@ mod tests {
             panic!("no member opened");
         };
         assert_eq!(thread, "m2");
+    }
+}
+
+#[cfg(test)]
+mod team_tests {
+    use dusk_protocol::thread::{
+        TaskStatus, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed, ThreadEvent,
+    };
+
+    use crate::app::tabs::tests::app;
+
+    fn team(status: TeamStatus, members: &[(&str, &str, TaskStatus)]) -> Team {
+        Team {
+            thread_id: "lead".into(),
+            status,
+            budget: TeamBudget::new(2, 100, 1_000_000, 60).unwrap(),
+            used: TeamUsed::default(),
+            members: members
+                .iter()
+                .map(|(thread, task, status)| TeamMember {
+                    thread_id: (*thread).into(),
+                    name: (*thread).into(),
+                    role: None,
+                    model: None,
+                    task_id: (*task).into(),
+                    status: *status,
+                })
+                .collect(),
+        }
+    }
+
+    /// The terminal's agent cards follow a team as the other clients' chats do: a chat
+    /// opened while it runs lists its members, an ended team stops those the core no
+    /// longer names, and an answer older than an event changes nothing.
+    #[test]
+    fn a_team_s_members_are_the_terminal_s_agents() {
+        let mut app = app();
+        let running = team(
+            TeamStatus::Running,
+            &[
+                ("m1", "t1", TaskStatus::Running),
+                ("m2", "t2", TaskStatus::Done),
+            ],
+        );
+        app.team_heard(running.clone(), true);
+        assert_eq!(app.subagents.len(), 2);
+        assert!(
+            app.subagents
+                .iter()
+                .any(|card| card.thread_id == "m1" && card.state.working())
+        );
+
+        let ended = team(
+            TeamStatus::Ended(TeamEnd::Stopped),
+            &[("m2", "t2", TaskStatus::Done)],
+        );
+        app.apply(ThreadEvent::Team(ended));
+        assert_eq!(app.subagents.len(), 2);
+        assert!(app.subagents.iter().all(|card| !card.state.working()));
+        // The answer to a request that left before the end does not bring it back.
+        app.team_heard(running, true);
+        assert!(app.team.as_ref().is_some_and(|team| team.ended().is_some()));
     }
 }

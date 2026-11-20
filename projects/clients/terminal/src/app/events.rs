@@ -153,10 +153,11 @@ impl App {
                 task,
                 effort,
                 model,
+                task_id,
                 ..
             } => {
                 let parent = self.thread_id.clone();
-                self.start_subagent(thread_id, agent, task, (effort, model), parent);
+                self.start_subagent(thread_id, agent, task, (effort, model), parent, task_id);
             }
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
             ThreadEvent::FromJob(_) => self.jobs_stale = true,
@@ -173,7 +174,10 @@ impl App {
                 }
                 self.overview_stale = true;
             }
-            ThreadEvent::Team(_) => self.overview_stale = true,
+            ThreadEvent::Team(team) => {
+                self.team_heard(team, false);
+                self.overview_stale = true;
+            }
             ThreadEvent::Goal {
                 goal,
                 note,
