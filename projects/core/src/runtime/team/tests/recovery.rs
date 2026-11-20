@@ -166,7 +166,9 @@ async fn a_task_whose_turn_a_stop_cut_off_returns_to_the_pool_exactly_once() {
 
 #[tokio::test]
 async fn a_turn_that_completed_before_the_stop_is_handed_in_and_not_done_twice() {
-    let rig = Rig::new("team_settle_done", hang).await;
+    // A lead that answered the line before the second settle would end the team as
+    // stalled, by design; this test is about the hand-in, so the lead never answers.
+    let rig = Rig::new("team_settle_done", silent).await;
     let answer = TurnAnswer {
         content: DONE.into(),
         reasoning: None,

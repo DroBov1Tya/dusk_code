@@ -127,6 +127,8 @@ impl Workspace {
                 jpeg,
             } => self.plugin_frame(plugin, part, widget, jpeg, cx),
             Event::PluginNotice { plugin, text } => self.plugin_notice(&plugin, &text, cx),
+            // The app shows the stop when the core's side of the connection ends.
+            Event::CoreStopping { .. } => {}
             Event::GitChanged { project_id } => self.git_changed(&project_id, cx),
             Event::RepositoryStatus { project_id, status } => {
                 self.repository_changed(&project_id, *status, cx)

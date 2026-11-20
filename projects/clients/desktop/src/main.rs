@@ -52,12 +52,13 @@ fn main() -> Result<()> {
         .context("cannot start the async runtime")?;
     let paths = Paths::from_home()?;
     let _restore_guard = app::RestoreGuard::startup(&paths, None)?;
-    let telemetry = app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "gui").ok();
+    let telemetry =
+        app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "gui", app::LogRole::Owner).ok();
     let look_file = paths.config_root().join("gui.json");
     let home = paths.workspace_root().to_path_buf();
     let hello = Hello::new(THREAD_SOURCE);
     let hub = runtime.block_on(app::start_hub(paths, None))?;
-    let client = hub.attach(hello, dusk_core::client::Scope::full())?;
+    let client = hub.attach_owner(hello, dusk_core::client::Scope::full())?;
     let (client, events, status) = core::split(client);
     let shutdown = Arc::clone(&client);
     let runtime = Arc::new(runtime);

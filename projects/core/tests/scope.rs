@@ -45,6 +45,7 @@ const EVERYTHING: &[Area] = &[
     Area::StoreInstall,
     Area::Update,
     Area::Shutdown,
+    Area::Clients,
 ];
 
 struct Core {
@@ -327,6 +328,8 @@ fn apart(folder: &Path) -> Vec<Request> {
     let word = || "x".to_owned();
     vec![
         Request::Shutdown,
+        Request::Clients,
+        Request::Disconnect { id: 1 },
         Request::InstallUpdate { tag: word() },
         Request::Store(StoreRequest::List {
             order: Default::default(),
@@ -446,6 +449,8 @@ async fn a_browser_is_refused_in_the_core_and_the_core_runs_on() {
 
     for request in [
         Request::Shutdown,
+        Request::Clients,
+        Request::Disconnect { id: 1 },
         Request::Store(StoreRequest::UpdateAll),
         Request::Terminal(TerminalRequest::Open {
             cwd: core.folder.clone(),

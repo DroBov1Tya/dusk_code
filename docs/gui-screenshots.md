@@ -49,5 +49,8 @@ makes a chat to look at.
 The window draws no frames of its own, so an animation or a picture decoded after the first
 draw shows only on a second `shot`: take one, `wait`, and take the one to keep.
 
+The working row's words swap faster than a shot is taken: `DUSK_SWAP=MS` holds a swap that many
+milliseconds in (`fake=activity-thinking`, a shot, then `fake=activity-steps` in the same run).
+
 The subagents' mascots move faster than a shot is taken: `DUSK_MASCOT=MS` in the environment holds
 each that many milliseconds into its activity (`fake=agents;modal=agents` shows one of each).
