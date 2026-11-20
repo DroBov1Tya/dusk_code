@@ -253,3 +253,27 @@ async fn a_connector_never_takes_the_name_of_a_plugins_server() {
     );
     assert!(runtime.config().current().mcp().get("tracker").is_none());
 }
+
+/// What the listing marks unfit is refused again when the install comes: a client may
+/// send it without looking.
+#[tokio::test]
+async fn a_near_name_from_another_source_is_refused_when_it_is_added() {
+    let runtime = runtime("connector_near_name").await;
+    runtime
+        .save_mcp_server(None, "linear:\n  url: http://127.0.0.1:9/mine\n")
+        .unwrap();
+    let mut from_mirror = added(HERE);
+    from_mirror.source = "friends".into();
+    let error = runtime
+        .add_connector("linnear", server(HERE), from_mirror)
+        .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("too close to the MCP server linear"),
+        "{error:#}"
+    );
+    assert!(runtime.config().current().mcp().get("linnear").is_none());
+    // The official list may name its own servers as it likes.
+    runtime
+        .add_connector("linnear", server(HERE), added(HERE))
+        .unwrap();
+}

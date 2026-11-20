@@ -141,7 +141,7 @@ impl Spec {
         match self.auth {
             Auth::None => {}
             Auth::OAuth => lines.push(format!(
-                "ask you to sign in at {} in your browser; the token stays in duskcode's config folder",
+                "ask you to sign in in your browser, on whatever page {0} names; the token you get is sent to {0} with its calls and stays in duskcode's config folder",
                 self.url.as_deref().and_then(host).unwrap_or_default()
             )),
             Auth::Key => lines.push(format!(

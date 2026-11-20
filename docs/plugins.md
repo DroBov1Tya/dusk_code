@@ -632,7 +632,8 @@ punycode label), as it is written to the config and shown; names only a private 
 answers (`.local`, `.lan`, `.corp`, `.internal`, `.home.arpa`, `localhost` and the like)
 are refused, and the name must resolve to public addresses when the connector is added.
 A package is `npx -y name@MAJOR.MINOR.PATCH` with an npm registry name, or `uvx
-name==MAJOR.MINOR.PATCH` with a normalised PyPI name: never a range, tag, folder,
+name===MAJOR.MINOR.PATCH` (`===`, so no padded or local version matches) with a
+normalised PyPI name: never a range, tag, folder,
 tarball or another protocol. A key goes in a header or variable the user names, never
 one that changes what runs (`PATH`, `NODE_OPTIONS`, `npm_config_*`, `PYTHON*`, `LD_*`,
 `DYLD_*` and the like) or one the transport sets. A connector never takes the name of a

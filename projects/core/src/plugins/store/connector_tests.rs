@@ -112,7 +112,7 @@ fn a_connector_is_held_to_a_public_address_or_a_pinned_package() {
         "playwright",
         r#"["-y", "@playwright/mcp@0.0.86", "--headless"]"#,
     );
-    let uvx = local("fetch", r#"["mcp-server-fetch==2026.11.18"]"#).replace("npx", "uvx");
+    let uvx = local("fetch", r#"["mcp-server-fetch===2026.11.18"]"#).replace("npx", "uvx");
     for entry in [key, pinned, uvx] {
         parse(&list(3, std::slice::from_ref(&entry)))
             .unwrap_or_else(|error| panic!("{entry}: {error:#}"));
@@ -163,7 +163,7 @@ fn an_unverified_source_keeps_only_remote_connectors() {
     assert!(
         consent
             .iter()
-            .any(|line| line.contains("sign in at mcp.example.com")),
+            .any(|line| line.contains("the token you get is sent to mcp.example.com")),
         "{consent:?}"
     );
     let agreed = Agreed {
@@ -380,23 +380,24 @@ fn a_package_is_a_registry_name_at_one_exact_version() {
         assert!(npm_package(bad).is_err(), "{bad}");
     }
     for good in [
-        "mcp-server-fetch==2026.11.18",
-        "x==1.0.0rc1",
-        "x2==1.2.3.post1",
+        "mcp-server-fetch===2026.11.18",
+        "x===1.0.0rc1",
+        "x2===1.2.3.post1",
     ] {
         pypi_package(good).unwrap_or_else(|error| panic!("{good}: {error:#}"));
     }
     for bad in [
-        "x==1",
-        "x==1.0",
+        "x==1.2.3",
+        "x===1",
+        "x===1.0",
         "x>=1.0.0",
-        "x==1.0.*",
+        "x===1.0.*",
         "x",
-        "Mcp_Server==1.0.0",
-        "mcp_server==1.0.0",
-        "x[extra]==1.0.0",
-        "../x==1.0.0",
-        "x==1.0.0a1rc2",
+        "Mcp_Server===1.0.0",
+        "mcp_server===1.0.0",
+        "x[extra]===1.0.0",
+        "../x===1.0.0",
+        "x===1.0.0a1rc2",
     ] {
         assert!(pypi_package(bad).is_err(), "{bad}");
     }

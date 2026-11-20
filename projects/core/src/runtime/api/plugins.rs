@@ -188,12 +188,13 @@ impl Runtime {
         mut server: crate::config::McpServerConfig,
         added: crate::plugins::store::Installed,
     ) -> Result<()> {
-        use crate::plugins::store::{connector, listing_plugin_servers};
-        ensure!(
-            !listing_plugin_servers(self.paths()).contains(name),
-            "a plugin here brings an MCP server named {name}; a connector may not take it"
-        );
+        use crate::plugins::store::{Here, connector, taken_name};
         let config = self.config().current();
+        // The Workshop shows this on the listing; a client may send the install anyway.
+        let here = Here::of(&config, self.paths(), Default::default());
+        if let Some(why) = taken_name(&here, &added.source, name) {
+            anyhow::bail!(why);
+        }
         let old = match config.mcp().get(name) {
             None => None,
             Some(old) => {

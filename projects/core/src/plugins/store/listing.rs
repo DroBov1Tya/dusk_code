@@ -149,7 +149,7 @@ fn connector(
         (None, false) => ConnectorState::NotAdded,
     };
     let tier = tier(source, entry);
-    let unfit = taken_name(here, source, name, added.is_some()).or_else(|| match state {
+    let unfit = taken_name(here, &source.name, name).or_else(|| match state {
         ConnectorState::Yours => Some(format!(
             "a connector of yours is named {name}; rename or remove it to add this one"
         )),
@@ -179,20 +179,22 @@ fn connector(
 
 /// Why a connector may not take `name`: a plugin here brings a server of that name, or,
 /// from a source other than the official one, the name is close to a server already
-/// set up, which it could pass for. Its own server, once added, does not count.
-fn taken_name(here: &Here, source: &Fetched, name: &str, added: bool) -> Option<String> {
+/// set up, which it could pass for. A server of exactly that name is the listing's
+/// state, not this: its own once added, or the user's. The Workshop shows it on the
+/// listing, and the core asks it again when the connector is added.
+pub fn taken_name(here: &Here, source: &str, name: &str) -> Option<String> {
     if here.plugin_servers.contains(name) {
         return Some(format!(
             "a plugin here brings an MCP server named {name}; a connector may not take it"
         ));
     }
-    if source.name == dusk_protocol::plugin::OFFICIAL_SOURCE {
+    if source == dusk_protocol::plugin::OFFICIAL_SOURCE {
         return None;
     }
     let near = here
         .yours
         .keys()
-        .filter(|other| !(added && other.as_str() == name) && other.as_str() != name)
+        .filter(|other| other.as_str() != name)
         .chain(&here.plugin_servers)
         .find(|other| super::guard::close(name, other))?;
     Some(format!(

@@ -198,12 +198,13 @@ fn is_npm_name(name: &str) -> bool {
     }
 }
 
-/// `name==1.2.3`, the name as PEP 503 normalises it, and a PEP 440 release of at least
-/// three parts with an optional pre, post or dev mark: one version, never a range.
+/// `name===1.2.3`, the name as PEP 503 normalises it, and a PEP 440 release of at least
+/// three parts with an optional pre, post or dev mark. `===` matches that string only:
+/// `==` would also take `1.2.3.0` or a local `1.2.3+anything`.
 pub fn pypi_package(package: &str) -> Result<()> {
     let (name, version) = package
-        .split_once("==")
-        .context("the package is not pinned: name==1.2.3")?;
+        .split_once("===")
+        .context("the package is not pinned: name===1.2.3")?;
     let normalised = !name.is_empty()
         && name.len() <= MAX_PACKAGE
         && name
@@ -218,7 +219,7 @@ pub fn pypi_package(package: &str) -> Result<()> {
     );
     ensure!(
         is_pep440_release(version),
-        "the package is not pinned to one exact version: name==MAJOR.MINOR.PATCH"
+        "the package is not pinned to one exact version: name===MAJOR.MINOR.PATCH"
     );
     Ok(())
 }

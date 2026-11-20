@@ -153,7 +153,9 @@ impl Listing {
                         .strip_prefix("https://")
                         .and_then(|rest| rest.split(['/', '?', '#']).next())
                         .unwrap_or(url);
-                    format!("Its tool calls, any sign-in and any key you put in go to {host}.")
+                    format!(
+                        "Its tool calls, its sign-in token and any key you put in are sent to {host}."
+                    )
                 }
                 Runs::Command(line) => format!("It runs {line} on this computer, as you."),
             });
@@ -599,7 +601,7 @@ mod tests {
         assert!(lines[0].starts_with("Nobody vouches for notion-workspace"));
         assert!(lines[0].contains("loose (lists.example.net)"));
         assert!(lines[1].contains("says it is by Notion; nothing checks that"));
-        assert!(lines[2].contains("go to mcp.notion-workspace.app."));
+        assert!(lines[2].contains("are sent to mcp.notion-workspace.app."));
         let vouched = Listing {
             tier: Tier::Verified,
             ..listing.clone()

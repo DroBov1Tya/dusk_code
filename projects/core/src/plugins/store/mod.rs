@@ -76,7 +76,7 @@ pub use record::Installed;
 pub(crate) use record::Record;
 use source::Fetched;
 
-pub use listing::{Here, plugin_servers as listing_plugin_servers};
+pub use listing::{Here, taken_name};
 pub use pack::{FILE as PACK_FILE, Pack};
 pub use picture::{cover, screenshot};
 pub use source::{probe, probed};
