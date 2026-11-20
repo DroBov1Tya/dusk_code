@@ -26,6 +26,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Lines<S> {
         }
     }
 
+    /// Changes the longest line taken from now on: the handshake's lines are short, the
+    /// stream's may carry a recording.
+    pub fn set_max_line(&mut self, max_line: usize) {
+        self.max_line = max_line;
+    }
+
     fn take_line(&mut self) -> Result<Option<String>> {
         let found = self.buffer[self.scanned..].iter().position(|b| *b == b'\n');
         let Some(at) = found.map(|at| at + self.scanned) else {

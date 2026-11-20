@@ -8,7 +8,7 @@ use axum::http::{HeaderMap, header};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use subtle::ConstantTimeEq;
 
-use limiter::Limiter;
+pub(crate) use limiter::Limiter;
 use session::Sessions;
 
 /// The cookie's name where the browser takes the `__Host-` prefix (a `Secure` cookie on a
