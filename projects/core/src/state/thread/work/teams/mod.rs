@@ -154,6 +154,7 @@ impl State {
             budget: run.budget,
             used,
             members,
+            started_at: Some(run.started_at),
         }))
     }
 

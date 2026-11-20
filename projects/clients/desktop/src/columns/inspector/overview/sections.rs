@@ -3,10 +3,13 @@
 
 use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::thread::{
-    BudgetPart, LogEntry, LogKind, Overview, PlanCounts, TaskStatus, Team, ThreadTokens,
+    BudgetPart, LogEntry, LogKind, Overview, PlanCounts, Task, Team, ThreadTokens,
 };
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName, button::Button},
+    component::{
+        ActiveTheme, Icon, IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
     *,
 };
 
@@ -32,11 +35,12 @@ pub fn all(ws: &Workspace, form: Form, cx: &mut Context<Workspace>) -> Vec<Div> 
     let chat = ws.shown_chat();
     let shown = ws.overview.of(ws.shown.as_deref());
     let overview = shown.and_then(|shown| shown.overview.as_ref());
+    let tasks = chat.map_or(&[][..], |chat| chat.tasks.as_slice());
     [
         shown.and_then(|shown| progress(shown, form, cx)),
         shown
             .and_then(|shown| shown.team.as_ref())
-            .and_then(|team| members(team, form, cx)),
+            .and_then(|team| members(team, tasks, form, cx)),
         chat.and_then(|chat| chat.usage)
             .and_then(|usage| tokens(&usage, shown.and_then(|s| s.plan), form, cx)),
         ws.context.is_some().then(|| context_section(ws, form, cx)),
@@ -109,7 +113,7 @@ fn mono(text: String) -> Div {
     div().small().font_family("Menlo").child(text)
 }
 
-fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
+fn progress(shown: &Shown, form: Form, cx: &mut Context<Workspace>) -> Option<Div> {
     let counts = shown.plan.filter(|counts| counts.total() > 0)?;
     let theme = cx.theme();
     let all = counts.total();
@@ -148,8 +152,39 @@ fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
         .child(segments);
     if let Some(team) = &shown.team {
         body = body.children(team.budget_parts().map(|part| budget_row(part, cx)));
+        // Only a running team can be stopped or given more.
+        if team.ended().is_none() {
+            body = body.child(steer(team, cx));
+        }
     }
     Some(frame(form, "Progress", aside, body, cx))
+}
+
+/// Edit budget and Stop team, under the budget they act on.
+fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
+    let team = team.clone();
+    div()
+        .flex()
+        .flex_row()
+        .justify_end()
+        .gap_2()
+        .pt_2()
+        .child(
+            Button::new("team-budget")
+                .small()
+                .ghost()
+                .label("Edit budget")
+                .on_click(
+                    cx.listener(move |ws, _, window, cx| ws.ask_team_budget(&team, window, cx)),
+                ),
+        )
+        .child(
+            Button::new("team-stop")
+                .small()
+                .ghost()
+                .label("Stop team")
+                .on_click(cx.listener(|ws, _, _, cx| ws.ask_stop_team(cx))),
+        )
 }
 
 /// One part of the team's budget: its name, a thin bar, and "used of all".
@@ -186,49 +221,56 @@ fn budget_row(part: BudgetPart, cx: &App) -> Div {
         .child(div().w(px(96.)).text_right().child(part.text()))
 }
 
-fn members(team: &Team, form: Form, cx: &App) -> Option<Div> {
+fn members(team: &Team, tasks: &[Task], form: Form, cx: &mut Context<Workspace>) -> Option<Div> {
     if team.members.is_empty() {
         return None;
     }
-    let theme = cx.theme();
-    let at_work = team.at_work();
+    let muted = cx.theme().muted_foreground;
     let mut body = div().flex().flex_col();
-    for member in &team.members {
-        let color = match member.status {
-            TaskStatus::Open | TaskStatus::Claimed => theme.muted_foreground,
-            TaskStatus::Running | TaskStatus::Review => theme.primary,
-            TaskStatus::Blocked => theme.warning,
-            TaskStatus::Done => theme.success,
-            TaskStatus::Failed => theme.danger,
-        };
-        let word = member.status.member_word();
+    for (index, member) in team.member_rows(tasks).into_iter().enumerate() {
+        let color = widgets::tone(member.status.tone(), cx);
+        let thread_id = member.thread_id.clone();
+        // A click opens its chat, as a subagent's opens from the agents window.
         body = body.child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .h(px(36.))
-                .small()
-                .child(widgets::icon(IconName::Bot, color))
+            widgets::row(("team-member", index), false, cx)
+                .h(px(48.))
+                .mx_0()
+                .child(widgets::icon(IconName::Bot, color).flex_none())
                 .child(
                     div()
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(member.name.clone()),
-                )
-                .child(
-                    div()
+                        .flex()
+                        .flex_col()
                         .flex_1()
                         .min_w_0()
-                        .truncate()
-                        .meta()
-                        .text_color(theme.muted_foreground)
-                        .child(member.role.clone().unwrap_or_else(|| "general".into())),
+                        .child(
+                            div()
+                                .small()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(member.name.clone()),
+                        )
+                        .child(
+                            div()
+                                .meta()
+                                .text_color(muted)
+                                .truncate()
+                                .child(member.line()),
+                        ),
                 )
-                .child(div().meta().text_color(color).child(word)),
+                .child(
+                    div()
+                        .flex_none()
+                        .meta()
+                        .text_color(color)
+                        .child(member.status.member_word()),
+                )
+                .on_click(cx.listener(move |ws, _, _, cx| ws.open_agent_chat(&thread_id, cx))),
         );
     }
-    let aside = div().child(format!("{at_work} of {} at work", team.members.len()));
+    let aside = div().child(format!(
+        "{} of {} at work",
+        team.at_work(),
+        team.members.len()
+    ));
     Some(frame(form, "Members", Some(aside), body, cx))
 }
 

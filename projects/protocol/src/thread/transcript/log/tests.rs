@@ -5,8 +5,8 @@ use super::*;
 use crate::catalog::SkillSaveAction;
 use crate::plugin::{Kind, Listing, SUGGEST_TOOL, Suggested, Suggestion};
 use crate::thread::{
-    FAILED_PREFIXES, Message, MessageRole, SHOW_TOOL, SUGGEST_NEXT_TOOL, Turn, TurnStatus,
-    stored_failure,
+    FAILED_PREFIXES, Message, MessageRole, SHOW_TOOL, SUGGEST_NEXT_TOOL, TaskStatus, Turn,
+    TurnStatus, stored_failure,
 };
 use crate::tools::ToolResult;
 use serde_json::json;
@@ -134,6 +134,7 @@ fn a_subagent_follows_its_running_tools_and_stays_ended() {
             task: "look".into(),
             effort: None,
             model: None,
+            task_id: None,
         },
         1,
     );
@@ -404,6 +405,11 @@ fn a_conversation_reads_the_same_from_history_and_live() {
     };
     let card = suggestion();
     let suggest = call("s", SUGGEST_TOOL, json!({ "ids": ["official/motion-kit"] }));
+    // A team member's line to the lead, which comes between turns.
+    let handed_in = Message {
+        from_thread_id: Some("member1".into()),
+        ..message(MessageRole::User, "Task #1 waits for you")
+    };
     let mut step = calling(vec![read.clone(), run.clone(), ask_agent.clone()]);
     step.content = "Let me look.".into();
     step.reasoning = Some("think".into());
@@ -422,6 +428,7 @@ fn a_conversation_reads_the_same_from_history_and_live() {
         at(calling(vec![suggest.clone()]), 12),
         at(result("s", &card.result()), 13),
         at(message(MessageRole::Assistant, "second"), 14),
+        at(handed_in.clone(), 15),
     ];
     let change = |undone: bool| SkillChange {
         id: 1,
@@ -462,6 +469,7 @@ fn a_conversation_reads_the_same_from_history_and_live() {
             task: "look around".into(),
             effort: None,
             model: None,
+            task_id: None,
         },
         finished("a", "file text", false),
         ThreadEvent::SkillChanged(change(false)),
@@ -482,6 +490,21 @@ fn a_conversation_reads_the_same_from_history_and_live() {
         text("second"),
         ThreadEvent::TurnFinished(ended()),
         ThreadEvent::Idle,
+        // The team gives a task out, its member works and hands it in: nothing of it is
+        // an item but the member's line, which history names the same way.
+        ThreadEvent::TaskChanged(plan_task("t1", TaskStatus::Claimed)),
+        member_started("member1", "t1"),
+        ThreadEvent::Subagent {
+            thread_id: "member1".into(),
+            event: Box::new(ThreadEvent::TurnStarted(turn())),
+        },
+        ThreadEvent::Subagent {
+            thread_id: "member1".into(),
+            event: Box::new(ThreadEvent::Idle),
+        },
+        ThreadEvent::TaskChanged(plan_task("t1", TaskStatus::Review)),
+        ThreadEvent::Team(team(&[("member1", "t1", TaskStatus::Review)])),
+        ThreadEvent::FromAgent(handed_in),
     ];
     let mut live = Chat::default();
     for (at, event) in events.into_iter().enumerate() {
@@ -496,7 +519,166 @@ fn a_conversation_reads_the_same_from_history_and_live() {
     assert!(matches!(&stored.items[5], Item::Agent { from, .. } if *from == agent_name("sub1")));
     assert!(matches!(&stored.items[7], Item::User { answered, .. } if answered.len() == 1));
     assert!(matches!(&stored.items[10], Item::Suggestion(shown) if *shown == card));
+    assert!(
+        matches!(stored.items.last(), Some(Item::Agent { from, .. }) if *from == agent_name("member1"))
+    );
     assert_eq!(stored.activity_boundaries, [1, 9, 10, 12]);
+    let member = live
+        .agent("member1")
+        .expect("the member is an agent of the chat");
+    assert_eq!(member.task_id.as_deref(), Some("t1"));
+    assert_eq!(member.state, AgentState::Done);
+}
+
+fn plan_task(task_id: &str, status: TaskStatus) -> Task {
+    Task {
+        task_id: task_id.into(),
+        description: format!("do {task_id}"),
+        done: status == TaskStatus::Done,
+        status,
+        ..Task::default()
+    }
+}
+
+/// The core's announcement of a member given `task_id`.
+fn member_started(thread_id: &str, task_id: &str) -> ThreadEvent {
+    ThreadEvent::SubagentStarted {
+        call_id: crate::thread::team_call_id(task_id),
+        thread_id: thread_id.into(),
+        agent: "backend-engineer".into(),
+        task: format!("do {task_id}"),
+        effort: None,
+        model: Some("chatgpt/gpt-5.5".into()),
+        task_id: Some(task_id.into()),
+    }
+}
+
+fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
+    Team {
+        thread_id: "t".into(),
+        status: crate::thread::TeamStatus::Running,
+        budget: crate::thread::TeamBudget::new(2, 100, 1_000_000, 60).unwrap(),
+        used: crate::thread::TeamUsed::default(),
+        members: members
+            .iter()
+            .map(|(thread_id, task_id, status)| crate::thread::TeamMember {
+                thread_id: (*thread_id).into(),
+                name: agent_name(thread_id),
+                role: Some("backend-engineer".into()),
+                model: None,
+                task_id: (*task_id).into(),
+                status: *status,
+            })
+            .collect(),
+        started_at: None,
+    }
+}
+
+/// A plan run twice: the second run's members are not stopped by the first run's end,
+/// whether it comes again as an event replayed after them or as a stale answer.
+#[test]
+fn a_new_run_is_not_ended_by_the_last_one() {
+    let run = |started: i64, ended: bool, members: &[(&str, &str, TaskStatus)]| {
+        let mut team = team(members);
+        team.started_at = Some(started);
+        if ended {
+            team.status = crate::thread::TeamStatus::Ended(crate::thread::TeamEnd::Steps);
+        }
+        team
+    };
+    let mut chat = Chat::default();
+    chat.apply(member_started("m1", "t1"), 1);
+    chat.apply(
+        ThreadEvent::Team(run(100, false, &[("m1", "t1", TaskStatus::Running)])),
+        2,
+    );
+    let first_end = run(100, true, &[]);
+    chat.apply(ThreadEvent::Team(first_end.clone()), 3);
+    assert!(!chat.agent("m1").unwrap().working());
+
+    // The plan runs again: m2 works on the second run's task.
+    chat.apply(member_started("m2", "t2"), 4);
+    chat.apply(
+        ThreadEvent::Team(run(200, false, &[("m2", "t2", TaskStatus::Running)])),
+        5,
+    );
+    chat.team_answer(first_end.clone(), 6);
+    chat.apply(ThreadEvent::Team(first_end), 7);
+    assert!(chat.agent("m2").unwrap().working());
+    assert!(
+        chat.team
+            .as_ref()
+            .is_some_and(|team| team.ended().is_none())
+    );
+
+    // A chat that held only the first run's end takes the second run's answer.
+    let mut later = Chat::default();
+    later.apply(
+        ThreadEvent::Team(run(100, true, &[("m1", "t1", TaskStatus::Done)])),
+        1,
+    );
+    later.team_answer(run(200, false, &[("m2", "t2", TaskStatus::Running)]), 2);
+    assert!(later.agent("m2").unwrap().working());
+    assert_eq!(
+        later.team.as_ref().and_then(|team| team.started_at),
+        Some(200)
+    );
+}
+
+/// A team's members are the chat's agents: those the core announced, and those of a
+/// team the chat only read, as one opened while its team runs, in their task's state.
+#[test]
+fn a_team_s_members_are_the_chat_s_agents() {
+    let mut chat = Chat::default();
+    chat.apply(
+        ThreadEvent::Tasks(vec![plan_task("t2", TaskStatus::Running)]),
+        1,
+    );
+    chat.apply(member_started("m1", "t1"), 2);
+    let roster = [
+        ("m1", "t1", TaskStatus::Running),
+        ("m2", "t2", TaskStatus::Running),
+        ("m3", "t3", TaskStatus::Failed),
+        ("m4", "t4", TaskStatus::Done),
+    ];
+    chat.apply(ThreadEvent::Team(team(&roster)), 3);
+
+    assert_eq!(chat.agents.len(), 4);
+    assert!(chat.team.is_some());
+    let m1 = chat.agent("m1").unwrap();
+    assert_eq!((m1.started_at, m1.role.as_str()), (2, "backend-engineer"));
+    let m2 = chat.agent("m2").unwrap();
+    assert_eq!(m2.task, "do t2");
+    assert_eq!(m2.call_id, "team:t2");
+    assert!(m2.working());
+    assert_eq!(chat.agent("m3").unwrap().state, AgentState::Failed);
+    assert_eq!(chat.agent("m4").unwrap().state, AgentState::Done);
+
+    // A task handed in ended its member's turn; a member given another task starts on it.
+    chat.apply(
+        ThreadEvent::Team(team(&[
+            ("m1", "t1", TaskStatus::Review),
+            ("m2", "t5", TaskStatus::Claimed),
+        ])),
+        4,
+    );
+    let m1 = chat.agent("m1").unwrap();
+    assert_eq!((m1.working(), m1.ended_at), (false, Some(4)));
+    let m2 = chat.agent("m2").unwrap();
+    assert_eq!((m2.task_id.as_deref(), m2.started_at), (Some("t5"), 4));
+    assert!(m2.working());
+
+    // A team that ended cancelled its members at work. The core gives their tasks back
+    // without an owner, so the roster it sends then leaves m2 out; m2 stops all the same,
+    // and the chat keeps every member it learned.
+    let mut ended = team(&[("m1", "t1", TaskStatus::Review)]);
+    ended.status = crate::thread::TeamStatus::Ended(crate::thread::TeamEnd::Stopped);
+    chat.apply(ThreadEvent::Team(ended), 5);
+    assert!(chat.agents.values().all(|agent| !agent.working()));
+    assert_eq!(chat.agents.len(), 4);
+    assert_eq!(chat.agent("m2").unwrap().ended_at, Some(5));
+    // Nor does the working row count it.
+    assert!(chat.work(5).is_none());
 }
 
 fn suggestion() -> Suggestion {

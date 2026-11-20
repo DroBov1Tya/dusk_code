@@ -6,7 +6,7 @@ use crate::ui::elevation::{Elevation, Level};
 use crate::ui::press::Press;
 use std::ops::Range;
 
-use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus, current_task};
+use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus, plan_aside};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
     prelude::FluentBuilder,
@@ -49,7 +49,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         Some(counts) => div()
             .small()
             .text_color(theme.foreground)
-            .whitespace_nowrap()
+            .min_w_0()
+            .truncate()
             .child(counts.summary())
             .into_any_element(),
         // The counts are on their way: a still placeholder of their size.
@@ -60,12 +61,17 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             .bg(border)
             .into_any_element(),
     };
-    let current = current_task(&chat.tasks).map(|(number, task)| {
+    // An ended team says how it ended in the place of a task in work: none is.
+    let ended_team = chat
+        .team
+        .as_ref()
+        .is_some_and(|team| team.ended().is_some());
+    let current = plan_aside(&chat.tasks, chat.team.as_ref()).map(|(text, tone)| {
         div()
             .meta()
-            .text_color(muted)
+            .text_color(widgets::tone(tone, cx))
             .truncate()
-            .child(format!("#{number} {}", one_line(&task.description)))
+            .child(text)
     });
     let line = div()
         .id("plan-line")
@@ -99,7 +105,14 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                 .child(crate::pages::chat::activity::plan_label(planning, cx)),
         )
         .child(summary)
-        .child(div().flex_1().min_w_0().children(current))
+        // How a team ended keeps its words; the counts give way to them.
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .when(ended_team, |line| line.min_w(px(260.)))
+                .children(current),
+        )
         .children(counts.map(|counts| bar(counts, ws.dock.counts_before, cx)))
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_plan(cx)));
     let rows = open.then(|| {
@@ -204,11 +217,11 @@ fn bar(counts: PlanCounts, before: Option<(PlanCounts, std::time::Instant)>, cx:
 /// One task: its number, the state's glyph and word, its words on one line and its owner.
 /// A task that waits for the user's confirmation has `confirm` for its word, and a
 /// click on it passes the task.
-fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
+fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, accent) = (theme.muted_foreground, theme.primary);
-    let (glyph, color) = look(task.status, cx);
-    let word = div().flex_none().w(px(56.)).meta().text_right();
+    let (glyph, color) = (task.status.glyph(), widgets::tone(task.status.tone(), cx));
+    let word = div().flex_none().w(px(64.)).meta().text_right();
     let for_user =
         task.status == TaskStatus::Review && task.gate == Some(GoalCheck::UserConfirmation);
     let word = match for_user {
@@ -218,7 +231,11 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
                 .text_color(accent)
                 .cursor_pointer()
                 .child("confirm")
-                .on_click(cx.listener(move |ws, _, _, cx| ws.confirm_task(&task_id, cx)))
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    // The row under it opens the card; this click only confirms.
+                    cx.stop_propagation();
+                    ws.confirm_task(&task_id, cx)
+                }))
                 .into_any_element()
         }
         false => word
@@ -237,7 +254,10 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
     });
     // A list item sizes to its content unless told otherwise; full width keeps the status
     // words in one column at the right edge.
+    // A click on the row opens the task's card.
+    let card = task.task_id.clone();
     div()
+        .id(SharedString::from(format!("plan-row-{}", task.task_id)))
         .w_full()
         .flex()
         .flex_row()
@@ -245,6 +265,9 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
         .gap_2()
         .h(px(ROW))
         .px_2()
+        .cursor_pointer()
+        .hover(|row| row.bg(cx.theme().list_hover))
+        .on_click(cx.listener(move |ws, _, _, cx| ws.open_task_card(&card, cx)))
         .child(
             div()
                 .flex_none()
@@ -272,28 +295,8 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
                 .when(task.status == TaskStatus::Done, |text| {
                     text.text_color(muted)
                 })
-                .child(one_line(&task.description)),
+                .child(task.title()),
         )
         .children(owner)
         .child(word)
-}
-
-/// The glyph and colour of a status; its word is always beside it, so colour is never
-/// the only sign.
-fn look(status: TaskStatus, cx: &App) -> (&'static str, Hsla) {
-    let theme = cx.theme();
-    match status {
-        TaskStatus::Open => ("\u{25CB}", theme.muted_foreground),
-        TaskStatus::Claimed => ("\u{25C9}", theme.info),
-        TaskStatus::Running => ("\u{25CF}", theme.primary),
-        TaskStatus::Blocked => ("\u{25C6}", theme.warning),
-        TaskStatus::Review => ("\u{25C7}", theme.info),
-        TaskStatus::Done => ("\u{2713}", theme.success),
-        TaskStatus::Failed => ("\u{2715}", theme.danger),
-    }
-}
-
-/// A task's words are model text: one line, drawn as plain text.
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

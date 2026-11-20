@@ -5,7 +5,7 @@ use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, WorkRequest},
     project::{Change, FileChange, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanPage, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanPage, Team, TeamBudget},
 };
 
 /// A thread's background jobs and sources.
@@ -141,6 +141,26 @@ impl Work<'_> {
             .done(Request::Work(WorkRequest::ConfirmTask {
                 thread_id,
                 task_id,
+            }))
+            .await
+    }
+
+    /// Ends the chat's running team as stopped: its members at work are cancelled and
+    /// their tasks go back to open.
+    pub async fn stop_team(&self, thread_id: &str) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.0
+            .done(Request::Work(WorkRequest::StopTeam { thread_id }))
+            .await
+    }
+
+    /// Gives the chat's running team `budget`, within the ceilings of the settings.
+    pub async fn set_team_budget(&self, thread_id: &str, budget: TeamBudget) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.0
+            .done(Request::Work(WorkRequest::SetTeamBudget {
+                thread_id,
+                budget,
             }))
             .await
     }

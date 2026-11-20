@@ -1,4 +1,19 @@
-//! A team: the core's run of the plan of a root thread, its budget and its members.
+//! A team: the core's run of the plan of a root thread, its budget and its members, and
+//! the words every client shows for it and its plan.
+
+mod budget;
+mod card;
+mod members;
+mod plan;
+mod roster;
+mod status;
+
+pub use budget::BUDGET_FIELDS;
+pub use card::{TaskCard, task_card};
+pub use members::{MemberRow, short_model};
+pub use plan::find_task;
+pub use roster::{GENERAL_ROLE, Joining, KnownAgent, TeamChange, role_name};
+pub use status::{plan_aside, task_in_work};
 
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -13,6 +28,11 @@ pub const MAX_TEAM_STEPS: u32 = 5_000;
 pub const MAX_TEAM_TOKENS: u64 = 100_000_000;
 pub const MAX_TEAM_MINUTES: u32 = 1_440;
 
+/// The `call_id` of the `SubagentStarted` that announces the member given `task_id`.
+pub fn team_call_id(task_id: &str) -> String {
+    format!("team:{task_id}")
+}
+
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Team {
@@ -23,6 +43,11 @@ pub struct Team {
     pub used: TeamUsed,
     /// Newest first, at most `MAX_TEAM_MEMBERS`.
     pub members: Vec<TeamMember>,
+    /// When this run of the team started, in Unix milliseconds. Running the plan again
+    /// after a team ended starts a new run of the same chat's team; none from cores
+    /// before runs were told apart.
+    #[serde(default)]
+    pub started_at: Option<i64>,
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -181,13 +206,24 @@ impl Team {
         }
     }
 
-    /// "running · 12 min".
+    /// "running · 23 min", "done after 57 min", "stopped after 4 min", or "ended — ran
+    /// out of steps after 57 min": how the team stands and, once it ended, why.
     pub fn progress_note(&self) -> String {
-        format!("{} \u{00B7} {} min", self.state_word(), self.used.minutes)
+        let minutes = self.used.minutes;
+        match self.ended() {
+            None => format!("{} \u{00B7} {minutes} min", self.state_word()),
+            Some(TeamEnd::Done) => format!("done after {minutes} min"),
+            Some(TeamEnd::Stopped) => format!("stopped after {minutes} min"),
+            Some(end) => format!("ended \u{2014} {} after {minutes} min", end.reason()),
+        }
     }
 
-    /// Members whose task is claimed or running.
+    /// Members whose task is claimed or running; none once the team ended, whatever a
+    /// task's last status says.
     pub fn at_work(&self) -> usize {
+        if self.ended().is_some() {
+            return 0;
+        }
         self.members
             .iter()
             .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
@@ -297,6 +333,7 @@ mod tests {
                     task_id: "t1".into(),
                     status: TaskStatus::Review,
                 }],
+                started_at: None,
             };
             let text = serde_json::to_string(&team).unwrap();
             assert_eq!(serde_json::from_str::<Team>(&text).unwrap(), team);
@@ -329,6 +366,7 @@ mod tests {
                     status: *status,
                 })
                 .collect(),
+            started_at: None,
         }
     }
 
@@ -345,7 +383,8 @@ mod tests {
         assert_eq!(running.progress_note(), "running \u{00B7} 12 min");
         assert_eq!(running.at_work(), 2);
         let ended = team(TeamStatus::Ended(TeamEnd::Done), &[]);
-        assert_eq!(ended.progress_note(), "ended \u{00B7} 12 min");
+        // An ended team says why (see `status`).
+        assert_eq!(ended.progress_note(), "done after 12 min");
         assert_eq!(ended.at_work(), 0);
         let texts: Vec<String> = running
             .budget_parts()

@@ -62,6 +62,10 @@ pub enum Action {
     OpenPlan,
     /// Read the Overview and open its panel.
     Overview,
+    /// Stop the chat's running team, after the second `s`.
+    StopTeam,
+    /// Give the chat's running team this budget.
+    SetTeamBudget(dusk_protocol::thread::TeamBudget),
     /// `/files`: what this chat's commands changed in the project.
     ChangedFiles,
     /// `/diff`: the folder's changes line by line.

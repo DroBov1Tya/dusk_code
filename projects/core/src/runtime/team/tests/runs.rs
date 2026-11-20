@@ -90,11 +90,38 @@ async fn a_chain_runs_to_done_and_wakes_the_lead_only_for_its_reviews() {
     assert!(lines[1].contains("its gate was not run"), "{}", lines[1]);
     assert!(lines[3].starts_with("Team ended: done. 3 of 3 tasks;"));
     assert!(lines.iter().all(|line| line.len() <= 400));
+    let mut expected = rig.members().await;
+    expected.sort();
     // Clients heard of every task and of the team.
     let events = rig.events.lock().unwrap();
     let heard = |wanted: fn(&ThreadEvent) -> bool| events.iter().filter(|e| wanted(e)).count();
     assert!(heard(|event| matches!(event, ThreadEvent::TaskChanged(_))) >= 9);
     assert!(heard(|event| matches!(event, ThreadEvent::Team(_))) >= 2);
+    // Each member was announced as an agent with its task, so the chat counts it as one.
+    let announced: Vec<(&str, &str)> = events
+        .iter()
+        .filter_map(|event| match event {
+            ThreadEvent::SubagentStarted {
+                call_id,
+                task_id: Some(task_id),
+                ..
+            } => Some((call_id.as_str(), task_id.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(announced.len(), 3, "{announced:?}");
+    for (call_id, task_id) in &announced {
+        assert_eq!(*call_id, dusk_protocol::thread::team_call_id(task_id));
+        assert!(plan.iter().any(|task| task.task_id == *task_id));
+    }
+    let mut chat = dusk_protocol::thread::ChatLog::<std::convert::Infallible>::default();
+    for event in events.iter() {
+        chat.apply(event.clone(), 0);
+    }
+    let mut members: Vec<String> = chat.agents.keys().cloned().collect();
+    members.sort();
+    assert_eq!(members, expected);
+    assert!(chat.agents.values().all(|agent| !agent.working()));
 }
 
 #[tokio::test]

@@ -10,6 +10,7 @@
 //! thinking stopped being blank, or a turn boundary was drawn.
 
 mod history;
+mod team;
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -22,7 +23,7 @@ use crate::{
     model::{ModelEvent, ToolCall},
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
-        Block, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, ThreadEvent, ThreadTokens,
+        Block, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens,
         TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind},
@@ -111,9 +112,11 @@ pub struct Subagent {
     pub role: String,
     /// The model it answers on, `provider/model`; none when the core did not say.
     pub model: Option<String>,
-    /// The `ask_agent` call that started it.
+    /// The `ask_agent` call that started it, or `team:<task_id>` for a team member.
     pub call_id: String,
     pub task: String,
+    /// The task of the plan it works on, when it is a team member.
+    pub task_id: Option<String>,
     pub state: AgentState,
     /// The tools it runs now, by call ID and name, oldest first.
     pub running: Vec<(String, String)>,
@@ -211,6 +214,8 @@ pub struct ChatLog<L = Infallible> {
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
     pub tasks: Vec<Task>,
+    /// The team running the chat's plan, as the core last told it.
+    pub team: Option<Team>,
     pub pins: Vec<Pin>,
     /// What agents changed in skills, oldest first; a change hangs under the step whose
     /// `call_id` it names.
@@ -254,6 +259,7 @@ impl<L> Default for ChatLog<L> {
             usage: None,
             cost: None,
             tasks: Vec::new(),
+            team: None,
             pins: Vec::new(),
             skill_changes: Vec::new(),
             agents: BTreeMap::new(),
@@ -715,6 +721,7 @@ impl<L> ChatLog<L> {
                 agent,
                 task,
                 model,
+                task_id,
                 ..
             } => {
                 // Asking the same thread again brings it back to work.
@@ -725,6 +732,7 @@ impl<L> ChatLog<L> {
                     model,
                     call_id,
                     task,
+                    task_id,
                     state: AgentState::Thinking,
                     running: Vec::new(),
                     started_at: now,
@@ -733,6 +741,7 @@ impl<L> ChatLog<L> {
                 self.agents.insert(thread_id, agent);
             }
             ThreadEvent::AgentsWorking(on) => self.agents_working = on,
+            ThreadEvent::Team(team) => self.set_team(team, now),
             // An agent not started in this chat still has its chat followed.
             ThreadEvent::Subagent { thread_id, event } => {
                 self.agent_chats

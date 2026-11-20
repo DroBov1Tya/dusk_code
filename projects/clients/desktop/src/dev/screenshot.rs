@@ -35,6 +35,8 @@
 //! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
 //!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
 //!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
+//! - `fake=team|team-ended`: after `fake=chat`, the chat leads a team of seven members on
+//!   eight tasks, one in each status, running or ended on its steps (see `dev::team`);
 //! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
 //!   icon, and a chat that links two of them, drawn as chips;
 //! - `fake=forge-signin|forge-unserved`: the quiet line in Changes when the forge asks to sign in,
@@ -352,6 +354,15 @@ fn act(
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
+            // After `fake=team`: the yes Stop team asks for, the budget form and a task's card.
+            "team-stop" => ws.ask_stop_team(cx),
+            // The card of task #4, blocked on the lead with a note.
+            "task-card" => ws.open_task_card("t4", cx),
+            "team-budget" => {
+                if let Some(team) = ws.overview.team.clone() {
+                    ws.ask_team_budget(&team, window, cx);
+                }
+            }
             // The arbiter's window, with a few things said so its timeline has rows.
             "whatsnew" => {
                 ws.modal = Some(crate::modal::Modal::WhatsNew {
@@ -597,6 +608,7 @@ fn act(
             super::polish::state(ws, value, cx)
         }
         "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
+        "fake" if value == "team" || value == "team-ended" => super::team::fake(ws, value, cx),
         // The transcript scrolled so its Nth row is at the top.
         "scroll" => {
             ws.list.scroll_to(ListOffset {
@@ -769,6 +781,7 @@ fn act(
                         task: (*task).into(),
                         effort: None,
                         model: Some("chatgpt/gpt-5.5".into()),
+                        task_id: None,
                     });
                     let inner = match index {
                         1 => Some(ThreadEvent::ToolStarted(ToolCall {
@@ -923,6 +936,7 @@ fn act(
                 task: "Compare the two takes".into(),
                 effort: None,
                 model: Some("chatgpt/gpt-5.5".into()),
+                task_id: None,
             });
             ws.chats.insert("demo".into(), chat);
             ws.shown = Some("demo".into());

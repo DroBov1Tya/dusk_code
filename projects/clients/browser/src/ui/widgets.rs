@@ -57,3 +57,16 @@ pub fn confirm(question: &str) -> bool {
         .and_then(|window| window.confirm_with_message(question).ok())
         .unwrap_or(false)
 }
+
+/// The class that colours text in a tone the protocol names, such as a task's status.
+pub fn tone_text(tone: dusk_protocol::thread::Tone) -> &'static str {
+    use dusk_protocol::thread::Tone;
+    match tone {
+        Tone::Neutral => "tone-muted",
+        Tone::Info => "tone-info",
+        Tone::Success => "tone-good",
+        Tone::Warning => "tone-warn",
+        Tone::Danger => "tone-bad",
+        Tone::Accent => "tone-accent",
+    }
+}

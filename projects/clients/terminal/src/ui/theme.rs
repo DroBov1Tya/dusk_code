@@ -144,3 +144,15 @@ pub fn dusk(at: f64) -> Color {
         channel(from.2, to.2),
     )
 }
+
+/// The text colour of a tone the protocol names, such as a task's status: no surface.
+pub fn tone_fg(tone: Tone) -> Color {
+    match tone {
+        Tone::Neutral => TEXT_MUTED,
+        Tone::Info => DUSK,
+        Tone::Success => POSITIVE,
+        Tone::Warning => WARNING,
+        Tone::Danger => NEGATIVE,
+        Tone::Accent => ACCENT,
+    }
+}
