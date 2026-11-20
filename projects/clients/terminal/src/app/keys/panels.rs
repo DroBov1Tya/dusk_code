@@ -8,7 +8,6 @@ use crate::app::{
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dusk_protocol::{client::Command, release::InstallStage, thread::TeamBudget};
-use std::time::{Duration, Instant};
 
 impl App {
     pub(super) fn panel_key(&mut self, key: KeyEvent) -> Action {
@@ -448,11 +447,9 @@ impl App {
                     }
                     return Action::None;
                 }
-                // A first `s` holds for a few seconds. A second one sooner than a hand
-                // presses twice is the key's own repeat and confirms nothing.
-                let armed = view.stopping.take().map(|at| at.elapsed());
-                let stopping = armed.is_some_and(|since| since <= STOP_HOLDS);
-                let repeat = armed.is_some_and(|since| since < STOP_REPEAT);
+                // `s` asks "Stop team? y/n": only `y` stops, and any other key, `s` held
+                // down included, answers no.
+                let stopping = std::mem::take(&mut view.stopping);
                 let members = self.team.as_ref().map_or(0, |team| team.members.len());
                 match (key.code, team) {
                     (KeyCode::Tab, _) if members > 0 => {
@@ -474,11 +471,10 @@ impl App {
                             return Action::OpenAgent(member.thread_id.clone());
                         }
                     }
-                    (KeyCode::Char('s'), Some(_)) if repeat => {
-                        view.stopping = Some(armed_at(armed))
-                    }
-                    (KeyCode::Char('s'), Some(_)) if stopping => return Action::StopTeam,
-                    (KeyCode::Char('s'), Some(_)) => view.stopping = Some(Instant::now()),
+                    (KeyCode::Char('y'), Some(_)) if stopping => return Action::StopTeam,
+                    // Any other key answers no, and does nothing else.
+                    _ if stopping => {}
+                    (KeyCode::Char('s'), Some(_)) => view.stopping = true,
                     (KeyCode::Char('b'), Some(team)) => {
                         view.budget = Some(BudgetEdit {
                             fields: team.budget.fields(),
@@ -486,8 +482,6 @@ impl App {
                             error: None,
                         });
                     }
-                    // A first `s` is taken back by any other key.
-                    _ if stopping => {}
                     _ if !scroll(&mut view.row, key.code, up, down) => self.panel = None,
                     _ => {}
                 }
@@ -531,19 +525,6 @@ impl App {
 }
 
 /// Moves a text panel's top row; any key but the scrolling ones answers false, to close.
-/// How long a first `s` waits for the second that stops the team.
-const STOP_HOLDS: Duration = Duration::from_secs(4);
-/// A second `s` sooner than this is the key's auto-repeat.
-const STOP_REPEAT: Duration = Duration::from_millis(300);
-
-/// When a first `s` that `armed` long ago was pressed, so a repeat keeps its time.
-fn armed_at(armed: Option<Duration>) -> Instant {
-    let now = Instant::now();
-    armed
-        .and_then(|since| now.checked_sub(since))
-        .unwrap_or(now)
-}
-
 fn scroll(row: &mut usize, code: KeyCode, up: bool, down: bool) -> bool {
     *row = match code {
         _ if up => row.saturating_sub(1),
@@ -604,29 +585,26 @@ mod tests {
         app.panel_key(KeyEvent::from(code))
     }
 
-    /// Moves the first `s` back in time, as a hand pressing again later would find it.
-    fn armed_ago(app: &mut App, ago: std::time::Duration) {
-        if let Some(Panel::Overview(view)) = &mut app.panel {
-            view.stopping = view.stopping.and_then(|at| at.checked_sub(ago));
-        }
-    }
-
-    /// Stopping a team takes a second `s` pressed apart from the first: its auto-repeat
-    /// does not count, any other key takes the first back, and so does waiting too long.
+    /// `s` asks before a team stops: only `y` stops it, and any other key, a second
+    /// `s` from a key held down included, answers no.
     #[test]
-    fn a_team_stops_only_on_a_second_s() {
-        use std::time::Duration;
+    fn a_team_stops_only_on_yes() {
+        let asking = |app: &App| matches!(&app.panel, Some(Panel::Overview(view)) if view.stopping);
         let mut app = overview(TeamStatus::Running);
         assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
-        assert!(matches!(press(&mut app, KeyCode::Char('x')), Action::None));
+        assert!(asking(&app));
+        // A second `s`, as a key held down sends, answers no.
         assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
-        // A held key repeats at once: still armed, not stopped.
-        assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
-        armed_ago(&mut app, Duration::from_secs(10));
-        assert!(matches!(press(&mut app, KeyCode::Char('s')), Action::None));
-        armed_ago(&mut app, Duration::from_secs(1));
+        assert!(!asking(&app));
+        press(&mut app, KeyCode::Char('s'));
+        assert!(matches!(press(&mut app, KeyCode::Char('n')), Action::None));
+        assert!(
+            !asking(&app) && app.panel.is_some(),
+            "an answer closes nothing"
+        );
+        press(&mut app, KeyCode::Char('s'));
         assert!(matches!(
-            press(&mut app, KeyCode::Char('s')),
+            press(&mut app, KeyCode::Char('y')),
             Action::StopTeam
         ));
         // An ended team has nothing to stop: `s` closes the panel as any key does.
