@@ -65,7 +65,10 @@ pub fn render(
         Confirm::Install(listing) if super::workshop::reviewed_first(listing) => {
             (unverified(listing, review, cx), verb(listing))
         }
-        Confirm::Install(listing) => (permissions(listing, cx), verb(listing)),
+        Confirm::Install(listing) => (
+            unvouched(listing, cx).child(permissions(listing, cx)),
+            verb(listing),
+        ),
         Confirm::Remove(_, kind) => (
             div().small().text_color(muted).child(match kind {
                 Kind::Connector => {
@@ -262,6 +265,21 @@ fn permissions(listing: &Listing, cx: &App) -> Div {
 /// The yes for a listing nobody vouches for: where it comes from as far as anyone can
 /// tell, what it may make the agent do, and every file it writes, with what an update
 /// changes in the copy here.
+/// Above an Unverified connector's lines: nobody vouches for it and where it goes, in
+/// the words every client uses. Nothing for any other listing.
+fn unvouched(listing: &Listing, cx: &App) -> Div {
+    let (warning, muted) = (cx.theme().warning, cx.theme().muted_foreground);
+    let mut body = div().flex().flex_col().gap_2();
+    for (index, line) in listing.unvouched().into_iter().enumerate() {
+        let line = match index {
+            0 => div().body().text_color(warning).child(line),
+            _ => div().small().text_color(muted).child(line),
+        };
+        body = body.child(line);
+    }
+    body
+}
+
 fn unverified(listing: &Listing, review: Option<&Reviewed>, cx: &App) -> Div {
     let theme = cx.theme();
     let (muted, warning, danger) = (theme.muted_foreground, theme.warning, theme.danger);

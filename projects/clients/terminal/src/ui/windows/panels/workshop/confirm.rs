@@ -63,6 +63,13 @@ pub fn confirm_box(confirm: &Confirm, width: usize) -> Vec<Line<'static>> {
     {
         lines.extend(unverified(confirm, width));
     } else if offered.contains(&Choice::Install) || offered.contains(&Choice::Update) {
+        for (index, line) in listing.unvouched().iter().enumerate() {
+            let style = match index {
+                0 => fg(ACCENT),
+                _ => dim(),
+            };
+            lines.extend(paragraph(&one_line(line), style, width));
+        }
         if listing.permissions.is_empty() {
             lines.extend(paragraph(
                 "It asks for nothing beyond its own folder.",

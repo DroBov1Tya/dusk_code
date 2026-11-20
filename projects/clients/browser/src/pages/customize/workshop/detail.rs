@@ -111,12 +111,15 @@ fn side(shop: Shop, listing: &Listing) -> impl IntoView {
         (Some(version), None) => format!("Installed, {version}"),
         (None, _) => "Install it in the desktop app or the terminal".to_owned(),
     };
-    let warnings = [
+    let warnings: Vec<String> =
         listing
-            .clash
-            .then(|| "Another source offers the same name; check where it comes from.".to_owned()),
-        listing.unfit.clone(),
-    ];
+            .unvouched()
+            .into_iter()
+            .chain(listing.clash.then(|| {
+                "Another source offers the same name; check where it comes from.".to_owned()
+            }))
+            .chain(listing.unfit.clone())
+            .collect();
     let permissions = matches!(listing.kind, Kind::Plugin | Kind::Connector).then(|| {
         let lines = if listing.permissions.is_empty() {
             vec!["Nothing beyond its own folder".to_owned()]
@@ -160,7 +163,7 @@ fn side(shop: Shop, listing: &Listing) -> impl IntoView {
             {card::facts(listing)}
             {hero::tags(listing)}
             <p class="state">{state}</p>
-            {warnings.into_iter().flatten().map(|text| view! { <p class="warn"><Icon name=IconName::TriangleAlert />{text}</p> }).collect_view()}
+            {warnings.into_iter().map(|text| view! { <p class="warn"><Icon name=IconName::TriangleAlert />{text}</p> }).collect_view()}
             {permissions}
             {pack}
             <dl class="dates">{dates}</dl>

@@ -123,6 +123,44 @@ pub struct Listing {
 }
 
 impl Listing {
+    /// What every client says above the lines of a connector from a source without a
+    /// key, before anything else: nobody vouches for it, where its list comes from, whose
+    /// claim its author is, and the exact host its requests, sign-in and keys go to.
+    /// Empty for any other listing.
+    pub fn unvouched(&self) -> Vec<String> {
+        if self.kind != Kind::Connector || self.tier != Tier::Unverified {
+            return Vec::new();
+        }
+        let from = match &self.from {
+            Some(host) => format!("{} ({host})", self.source),
+            None => self.source.clone(),
+        };
+        let mut lines = vec![format!(
+            "Nobody vouches for {}. It comes from {from}, a source you added without a key: \
+             nobody signed its list, and what it says about itself is only its claim.",
+            self.name
+        )];
+        if !self.author.is_empty() {
+            lines.push(format!(
+                "The source says it is by {}; nothing checks that.",
+                self.author
+            ));
+        }
+        for connector in &self.connectors {
+            lines.push(match &connector.runs {
+                Runs::Url(url) => {
+                    let host = url
+                        .strip_prefix("https://")
+                        .and_then(|rest| rest.split(['/', '?', '#']).next())
+                        .unwrap_or(url);
+                    format!("Its tool calls, any sign-in and any key you put in go to {host}.")
+                }
+                Runs::Command(line) => format!("It runs {line} on this computer, as you."),
+            });
+        }
+        lines
+    }
+
     /// The lines of `permissions` after those of its programs and connectors: what else
     /// it may reach.
     pub fn reach(&self) -> &[String] {
@@ -536,3 +574,41 @@ pub struct FilePreview {
 
 /// The most of one file `StoreRequest::File` answers with.
 pub const PREVIEW_BYTES: usize = 256 * 1024;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unverified_connector_says_who_vouches_and_where_it_goes() {
+        let listing = Listing {
+            name: "notion-workspace".into(),
+            kind: Kind::Connector,
+            tier: Tier::Unverified,
+            source: "loose".into(),
+            from: Some("lists.example.net".into()),
+            author: "Notion".into(),
+            connectors: vec![Connector {
+                name: "notion-workspace".into(),
+                runs: Runs::Url("https://mcp.notion-workspace.app/mcp".into()),
+                state: ConnectorState::NotAdded,
+            }],
+            ..Listing::default()
+        };
+        let lines = listing.unvouched();
+        assert!(lines[0].starts_with("Nobody vouches for notion-workspace"));
+        assert!(lines[0].contains("loose (lists.example.net)"));
+        assert!(lines[1].contains("says it is by Notion; nothing checks that"));
+        assert!(lines[2].contains("go to mcp.notion-workspace.app."));
+        let vouched = Listing {
+            tier: Tier::Verified,
+            ..listing.clone()
+        };
+        assert!(vouched.unvouched().is_empty());
+        let skill = Listing {
+            kind: Kind::Skill,
+            ..listing
+        };
+        assert!(skill.unvouched().is_empty());
+    }
+}
