@@ -10,19 +10,22 @@ use std::{
 
 use parking_lot::Mutex;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use tokio::sync::{mpsc, oneshot};
 
-use super::tool::Progress;
+use super::{
+    console::command_line::{WRAPPERS, program_name},
+    tool::Progress,
+};
 use crate::{config::ApprovalPolicy, runtime::ThreadEvent};
 
-pub use dusk_protocol::tools::{ApprovalRequest, Request, WindowAccess};
+pub use dusk_protocol::tools::{ApprovalRequest, ApprovalStep, Request, WindowAccess};
 
 pub use dusk_protocol::tools::Decision;
 
 /// What decides a request in the user's place, in arbiter mode.
 pub trait Judge: Send + Sync {
-    /// Never an error: a judge that cannot decide says no.
+    /// An error leaves the request to the user.
     fn judge<'a>(&'a self, request: &'a Request) -> crate::BoxFuture<'a, Verdict>;
 }
 
@@ -31,10 +34,15 @@ pub struct Verdict {
     pub reason: String,
 }
 
+/// The thread that asked, whether only the owner may answer, and where the answer goes.
+type Pending = (String, bool, oneshot::Sender<Decision>);
+
 #[derive(Default)]
 pub struct Approvals {
     next: AtomicU64,
-    pending: Mutex<HashMap<u64, oneshot::Sender<Decision>>>,
+    /// Each open request with the thread that asked it, and whether only the owner, a
+    /// client that may change the settings itself, may answer it.
+    pending: Mutex<HashMap<u64, Pending>>,
     grants: Mutex<Grants>,
     judge: std::sync::OnceLock<std::sync::Arc<dyn Judge>>,
 }
@@ -57,6 +65,7 @@ impl Approvals {
     /// client listens, so only full access or a session grant lets the request through.
     pub async fn ask(
         &self,
+        thread_id: &str,
         request: Request,
         progress: Option<Progress>,
         policy: ApprovalPolicy,
@@ -68,33 +77,195 @@ impl Approvals {
             return Ok(());
         }
         if policy == ApprovalPolicy::Arbiter {
-            return self.arbitrate(request, progress).await;
+            return self.arbitrate(thread_id, request, progress).await;
         }
+        let session = session_grant(&request);
+        self.prompt(thread_id, request, session, Vec::new(), progress)
+            .await
+    }
+
+    /// Asks the owner whatever the mode and the session's grants say, offering no grant
+    /// for the session: a change of the settings, which a tool may only propose. Only a
+    /// client that could make the change itself may answer (`owner_only`), so a chat
+    /// shared with someone else never lets them make it.
+    pub async fn ask_owner(
+        &self,
+        thread_id: &str,
+        request: Request,
+        progress: Option<Progress>,
+    ) -> Result<()> {
+        self.open(thread_id, request, None, Vec::new(), progress, true)
+            .await
+    }
+
+    /// Whether only the owner may answer request `id`.
+    pub fn owner_only(&self, id: u64) -> bool {
+        self.pending
+            .lock()
+            .get(&id)
+            .is_some_and(|(_, owner, _)| *owner)
+    }
+
+    /// Screen actions asked as one: never less than asking each alone. A request the
+    /// session grants already is not asked again but still listed, with its number in
+    /// the batch, so the user sees every step. Steps of one kind may be allowed for the
+    /// session as that kind; mixed kinds are asked as the strictest of them for this
+    /// time only, since one session yes must not stand for another kind's. The arbiter
+    /// judges each step on its own.
+    pub async fn ask_all(
+        &self,
+        thread_id: &str,
+        requests: Vec<Request>,
+        progress: Option<Progress>,
+        policy: ApprovalPolicy,
+    ) -> Result<()> {
+        if policy == ApprovalPolicy::FullAccess {
+            return Ok(());
+        }
+        if requests.len() < 2 || requests.iter().any(|r| strictness(r).is_none()) {
+            // A single request looks as it always has; only screen kinds merge.
+            for request in requests {
+                self.ask(thread_id, request, progress.clone(), policy)
+                    .await?;
+            }
+            return Ok(());
+        }
+        let steps: Vec<ApprovalStep> = {
+            let grants = self.grants.lock();
+            requests
+                .into_iter()
+                .enumerate()
+                .map(|(index, request)| ApprovalStep {
+                    number: index + 1,
+                    allowed: grants.covers(&request),
+                    request,
+                })
+                .collect()
+        };
+        let open: Vec<&ApprovalStep> = steps.iter().filter(|step| !step.allowed).collect();
+        let Some(first) = open.first().map(|step| &step.request) else {
+            return Ok(());
+        };
+        if policy == ApprovalPolicy::Arbiter {
+            for step in &open {
+                let judged = self.arbitrate(thread_id, step.request.clone(), progress.clone());
+                judged
+                    .await
+                    .with_context(|| format!("step {} of the batch", step.number))?;
+            }
+            return Ok(());
+        }
+        let same = open.iter().all(|step| same_kind(&step.request, first));
+        let strictest = open
+            .iter()
+            .map(|step| &step.request)
+            .max_by_key(|r| strictness(r))
+            .unwrap_or(first);
+        // The steps go in the text too, so whatever shows only the request, such as a
+        // message on a chat platform, still shows each step it allows.
+        let lines: Vec<String> = steps.iter().map(ApprovalStep::line).collect();
+        let action = format!("{} computer actions:\n{}", steps.len(), lines.join("\n"));
+        let request = with_action(strictest, action);
+        let session = if same { session_grant(&request) } else { None };
+        self.prompt(thread_id, request, session, steps, progress)
+            .await
+    }
+
+    /// Command lines asked as one list, for a yes that covers exactly these lines: the
+    /// gates of a plan, which run later where nobody can be asked. A line the session
+    /// allows already is listed but not asked. The session is never offered, and the
+    /// caller asks only in a mode that would ask for each command.
+    pub async fn ask_commands(
+        &self,
+        thread_id: &str,
+        commands: &[String],
+        progress: Option<Progress>,
+    ) -> Result<()> {
+        let steps: Vec<ApprovalStep> = {
+            let grants = self.grants.lock();
+            commands
+                .iter()
+                .enumerate()
+                .map(|(index, command)| {
+                    let request = Request::Command {
+                        command: command.clone(),
+                    };
+                    ApprovalStep {
+                        number: index + 1,
+                        allowed: grants.covers(&request),
+                        request,
+                    }
+                })
+                .collect()
+        };
+        if steps.iter().all(|step| step.allowed) {
+            return Ok(());
+        }
+        let request = Request::Command {
+            command: commands.join("\n"),
+        };
+        self.prompt(thread_id, request, None, steps, progress).await
+    }
+
+    /// Shows the request to the user and waits. A yes for the session
+    /// adds a grant only when `session` offered one.
+    async fn prompt(
+        &self,
+        thread_id: &str,
+        request: Request,
+        session: Option<String>,
+        steps: Vec<ApprovalStep>,
+        progress: Option<Progress>,
+    ) -> Result<()> {
+        self.open(thread_id, request, session, steps, progress, false)
+            .await
+    }
+
+    async fn open(
+        &self,
+        thread_id: &str,
+        request: Request,
+        session: Option<String>,
+        steps: Vec<ApprovalStep>,
+        progress: Option<Progress>,
+        owner_only: bool,
+    ) -> Result<()> {
         let Some(progress) = progress else {
-            bail!(
-                "{} needs the user's approval, and no one can answer here",
-                request.what()
-            );
+            let what = match steps.is_empty() {
+                true => request.what(),
+                false => steps
+                    .iter()
+                    .filter(|step| !step.allowed)
+                    .map(ApprovalStep::line)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            };
+            bail!("{what} needs the user's approval, and no one can answer here");
         };
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (sender, answer) = oneshot::channel();
-        self.pending.lock().insert(id, sender);
+        self.pending
+            .lock()
+            .insert(id, (thread_id.to_owned(), owner_only, sender));
         // Closes the request on the client however the wait ends, a stopped turn included.
         let _open = Open {
             approvals: self,
             id,
             events: progress.events.clone(),
         };
-        let session = session_grant(&request);
+        let offered = session.is_some();
         progress.emit(ThreadEvent::Approval(ApprovalRequest {
             id,
             request: request.clone(),
             session,
+            steps,
         }));
         match answer.await {
             Ok(Decision::Once) => Ok(()),
             Ok(Decision::Session) => {
-                self.grants.lock().add(&request);
+                if offered {
+                    self.grants.lock().add(&request);
+                }
                 Ok(())
             }
             Ok(Decision::Deny) | Err(_) => bail!(
@@ -105,17 +276,23 @@ impl Approvals {
     }
 
     /// The arbiter's verdict stands for the user's answer; the thread that asked hears it.
-    async fn arbitrate(&self, request: Request, progress: Option<Progress>) -> Result<()> {
+    async fn arbitrate(
+        &self,
+        thread_id: &str,
+        request: Request,
+        progress: Option<Progress>,
+    ) -> Result<()> {
         let what = request.what();
         let verdict = match self.judge.get() {
-            Some(judge) => judge.judge(&request).await.unwrap_or_else(|error| Verdict {
-                allow: false,
-                reason: format!("the arbiter could not decide: {error:#}"),
-            }),
-            None => Verdict {
-                allow: false,
-                reason: "no arbiter is running".into(),
-            },
+            Some(judge) => judge.judge(&request).await,
+            None => Err(anyhow::anyhow!("no arbiter is running")),
+        };
+        // An unclear answer or a failure is not a no the user gave: they are asked.
+        let Ok(verdict) = verdict else {
+            let session = session_grant(&request);
+            return self
+                .prompt(thread_id, request, session, Vec::new(), progress)
+                .await;
         };
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::ArbiterDecided {
@@ -139,7 +316,15 @@ impl Approvals {
         self.pending
             .lock()
             .remove(&id)
-            .is_some_and(|sender| sender.send(decision).is_ok())
+            .is_some_and(|(_, _, sender)| sender.send(decision).is_ok())
+    }
+
+    /// The thread that asked request `id`; `None` when nothing waits for it.
+    pub fn thread_of(&self, id: u64) -> Option<String> {
+        self.pending
+            .lock()
+            .get(&id)
+            .map(|(thread, _, _)| thread.clone())
     }
 }
 
@@ -181,7 +366,7 @@ impl Grants {
             }
             Request::Screen { .. } => self.screen,
             Request::SystemPointer { .. } => self.system_pointer,
-            Request::Keyboard { .. } => false,
+            Request::Keyboard { .. } | Request::Settings { .. } => false,
             Request::Window { grant, .. } => grant
                 .as_ref()
                 .is_some_and(|access| self.windows.contains(access)),
@@ -196,9 +381,43 @@ impl Grants {
             }
             Request::Screen { .. } => self.screen = true,
             Request::SystemPointer { .. } => self.system_pointer = true,
-            Request::Keyboard { .. } => {}
+            Request::Keyboard { .. } | Request::Settings { .. } => {}
             Request::Window { grant, .. } => self.windows.extend(grant.clone()),
         }
+    }
+}
+
+/// How much a screen request can do, for a merged request to take the strictest kind.
+/// `None` for requests that are not about the screen.
+fn strictness(request: &Request) -> Option<u8> {
+    match request {
+        Request::Screen { .. } => Some(0),
+        Request::Window { .. } => Some(1),
+        Request::SystemPointer { .. } => Some(2),
+        Request::Keyboard { .. } => Some(3),
+        Request::Path { .. } | Request::Command { .. } | Request::Settings { .. } => None,
+    }
+}
+
+/// Whether one session grant would cover both.
+fn same_kind(a: &Request, b: &Request) -> bool {
+    match (a, b) {
+        (Request::Window { grant: a, .. }, Request::Window { grant: b, .. }) => a == b,
+        _ => std::mem::discriminant(a) == std::mem::discriminant(b),
+    }
+}
+
+/// `kind` asking for `action` instead.
+fn with_action(kind: &Request, action: String) -> Request {
+    match kind {
+        Request::Screen { .. } => Request::Screen { action },
+        Request::SystemPointer { .. } => Request::SystemPointer { action },
+        Request::Keyboard { .. } => Request::Keyboard { action },
+        Request::Window { grant, .. } => Request::Window {
+            grant: grant.clone(),
+            action,
+        },
+        Request::Path { .. } | Request::Command { .. } | Request::Settings { .. } => kind.clone(),
     }
 }
 
@@ -210,7 +429,7 @@ pub fn session_grant(request: &Request) -> Option<String> {
         Request::Command { command } => program(command).map(str::to_owned),
         Request::Screen { .. } => Some("the screen".into()),
         Request::SystemPointer { .. } => Some("the system pointer".into()),
-        Request::Keyboard { .. } => None,
+        Request::Keyboard { .. } | Request::Settings { .. } => None,
         Request::Window { grant, .. } => match grant {
             Some(WindowAccess::List) => Some("listing window names and IDs".into()),
             Some(WindowAccess::Capture(_)) => Some("capture of this selected window".into()),
@@ -229,10 +448,14 @@ const SHELL_SYNTAX: &[char] = &[
 ];
 
 /// Programs that run their arguments as another command; allowing one would allow all.
+/// The wrappers a command line is read through (`WRAPPERS`) are runners too.
 const RUNNERS: &[&str] = &[
-    "sudo", "doas", "env", "xargs", "exec", "eval", "command", "builtin", "nohup", "nice",
-    "timeout", "time", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
+    "xargs", "eval", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
 ];
+
+fn is_runner(name: &str) -> bool {
+    RUNNERS.contains(&name) || WRAPPERS.contains(&name)
+}
 
 /// The folder a yes for a path opens: the path itself when it is one.
 fn folder_of(path: &std::path::Path) -> PathBuf {
@@ -251,7 +474,7 @@ fn program(command: &str) -> Option<&str> {
     let plain = name
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "-_./+".contains(c));
-    (plain && !RUNNERS.contains(&name.rsplit('/').next().unwrap_or(name))).then_some(name)
+    (plain && !is_runner(program_name(name))).then_some(name)
 }
 
 #[cfg(test)]
@@ -261,6 +484,7 @@ mod tests {
     async fn decide(approvals: &Approvals, request: Request, decision: Decision) -> Result<()> {
         let (events, mut seen) = mpsc::unbounded_channel();
         let ask = approvals.ask(
+            "t",
             request,
             Some(Progress {
                 call_id: "pointer-test".into(),
@@ -292,7 +516,7 @@ mod tests {
             .unwrap();
         assert!(
             approvals
-                .ask(screen, None, ApprovalPolicy::Ask)
+                .ask("t", screen, None, ApprovalPolicy::Ask)
                 .await
                 .is_ok()
         );
@@ -302,7 +526,10 @@ mod tests {
             ApprovalPolicy::Arbiter,
         ] {
             assert!(
-                approvals.ask(pointer.clone(), None, policy).await.is_err(),
+                approvals
+                    .ask("t", pointer.clone(), None, policy)
+                    .await
+                    .is_err(),
                 "{policy:?}"
             );
         }
@@ -313,7 +540,7 @@ mod tests {
         );
         assert!(
             approvals
-                .ask(pointer.clone(), None, ApprovalPolicy::Ask)
+                .ask("t", pointer.clone(), None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
@@ -322,14 +549,14 @@ mod tests {
             .unwrap();
         assert!(
             approvals
-                .ask(pointer.clone(), None, ApprovalPolicy::Ask)
+                .ask("t", pointer.clone(), None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
         // FullAccess is an explicit global policy, not an inferred screen grant.
         assert!(
             approvals
-                .ask(pointer.clone(), None, ApprovalPolicy::FullAccess)
+                .ask("t", pointer.clone(), None, ApprovalPolicy::FullAccess)
                 .await
                 .is_ok()
         );
@@ -338,7 +565,7 @@ mod tests {
             .unwrap();
         assert!(
             approvals
-                .ask(pointer, None, ApprovalPolicy::Ask)
+                .ask("t", pointer, None, ApprovalPolicy::Ask)
                 .await
                 .is_ok()
         );
@@ -367,12 +594,12 @@ mod tests {
         assert_eq!(session_grant(&release), None);
         decide(&approvals, select, Decision::Session).await.unwrap();
         approvals
-            .ask(capture.clone(), None, ApprovalPolicy::Ask)
+            .ask("t", capture.clone(), None, ApprovalPolicy::Ask)
             .await
             .unwrap();
         assert!(
             approvals
-                .ask(press.clone(), None, ApprovalPolicy::Ask)
+                .ask("t", press.clone(), None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
@@ -382,12 +609,12 @@ mod tests {
             .await
             .unwrap();
         action_only
-            .ask(press, None, ApprovalPolicy::Ask)
+            .ask("t", press, None, ApprovalPolicy::Ask)
             .await
             .unwrap();
         assert!(
             action_only
-                .ask(capture, None, ApprovalPolicy::Ask)
+                .ask("t", capture, None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
@@ -419,14 +646,14 @@ mod tests {
             ] {
                 assert!(
                     approvals
-                        .ask(request, None, ApprovalPolicy::Ask)
+                        .ask("t", request, None, ApprovalPolicy::Ask)
                         .await
                         .is_err()
                 );
             }
         }
         approvals
-            .ask(release, None, ApprovalPolicy::FullAccess)
+            .ask("t", release, None, ApprovalPolicy::FullAccess)
             .await
             .unwrap();
     }
@@ -445,7 +672,7 @@ mod tests {
             .await
             .unwrap();
         approvals
-            .ask(list.clone(), None, ApprovalPolicy::Ask)
+            .ask("t", list.clone(), None, ApprovalPolicy::Ask)
             .await
             .unwrap();
         for request in [
@@ -467,7 +694,7 @@ mod tests {
         ] {
             assert!(
                 approvals
-                    .ask(request, None, ApprovalPolicy::Ask)
+                    .ask("t", request, None, ApprovalPolicy::Ask)
                     .await
                     .is_err()
             );
@@ -478,7 +705,7 @@ mod tests {
             .unwrap();
         assert!(
             desktop_only
-                .ask(list, None, ApprovalPolicy::Ask)
+                .ask("t", list, None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
@@ -528,6 +755,29 @@ mod tests {
         }
     }
 
+    /// The runners stay refused now that the wrappers come from the command-line reader.
+    #[test]
+    fn no_runner_is_ever_allowed_for_the_session() {
+        for runner in [
+            "sudo", "doas", "env", "xargs", "exec", "eval", "command", "builtin", "nohup", "nice",
+            "timeout", "time", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
+        ] {
+            for line in [
+                format!("{runner} cargo test"),
+                format!("/usr/bin/{runner} ls"),
+            ] {
+                assert_eq!(session_grant(&command(&line)), None, "{line:?}");
+            }
+        }
+        for wrapper in WRAPPERS {
+            assert_eq!(session_grant(&command(&format!("{wrapper} ls"))), None);
+        }
+        assert_eq!(
+            session_grant(&command("cargo test")).as_deref(),
+            Some("cargo")
+        );
+    }
+
     #[test]
     fn a_folder_allowed_for_reading_stays_closed_to_writes() {
         let mut grants = Grants::default();
@@ -558,7 +808,7 @@ mod tests {
             call_id: "c".into(),
             events: events.clone(),
         };
-        let ask = approvals.ask(command("ls"), Some(progress), ApprovalPolicy::Ask);
+        let ask = approvals.ask("t", command("ls"), Some(progress), ApprovalPolicy::Ask);
         let answer = async {
             let Some(ThreadEvent::Approval(asked)) = seen.recv().await else {
                 panic!("no request");
@@ -573,20 +823,20 @@ mod tests {
         ));
         assert!(
             approvals
-                .ask(command("ls"), None, ApprovalPolicy::Ask)
+                .ask("t", command("ls"), None, ApprovalPolicy::Ask)
                 .await
                 .is_err()
         );
         assert!(
             approvals
-                .ask(command("ls"), None, ApprovalPolicy::FullAccess)
+                .ask("t", command("ls"), None, ApprovalPolicy::FullAccess)
                 .await
                 .is_ok()
         );
         // The sandbox confines commands, so they pass; nothing else does.
         assert!(
             approvals
-                .ask(command("ls"), None, ApprovalPolicy::Sandbox)
+                .ask("t", command("ls"), None, ApprovalPolicy::Sandbox)
                 .await
                 .is_ok()
         );
@@ -595,7 +845,7 @@ mod tests {
         };
         assert!(
             approvals
-                .ask(screen, None, ApprovalPolicy::Sandbox)
+                .ask("t", screen, None, ApprovalPolicy::Sandbox)
                 .await
                 .is_err()
         );

@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, watch};
 use super::{Center, Right, Workspace};
 use crate::{
     core::Core,
-    pages::{connectors::Shelf, settings::SettingsPage},
+    pages::{customize::Shelf, settings::SettingsPage},
 };
 
 impl Workspace {
@@ -53,6 +53,17 @@ impl Workspace {
             }
         })
         .detach();
+        let limit_edit = crate::pages::settings::LimitEdit::new(window, cx);
+        cx.subscribe_in(
+            &limit_edit.input,
+            window,
+            |ws, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                    ws.commit_limit(cx);
+                }
+            },
+        )
+        .detach();
         let web_port = cx.new(|cx| InputState::new(window, cx).placeholder("8080"));
         let branch_input = cx.new(|cx| InputState::new(window, cx).placeholder("such as dusk/"));
         cx.subscribe_in(&branch_input, window, |ws, _, event: &InputEvent, _, cx| {
@@ -64,7 +75,7 @@ impl Workspace {
         let composer = cx.new(|cx| {
             let mut state = TextareaState::new(window, cx)
                 .auto_grow(2, 10)
-                .placeholder("Ask anything. Enter sends, Shift+Enter starts a new line.");
+                .placeholder(crate::pages::chat::composer::PLACEHOLDER);
             state.set_submit_on_enter(true, cx);
             state
         });
@@ -81,6 +92,9 @@ impl Workspace {
             },
         )
         .detach();
+        // A chat shown while the window was in the back is read once it comes forward.
+        cx.observe_window_activation(window, |_, _, cx| cx.notify())
+            .detach();
         let first = status.borrow().clone();
         let mut workspace = Self {
             core,
@@ -96,9 +110,17 @@ impl Workspace {
             center: Center::Chat,
             shelf: Shelf::Connectors,
             shelf_search,
+            shelf_scroll: ScrollHandle::new(),
+            todo_done_open: false,
             folded: Right::folded_from(crate::ui::theme::prefs(cx).right_folded.as_deref()),
+            right_order: crate::columns::inspector::order::saved(
+                &crate::ui::theme::prefs(cx).right_order,
+            ),
+            module_drop: None,
+            module_moved: None,
             modal: None,
-            settings_page: SettingsPage::Model,
+            settings_page: SettingsPage::Ai,
+            ai_tab: crate::pages::settings::ai::Tab::Llm,
             font_search,
             fonts: crate::ui::theme::font_families(cx),
             model_input,
@@ -111,22 +133,33 @@ impl Workspace {
             jump: None,
             temporary_next: false,
             composer,
-            fill_composer: None,
+            fill_composer: Vec::new(),
+            drafts: Default::default(),
             me: crate::pages::settings::about_me::AboutMe::new(window, cx),
+            arbiter: crate::pages::settings::arbiter::ArbiterForm::new(window, cx),
             notice: None,
+            toast: None,
             pending: Vec::new(),
             rates: HashMap::new(),
+            suggestions: HashMap::new(),
+            placeholder_shown: crate::pages::chat::composer::PLACEHOLDER.to_owned(),
+            suggestion_taken: None,
             git: None,
+            repository: None,
+            pulls: HashMap::new(),
+            checks_open: HashMap::new(),
             touched: Vec::new(),
-            review: crate::pages::review::Review::new(),
+            review: crate::pages::review::Review::new(window, cx),
             focus: cx.focus_handle(),
             agents_trigger_focus: cx.focus_handle(),
-            agents_modal_focus: cx.focus_handle(),
+            modal_focus: cx.focus_handle(),
+            confirm_focus: cx.focus_handle(),
             file: crate::pages::file::FileView::new(),
             mcp_restarting: HashSet::new(),
             files: BTreeMap::new(),
             expanded: HashSet::new(),
             context: None,
+            dock: crate::pages::chat::dock::Dock::new(cx),
             alerts: Default::default(),
             plan: crate::columns::inspector::plan::Plan::new(window, cx),
             providers_page: crate::pages::settings::providers::State::new(window, cx),
@@ -137,24 +170,32 @@ impl Workspace {
             web: None,
             web_busy: false,
             web_global: false,
-            voice_form: crate::pages::connectors::voice::VoiceForm::new(window, cx),
+            voice_form: crate::pages::settings::ai::voice::VoiceForm::new(window, cx),
+            workshop: Default::default(),
             token_box: crate::pages::settings::TokenBox::new(window, cx),
+            repositories: crate::pages::settings::Repositories::new(window, cx),
+            limit_edit,
             context_open: HashSet::new(),
             context_load: Default::default(),
+            team_page: Default::default(),
+            overview: Default::default(),
             models_open: HashSet::new(),
+            sent_pictures: HashMap::new(),
             last_input: std::time::Instant::now(),
             fog_cleared: None,
             fog_dawn: None,
             terminal: crate::columns::terminal::Panel::new(cx),
-            simulator: Default::default(),
+            plugins: crate::plugins::Plugins::new(window, cx),
             jobs: Vec::new(),
             sources: Vec::new(),
             settings: None,
             providers: Vec::new(),
             models_loading: false,
+            models_pending: HashSet::new(),
             picker: None,
             picker_closed: None,
             picked: Vec::new(),
+            approval_open: Default::default(),
             attach_open: false,
             left_hidden: false,
             rail_hidden: false,
@@ -167,6 +208,7 @@ impl Workspace {
             attachments: Vec::new(),
             pastes: Vec::new(),
             sent_rows: Vec::new(),
+            rows_key: None,
             navigator_open: false,
             secret_inputs: Vec::new(),
             agent_path: Vec::new(),
@@ -184,14 +226,20 @@ impl Workspace {
             unfolded: HashSet::new(),
             list: ListState::new(0, ListAlignment::Top, px(800.)),
             rows: Vec::new(),
+            reading_width: 720.,
+            replied: None,
+            pins: Default::default(),
             list_chat: None,
+            texts: Default::default(),
             measure_again: false,
+            welcome: crate::pages::welcome::Welcome::new(window, cx),
         };
         workspace.pump_events(events, cx);
         workspace.pump_status(status, cx);
         workspace.watch_idle(cx);
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
+        workspace.ask_welcome(cx);
         // The runs since the last look come up on the chat's "while you were away" card.
         workspace.load_schedules(cx);
         // The first start of a new version says what it brought. A first start ever has

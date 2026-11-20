@@ -2,18 +2,18 @@
 
 use std::{collections::BTreeMap, time::Duration};
 
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use reqwest::{
     Client, RequestBuilder, Response, Url,
     header::{ACCEPT, AUTHORIZATION, HeaderValue},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::{
     config::{Effort, ProviderConfig, ProviderKind},
     providers::{
-        errors::{Transient, UnsupportedEffort, UnsupportedPictures},
+        errors::{UnsupportedEffort, UnsupportedPictures},
         limits::{Account, Headers},
         registry::Model,
         request::{ChatMessage, ChatRequest},
@@ -21,7 +21,12 @@ use crate::{
     },
 };
 
-use super::{request::CompletionRequest, stream::CompletionStream};
+use dusk_protocol::model::CheckFailure;
+
+use super::{
+    request::CompletionRequest,
+    stream::{self, CompletionStream},
+};
 
 const MAX_ERROR_BYTES: usize = 64 * 1024;
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -48,19 +53,19 @@ struct ModelEntry {
     /// Named differently by LiteLLM, OpenRouter and others; OpenAI omits it.
     #[serde(alias = "context_length", alias = "context_window")]
     max_input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "positive_output_limit")]
+    max_output_tokens: Option<u64>,
+}
+
+fn positive_output_limit<'de, D: Deserializer<'de>>(value: D) -> Result<Option<u64>, D::Error> {
+    let value = Value::deserialize(value)?;
+    Ok(value.as_u64().filter(|tokens| *tokens > 0))
 }
 
 impl OpenAiCompatible {
     pub fn new(config: &ProviderConfig) -> Result<Self> {
         let base_url = http::base_url(&config.base_url, config.allow_http)?;
-        let authorization = if config.api_key.0.is_empty() {
-            None
-        } else {
-            let mut value = HeaderValue::from_str(&format!("Bearer {}", config.api_key.0))
-                .map_err(|_| anyhow!("invalid provider API key"))?;
-            value.set_sensitive(true);
-            Some(value)
-        };
+        let authorization = http::sensitive_header(&config.api_key.0, "Bearer ")?;
         let client = http::client()?;
         Ok(Self {
             client,
@@ -75,54 +80,34 @@ impl OpenAiCompatible {
     pub async fn list_models(&self) -> Result<Vec<Model>> {
         // Do not retain reqwest errors or response bodies in error chains: either
         // can contain endpoint input or values echoed by an upstream server.
-        let mut response = self
+        let response = self
             .with_authorization(self.client.get(self.models_url.clone()))
             .header(ACCEPT, "application/json")
             .timeout(CATALOGUE_TIMEOUT)
             .send()
             .await
-            .map_err(|_| anyhow!("provider model request failed"))?;
+            .map_err(|_| {
+                http::check_failed(CheckFailure::Unreachable, "provider model request failed")
+            })?;
         self.account.note(Headers::OpenAi, response.headers());
-        ensure!(
-            response.status().is_success(),
-            http::refused("model", response.status())
-        );
-        ensure!(
-            response
-                .content_length()
-                .is_none_or(|length| length <= MAX_CATALOGUE_BYTES as u64),
-            "provider model catalogue is too large"
-        );
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| anyhow!("cannot read provider model catalogue"))?
-        {
-            ensure!(
-                chunk.len() <= MAX_CATALOGUE_BYTES - bytes.len(),
-                "provider model catalogue is too large"
-            );
-            bytes.extend_from_slice(&chunk);
+        if !response.status().is_success() {
+            return Err(http::catalogue_refused(response.status()));
         }
-        let catalogue: ModelCatalogue = serde_json::from_slice(&bytes)
-            .map_err(|_| anyhow!("invalid provider model catalogue JSON"))?;
+        let bytes = crate::net::read_limited(response, MAX_CATALOGUE_BYTES)
+            .await
+            .map_err(|error| error.about("provider model catalogue"))?;
+        let catalogue: ModelCatalogue = serde_json::from_slice(&bytes).map_err(|_| {
+            http::check_failed(
+                CheckFailure::NotCompatible,
+                "invalid provider model catalogue JSON",
+            )
+        })?;
         let mut models = BTreeMap::new();
         for model in catalogue.data {
-            ensure!(
-                !model.id.trim().is_empty() && !model.id.chars().any(char::is_control),
-                "provider returned an empty or invalid model ID"
-            );
-            models.insert(model.id, model.max_input_tokens);
+            http::check_model_id(&model.id)?;
+            models.insert(model.id, (model.max_input_tokens, model.max_output_tokens));
         }
-        Ok(models
-            .into_iter()
-            .map(|(id, context_window)| Model {
-                id,
-                context_window,
-                max_output: None,
-            })
-            .collect())
+        Ok(http::models(models))
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
@@ -138,13 +123,13 @@ impl OpenAiCompatible {
             .json(&request)
             .send()
             .await
-            .map_err(|_| Transient("provider completion request failed".into()))?;
+            .map_err(http::unsent)?;
         self.account.note(Headers::OpenAi, response.headers());
         let status = response.status();
         if !status.is_success() {
-            let message = http::refused("completion", status);
-            if http::is_retryable(status) {
-                return Err(http::retry_failure(&response, message));
+            let failure = http::status_failure(&response, http::refused("completion", status));
+            if failure.kind.is_retryable() {
+                bail!(failure);
             }
             if has_pictures && matches!(status.as_u16(), 400 | 413 | 415 | 422) {
                 bail!(UnsupportedPictures);
@@ -158,13 +143,13 @@ impl OpenAiCompatible {
                     bail!(UnsupportedEffort);
                 }
             }
-            bail!(message);
+            bail!(failure);
         }
         ensure!(
             http::is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(CompletionStream::new(response, effort_off))
+        Ok(stream::stream(response, effort_off))
     }
 
     fn with_authorization(&self, request: RequestBuilder) -> RequestBuilder {
@@ -175,23 +160,10 @@ impl OpenAiCompatible {
     }
 }
 
-async fn rejects_effort_off(mut response: Response) -> bool {
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_ERROR_BYTES as u64)
-    {
+async fn rejects_effort_off(response: Response) -> bool {
+    let Ok(bytes) = crate::net::read_limited(response, MAX_ERROR_BYTES).await else {
         return false;
-    }
-    let mut bytes = Vec::new();
-    loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) if chunk.len() <= MAX_ERROR_BYTES - bytes.len() => {
-                bytes.extend_from_slice(&chunk);
-            }
-            Ok(None) => break,
-            _ => return false,
-        }
-    }
+    };
     serde_json::from_slice::<Value>(&bytes)
         .ok()
         .and_then(|body| body.get("error").cloned())
@@ -228,4 +200,31 @@ pub fn error_rejects_effort_off(error: &Value) -> bool {
     .iter()
     .any(|phrase| message.contains(phrase));
     identifies_effort && explicit
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModelCatalogue;
+
+    #[test]
+    fn catalogue_keeps_the_advertised_output_budget() {
+        let catalogue: ModelCatalogue = serde_json::from_str(
+            r#"{"data":[
+            {"id":"reasoning","max_input_tokens":262144,"max_output_tokens":262144},
+            {"id":"plain"},
+            {"id":"null","max_output_tokens":null},
+            {"id":"zero","max_output_tokens":0},
+            {"id":"negative","max_output_tokens":-1},
+            {"id":"unknown","max_output_tokens":"unknown"},
+            {"id":"object","max_output_tokens":{"maximum":8192}}
+        ]}"#,
+        )
+        .unwrap();
+        assert_eq!(catalogue.data[0].max_output_tokens, Some(262144));
+        assert!(
+            catalogue.data[1..]
+                .iter()
+                .all(|model| model.max_output_tokens.is_none())
+        );
+    }
 }

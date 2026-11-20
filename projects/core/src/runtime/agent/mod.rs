@@ -14,6 +14,10 @@ mod rate;
 mod repeats;
 mod vision;
 
-pub use agent::Agent;
+pub(crate) use agent::Admit;
+pub use agent::{Agent, Decision, Recovered};
+pub use compaction::Keep;
+pub(crate) use compaction::Loaded;
 pub use inbox::{Inbox, Input, Stop};
+pub(crate) use mail::MAX_AGENT_MESSAGES;
 pub use mailboxes::{Mailbox, Mailboxes};

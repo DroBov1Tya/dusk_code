@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Thread {
     pub id: String,
@@ -23,9 +24,19 @@ pub struct Thread {
     /// It is kept in memory only and is gone when the core stops.
     #[serde(default)]
     pub temporary: bool,
+    /// The id of the token that started the chat; `None` for the local clients' chats. It is
+    /// the token id for now; Phase 3 maps it to the name before any non-full scope sees
+    /// other chats.
+    #[serde(default)]
+    pub owner: Option<String>,
+    /// An answer, a question, a request for a yes or the end of a turn arrived since a
+    /// client last showed the chat (`ThreadRequest::Seen`). Never for an agent's thread.
+    #[serde(default)]
+    pub unread: bool,
 }
 
 /// A message found by searching the text of every chat.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Found {
     pub thread_id: String,
@@ -34,4 +45,46 @@ pub struct Found {
     pub sequence: u64,
     /// The words around the match, on one line.
     pub snippet: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::{Request, ThreadRequest};
+    use crate::thread::ThreadEvent;
+
+    /// The unread mark, the request that clears it and the event that tells of it cross
+    /// the wire; a thread from a core before the mark reads as read.
+    #[test]
+    fn the_unread_mark_survives_a_round_trip_and_defaults_to_read() {
+        let thread = Thread {
+            id: "chat".into(),
+            source: "gui".into(),
+            created_at: 1,
+            title: Some("t".into()),
+            active_at: 2,
+            parent_thread_id: None,
+            agent: None,
+            name: None,
+            project: None,
+            temporary: false,
+            owner: None,
+            unread: true,
+        };
+        let text = serde_json::to_string(&thread).unwrap();
+        assert_eq!(serde_json::from_str::<Thread>(&text).unwrap(), thread);
+        let mut old = serde_json::to_value(&thread).unwrap();
+        old.as_object_mut().unwrap().remove("unread");
+        assert!(!serde_json::from_value::<Thread>(old).unwrap().unread);
+
+        let seen = Request::Thread(ThreadRequest::Seen {
+            thread_id: "chat".into(),
+        });
+        let text = serde_json::to_string(&seen).unwrap();
+        assert_eq!(serde_json::from_str::<Request>(&text).unwrap(), seen);
+        for event in [ThreadEvent::Unread(true), ThreadEvent::Unread(false)] {
+            let text = serde_json::to_string(&event).unwrap();
+            assert_eq!(serde_json::from_str::<ThreadEvent>(&text).unwrap(), event);
+        }
+    }
 }

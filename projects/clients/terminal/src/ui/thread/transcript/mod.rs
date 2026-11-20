@@ -3,9 +3,11 @@
 
 mod blocks;
 mod lines;
+mod shown;
+mod suggested;
 
 pub use lines::thread_lines;
-use lines::{Placed, append_entry};
+use lines::{Placed, append_entry, ends_turn, is_meta};
 
 use super::theme::{
     ACCENT, DUSK, HAIRLINE, RAISED, SELECTED, SPINNER, SUN_GLYPH, TEXT_MUTED, TEXT_SOFT, bold, dim,
@@ -30,6 +32,28 @@ const FOLLOW_ROWS: usize = 3;
 /// The thread's transcript: its entries, the buttons under them and the scroll position.
 pub struct TranscriptView<'a> {
     pub app: &'a mut App,
+}
+
+/// What the lines of the entry at `index` are made from: when it changes, the entry is
+/// laid out again. Its own stamp, and what its neighbours decide of how it is drawn.
+fn signature(transcript: &crate::app::Transcript, index: usize, browsed: Option<usize>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    let entries = &transcript.entries;
+    transcript.stamp(index).hash(&mut hash);
+    transcript.is_hidden(index).hash(&mut hash);
+    transcript.is_folded_away(index).hash(&mut hash);
+    (browsed == Some(index)).hash(&mut hash);
+    (index > 0 && is_meta(&entries[index - 1]) && is_meta(&entries[index])).hash(&mut hash);
+    ends_turn(entries, index).hash(&mut hash);
+    if matches!(entries[index], Entry::Activity { .. }) {
+        // The activity line counts its run and names what goes on while it is the newest.
+        transcript.current_step(index).hash(&mut hash);
+        for step in index + 1..index + 1 + transcript.run(index).count() {
+            transcript.stamp(step).hash(&mut hash);
+        }
+    }
+    hash.finish()
 }
 
 fn plain_text(line: &Line) -> String {
@@ -275,21 +299,26 @@ impl TranscriptView<'_> {
         let Some(index) = self.app.hover.or(browsed) else {
             return;
         };
-        let offered: &[(Button, &str, Color)] = match self.app.transcript.entries.get(index) {
-            Some(Entry::Notice { .. }) | None => &[],
+        let mut offered: Vec<(Button, &str, Color)> = match self.app.transcript.entries.get(index) {
+            Some(Entry::Notice { .. } | Entry::Skill { .. }) | None => Vec::new(),
             Some(_) if self.app.transcript.is_hidden(index) => {
-                &[(Button::Copy, " copy ", TEXT_SOFT)]
+                vec![(Button::Copy, " copy ", TEXT_SOFT)]
             }
-            Some(Entry::User { .. }) => &[
+            Some(Entry::User { .. }) => vec![
                 (Button::Hide, " hide ", TEXT_MUTED),
                 (Button::Edit, " edit ", TEXT_SOFT),
                 (Button::Copy, " copy ", TEXT_SOFT),
             ],
-            Some(_) => &[
+            Some(_) => vec![
                 (Button::Hide, " hide ", TEXT_MUTED),
                 (Button::Copy, " copy ", TEXT_SOFT),
             ],
         };
+        // While its command runs, it can go on in the background; copy stays last.
+        if self.app.transcript.running_command_at(index).is_some() {
+            let before_copy = offered.len().saturating_sub(1);
+            offered.insert(before_copy, (Button::Background, " background ", TEXT_SOFT));
+        }
         let Some(&(from, to)) = self.app.entry_lines.get(index) else {
             return;
         };
@@ -343,27 +372,53 @@ impl TranscriptView<'_> {
         }
     }
 
-    /// Lays out every entry but the last again, when the transcript, the width or the browsed
-    /// entry changed since the last frame.
+    /// Lays out every entry but the last; of those laid out on the last frame, only the
+    /// ones from the first that changed since, so a new entry or a step that finished does
+    /// not lay out the whole thread again. All of it when the width changed.
     pub(super) fn refresh_layout(&mut self, width: usize, browsed: Option<usize>) {
-        let revision = self.app.transcript.revision();
-        let current = self.app.layout.as_ref().is_some_and(|layout| {
-            layout.width == width && layout.revision == revision && layout.browsed == browsed
+        let transcript = &self.app.transcript;
+        let count = transcript.entries.len().saturating_sub(1);
+        let signatures: Vec<u64> = (0..count)
+            .map(|index| signature(transcript, index, browsed))
+            .collect();
+        let layout = self
+            .app
+            .layout
+            .take()
+            .filter(|layout| layout.width == width);
+        let kept = layout.as_ref().map_or(0, |layout| {
+            layout
+                .signatures
+                .iter()
+                .zip(&signatures)
+                .take_while(|(old, new)| old == new)
+                .count()
         });
-        if current {
-            return;
-        }
         let mut placed = Placed::default();
-        for index in 0..self.app.transcript.entries.len().saturating_sub(1) {
-            append_entry(
-                &self.app.transcript,
-                index,
-                width,
-                None,
-                browsed,
-                &mut placed,
-            );
+        let mut text = Vec::new();
+        let mut before = Vec::new();
+        if let Some(layout) = layout {
+            let cut = layout
+                .before
+                .get(kept)
+                .copied()
+                .unwrap_or(layout.lines.len());
+            placed.lines = layout.lines;
+            placed.lines.truncate(cut);
+            placed.starts = layout.starts;
+            placed.starts.truncate(kept);
+            placed.images = layout.images;
+            placed.images.retain(|image| image.line < cut);
+            text = layout.text;
+            text.truncate(cut);
+            before = layout.before;
+            before.truncate(kept);
         }
+        for index in kept..count {
+            before.push(placed.lines.len());
+            append_entry(transcript, index, width, None, browsed, &mut placed);
+        }
+        text.extend(placed.lines[text.len()..].iter().map(plain_text));
         let Placed {
             lines,
             starts,
@@ -371,11 +426,11 @@ impl TranscriptView<'_> {
         } = placed;
         self.app.layout = Some(Layout {
             width,
-            revision,
-            browsed,
-            text: lines.iter().map(plain_text).collect(),
+            signatures,
+            text,
             lines,
             starts,
+            before,
             images,
         });
     }
@@ -394,7 +449,9 @@ impl TranscriptView<'_> {
             Activity::Tool(name) => Some(name.clone()),
             Activity::Compacting => Some("compacting".into()),
             Activity::Forking => Some("forking".into()),
-            Activity::Retrying(attempt) => Some(format!("retrying, attempt {attempt}")),
+            // The attempt and the countdown live in the footer: a changing step would lay the
+            // transcript out again.
+            Activity::Retrying(..) => Some("retrying".into()),
         }
     }
 
@@ -409,3 +466,6 @@ impl TranscriptView<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

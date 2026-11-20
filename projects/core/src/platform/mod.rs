@@ -13,6 +13,13 @@ mod sandbox;
 pub mod usage;
 
 pub use detect::{Needs, Platform};
-#[cfg(target_os = "macos")]
-pub use macos::simulator;
-pub use sandbox::{Confinement, shell};
+#[cfg(target_os = "linux")]
+pub use linux::netns;
+#[cfg(target_os = "linux")]
+pub use linux::sandbox::every_file_right;
+#[cfg(target_os = "linux")]
+pub use sandbox::namespaced_program;
+pub use sandbox::{
+    Confinement, Network, available as sandbox_available, confined_program, developer_tools, shell,
+    temp_folders,
+};

@@ -9,13 +9,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
     catalog::modes::Modes,
     init::create_private_dir,
     init::paths::Paths,
+    message::sources::FOLDER as SOURCES,
     state::{State, Thread},
 };
 
@@ -108,6 +110,68 @@ pub async fn start_thread(
     })
 }
 
+/// A chat that holds `from`'s history up to `message_id`, in its project and mode, with
+/// its own folder and a copy of the attached files the copied messages name.
+pub async fn start_fork(
+    state: &State,
+    paths: &Paths,
+    source: &str,
+    from: &str,
+    message_id: &str,
+) -> Result<StartedThread> {
+    let original = state
+        .load_thread(from)
+        .await?
+        .context("no such thread to fork")?;
+    let thread_id = Uuid::now_v7().to_string();
+    let (folder, workspace) = new_chat_folder(paths)?;
+    state.create_thread(&thread_id, source).await?;
+    state.set_thread_folder(&thread_id, &folder).await?;
+    if let Some(project) = &original.project {
+        state.set_thread_project(&thread_id, project).await?;
+    }
+    if let Some(mode) = state.chat_mode(from).await? {
+        state.set_chat_mode(&thread_id, &mode).await?;
+    }
+    state.copy_history(from, &thread_id, message_id).await?;
+    let title = original.title.as_deref().unwrap_or("Chat");
+    state
+        .set_title(&thread_id, &format!("{title} (fork)"))
+        .await?;
+    if let Some(from_folder) = state.thread_folder(from).await? {
+        copy_sources(&paths.workspace_folder(&from_folder)?, &workspace);
+    }
+    Ok(StartedThread {
+        thread_id,
+        name: None,
+        workspace,
+    })
+}
+
+/// The attached files go along; one that cannot be copied is logged, not fatal, since
+/// the history is already stored.
+fn copy_sources(from: &Path, to: &Path) {
+    let (from, to) = (from.join(SOURCES), to.join(SOURCES));
+    let Ok(entries) = fs::read_dir(&from) else {
+        return;
+    };
+    if let Err(error) = fs::create_dir_all(&to) {
+        warn!("fork: cannot create the sources folder: {error}");
+        return;
+    }
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        // Plain files only: a link could reach outside the chat's folder.
+        if kind.is_file()
+            && let Err(error) = fs::copy(entry.path(), to.join(entry.file_name()))
+        {
+            warn!("fork: cannot copy a source: {error}");
+        }
+    }
+}
+
 /// A thread for `agent` under the thread that asks it, with `prompt` as its system prompt.
 pub async fn start_agent_thread(
     state: &State,
@@ -115,6 +179,29 @@ pub async fn start_agent_thread(
     parent: &str,
     agent: &str,
     prompt: Option<String>,
+) -> Result<StartedThread> {
+    start_under(state, paths, parent, agent, prompt, false).await
+}
+
+/// A thread a team makes under its lead for one task, working as `role`: an agent's
+/// thread in everything but who made it, which its record says.
+pub async fn start_member_thread(
+    state: &State,
+    paths: &Paths,
+    lead: &str,
+    role: &str,
+    prompt: Option<String>,
+) -> Result<StartedThread> {
+    start_under(state, paths, lead, role, prompt, true).await
+}
+
+async fn start_under(
+    state: &State,
+    paths: &Paths,
+    parent: &str,
+    agent: &str,
+    prompt: Option<String>,
+    member: bool,
 ) -> Result<StartedThread> {
     // The name comes from the ID, so a new ID gives a sibling's name a way out.
     let taken: Vec<String> = state
@@ -139,9 +226,18 @@ pub async fn start_agent_thread(
     let folder = format!("{chat}/{AGENTS_FOLDER}/{thread_id}");
     let workspace = paths.workspace_folder(&folder)?;
     create_private_dir(&workspace)?;
-    state
-        .create_agent_thread(&thread_id, parent, agent, &name)
-        .await?;
+    match member {
+        true => {
+            state
+                .create_member_thread(&thread_id, parent, agent, &name)
+                .await?
+        }
+        false => {
+            state
+                .create_agent_thread(&thread_id, parent, agent, &name)
+                .await?
+        }
+    };
     state.set_thread_folder(&thread_id, &folder).await?;
     if let Some(prompt) = prompt.filter(|prompt| !prompt.trim().is_empty()) {
         state.add_system_message(&thread_id, &prompt).await?;
@@ -206,5 +302,31 @@ mod tests {
         state.create_thread("older", "test").await.unwrap();
         let older = workspace(&state, &paths, "older").await.unwrap();
         assert_eq!(older, paths.workspace_root().join("older"));
+    }
+
+    /// A new chat starts read, and so does a fork of an unread one: nothing in it is new
+    /// to the user who made it.
+    #[tokio::test]
+    async fn a_new_chat_and_a_fork_start_read() {
+        let (state, paths) = (temp_state("start_read").await, temp_paths("start_read"));
+        let cwd = std::env::temp_dir();
+        let chat = start_thread(&state, &paths, "test", "MAIN", &cwd)
+            .await
+            .unwrap();
+        let unread = |id: String| {
+            let state = &state;
+            async move { state.load_thread(&id).await.unwrap().unwrap().unread }
+        };
+        assert!(!unread(chat.thread_id.clone()).await);
+        let message = state
+            .add_user_message(&chat.thread_id, "go", "go")
+            .await
+            .unwrap();
+        assert!(state.mark_unread(&chat.thread_id).await.unwrap());
+        let fork = start_fork(&state, &paths, "test", &chat.thread_id, &message.message_id)
+            .await
+            .unwrap();
+        assert!(!unread(fork.thread_id).await);
+        assert!(unread(chat.thread_id).await, "the original keeps its mark");
     }
 }

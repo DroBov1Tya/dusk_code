@@ -9,7 +9,7 @@ use super::{McpServerConfig, ProviderConfig};
 
 /// A plugin as the user set it up. Found plugins stay off until switched on, since a
 /// plugin runs programs of its own.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginConfig {
     #[serde(default)]
@@ -17,6 +17,13 @@ pub struct PluginConfig {
     /// Handed to the plugin's programs, such as a bot's token.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub settings: BTreeMap<String, String>,
+    /// What the user allowed when switching it on; an update that asks for more keeps
+    /// it off until it is switched on again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed: Option<dusk_protocol::plugin::Permissions>,
+    /// The contracts the user agreed to along with `allowed`; the same rule applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_provides: Option<dusk_protocol::plugin::Provides>,
 }
 
 /// What the plugins that are on add: kept in memory only, never written to the file.

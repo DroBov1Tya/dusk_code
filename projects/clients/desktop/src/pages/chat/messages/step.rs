@@ -66,6 +66,10 @@ pub fn run(
     for (offset, tool) in tools.iter().enumerate().skip(first) {
         block = block.child(step(ws, shown, start + offset, tool, cx));
     }
+    // A step folded into "earlier" still shows the skill it changed.
+    for tool in &tools[..first] {
+        block = block.children(super::skill_change::rows(ws, shown, &tool.call_id, cx));
+    }
     if open && tools.len() > 4 {
         let id = shown.to_owned();
         block = block.child(
@@ -108,6 +112,20 @@ fn step_icon(tool: &str) -> IconName {
     }
 }
 
+/// The model of the subagent an agent tool's call started, when the core said it.
+fn agent_model(ws: &Workspace, shown: &str, tool: &Tool) -> Option<String> {
+    if !dusk_protocol::tools::is_agent_tool(&tool.name) {
+        return None;
+    }
+    ws.chats
+        .get(shown)?
+        .agents
+        .values()
+        .find(|agent| agent.call_id == tool.call_id)?
+        .model
+        .clone()
+}
+
 pub fn step(
     ws: &Workspace,
     shown: &str,
@@ -122,7 +140,8 @@ pub fn step(
     // The icon says what the step is; its color, how it stands.
     let icon = step_icon(&tool.name);
     let (color, status) = match tool.state {
-        ToolState::Running => (theme.warning, "Running"),
+        // A running step is told by the live mark at its end, not by its icon.
+        ToolState::Running => (muted, "Running"),
         ToolState::Done => (muted, "Completed"),
         ToolState::Failed => (theme.danger, "Failed"),
     };
@@ -162,6 +181,16 @@ pub fn step(
             .text_color(muted)
             .child(detail),
     )
+    // The model the agent answers on, beside the work handed to it.
+    .children(agent_model(ws, shown, tool).map(|model| {
+        div()
+            .flex_none()
+            .max_w(relative(0.30))
+            .truncate()
+            .meta()
+            .text_color(muted)
+            .child(model)
+    }))
     .when(open, |row| {
         row.child(
             div()
@@ -175,6 +204,14 @@ pub fn step(
     .when(tool.state == ToolState::Failed, |row| {
         row.child(div().meta().text_color(color).child(status))
     })
+    .child(crate::pages::chat::activity::step_mark(
+        tool.state,
+        ws.chats.get(shown).is_some_and(|chat| chat.working),
+        ws.chats
+            .get(shown)
+            .and_then(|chat| chat.settled.get(&tool.call_id).copied()),
+        cx,
+    ))
     .child(disclosure_icon(open, muted))
     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx)));
     let mut row = div().flex().items_center().gap_2().child(button);
@@ -183,7 +220,14 @@ pub fn step(
         row = row.child(background_button(shown, index, tool, cx));
     }
     let mut line = div().flex().flex_col().child(row);
+    line = line.children(super::skill_change::rows(ws, shown, &tool.call_id, cx));
     if open {
+        // The look of the plain monospace cells: `meta` size in the mono font.
+        let mono_meta = gpui::TextStyleRefinement {
+            font_family: Some(mono.clone().into()),
+            font_size: Some(rems(0.78).into()),
+            ..Default::default()
+        };
         let block = |title: &'static str, text: &str| {
             let group = SharedString::from(format!("step-{title}-{shown}-{index}"));
             div()
@@ -201,16 +245,20 @@ pub fn step(
                             SharedString::from(format!("step-copy-{title}-{shown}-{index}")),
                             &group,
                             text,
+                            cx,
                         )),
                 )
                 .child(
-                    div()
-                        .p_2()
-                        .rounded_md()
-                        .bg(surface)
-                        .meta()
-                        .font_family(mono.clone())
-                        .child(text.to_owned()),
+                    div().p_2().rounded_md().bg(surface).child(
+                        // Selectable so part of the command or output can be copied, not
+                        // only the whole through the button. The raw text is shown as is:
+                        // JSON and output, never markdown.
+                        gpui_kit::base::SelectableText::new(
+                            SharedString::from(format!("step-body-{title}-{shown}-{index}")),
+                            text.to_owned(),
+                        )
+                        .text_style(mono_meta.clone()),
+                    ),
                 )
         };
         let mut details = div()

@@ -3,12 +3,16 @@
 //! - `new`: the view's first state and the streams it follows;
 //! - `events`: what the core sends, folded into that state;
 //! - `render`: the window drawn from it;
-//! - `keys`: the shortcuts and what Escape closes.
+//! - `keys`: the shortcuts and what Escape closes;
+//! - `seen`: telling the core a chat was read while it is shown;
+//! - `toast`: short notes over any page that go away on their own.
 
 mod events;
 pub mod keys;
 mod new;
 mod render;
+mod seen;
+mod toast;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -31,14 +35,14 @@ use crate::{
     columns::topbar,
     core::Core,
     modal::Modal,
-    pages::{chat, chat::transcript::Transcript, connectors::Shelf, settings::SettingsPage},
+    pages::{chat, chat::transcript::Transcript, customize::Shelf, settings::SettingsPage},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Center {
     Chat,
     Artifacts,
-    Connectors,
+    Customize,
     Settings,
     /// The project's changes, file by file.
     Review,
@@ -46,14 +50,21 @@ pub enum Center {
     File,
     /// Prompts the core runs on a timetable.
     Schedules,
+    /// How the shown chat's work stands, as a page.
+    Overview,
+    /// The team that runs the shown chat's plan, as a graph.
+    Team,
 }
 
-/// The modules of the right column, top to bottom.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// The modules of the right column, in their default order top to bottom.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Right {
     Arbiter,
-    /// The context and the activity under one fold.
-    Statistics,
+    /// How the shown chat's work stands: plan, team, tokens, context, changes, activity
+    /// and its log.
+    Overview,
+    /// The team that runs the shown chat's plan, in rows.
+    Team,
     Screenshots,
     Git,
     Files,
@@ -67,9 +78,10 @@ pub enum Right {
 }
 
 impl Right {
-    const ALL: [Right; 10] = [
+    pub const ALL: [Right; 11] = [
         Right::Arbiter,
-        Right::Statistics,
+        Right::Overview,
+        Right::Team,
         Right::Screenshots,
         Right::Git,
         Right::Files,
@@ -80,11 +92,12 @@ impl Right {
         Right::Sources,
     ];
 
-    /// The name the choice of folding is kept under.
+    /// The name the choices of folding and order are kept under.
     pub fn key(self) -> &'static str {
         match self {
             Self::Arbiter => "arbiter",
-            Self::Statistics => "statistics",
+            Self::Overview => "overview",
+            Self::Team => "team",
             Self::Screenshots => "screenshots",
             Self::Git => "git",
             Self::Files => "files",
@@ -100,7 +113,7 @@ impl Right {
     fn folded_at_first() -> HashSet<Right> {
         [
             Right::Arbiter,
-            Right::Statistics,
+            Right::Overview,
             Right::Screenshots,
             Right::Git,
             Right::Files,
@@ -152,10 +165,23 @@ pub struct Workspace {
     pub center: Center,
     pub shelf: Shelf,
     pub shelf_search: Entity<InputState>,
+    /// Where the Customize page is scrolled to; a shelf shown whole starts at its top.
+    pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,
+    /// The right column's modules top to bottom, every one once.
+    pub right_order: Vec<Right>,
+    /// While a module's header is dragged: the module under the pointer, and whether the
+    /// drop lands below it rather than above.
+    pub module_drop: Option<(Right, bool)>,
+    /// The module moved last, the side it came from in pixels (negative: from above),
+    /// and when, so it settles into its place once.
+    pub module_moved: Option<(Right, f32, std::time::Instant)>,
+    /// The todo module shows its finished tasks; they are folded away by default.
+    pub todo_done_open: bool,
     pub modal: Option<Modal>,
     pub settings_page: SettingsPage,
+    pub ai_tab: crate::pages::settings::ai::Tab,
     pub font_search: Entity<InputState>,
     /// The machine's font families, read once.
     pub fonts: Vec<String>,
@@ -175,19 +201,34 @@ pub struct Workspace {
     pub temporary_next: bool,
     pub composer: Entity<TextareaState>,
     /// Text for the composer, put there on the next frame, which has the window.
-    pub fill_composer: Option<String>,
+    pub fill_composer: Vec<chat::composer::Edit>,
+    /// What is typed and attached in the chats that are not shown.
+    pub drafts: chat::composer::Drafts,
     /// The profile and snippets a message names with `@`, and their settings fields.
     pub me: crate::pages::settings::about_me::AboutMe,
+    pub arbiter: crate::pages::settings::arbiter::ArbiterForm,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
+    /// A short note over any page, and when it came; see `toast`.
+    pub toast: Option<(std::time::Instant, String)>,
     pub git: Option<GitInfo>,
+    /// The shown project's work tree and pull requests, kept fresh by the core.
+    pub repository: Option<dusk_protocol::project::RepositoryStatus>,
+    /// The pull requests of each project's branch, by project ID, for the chat rows.
+    pub pulls: HashMap<String, dusk_protocol::project::PullSummary>,
+    /// Which groups of a pull request's checks are unfolded, by its number and the
+    /// group's name; a group not here has its default (Failed open, the rest closed).
+    pub checks_open: HashMap<(u64, &'static str), bool>,
     pub touched: Vec<dusk_protocol::project::Change>,
     pub review: crate::pages::review::Review,
     /// The window's own focus: shortcuts reach the workspace from here when no box or row
     /// has the keyboard.
     pub focus: FocusHandle,
     pub agents_trigger_focus: FocusHandle,
-    pub agents_modal_focus: FocusHandle,
+    /// The keys of a window that takes them: the subagents' list, a listing's gallery.
+    pub modal_focus: FocusHandle,
+    /// The Workshop confirmation's Cancel button, where the keyboard starts.
+    pub confirm_focus: FocusHandle,
     pub file: crate::pages::file::FileView,
     /// MCP servers whose restart button was just pressed.
     pub mcp_restarting: HashSet<String>,
@@ -196,6 +237,12 @@ pub struct Workspace {
     pub expanded: HashSet<String>,
     pub context: Option<ContextReport>,
     pub context_load: crate::columns::inspector::context::ContextLoad,
+    /// What the Team page keeps of its own.
+    pub team_page: crate::pages::team::TeamPage,
+    /// The core's answers the Overview draws.
+    pub overview: crate::columns::inspector::overview::Shown,
+    /// The plan strip and the views tab over the composer.
+    pub dock: chat::dock::Dock,
     pub alerts: crate::platform::notify::Alerts,
     /// The shown chat's pinned plan.
     pub plan: crate::columns::inspector::plan::Plan,
@@ -214,12 +261,20 @@ pub struct Workspace {
     pub web_busy: bool,
     /// The next start listens on every address, for other devices on the network.
     pub web_global: bool,
-    pub voice_form: crate::pages::connectors::voice::VoiceForm,
+    pub voice_form: crate::pages::settings::ai::voice::VoiceForm,
+    /// The plugin store on the plugins shelf.
+    pub workshop: crate::pages::customize::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,
+    /// Settings, Workshop: the repositories added and the Add form.
+    pub repositories: crate::pages::settings::Repositories,
+    /// The Advanced page's number being typed in place of its minus and plus.
+    pub limit_edit: crate::pages::settings::LimitEdit,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.
     pub models_open: HashSet<String>,
+    /// Pictures of the user's messages, by thread and source name, as the core gave them.
+    pub sent_pictures: HashMap<(String, String), chat::messages::SentPicture>,
     /// The last click or key, for the mist that rises when the window is left alone.
     pub last_input: std::time::Instant,
     /// When the mist was cleared and how thick it stood, while it fades.
@@ -228,18 +283,22 @@ pub struct Workspace {
     pub fog_dawn: Option<(std::time::Instant, f32)>,
     /// The terminal panel at the foot of the work area.
     pub terminal: crate::columns::terminal::Panel,
-    /// The iOS Simulator at the right edge, on macOS.
-    pub simulator: crate::columns::simulator::Panel,
+    /// The parts plugins add, and the docks they are open in.
+    pub plugins: crate::plugins::Plugins,
     pub jobs: Vec<JobInfo>,
     /// The shown chat's sources, as the core lists them.
     pub sources: Vec<dusk_protocol::thread::Source>,
     pub settings: Option<Settings>,
     pub providers: Vec<ProviderStatus>,
     pub models_loading: bool,
+    /// Providers whose models have not come yet; each answers on its own.
+    pub models_pending: HashSet<String>,
     pub picker: Option<Picker>,
     pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.
     pub picked: Vec<usize>,
+    /// Approval command boxes shown in full, by request and step.
+    pub approval_open: std::collections::HashSet<(u64, usize)>,
     pub attach_open: bool,
     pub left_hidden: bool,
     /// The strip of places at the left edge, hidden on the user's word.
@@ -263,8 +322,17 @@ pub struct Workspace {
     pub pending: Vec<chat::queue::Pending>,
     /// Output tokens per second by thread, from the core's rate events.
     pub rates: HashMap<String, u64>,
+    /// The user's likely next message by chat, as the model proposed it.
+    pub suggestions: HashMap<String, dusk_protocol::thread::Suggestion>,
+    /// What the composer's empty box says now: the placeholder or a suggestion.
+    pub placeholder_shown: String,
+    /// When Tab last took a suggestion in, for the box's flare.
+    pub suggestion_taken: Option<std::time::Instant>,
     /// The shown chat's sent messages, by transcript row, for the navigator.
-    pub sent_rows: Vec<(usize, String)>,
+    /// The rows of the user's sent messages: their row and their item.
+    pub sent_rows: Vec<(usize, usize)>,
+    /// What `rows` were built from: the chat, its shape and whether a turn ran.
+    pub rows_key: Option<(String, u64, bool)>,
     pub navigator_open: bool,
     /// Fields for the settings a plugin lacks, in its detail window.
     pub secret_inputs: Vec<(String, Entity<InputState>)>,
@@ -298,8 +366,19 @@ pub struct Workspace {
     pub rows: Vec<crate::pages::chat::messages::Row>,
     /// The chat the list was built for; another one starts it anew.
     pub list_chat: Option<String>,
+    /// The parsed words of that chat's rows, so a row scrolled back comes at its height.
+    pub texts: crate::pages::chat::messages::Texts,
     /// A row changed height, as when folded: measure every row again.
     pub measure_again: bool,
+    /// How wide the transcript's rows are drawn, for blocks that set their columns by it.
+    pub reading_width: f32,
+    /// The chat whose reply buttons were just pressed and how many items it had then,
+    /// so one press sends once.
+    pub replied: Option<(String, usize)>,
+    /// The pinned bar: the pin it shows, whether its list is open, a pin under way.
+    pub pins: chat::pins::PinsView,
+    /// The first screen while no provider is connected.
+    pub welcome: crate::pages::welcome::Welcome,
 }
 
 impl Workspace {

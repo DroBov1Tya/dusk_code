@@ -17,7 +17,7 @@ mod ui;
 use anyhow::Result;
 use cli::args::{self, Args};
 use dusk_core::app::Paths;
-use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
+use dusk_protocol::client::Hello;
 use std::sync::Arc;
 use tracing::{error, info};
 
@@ -26,14 +26,6 @@ async fn main() -> Result<()> {
     #[cfg(target_os = "macos")]
     if dusk_core::app::run_overlay_if_asked() {
         return Ok(());
-    }
-    // The built-in telegram plugin's platform: this binary, run by the core.
-    let mut arguments = std::env::args().skip(1);
-    if arguments.next().as_deref() == Some("--platform") {
-        return match arguments.next().as_deref() {
-            Some("telegram") => dusk_telegram::platform::run().await,
-            other => anyhow::bail!("no built-in platform {}", other.unwrap_or("named")),
-        };
     }
     let (paths, state_db, thread, web) = match args::parse_args() {
         Args::Run {
@@ -66,7 +58,12 @@ async fn main() -> Result<()> {
         .transpose()?;
     // Keep a shared lock for the full process lifetime, including log initialization.
     let _restore_guard = dusk_core::app::RestoreGuard::startup(&paths, state_db.as_deref())?;
-    let telemetry = match dusk_core::app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "tui") {
+    let telemetry = match dusk_core::app::init_logs(
+        &paths,
+        env!("CARGO_CRATE_NAME"),
+        "tui",
+        dusk_core::app::LogRole::Owner,
+    ) {
         Ok(telemetry) => Some(telemetry),
         Err(error) => {
             eprintln!("duskcode: no log files: {error:#}");
@@ -77,12 +74,9 @@ async fn main() -> Result<()> {
     info!("duskcode {} starts", env!("CARGO_PKG_VERSION"));
     cli::resources::ensure().await;
     // Started before the screen is taken, so a first-start message stays readable.
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: session::THREAD_SOURCE.to_owned(),
-    };
+    let hello = Hello::new(session::THREAD_SOURCE);
     let hub = dusk_core::app::start_hub(paths, state_db).await?;
-    let mut client = hub.attach(hello)?;
+    let mut client = hub.attach_owner(hello, dusk_core::client::Scope::full())?;
     let web = match web {
         Some(options) => {
             let server = cli::web::start(Arc::clone(&hub), options).await?;

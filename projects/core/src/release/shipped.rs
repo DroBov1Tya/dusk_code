@@ -1,18 +1,27 @@
 //! The files dusk ships into the rules folder: the prompts of the modes, COMPACT.md,
 //! FORK.md, built-in skills and specialist agents. They are the repository's: at every
 //! start each one whose hash differs from this build's is replaced with it, a local edit
-//! included. Files the user added beside them are never touched.
+//! included. Files the user added beside them are never touched, and neither are the
+//! skills and agents earlier builds shipped that moved to Workshop packs: the user may
+//! still use them, so they stay as the user's own. Only `DROPPED` files go.
 
 use std::{
-    fs::{self, OpenOptions},
-    io::{ErrorKind, Write},
+    fs,
+    io::ErrorKind,
     path::{Component, Path},
 };
 
 use anyhow::{Context, Result, ensure};
-use sha2::{Digest, Sha256};
+use dusk_protocol::text::sha256_hex;
 
-use crate::{init::create_private_dir, init::paths::Paths, release::resources};
+use crate::{
+    init::{
+        create_private_dir,
+        files::{remove_empty_parents, write_private, write_private_program},
+        paths::Paths,
+    },
+    release::resources,
+};
 
 /// Kept edited shipped files by their hash in older builds.
 pub const LOCK_FILE: &str = "builtin.lock";
@@ -20,7 +29,7 @@ const OLD_NEW_SUFFIX: &str = ".new";
 /// Files older builds shipped and this one does not, by path in the rules folder, with
 /// the SHA-256 they were shipped with. One still as shipped is removed at start; one the
 /// user changed is theirs and stays.
-const DROPPED: [(&str, &str); 44] = [
+const DROPPED: [(&str, &str); 52] = [
     (
         "skills/frontend-design/LICENSE.txt",
         "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
@@ -197,6 +206,38 @@ const DROPPED: [(&str, &str); 44] = [
         "prompts/RETIRED_SKILL_FILES.md",
         "373c98debfc2c6dd9220d1b405160ab21b706113e1c9e317b615d565abf9bccf",
     ),
+    (
+        "plugins/telegram/plugin.yml",
+        "101e4264770a4a7de04f0a64a9f80318463a4deb4944a6fe34082d942ebb66c2",
+    ),
+    (
+        "plugins/telegram/plugin.yml",
+        "2b5905ab81bdbb9ad3b1a5af342ddc17240bb270007da80c73e4daa3650f7570",
+    ),
+    (
+        "plugins/telegram/plugin.yml",
+        "9db712ce3f4c155edc352110f4904e28bc25e86660ffc915f1dc83c05557ba17",
+    ),
+    (
+        "plugins/telegram/plugin.yml",
+        "f382c5dd1ec0989ba54dce76e1c67a85e77b0e377a442166ddd645822c008537",
+    ),
+    (
+        "skills/skill-improve/SKILL.md",
+        "73c0808c4886bc9b192f54461d7febccdd5f64d5ac25c607bd443ab0941fcd89",
+    ),
+    (
+        "skills/skill-improve/SKILL.md",
+        "22fbd7e31197cd926fea9551edbabb54b7c988796c6becd24c2b7177632d28f3",
+    ),
+    (
+        "skills/skill-improve/SKILL.md",
+        "f02804b38f96b986a7f9fdd5c20cf6701f18897c1f7ba89a79fad3ac34af2f95",
+    ),
+    (
+        "skills/skill-from-practice/SKILL.md",
+        "e62dc790c347207b46718cdcc6e40c54ddd7664f8fe45383fbc9e55da205bbb6",
+    ),
 ];
 /// In the release only so that 0.70.2, which wants it there, can update; never shipped.
 const FOR_OLD_UPDATERS: [&str; 1] = ["internal/RETIRED_SKILL_FILES.md"];
@@ -237,7 +278,7 @@ impl Synced {
                     write(&target, &contents)?;
                     synced.written.push(path);
                 }
-                Some(disk) if hash(&disk) != hash(&contents) => {
+                Some(disk) if sha256_hex(&disk) != sha256_hex(&contents) => {
                     write(&target, &contents)?;
                     synced.updated.push(path);
                 }
@@ -270,7 +311,7 @@ impl Synced {
                 };
                 let metadata = fs::symlink_metadata(&file)?;
                 let contents = crate::init::files::read_regular(&file, metadata.len())?;
-                if hash(&contents) != shipped_hash {
+                if sha256_hex(&contents) != shipped_hash {
                     continue;
                 }
                 fs::remove_file(&file).context("cannot remove an old shipped file")?;
@@ -281,13 +322,7 @@ impl Synced {
                         .into_owned(),
                 );
                 // A folder that still holds anything stays.
-                let mut folder = file.parent();
-                while let Some(parent) = folder.filter(|parent| *parent != root) {
-                    if fs::remove_dir(parent).is_err() {
-                        break;
-                    }
-                    folder = parent.parent();
-                }
+                remove_empty_parents(&file, |parent| parent == root);
             }
         }
         Ok(())
@@ -348,29 +383,11 @@ fn write(target: &Path, contents: &[u8]) -> Result<()> {
     if let Some(parent) = target.parent() {
         create_private_dir(parent)?;
     }
-    let script = contents.starts_with(b"#!");
-    let temporary = target.with_file_name(format!(".duskcode-writing-{}", uuid::Uuid::now_v7()));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(if script { 0o700 } else { 0o600 });
+    if contents.starts_with(b"#!") {
+        write_private_program(target, contents)
+    } else {
+        write_private(target, contents)
     }
-    let mut file = options
-        .open(&temporary)
-        .with_context(|| format!("cannot write {}", target.display()))?;
-    file.write_all(contents)
-        .and_then(|()| file.sync_all())
-        .with_context(|| format!("cannot write {}", target.display()))?;
-    fs::rename(&temporary, target).with_context(|| format!("cannot replace {}", target.display()))
-}
-
-fn hash(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[cfg(test)]
@@ -444,6 +461,32 @@ mod tests {
         assert!(creator.contains("source: \"dusk_code\""));
     }
 
+    /// A skill or agent that moved to a Workshop pack is not in `DROPPED`: the copy an
+    /// earlier build wrote stays and keeps working.
+    #[test]
+    fn a_retired_builtin_on_disk_survives_an_update() {
+        let paths = temp_paths("retired");
+        let spike = paths.skills_dir().join("spike/SKILL.md");
+        let agent = paths.rules_root().join("agents/backend-engineer/AGENT.md");
+        for file in [&spike, &agent] {
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(
+                file,
+                "---\ndescription: as an earlier build shipped it\n---\nWork.",
+            )
+            .unwrap();
+        }
+        let synced = Synced::sync(&paths).unwrap();
+        assert!(spike.is_file() && agent.is_file());
+        assert!(synced.removed.is_empty(), "{:?}", synced.removed);
+        let listed = skills::list(&paths.skills_dir(), &Config::parse(b"{}").unwrap());
+        assert!(
+            listed
+                .iter()
+                .any(|skill| skill.name == "spike" && skill.problem.is_none())
+        );
+    }
+
     #[test]
     fn old_shipped_files_go_and_changed_ones_stay() {
         let paths = temp_paths("dropped");
@@ -457,7 +500,7 @@ mod tests {
         fs::write(skill.join("edited.py"), "user changes").unwrap();
         fs::write(skill.join("SKILL.md"), "the skill").unwrap();
         fs::write(moved.join("old.py"), shipped).unwrap();
-        let digest = hash(shipped);
+        let digest = sha256_hex(shipped);
         let mut dropped = vec![
             ("skills/legacy/old.py", digest.as_str()),
             ("skills/legacy/edited.py", digest.as_str()),

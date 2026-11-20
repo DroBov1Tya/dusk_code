@@ -1,30 +1,36 @@
 //! The settings page: a menu of categories on the left, the chosen one on the right.
 
 pub mod about_me;
+pub mod ai;
 mod appearance;
+pub mod arbiter;
 mod behavior;
+pub use behavior::LimitEdit;
 pub mod providers;
 mod secrets;
 pub use secrets::TokenBox;
 mod shortcuts;
 mod system;
 pub mod uninstall;
+mod workshop;
+pub use workshop::Repositories;
 
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
-    component::{ActiveTheme, Colorize, IconName},
+    component::{ActiveTheme, Colorize, Icon, IconName},
     prelude::FluentBuilder,
     *,
 };
 
 use crate::{
-    ui::{Type, widgets},
+    ui::{Type, icons, widgets},
     workspace::Workspace,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SettingsPage {
     Appearance,
-    Model,
+    Ai,
     Chat,
     Safety,
     AboutMe,
@@ -36,9 +42,20 @@ pub enum SettingsPage {
     Updates,
     Usage,
     Secrets,
+    /// The repositories added beside the official store.
+    Workshop,
+    /// The pages plugins add; listed while one does.
+    Plugins,
 }
 
-type Page = (SettingsPage, IconName, &'static str);
+/// A page's icon in the menu: one of the kit's, or one of the app's own SVGs.
+#[derive(Clone)]
+enum Glyph {
+    Kit(IconName),
+    Own(&'static str),
+}
+
+type Page = (SettingsPage, Glyph, &'static str);
 
 /// The pages in the order they are reached for: what the agent is and may do first, then
 /// how the window looks and speaks, then what it keeps, then the machine. Each group has
@@ -47,28 +64,58 @@ const GROUPS: &[(&str, &[Page])] = &[
     (
         "Agent",
         &[
-            (SettingsPage::Model, IconName::Cpu, "Model"),
-            (SettingsPage::Chat, IconName::Inbox, "Chat"),
-            (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
-            (SettingsPage::Memory, IconName::MemoryStick, "Memory"),
-            (SettingsPage::AboutMe, IconName::User, "About me"),
+            (SettingsPage::Ai, Glyph::Kit(IconName::Cpu), "AI"),
+            (SettingsPage::Chat, Glyph::Kit(IconName::Inbox), "Chat"),
+            (
+                SettingsPage::Safety,
+                Glyph::Kit(IconName::CircleCheck),
+                "Safety",
+            ),
+            (
+                SettingsPage::Memory,
+                Glyph::Kit(IconName::MemoryStick),
+                "Memory",
+            ),
+            (
+                SettingsPage::AboutMe,
+                Glyph::Kit(IconName::User),
+                "About me",
+            ),
         ],
     ),
     (
         "Window",
         &[
-            (SettingsPage::Appearance, IconName::Palette, "Appearance"),
-            (SettingsPage::Notifications, IconName::Bell, "Notifications"),
-            (SettingsPage::Keyboard, IconName::SquareTerminal, "Keyboard"),
+            (
+                SettingsPage::Appearance,
+                Glyph::Kit(IconName::Palette),
+                "Appearance",
+            ),
+            (
+                SettingsPage::Notifications,
+                Glyph::Kit(IconName::Bell),
+                "Notifications",
+            ),
+            (
+                SettingsPage::Keyboard,
+                Glyph::Kit(IconName::SquareTerminal),
+                "Keyboard",
+            ),
+            (SettingsPage::Plugins, Glyph::Own(icons::PUZZLE), "Plugins"),
         ],
     ),
     (
         "Data",
         &[
-            (SettingsPage::Secrets, IconName::Eye, "Secrets"),
+            (SettingsPage::Secrets, Glyph::Kit(IconName::Eye), "Secrets"),
+            (
+                SettingsPage::Workshop,
+                Glyph::Kit(IconName::Globe),
+                "Workshop",
+            ),
             (
                 SettingsPage::VersionControl,
-                IconName::Github,
+                Glyph::Own(icons::GIT_BRANCH),
                 "Version control",
             ),
         ],
@@ -76,19 +123,37 @@ const GROUPS: &[(&str, &[Page])] = &[
     (
         "System",
         &[
-            (SettingsPage::Updates, IconName::RefreshCw, "Updates"),
-            (SettingsPage::Usage, IconName::ChartPie, "System usage"),
-            (SettingsPage::Advanced, IconName::Settings2, "Advanced"),
+            (
+                SettingsPage::Updates,
+                Glyph::Kit(IconName::RefreshCw),
+                "Updates",
+            ),
+            (
+                SettingsPage::Usage,
+                Glyph::Kit(IconName::ChartPie),
+                "System usage",
+            ),
+            (
+                SettingsPage::Advanced,
+                Glyph::Kit(IconName::Settings2),
+                "Advanced",
+            ),
         ],
     ),
 ];
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     ws.token_box.settle(window, cx);
+    ws.repositories.settle(window, cx);
     let theme = cx.theme();
     let (border, muted) = (theme.border, theme.muted_foreground);
+    let menu_width = if window.viewport_size().width < px(1200.) {
+        176.
+    } else {
+        232.
+    };
     let mut menu = div()
-        .w(px(232.))
+        .w(px(menu_width))
         .h_full()
         .flex()
         .flex_col()
@@ -108,12 +173,23 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .text_color(muted.opacity(0.8))
                 .child(*group),
         );
-        menu = menu.children(GROUPS[index].1.iter().map(|(page, icon, label)| {
+        let plugins = crate::plugins::any_settings(ws);
+        let listed = GROUPS[index]
+            .1
+            .iter()
+            .filter(|(page, ..)| *page != SettingsPage::Plugins || plugins);
+        menu = menu.children(listed.map(|(page, icon, label)| {
             let page = *page;
 
             widgets::row(*label, ws.settings_page == page, cx)
                 .h(px(36.))
-                .child(widgets::icon(icon.clone(), muted))
+                .child(match icon {
+                    Glyph::Kit(name) => widgets::icon(name.clone(), muted),
+                    Glyph::Own(path) => Icon::default()
+                        .path(*path)
+                        .size(px(crate::ui::size::ICON))
+                        .text_color(muted),
+                })
                 .child(div().flex_1().child(*label))
                 .when(
                     page == SettingsPage::Updates && ws.status.available_update.is_some(),
@@ -126,6 +202,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 }))
         }));
     }
+    if ws.settings_page == SettingsPage::Ai {
+        return div()
+            .size_full()
+            .flex()
+            .child(menu)
+            .child(ai::render(ws, menu_width, window, cx));
+    }
     let title = pages()
         .find(|(page, ..)| *page == ws.settings_page)
         .map_or("", |(.., label)| *label);
@@ -135,6 +218,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         SettingsPage::Keyboard => shortcuts::page(cx),
         SettingsPage::Updates | SettingsPage::Usage => system::render(ws, ws.settings_page, cx),
         SettingsPage::Secrets => secrets::render(ws, cx),
+        SettingsPage::Workshop => workshop::render(ws, cx),
+        SettingsPage::Plugins => crate::plugins::settings_page(ws, cx),
+        SettingsPage::Safety => {
+            let arbiter = arbiter::render(ws, window, cx);
+            behavior::render(ws, SettingsPage::Safety, cx).child(arbiter)
+        }
         page => behavior::render(ws, page, cx),
     };
     div().size_full().flex().flex_row().child(menu).child(
@@ -160,11 +249,21 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     )
 }
 
+impl Workspace {
+    pub fn open_settings(&mut self, cx: &mut Context<Self>) {
+        self.center = crate::workspace::Center::Settings;
+        self.load_settings(cx);
+        if self.settings_page == SettingsPage::Ai {
+            self.load_ai_tab(cx);
+        }
+    }
+}
+
 /// What a page is for, in one line under its title.
 fn about(page: SettingsPage) -> &'static str {
     match page {
+        SettingsPage::Ai => "",
         SettingsPage::Appearance => "Theme and fonts, kept on this machine.",
-        SettingsPage::Model => "The model in use, how much context it gets, and its providers.",
         SettingsPage::Chat => "How a new chat starts: its mode and what it may do.",
         SettingsPage::Safety => "What the agents may do without asking.",
         SettingsPage::AboutMe => "What the agents know about you, and snippets for @names.",
@@ -176,6 +275,8 @@ fn about(page: SettingsPage) -> &'static str {
         SettingsPage::Updates => "The version you run and the newest one.",
         SettingsPage::Usage => "What duskcode takes from this machine.",
         SettingsPage::Secrets => "Keys and tokens, kept in the system keychain.",
+        SettingsPage::Workshop => "Repositories of skills and plugins you added.",
+        SettingsPage::Plugins => "Settings the switched-on plugins add.",
     }
 }
 
@@ -212,9 +313,7 @@ pub fn list(rows: impl IntoIterator<Item = Div>, cx: &App) -> Div {
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(border)
-        .bg(theme.muted)
+        .elevation(Level::Raised, cx)
         .overflow_hidden()
         .children(rows.into_iter().enumerate().map(move |(index, row)| {
             row.when(index > 0, |row| row.border_t_1().border_color(border))
@@ -228,9 +327,7 @@ fn section(title: &str, hint: &str, cx: &App) -> Div {
         .gap_3()
         .p_5()
         .rounded_xl()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().muted)
+        .elevation(Level::Raised, cx)
         .child(
             div()
                 .flex()

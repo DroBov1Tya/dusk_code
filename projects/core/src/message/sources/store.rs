@@ -7,17 +7,29 @@ use uuid::Uuid;
 
 use crate::{
     catalog::mentions::{ME, Mentions},
-    init::create_private_dir,
-    state::{Source, State},
+    init::{create_private_dir, files::read_regular},
+    state::{
+        Source, State,
+        artifacts::{ArtifactStore, Card, MAX_AUDIO_BYTES},
+    },
 };
 use dusk_protocol::config::find as find_mentions;
-use dusk_protocol::thread::{Part, source_tag, split, wrap};
+use dusk_protocol::thread::{Part, sound_tag, source_tag, split, wrap};
 
 use super::{
     block::{SourceBlock, attach},
-    paths::picture_paths,
+    paths::file_paths,
     picture::is_picture,
 };
+
+/// Whether the text of a sent message may name files of this machine: a path in it, or
+/// an `@` mention that brings the profile's files or a snippet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostFiles {
+    Taken,
+    /// A path and a mention stay the words they are.
+    Left,
+}
 
 pub(crate) const FOLDER: &str = "sources";
 /// Larger files are refused; a chat folder is not a backup.
@@ -77,14 +89,30 @@ impl ThreadSources<'_> {
 
     /// `message` with every pasted block, and every picture it names by its full path,
     /// moved to a source and replaced by its tag. A terminal pastes a dropped file as its
-    /// path, so this is how a screenshot reaches the model.
-    pub async fn keep_pastes(&self, message: &str) -> Result<String> {
+    /// path, so this is how a screenshot reaches the model. A sound it names is copied to
+    /// a card of `sounds`, for the chat to play, and keeps its path for the model.
+    pub async fn keep_pastes(&self, message: &str, sounds: &ArtifactStore) -> Result<String> {
+        self.kept(message, Some(sounds)).await
+    }
+
+    /// `message` with every pasted block moved to a source, and nothing else read: a
+    /// path in it stays text.
+    pub async fn keep_pasted_blocks(&self, message: &str) -> Result<String> {
+        self.kept(message, None).await
+    }
+
+    /// The files the text names are taken when there is a store for their sounds.
+    async fn kept(&self, message: &str, sounds: Option<&ArtifactStore>) -> Result<String> {
         let mut count = self.state.sources(self.thread_id).await?.len();
         let mut kept = String::new();
         for part in split(message) {
             match part {
-                Part::Text(text) => kept.push_str(&self.keep_pictures(text).await?),
+                Part::Text(text) => match sounds {
+                    Some(sounds) => kept.push_str(&self.keep_files(text, sounds).await?),
+                    None => kept.push_str(text),
+                },
                 Part::Source(name) => kept.push_str(&source_tag(name)),
+                Part::Sound { id, path } => kept.push_str(&sound_tag(id, path)),
                 Part::Pasted(text) => {
                     count += 1;
                     let name = format!("pasted-{count}.txt");
@@ -96,17 +124,27 @@ impl ThreadSources<'_> {
         Ok(kept)
     }
 
-    /// `text` with each picture path in it replaced by the tag of the picture's copy.
-    async fn keep_pictures(&self, text: &str) -> Result<String> {
+    /// `text` with each picture path in it replaced by the tag of the picture's copy, and
+    /// each sound path by a tag of the sound's card and the path.
+    async fn keep_files(&self, text: &str, sounds: &ArtifactStore) -> Result<String> {
         let mut kept = String::new();
         let mut from = 0;
-        for (range, path) in picture_paths(text) {
-            if !is_picture_file(&path).await {
-                continue;
-            }
-            let source = self.add_file(&path).await?;
+        for (range, path) in file_paths(text) {
+            let tag = if is_picture_file(&path).await {
+                source_tag(&self.add_file(&path).await?.name)
+            } else {
+                match keep_sound(&path, sounds).await {
+                    Ok(Some(card)) => sound_tag(&card.id, &path.display().to_string()),
+                    Ok(None) => continue,
+                    // The path stays text: the model can still read the file.
+                    Err(error) => {
+                        tracing::warn!("cannot keep a sound the user sent: {error:#}");
+                        continue;
+                    }
+                }
+            };
             kept.push_str(&text[from..range.start]);
-            kept.push_str(&source_tag(&source.name));
+            kept.push_str(&tag);
             from = range.end;
         }
         kept.push_str(&text[from..]);
@@ -144,6 +182,7 @@ impl ThreadSources<'_> {
             match part {
                 Part::Text(text) => kept.push_str(&self.mentions_in(text, mentions).await?),
                 Part::Source(name) => kept.push_str(&source_tag(name)),
+                Part::Sound { id, path } => kept.push_str(&sound_tag(id, path)),
                 Part::Pasted(text) => kept.push_str(&wrap(text)),
             }
         }
@@ -208,6 +247,31 @@ impl ThreadSources<'_> {
         self.store(name, bytes).await
     }
 
+    /// The bytes of the picture source `name`, the newest when names repeat. The name is
+    /// looked up among this chat's sources, never joined as a path, and only a PNG or a
+    /// JPEG is given out.
+    pub async fn picture(&self, name: &str) -> Result<Vec<u8>> {
+        let sources = self.state.sources(self.thread_id).await?;
+        let source = sources
+            .iter()
+            .rev()
+            .find(|source| source.name == name)
+            .context("this chat has no such source")?;
+        ensure!(
+            Path::new(&source.file).file_name() == Some(source.file.as_ref()),
+            "the source's file is not in the sources folder"
+        );
+        ensure!(source.bytes <= MAX_FILE_BYTES, "the picture is over 64 MiB");
+        let bytes = tokio::fs::read(self.folder().join(&source.file))
+            .await
+            .context("read the picture")?;
+        ensure!(
+            is_picture(&bytes[..bytes.len().min(16)]),
+            "the source is not a PNG or JPEG picture"
+        );
+        Ok(bytes)
+    }
+
     pub async fn remove(&self, id: &str) -> Result<()> {
         if let Some(file) = self.state.remove_source(self.thread_id, id).await? {
             // The name came from `store`, and a file already gone is what was asked for.
@@ -259,6 +323,17 @@ async fn read_file(path: &Path) -> Result<(String, Vec<u8>)> {
         .file_name()
         .map_or("file".into(), |name| clean_name(&name.to_string_lossy()));
     Ok((name, bytes))
+}
+
+/// A copy of the sound at `path` as a card; none when the file is no sound.
+async fn keep_sound(path: &Path, sounds: &ArtifactStore) -> Result<Option<Card>> {
+    let owned = path.to_owned();
+    let bytes =
+        tokio::task::spawn_blocking(move || read_regular(&owned, MAX_AUDIO_BYTES as u64)).await??;
+    if !crate::tools::is_sound(&bytes) {
+        return Ok(None);
+    }
+    crate::tools::save_sound(sounds, &bytes, None).map(Some)
 }
 
 async fn is_picture_file(path: &Path) -> bool {

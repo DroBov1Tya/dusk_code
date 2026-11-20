@@ -3,9 +3,10 @@
 use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::{
+    catalog::SkillChange,
     client::{Request, Response, ThreadRequest},
     config::ApprovalPolicy,
-    thread::{LocalUnsent, Message, Task, Thread},
+    thread::{LocalUnsent, Message, Pin, Task, Thread},
     tools::Decision,
 };
 use std::path::PathBuf;
@@ -32,6 +33,17 @@ impl Threads<'_> {
     pub async fn fork(&self, summary: &str, cwd: PathBuf) -> Result<String> {
         let summary = summary.to_owned();
         self.opened(ThreadRequest::Fork { summary, cwd }).await
+    }
+
+    /// A new chat holding `thread_id`'s history up to and including `message_id`.
+    pub async fn fork_at(&self, thread_id: &str, message_id: &str, cwd: PathBuf) -> Result<String> {
+        let (thread_id, message_id) = (thread_id.to_owned(), message_id.to_owned());
+        self.opened(ThreadRequest::ForkAt {
+            thread_id,
+            message_id,
+            cwd,
+        })
+        .await
     }
 
     pub async fn list(&self) -> Result<Vec<Thread>> {
@@ -61,6 +73,15 @@ impl Threads<'_> {
         let thread_id = thread_id.to_owned();
         match self.call(ThreadRequest::Tasks { thread_id }).await? {
             Response::Tasks(tasks) => Ok(tasks),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// What the thread's agents changed in skills, oldest first.
+    pub async fn skill_changes(&self, thread_id: &str) -> Result<Vec<SkillChange>> {
+        let thread_id = thread_id.to_owned();
+        match self.call(ThreadRequest::SkillChanges { thread_id }).await? {
+            Response::SkillChanges(changes) => Ok(changes),
             other => Err(unexpected(other)),
         }
     }
@@ -100,15 +121,22 @@ impl Threads<'_> {
     }
 
     /// Runs a command the user confirmed, in the chat's folder; returns its output.
-    pub async fn run_command(&self, thread_id: &str, command: &str) -> Result<String> {
+    pub async fn run_command(&self, thread_id: &str, command: &str, run: u64) -> Result<String> {
         let request = ThreadRequest::RunCommand {
             thread_id: thread_id.to_owned(),
             command: command.to_owned(),
+            run,
         };
         match self.call(request).await? {
             Response::Text(output) => Ok(output),
             other => Err(anyhow::anyhow!("unexpected answer: {other:?}")),
         }
+    }
+
+    /// Kills a command this client started with `run_command`.
+    pub async fn stop_run(&self, thread_id: &str, run: u64) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.done(ThreadRequest::StopRun { thread_id, run }).await
     }
 
     pub async fn cancel(&self, thread_id: &str) -> Result<()> {
@@ -139,8 +167,14 @@ impl Threads<'_> {
     }
 
     /// Answers a tool's request; `false` when it no longer waits.
-    pub async fn approve(&self, id: u64, decision: Decision) -> Result<bool> {
-        match self.call(ThreadRequest::Approve { id, decision }).await? {
+    pub async fn approve(&self, thread_id: &str, id: u64, decision: Decision) -> Result<bool> {
+        let thread_id = thread_id.to_owned();
+        let request = ThreadRequest::Approve {
+            thread_id,
+            id,
+            decision,
+        };
+        match self.call(request).await? {
             Response::Waiting(waiting) => Ok(waiting),
             other => Err(unexpected(other)),
         }
@@ -164,6 +198,34 @@ impl Threads<'_> {
             Response::Approvals(policy) => Ok(policy),
             other => Err(unexpected(other)),
         }
+    }
+
+    /// The thread's pins, oldest message first.
+    pub async fn pins(&self, thread_id: &str) -> Result<Vec<Pin>> {
+        let thread_id = thread_id.to_owned();
+        match self.call(ThreadRequest::Pins { thread_id }).await? {
+            Response::Pins(pins) => Ok(pins),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Pins or unpins a message of the thread; answers with its pins.
+    pub async fn pin(&self, thread_id: &str, message_id: &str, pinned: bool) -> Result<Vec<Pin>> {
+        let request = ThreadRequest::Pin {
+            thread_id: thread_id.to_owned(),
+            message_id: message_id.to_owned(),
+            pinned,
+        };
+        match self.call(request).await? {
+            Response::Pins(pins) => Ok(pins),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// The chat is shown to the user: it is read.
+    pub async fn seen(&self, thread_id: &str) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.done(ThreadRequest::Seen { thread_id }).await
     }
 
     async fn opened(&self, request: ThreadRequest) -> Result<String> {

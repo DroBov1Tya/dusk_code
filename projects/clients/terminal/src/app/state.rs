@@ -1,7 +1,7 @@
 //! The client state itself: its fields, how it opens a thread, and its timers.
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     time::Instant,
 };
 
@@ -17,7 +17,7 @@ use ratatui::layout::Rect;
 use super::{
     Activity, ApprovalHit, Asked, ButtonHit, ChipHit, EditorHit, Entry, Focus, GoalHit, Input,
     InputRow, Layout, Panel, PathPopup, PluginRow, Poll, Pressed, QueueHit, Selection,
-    ShownPreview, SubagentView, Tone, Transcript, TranscriptHit, panels::agents,
+    ShownPreview, SubagentView, Tab, TabHit, Tone, Transcript, TranscriptHit, panels::agents,
 };
 
 pub struct App {
@@ -34,8 +34,18 @@ pub struct App {
     pub temporary_next: bool,
     pub temporary: bool,
     pub title: Option<String>,
+    /// The open chat's pins, as the core last listed them.
+    pub pins: Vec<dusk_protocol::thread::Pin>,
     pub transcript: Transcript,
     pub input: Input,
+    /// What was typed and not sent in the threads that are not shown; `None` is a new one.
+    pub drafts: HashMap<Option<String>, Input>,
+    /// Every tab in strip order; the shown one's thread is in the fields here and its
+    /// slot holds what they held before.
+    pub tabs: Vec<Tab>,
+    /// The shown tab, by index into `tabs`.
+    pub tab: usize,
+    pub tab_hits: Vec<TabHit>,
     pub focus: Focus,
     pub panel: Option<Panel>,
     pub activity: Activity,
@@ -96,12 +106,13 @@ pub struct App {
     /// /undo took the thread back to this message: the history is read again and the
     /// text goes back into the box.
     pub undone: Option<String>,
-    /// A question the agent asked, until it is answered or declined.
+    /// The question shown, until it is answered or declined: the card's own state.
     pub poll: Option<Poll>,
-    /// Questions asked while one was on the screen, and the answers given so far: they
-    /// go to the agent together, after the last one.
-    pub polls_waiting: std::collections::VecDeque<dusk_protocol::tools::Question>,
-    pub poll_answers: Vec<String>,
+    /// The user's likely next message, as the model proposed it, greyed in the empty box.
+    pub suggestion: dusk_protocol::thread::Suggestion,
+    /// Every question asked and not answered, and the answers given so far: they go to
+    /// the agent together, after the last one.
+    pub questions: dusk_protocol::tools::QuestionQueue,
     /// Tools waiting for the user's yes, the oldest first; only the first is shown.
     pub approvals: Vec<Asked>,
     pub approval_hits: Vec<ApprovalHit>,
@@ -130,6 +141,13 @@ pub struct App {
     /// Read the jobs again at once: a tool ended, a result arrived, a thread opened.
     pub jobs_stale: bool,
     pub jobs_read: Instant,
+    /// The open thread's plan by status and its team, for the rail and /overview.
+    pub plan: Option<dusk_protocol::thread::PlanCounts>,
+    pub team: Option<dusk_protocol::thread::Team>,
+    /// Read the plan and team again, and the open Overview: a turn ended, the plan or
+    /// team changed, a thread opened. At most once every `OVERVIEW_PERIOD`.
+    pub overview_stale: bool,
+    pub overview_read: Instant,
     /// Image previews on screen in the last frame, and the pictures drawn over them
     /// where the terminal can.
     pub previews: Vec<ShownPreview>,
@@ -149,7 +167,9 @@ pub struct App {
     /// The MCP servers of the config, as the core last reported them.
     pub mcp: Vec<McpStatus>,
     pub turn_started_at: Option<i64>,
-    pub last_turn_duration_ms: Option<u64>,
+    pub last_turn_duration_ms: Option<i64>,
+    /// What the running turn has used so far, as the core counted it.
+    pub turn_spend: Option<dusk_protocol::thread::TurnSpend>,
     /// What the core last said about itself: model, settings, MCP, updates.
     pub status: Status,
     pub turn_running: bool,
@@ -162,6 +182,13 @@ pub struct App {
 }
 
 impl App {
+    /// Another thread is shown: its plan and team are read anew.
+    pub fn forget_overview(&mut self) {
+        self.plan = None;
+        self.team = None;
+        self.overview_stale = true;
+    }
+
     /// A transcript line as drawn on the last frame, as plain text.
     pub fn drawn_text(&self, line: usize) -> Option<&str> {
         let earlier = self
@@ -187,8 +214,13 @@ impl App {
             temporary_next: false,
             temporary: false,
             title: None,
+            pins: Vec::new(),
             transcript: Transcript::default(),
             input: Input::default(),
+            drafts: HashMap::new(),
+            tabs: vec![Tab::default()],
+            tab: 0,
+            tab_hits: Vec::new(),
             focus: Focus::Input,
             panel: None,
             activity: Activity::Idle,
@@ -239,8 +271,8 @@ impl App {
             goal_rounds: status.max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
-            polls_waiting: Default::default(),
-            poll_answers: Vec::new(),
+            suggestion: Default::default(),
+            questions: Default::default(),
             approvals: Vec::new(),
             approval_hits: Vec::new(),
             forked: None,
@@ -261,6 +293,10 @@ impl App {
             jobs: Vec::new(),
             jobs_stale: false,
             jobs_read: Instant::now(),
+            plan: None,
+            team: None,
+            overview_stale: false,
+            overview_read: Instant::now(),
             previews: Vec::new(),
             pictures: Default::default(),
             subagents: Vec::new(),
@@ -268,6 +304,7 @@ impl App {
             mcp: Vec::new(),
             turn_started_at: None,
             last_turn_duration_ms: None,
+            turn_spend: None,
             status,
             turn_running: false,
             compacting: false,
@@ -282,9 +319,16 @@ impl App {
     /// Shows another thread: its history, or nothing for a new one.
     pub fn open(&mut self, thread_id: Option<String>, title: Option<String>, history: &[Message]) {
         if self.thread_id != thread_id {
-            self.input = Input::default();
+            // While an earlier message is recalled, the typed text waits in `recall_draft`.
+            let typed = self.recall_draft.take();
+            let typed = typed.unwrap_or_else(|| std::mem::take(&mut self.input));
+            if !typed.is_empty() {
+                self.drafts.insert(self.thread_id.take(), typed);
+            }
+            self.input = self.drafts.remove(&thread_id).unwrap_or_default();
         }
         self.temporary = false;
+        self.pins.clear();
         (self.sent_ids, self.sent) = history
             .iter()
             .filter(|message| {
@@ -298,11 +342,11 @@ impl App {
         self.recall_draft = None;
         self.jobs.clear();
         self.jobs_stale = true;
+        self.forget_overview();
         self.thread_id = thread_id;
         self.title = title;
         self.poll = None;
-        self.polls_waiting.clear();
-        self.poll_answers.clear();
+        self.questions.clear();
         self.local_unsent.clear();
         let images = std::mem::take(&mut self.transcript.images);
         self.transcript = Transcript::from_history(history);
@@ -334,6 +378,7 @@ impl App {
         self.goal = None;
         self.turn_started_at = None;
         self.last_turn_duration_ms = None;
+        self.turn_spend = None;
         self.output_samples.clear();
         self.turn_running = false;
         self.compacting = false;
@@ -375,9 +420,9 @@ impl App {
             .unwrap_or_default()
     }
 
-    pub fn elapsed_ms(&self) -> Option<u64> {
+    pub fn elapsed_ms(&self) -> Option<i64> {
         self.turn_started_at
-            .map(|started| now_ms().saturating_sub(started).max(0) as u64)
+            .map(|started| now_ms().saturating_sub(started).max(0))
             .or(self.last_turn_duration_ms)
     }
 
@@ -408,7 +453,9 @@ impl App {
         self.activity = Activity::Idle;
         self.turn_running = false;
         self.compacting = false;
+        self.transcript.stopped();
         self.turn_started_at = None;
+        self.turn_spend = None;
         self.transcript.stop_running_tools();
         let unavailable_at = now_ms();
         for agent in self.subagents.iter_mut().filter(|agent| agent.is_working()) {
@@ -420,34 +467,30 @@ impl App {
         if self.local_unsent.iter().any(|item| item.id == message.id) {
             return;
         }
-        self.transcript.push(Entry::Notice {
-            local_id: Some(message.id.clone()),
-            text: format!(
+        self.transcript.local(
+            Some(message.id.clone()),
+            format!(
                 "Saved locally \u{00B7} not sent \u{00B7} /resend\n{}",
                 message.content
             ),
-            tone: Tone::Info,
-        });
+            Tone::Info,
+        );
         self.local_unsent.push(message);
     }
 
     pub fn mark_local_sent(&mut self, id: &str) {
         self.local_unsent.retain(|item| item.id != id);
-        for entry in self.transcript.entries_mut() {
-            if let Entry::Notice {
-                local_id: Some(local_id),
-                text,
-                ..
-            } = entry
-                && local_id == id
-            {
-                *text = text.replacen(
+        self.transcript.change_locals(|local| {
+            let mine = local.local_id.as_deref() == Some(id);
+            if mine {
+                local.text = local.text.replacen(
                     "Saved locally \u{00B7} not sent \u{00B7} /resend",
                     "Queued by explicit resend",
                     1,
                 );
             }
-        }
+            mine
+        });
         if let Some(Panel::Unsent { selected }) = &mut self.panel {
             *selected = (*selected).min(self.local_unsent.len().saturating_sub(1));
         }
@@ -458,7 +501,7 @@ impl App {
         if let Some(Entry::User { text: shown, .. }) = self.transcript.entries.last()
             && *shown == text
         {
-            self.transcript.entries_mut().pop();
+            self.transcript.remove(self.transcript.entries.len() - 1);
         }
         if self.input.is_empty() {
             self.input.set(text);
@@ -466,20 +509,5 @@ impl App {
     }
 }
 
-/// 1234 as "1.2k", 100000 as "100k", 1234567 as "1.2M".
-pub fn compact_number(value: u64) -> String {
-    match value {
-        0..1_000 => value.to_string(),
-        1_000..1_000_000 => format!("{}k", tenths(value, 1_000)),
-        _ => format!("{}M", tenths(value, 1_000_000)),
-    }
-}
-
-/// `value / unit` with one decimal, dropped when it is zero.
-pub fn tenths(value: u64, unit: u64) -> String {
-    let tenths = (value * 10 + unit / 2) / unit;
-    match tenths % 10 {
-        0 => (tenths / 10).to_string(),
-        rest => format!("{}.{rest}", tenths / 10),
-    }
-}
+/// 1234 as "1.2k", 100000 as "100k", 1234567 as "1.2M", as every client says it.
+pub use dusk_protocol::thread::short_count as compact_number;

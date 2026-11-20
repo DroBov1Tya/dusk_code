@@ -11,11 +11,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use dusk_protocol::{
     agent::{AgentPhase, Doing},
     model::{Effort, ModelEvent},
-    thread::{ARBITER_THREAD, ThreadEvent, ThreadTokens},
+    thread::{ARBITER_THREAD, AgentState, Note, ThreadEvent, ThreadTokens, note},
 };
 use ratatui::layout::{Position, Rect};
 
-use crate::app::{Action, App, Entry, Panel, Selection, Tone, Transcript, TranscriptHit};
+use crate::app::{Action, App, Panel, Selection, Tone, Transcript, TranscriptHit};
 use dusk_protocol::system::now_ms;
 
 /// Output older than this no longer counts toward tokens per second.
@@ -32,8 +32,12 @@ pub struct SubagentView {
     pub task: String,
     /// How hard it reasons; `None` is the provider's default.
     pub effort: Option<Effort>,
+    /// The model it answers on, `provider/model`; none when not known.
+    pub model: Option<String>,
     /// The thread that asked it.
     pub parent: Option<String>,
+    /// The task of the plan it was given, when it is a team member.
+    pub task_id: Option<String>,
     pub started_at: i64,
     pub finished_at: Option<i64>,
     /// When its event stream was lost, without an observed completion.
@@ -41,8 +45,10 @@ pub struct SubagentView {
     pub tokens: ThreadTokens,
     /// Where it is in its work, with what it said about it.
     pub phase: Option<(AgentPhase, String)>,
-    /// What it does this moment, from its events.
-    pub doing: Doing,
+    /// What it does this moment, from its events, as every client follows it.
+    pub state: AgentState,
+    /// The tools it runs now, by call ID and name.
+    running: Vec<(String, String)>,
     /// Its largest request.
     pub limit: u64,
     /// Text that came in recently, with when, for tokens per second.
@@ -52,8 +58,7 @@ pub struct SubagentView {
 /// One agent's thread open in a window over the screen.
 pub struct AgentWindow {
     pub thread_id: String,
-    /// The thread that asked the agent: its messages show as the requests they are.
-    parent: Option<String>,
+    /// Its thread; messages of the thread that asked it show as the requests they are.
     pub transcript: Transcript,
     /// Lines scrolled up from the bottom; 0 follows new output.
     pub scroll: usize,
@@ -73,6 +78,17 @@ pub struct AgentWindow {
 }
 
 impl SubagentView {
+    /// What it does this moment, in a word.
+    pub fn doing(&self) -> &'static str {
+        match &self.state {
+            AgentState::Thinking => "thinking",
+            AgentState::Writing => "writing",
+            AgentState::Tool(name) => Doing::of_tool(name).label(),
+            AgentState::Done => "done",
+            AgentState::Failed => "failed",
+        }
+    }
+
     pub fn is_working(&self) -> bool {
         self.finished_at.is_none() && self.unavailable_at.is_none()
     }
@@ -85,12 +101,12 @@ impl SubagentView {
     }
 
     /// How long work was observed, frozen on completion or loss of the stream.
-    pub fn elapsed_ms(&self) -> u64 {
+    pub fn elapsed_ms(&self) -> i64 {
         let end = self
             .finished_at
             .or(self.unavailable_at)
             .unwrap_or_else(now_ms);
-        end.saturating_sub(self.started_at).max(0) as u64
+        end.saturating_sub(self.started_at).max(0)
     }
 
     fn record_output(&mut self, text: &str) {
@@ -107,20 +123,10 @@ impl SubagentView {
 }
 
 impl AgentWindow {
-    pub fn new(thread_id: String, parent: Option<String>, mut transcript: Transcript) -> Self {
-        for entry in transcript.entries_mut() {
-            if let Entry::FromAgent {
-                thread_id, text, ..
-            } = entry
-                && parent.as_ref() == Some(thread_id)
-            {
-                *entry = request(std::mem::take(text));
-            }
-        }
+    pub fn new(thread_id: String, parent: Option<String>, transcript: Transcript) -> Self {
         Self {
             thread_id,
-            parent,
-            transcript,
+            transcript: transcript.with_asker(parent),
             scroll: 0,
             max_scroll: 0,
             body: Rect::default(),
@@ -180,33 +186,8 @@ impl AgentWindow {
 
     /// What the agent's thread does shows in the window as it happens.
     fn apply(&mut self, event: ThreadEvent) {
-        let transcript = &mut self.transcript;
-        match event {
-            ThreadEvent::Model(ModelEvent::Reasoning(text)) => transcript.add_reasoning(&text),
-            ThreadEvent::Model(ModelEvent::Text(text)) => transcript.add_answer(&text),
-            ThreadEvent::ToolStarted(call) => transcript.start_tool(call),
-            ThreadEvent::ToolFinished { call_id, result } => {
-                transcript.finish_tool(&call_id, result)
-            }
-            ThreadEvent::TurnFinished(_) => transcript.stop_running_tools(),
-            ThreadEvent::FromJob(message) => transcript.job_result(&message.content),
-            ThreadEvent::FromAgent(message) => {
-                let from = message.from_thread_id.unwrap_or_default();
-                let entry = if self.parent.as_ref() == Some(&from) {
-                    request(message.content)
-                } else {
-                    Entry::from_agent(from, message.content)
-                };
-                transcript.push(entry);
-            }
-            _ => {}
-        }
+        self.transcript.apply(event);
     }
-}
-
-/// What the asking thread wrote, shown like a user's message.
-fn request(text: String) -> Entry {
-    Entry::User { text, open: false }
 }
 
 /// Recent output in tokens per second, at about four bytes a token.
@@ -232,8 +213,17 @@ impl App {
                 agent,
                 task,
                 effort,
+                model,
+                task_id,
                 ..
-            } => self.start_subagent(child, agent, task, effort, Some(thread_id.to_owned())),
+            } => self.start_subagent(
+                child,
+                agent,
+                task,
+                (effort, model),
+                Some(thread_id.to_owned()),
+                task_id,
+            ),
             ThreadEvent::Subagent {
                 thread_id: child,
                 event,
@@ -251,7 +241,7 @@ impl App {
                 what,
                 allow,
                 reason,
-            } => self.arbiter_decided(what, allow, reason),
+            } => self.arbiter_decided(what, allow, reason, true),
             event => {
                 self.update_card(thread_id, &event);
                 if let Some(Panel::Agent(window)) = &mut self.panel
@@ -263,17 +253,26 @@ impl App {
         }
     }
 
-    /// The arbiter answered in the user's place: a note in the chat, and its card, which
-    /// opens its thread of requests and verdicts, shows the latest.
-    pub fn arbiter_decided(&mut self, what: String, allow: bool, reason: String) {
+    /// The arbiter answered in the user's place: its card, which opens its thread of
+    /// requests and verdicts, shows the latest. For an agent's request, `noted` puts the
+    /// line the chat's own decisions leave there too.
+    pub fn arbiter_decided(&mut self, what: String, allow: bool, reason: String, noted: bool) {
         let verdict = if allow { "allowed" } else { "denied" };
-        let tone = if allow { Tone::Info } else { Tone::Error };
-        self.transcript
-            .notice(format!("the arbiter {verdict} {what}: {reason}"), tone);
+        if noted {
+            let event = ThreadEvent::ArbiterDecided {
+                what: what.clone(),
+                allow,
+                reason,
+            };
+            if let Some(Note::Notice(text) | Note::Error(text)) = note(&event) {
+                self.transcript.notice(text, Tone::Info);
+            }
+        }
         self.start_subagent(
             ARBITER_THREAD.into(),
             "arbiter".into(),
             format!("{verdict} {what}"),
+            (None, None),
             None,
             None,
         );
@@ -288,8 +287,9 @@ impl App {
         thread_id: String,
         agent: String,
         task: String,
-        effort: Option<Effort>,
+        (effort, model): (Option<Effort>, Option<String>),
         parent: Option<String>,
+        task_id: Option<String>,
     ) {
         let earlier = self
             .subagents
@@ -304,16 +304,79 @@ impl App {
             agent,
             task,
             effort,
+            model,
             parent,
+            task_id,
             started_at: now_ms(),
             finished_at: None,
             unavailable_at: None,
             tokens,
             limit,
             phase: None,
-            doing: Doing::Thinking,
+            state: AgentState::Thinking,
+            running: Vec::new(),
             output: VecDeque::new(),
         });
+    }
+
+    /// The chat's team as the core told it: by its event, or, when `answer`, by a
+    /// request that an event newer than it may have overtaken. Its members become cards
+    /// by the rule every client shares (`Team::changes`), so a chat opened while its team
+    /// runs or after lists them as the desktop and browser do, and an ended team stops
+    /// its members whether its roster still names them or not.
+    pub fn team_heard(&mut self, team: dusk_protocol::thread::Team, answer: bool) {
+        use dusk_protocol::thread::{KnownAgent, TeamChange};
+        let stale = |held: &dusk_protocol::thread::Team| match answer {
+            true => !team.replaces(held),
+            false => team.older_run_than(held),
+        };
+        if self.team.as_ref().is_some_and(stale) {
+            return;
+        }
+        let known: Vec<KnownAgent<'_>> = self
+            .subagents
+            .iter()
+            .map(|card| KnownAgent {
+                thread_id: &card.thread_id,
+                task_id: card.task_id.as_deref(),
+                working: card.state.working(),
+            })
+            .collect();
+        let changes = team.changes(&self.tasks, &known);
+        let now = now_ms();
+        for change in changes {
+            match change {
+                TeamChange::Stop(thread_id) => {
+                    if let Some(card) = self.subagents.iter_mut().find(|c| c.thread_id == thread_id)
+                    {
+                        card.state = AgentState::Done;
+                        card.running.clear();
+                        card.finished_at.get_or_insert(now);
+                    }
+                }
+                TeamChange::Join(member) => {
+                    let thread_id = member.thread_id.clone();
+                    let parent = Some(team.thread_id.clone());
+                    let shown = (None, member.model);
+                    let task_id = Some(member.task_id);
+                    self.start_subagent(
+                        thread_id,
+                        member.role,
+                        member.task,
+                        shown,
+                        parent,
+                        task_id,
+                    );
+                    if !member.state.working()
+                        && let Some(card) = self.subagents.last_mut()
+                    {
+                        card.state = member.state;
+                        card.finished_at = Some(now);
+                    }
+                }
+            }
+        }
+        self.team = Some(team);
     }
 
     /// Whether an unfolded task shows a step whose timer runs.
@@ -423,17 +486,11 @@ impl App {
         else {
             return;
         };
+        card.state.follow(&mut card.running, event);
         match event {
-            ThreadEvent::Model(ModelEvent::Reasoning(text)) => {
-                card.doing = Doing::Thinking;
+            ThreadEvent::Model(ModelEvent::Reasoning(text) | ModelEvent::Text(text)) => {
                 card.record_output(text)
             }
-            ThreadEvent::Model(ModelEvent::Text(text)) => {
-                card.doing = Doing::Writing;
-                card.record_output(text)
-            }
-            ThreadEvent::ToolStarted(call) => card.doing = Doing::of_tool(&call.name),
-            ThreadEvent::ToolFinished { .. } => card.doing = Doing::Thinking,
             ThreadEvent::Tokens { tokens, limit } => {
                 card.tokens = *tokens;
                 card.limit = *limit;

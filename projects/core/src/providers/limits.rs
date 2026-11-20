@@ -11,14 +11,18 @@ use parking_lot::Mutex;
 use reqwest::header::HeaderMap;
 use sha2::{Digest, Sha256};
 
-use crate::config::ProviderConfig;
+use crate::config::{ProviderConfig, ProviderKind};
 
-pub use dusk_protocol::model::{RateLimit, RateLimits};
+pub use dusk_protocol::model::{PlanWindow, RateLimit, RateLimits};
 
 /// No provider counts further than this; a larger number is not a limit.
 const MAX_COUNT: u64 = 1_000_000_000_000;
 /// The longest period a limit is counted over is a day.
 const MAX_RESET: Duration = Duration::from_secs(24 * 60 * 60);
+/// The longest usage window a plan has is about a month.
+const MAX_PLAN_WINDOW: Duration = Duration::from_secs(31 * 24 * 60 * 60);
+/// How long a report without a reset or window length stays visible.
+const UNKNOWN_PLAN_AGE: Duration = Duration::from_secs(10 * 60);
 /// Longer than any number, duration or timestamp a provider writes.
 const MAX_VALUE_BYTES: usize = 40;
 
@@ -34,15 +38,37 @@ pub enum Headers {
     /// `anthropic-ratelimit-{requests,tokens}-{limit,remaining,reset}`, the reset as an
     /// RFC 3339 time.
     Anthropic,
+    /// `x-codex-{primary,secondary}-{used-percent,window-minutes,reset-after-seconds,
+    /// reset-at}`: the ChatGPT plan's usage windows by the share used.
+    ChatGpt,
 }
 
 /// An address and its key, as a digest: the key itself is not kept here.
+#[derive(Clone, Copy)]
 pub struct Account([u8; 32]);
+
+/// One window of the ChatGPT plan as its stream reports it, in a `codex.rate_limits`
+/// event: the share used, the window's length and when it is full again, a Unix time.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+pub struct PlanUse {
+    pub used_percent: f64,
+    pub window_minutes: Option<u64>,
+    pub reset_at: Option<u64>,
+}
 
 #[derive(Default)]
 struct Seen {
     requests: Option<Window>,
     tokens: Option<Window>,
+    plan: [Option<Share>; 2],
+}
+
+/// A plan's usage window as last seen.
+struct Share {
+    minutes: Option<u64>,
+    used_percent: u8,
+    reset: Option<Instant>,
+    observed: Instant,
 }
 
 struct Window {
@@ -53,17 +79,77 @@ struct Window {
 }
 
 impl Account {
+    /// A ChatGPT registration is tied to a user and workspace. Its tokens rotate
+    /// while the registration and its limits stay the same.
     pub fn of(settings: &ProviderConfig) -> Self {
         let mut hash = Sha256::new();
         hash.update(settings.base_url.as_bytes());
         hash.update([0]);
-        hash.update(settings.api_key.0.as_bytes());
+        let signed_in = (settings.kind == ProviderKind::ChatGpt)
+            .then(|| super::openai::sign_in::Credential::read(&settings.api_key.0).ok())
+            .flatten();
+        match signed_in {
+            Some(credential) => {
+                hash.update(b"chatgpt\0");
+                hash.update(credential.client_id.as_bytes());
+                hash.update([0]);
+                hash.update(credential.subject.as_bytes());
+            }
+            None => hash.update(settings.api_key.0.as_bytes()),
+        }
         Self(hash.finalize().into())
+    }
+
+    /// Updates the reported slots and leaves any omitted window alone.
+    pub fn note_plan(&self, windows: [Option<PlanUse>; 2]) {
+        let now = Instant::now();
+        let plan = windows.map(|window| {
+            let window = window?;
+            share(
+                window.used_percent,
+                window.window_minutes,
+                window.reset_at.and_then(until_unix),
+                now,
+            )
+        });
+        self.merge_plan(plan);
+    }
+
+    fn merge_plan(&self, windows: [Option<Share>; 2]) {
+        if windows.iter().all(Option::is_none) {
+            return;
+        }
+        let now = Instant::now();
+        let mut accounts = SEEN.lock();
+        let plan = &mut accounts.entry(self.0).or_default().plan;
+        for (index, window) in windows.into_iter().enumerate() {
+            let Some(mut next) = window else { continue };
+            if let Some(previous) = &plan[index]
+                && (next.minutes.is_none() || next.minutes == previous.minutes)
+            {
+                next.minutes = next.minutes.or(previous.minutes);
+                next.reset = next.reset.or(previous.reset.filter(|reset| *reset > now));
+            }
+            // A plan can move its only window from secondary to primary.
+            let other = 1 - index;
+            if next.minutes.is_some()
+                && plan[other]
+                    .as_ref()
+                    .is_some_and(|old| old.minutes == next.minutes)
+            {
+                plan[other] = None;
+            }
+            plan[index] = Some(next);
+        }
     }
 
     /// Remembers the limits a response carries; one without them changes nothing.
     pub fn note(&self, headers: Headers, response: &HeaderMap) {
         let now = Instant::now();
+        if matches!(headers, Headers::ChatGpt) {
+            self.merge_plan(["primary", "secondary"].map(|which| plan_share(response, which, now)));
+            return;
+        }
         let (requests, tokens) = match headers {
             Headers::OpenAi => (
                 openai_window(response, "requests", now),
@@ -75,6 +161,7 @@ impl Account {
                 anthropic_window(response, "tokens", now)
                     .or_else(|| anthropic_window(response, "input-tokens", now)),
             ),
+            Headers::ChatGpt => return,
         };
         if requests.is_none() && tokens.is_none() {
             return;
@@ -94,9 +181,39 @@ impl Account {
         let now = Instant::now();
         let seen = SEEN.lock();
         let account = seen.get(&self.0)?;
-        Some(RateLimits {
-            requests: account.requests.as_ref().map(|window| window.at(now)),
-            tokens: account.tokens.as_ref().map(|window| window.at(now)),
+        let requests = account.requests.as_ref().map(|window| window.at(now));
+        let tokens = account.tokens.as_ref().map(|window| window.at(now));
+        let plan: Vec<_> = account
+            .plan
+            .iter()
+            .flatten()
+            .filter_map(|share| share.at(now))
+            .collect();
+        (requests.is_some() || tokens.is_some() || !plan.is_empty()).then_some(RateLimits {
+            requests,
+            tokens,
+            plan,
+        })
+    }
+}
+
+impl Share {
+    fn at(&self, now: Instant) -> Option<PlanWindow> {
+        let expires = self.reset.unwrap_or_else(|| {
+            let age = self.minutes.map_or(UNKNOWN_PLAN_AGE, |minutes| {
+                Duration::from_secs(minutes * 60)
+            });
+            self.observed + age
+        });
+        if expires <= now {
+            return None;
+        }
+        Some(PlanWindow {
+            minutes: self.minutes,
+            used_percent: self.used_percent,
+            resets_in: self
+                .reset
+                .map(|reset| reset.duration_since(now).as_secs().max(1)),
         })
     }
 }
@@ -135,6 +252,43 @@ fn anthropic_window(headers: &HeaderMap, what: &str, now: Instant) -> Option<Win
         count(value("remaining")?)?,
         value("reset").and_then(until).map(|wait| now + wait),
     )
+}
+
+/// One of the ChatGPT plan's windows; the reset comes as seconds to wait or, from newer
+/// servers, as a Unix time.
+fn plan_share(headers: &HeaderMap, which: &str, now: Instant) -> Option<Share> {
+    let value = |part: &str| value(headers, &format!("x-codex-{which}-{part}"));
+    let used: f64 = value("used-percent")?.parse().ok()?;
+    let minutes = value("window-minutes").and_then(count);
+    let wait = value("reset-after-seconds")
+        .and_then(count)
+        .map(Duration::from_secs)
+        .or_else(|| value("reset-at").and_then(count).and_then(until_unix));
+    share(used, minutes, wait, now)
+}
+
+/// A plan window from what the server said, each part checked: a share from 0 to 1000
+/// percent, shown up to 100, a window and a wait of at most `MAX_PLAN_WINDOW`.
+fn share(used: f64, minutes: Option<u64>, wait: Option<Duration>, now: Instant) -> Option<Share> {
+    if !(0.0..=1000.0).contains(&used) {
+        return None;
+    }
+    let minutes = minutes.filter(|minutes| (1..=MAX_PLAN_WINDOW.as_secs() / 60).contains(minutes));
+    let wait = wait.filter(|wait| *wait <= MAX_PLAN_WINDOW);
+    Some(Share {
+        minutes,
+        used_percent: used.round().min(100.) as u8,
+        reset: wait.map(|wait| now + wait),
+        observed: now,
+    })
+}
+
+/// The wait until a Unix time in seconds; zero when it has passed.
+fn until_unix(seconds: u64) -> Option<Duration> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    Some(Duration::from_secs(seconds).saturating_sub(now))
 }
 
 fn window(limit: u64, remaining: u64, reset: Option<Instant>) -> Option<Window> {
@@ -270,6 +424,166 @@ mod tests {
         assert_eq!(
             (tokens.limit, tokens.remaining, tokens.resets_in),
             (2_000_000, 2_000_000, None)
+        );
+    }
+
+    #[test]
+    fn reads_the_chatgpt_plan_headers() {
+        let account = account("chatgpt-headers");
+        let week = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3 * 24 * 3600;
+        account.note(
+            Headers::ChatGpt,
+            &headers(&[
+                ("x-codex-primary-used-percent", "5.0"),
+                ("x-codex-primary-window-minutes", "300"),
+                ("x-codex-primary-reset-after-seconds", "7800"),
+                ("x-codex-secondary-used-percent", "100"),
+                ("x-codex-secondary-window-minutes", "10080"),
+                ("x-codex-secondary-reset-at", &week.to_string()),
+            ]),
+        );
+        let limits = account.limits().unwrap();
+        assert_eq!((&limits.requests, &limits.tokens), (&None, &None));
+        let [short, long] = limits.plan.as_slice() else {
+            panic!("two windows: {:?}", limits.plan);
+        };
+        assert_eq!((short.minutes, short.used_percent), (Some(300), 5));
+        assert!(matches!(short.resets_in, Some(7_799..=7_800)));
+        assert_eq!((long.minutes, long.used_percent), (Some(10_080), 100));
+        assert!(matches!(long.resets_in, Some(259_190..=259_200)));
+        assert_eq!(limits.used(), Some(1.));
+
+        // Headers that cannot be read leave what was seen.
+        for bad in ["", "-1", "nan", "inf", "1e9", "abc"] {
+            account.note(
+                Headers::ChatGpt,
+                &headers(&[("x-codex-primary-used-percent", bad)]),
+            );
+        }
+        assert_eq!(account.limits().unwrap().plan.len(), 2);
+        // The ChatGPT headers say nothing about requests and tokens, nor the reverse.
+        account.note(
+            Headers::OpenAi,
+            &headers(&[("x-codex-primary-used-percent", "50")]),
+        );
+        assert_eq!(account.limits().unwrap().plan[0].used_percent, 5);
+    }
+
+    #[test]
+    fn plan_reports_without_a_reset_expire_without_inventing_one() {
+        let observed = Instant::now();
+        for (minutes, lifetime) in [
+            (None, UNKNOWN_PLAN_AGE),
+            (Some(300), Duration::from_secs(5 * 3600)),
+        ] {
+            let window = share(25., minutes, None, observed).unwrap();
+            let last = window
+                .at(observed + lifetime - Duration::from_secs(1))
+                .unwrap();
+            assert_eq!((last.used_percent, last.resets_in), (25, None));
+            assert_eq!(window.at(observed + lifetime), None);
+        }
+    }
+
+    #[test]
+    fn a_partial_plan_keeps_other_reported_windows_and_discards_expired_data() {
+        let account = account("partial-chatgpt-plan");
+        account.note(
+            Headers::ChatGpt,
+            &headers(&[
+                ("x-codex-primary-used-percent", "15"),
+                ("x-codex-primary-window-minutes", "300"),
+                ("x-codex-primary-reset-at", "1"),
+                ("x-codex-secondary-used-percent", "71"),
+                ("x-codex-secondary-window-minutes", "10080"),
+            ]),
+        );
+        let limits = account.limits().unwrap();
+        assert_eq!(
+            limits
+                .plan
+                .iter()
+                .map(|p| p.used_percent)
+                .collect::<Vec<_>>(),
+            [71]
+        );
+
+        account.note_plan([
+            Some(PlanUse {
+                used_percent: 23.,
+                window_minutes: None,
+                reset_at: None,
+            }),
+            None,
+        ]);
+        let limits = account.limits().unwrap();
+        assert_eq!(
+            limits
+                .plan
+                .iter()
+                .map(|p| (p.minutes, p.used_percent))
+                .collect::<Vec<_>>(),
+            [(Some(300), 23), (Some(10_080), 71)]
+        );
+
+        // If a plan reports the week in its primary slot, the old duplicate goes away.
+        account.note_plan([
+            Some(PlanUse {
+                used_percent: 72.,
+                window_minutes: Some(10_080),
+                reset_at: None,
+            }),
+            None,
+        ]);
+        assert_eq!(
+            account.limits().unwrap().plan,
+            [PlanWindow {
+                minutes: Some(10_080),
+                used_percent: 72,
+                resets_in: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn chatgpt_plan_limits_follow_the_registration_and_survive_token_rotation() {
+        let configured = |client: &str, subject: &str, token: &str| {
+            let record = serde_json::json!({
+                "client_id": client, "host_id": "fixture", "subject": subject, "email": null,
+                "access_token": token, "refresh_token": "", "expires_at": 1, "saved_at": 1,
+            });
+            let settings = serde_json::json!({
+                "kind": "chatgpt",
+                "base_url": super::super::openai::sign_in::RESOURCE,
+                "api_key": record.to_string(),
+            });
+            Account::of(&serde_json::from_value(settings).unwrap())
+        };
+        let first = configured("fixture-workspace-a", "user", "first-token");
+        first.note_plan([
+            Some(PlanUse {
+                used_percent: 22.,
+                window_minutes: Some(300),
+                reset_at: None,
+            }),
+            None,
+        ]);
+
+        let renewed = configured("fixture-workspace-a", "user", "different-token");
+        assert_eq!(renewed.limits().unwrap().plan[0].used_percent, 22);
+        assert!(
+            configured("fixture-workspace-b", "user", "another-token")
+                .limits()
+                .is_none()
+        );
+        assert!(
+            configured("fixture-workspace-a", "someone else", "another-token")
+                .limits()
+                .is_none()
         );
     }
 

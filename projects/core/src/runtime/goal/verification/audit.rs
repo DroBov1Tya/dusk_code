@@ -11,16 +11,15 @@ pub(super) const REVIEW_TIMEOUT: Duration = Duration::from_secs(5);
 /// Pending messages, unconsumed inputs, jobs and descendant agents are checked in
 /// the same database transaction as completion. The caller also holds the mailbox
 /// lock so a live child's report cannot be halfway through delivery.
-pub(super) const BUSY: &str = "WITH RECURSIVE agents(id) AS (
-    SELECT id FROM threads WHERE parent_thread_id = ?1
-    UNION ALL SELECT t.id FROM threads t JOIN agents a ON t.parent_thread_id = a.id
-) SELECT EXISTS(SELECT 1 FROM pending_messages WHERE thread_id = ?1 OR thread_id IN agents)
-    OR EXISTS(SELECT 1 FROM turns WHERE (thread_id = ?1 OR thread_id IN agents) AND status = 'running')
-    OR EXISTS(SELECT 1 FROM background_jobs WHERE (thread_id = ?1 OR thread_id IN agents) AND status = 'running')
+pub(super) const BUSY: &str = crate::state::below!(
+    "SELECT EXISTS(SELECT 1 FROM pending_messages WHERE thread_id = ?1 OR thread_id IN below)
+    OR EXISTS(SELECT 1 FROM turns WHERE (thread_id = ?1 OR thread_id IN below) AND status = 'running')
+    OR EXISTS(SELECT 1 FROM background_jobs WHERE (thread_id = ?1 OR thread_id IN below) AND status = 'running')
     OR EXISTS(SELECT 1 FROM goals WHERE thread_id = ?1 AND awaiting_user = 1)
-    OR EXISTS(SELECT 1 FROM messages m WHERE (m.thread_id = ?1 OR m.thread_id IN agents)
+    OR EXISTS(SELECT 1 FROM messages m WHERE (m.thread_id = ?1 OR m.thread_id IN below)
         AND (m.role = 'user' OR m.from_job_id IS NOT NULL)
-        AND m.sequence > (SELECT COALESCE(MAX(last_sequence), 0) FROM turns WHERE thread_id = m.thread_id))";
+        AND m.sequence > (SELECT COALESCE(MAX(last_sequence), 0) FROM turns WHERE thread_id = m.thread_id))"
+);
 
 pub(super) type Review<'a> = (Transaction<'a, Sqlite>, Vec<String>, bool);
 
@@ -123,4 +122,33 @@ pub(super) async fn review<'a>(
         }
     }
     Ok(Some((tx, gaps, only_confirmation)))
+}
+
+#[cfg(test)]
+mod busy_tests {
+    use super::BUSY;
+    use crate::testing::temp_state;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn the_busy_check_ends_on_parent_links_that_loop() {
+        let state = temp_state("busy_loop").await;
+        state.create_thread("chat", "test").await.unwrap();
+        for (id, parent) in [("one", "chat"), ("two", "one")] {
+            state
+                .create_agent_thread(id, parent, "agent", id)
+                .await
+                .unwrap();
+        }
+        // No code writes this; a damaged file could hold it.
+        sqlx::query("UPDATE threads SET parent_thread_id = 'two' WHERE id = 'one'")
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        let busy = sqlx::query_scalar::<_, bool>(BUSY)
+            .bind("one")
+            .fetch_one(&state.pool);
+        let busy = tokio::time::timeout(Duration::from_secs(5), busy).await;
+        assert!(!busy.expect("the busy check never ends").unwrap());
+    }
 }

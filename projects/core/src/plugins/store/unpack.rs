@@ -1,0 +1,170 @@
+//! Unpacking a package into an empty folder. Its hash is checked before this, so a
+//! package that gets here is the one the signed list names; the rules still hold, so a
+//! list signed by mistake cannot write outside the folder either: only plain files and
+//! folders, paths without `..`, roots or links, within a size and a count.
+
+use std::{
+    fs::{self, OpenOptions},
+    io::{self, Read},
+    os::unix::fs::OpenOptionsExt,
+    path::{Component, Path, PathBuf},
+};
+
+use anyhow::{Context, Result, bail, ensure};
+use flate2::read::GzDecoder;
+use tar::{Archive, EntryType};
+
+pub const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
+pub const MAX_FILES: usize = 4000;
+/// Everything the gzip stream gives, headers and skipped entries included, so a small
+/// package cannot make the core read gigabytes.
+const MAX_DECOMPRESSED_BYTES: u64 = MAX_UNPACKED_BYTES + 16 * 1024 * 1024;
+pub const MAX_PATH: usize = 300;
+
+/// One entry of a package whose path and type passed the rules.
+pub enum Item<'a> {
+    Folder,
+    File {
+        size: u64,
+        executable: bool,
+        /// Its bytes, at most `size`; what the visitor leaves unread is skipped.
+        body: &'a mut dyn Read,
+    },
+}
+
+/// Unpacks the `.tar.gz` in `package` into `into`, which must not exist yet.
+pub fn unpack(package: &[u8], into: &Path) -> Result<()> {
+    fs::create_dir(into).with_context(|| format!("cannot create {}", into.display()))?;
+    set_mode(into, 0o700)?;
+    walk(package, |relative, item| {
+        let target = into.join(relative);
+        match item {
+            Item::Folder => {
+                fs::create_dir_all(&target)?;
+                set_mode(&target, 0o700)?;
+            }
+            Item::File {
+                size,
+                executable,
+                body,
+            } => {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(if executable { 0o700 } else { 0o600 })
+                    .open(&target)
+                    .with_context(|| format!("cannot write {}", relative.display()))?;
+                let copied = io::copy(body, &mut file)?;
+                ensure!(copied == size, "{} is cut short", relative.display());
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Reads the `.tar.gz` in `package` under the rules above without writing anything,
+/// handing `visit` each plain file and folder by its clean relative path.
+pub fn walk(package: &[u8], mut visit: impl FnMut(&Path, Item<'_>) -> Result<()>) -> Result<()> {
+    let mut archive = Archive::new(Capped {
+        inner: GzDecoder::new(package),
+        left: MAX_DECOMPRESSED_BYTES,
+    });
+    let mut total = 0u64;
+    let mut count = 0usize;
+    for entry in archive.entries().context("the package is not a tar.gz")? {
+        let mut entry = entry.context("the package is damaged")?;
+        let kind = entry.header().entry_type();
+        if matches!(
+            kind,
+            EntryType::XGlobalHeader | EntryType::XHeader | EntryType::GNULongName
+        ) {
+            continue;
+        }
+        let relative = relative(&entry.path().context("a path in the package")?)?;
+        // The archive's own root, `./`, is the folder itself.
+        if relative.as_os_str().is_empty() && kind == EntryType::Directory {
+            continue;
+        }
+        ensure!(
+            !relative.as_os_str().is_empty(),
+            "the package has a file without a name"
+        );
+        count += 1;
+        ensure!(count <= MAX_FILES, "the package has over {MAX_FILES} files");
+        match kind {
+            EntryType::Directory => visit(&relative, Item::Folder)?,
+            EntryType::Regular | EntryType::Continuous => {
+                let size = entry.header().size()?;
+                total = total.saturating_add(size);
+                ensure!(
+                    total <= MAX_UNPACKED_BYTES,
+                    "the package unpacks to over {MAX_UNPACKED_BYTES} bytes"
+                );
+                let executable = entry.header().mode().unwrap_or(0) & 0o111 != 0;
+                let mut body = (&mut entry).take(size);
+                visit(
+                    &relative,
+                    Item::File {
+                        size,
+                        executable,
+                        body: &mut body,
+                    },
+                )?;
+            }
+            other => bail!(
+                "{} is a {other:?}; a package holds only files and folders",
+                relative.display()
+            ),
+        }
+    }
+    Ok(())
+}
+
+/// The path as a plain relative one: only names, none of `..`, `/` at the start or a
+/// drive; `./` is dropped, so the archive's root comes out empty.
+fn relative(path: &Path) -> Result<PathBuf> {
+    let mut clean = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(name) => clean.push(name),
+            Component::CurDir => {}
+            _ => bail!(
+                "the package has a path out of its folder: {}",
+                path.display()
+            ),
+        }
+    }
+    ensure!(
+        clean.as_os_str().len() <= MAX_PATH,
+        "the package has an overlong path"
+    );
+    Ok(clean)
+}
+
+fn set_mode(path: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+        .with_context(|| format!("cannot set the mode of {}", path.display()))
+}
+
+/// A reader that fails once it has given `left` bytes.
+struct Capped<R> {
+    inner: R,
+    left: u64,
+}
+
+impl<R: Read> Read for Capped<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buf)?;
+        self.left = self.left.checked_sub(read as u64).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "the package unpacks to too much",
+            )
+        })?;
+        Ok(read)
+    }
+}

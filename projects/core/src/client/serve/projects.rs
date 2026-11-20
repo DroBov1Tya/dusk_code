@@ -36,8 +36,17 @@ impl Server {
             ),
             ProjectRequest::SwitchBranch { id, branch } => {
                 project::switch_branch(&project::find(state, &id).await?, &branch).await?;
+                super::publish::git_changed(&self.subscribers, &id);
+                self.pulls.changed(&id);
                 Response::Done
             }
+            ProjectRequest::Repository { .. }
+            | ProjectRequest::RepositoryStatus { .. }
+            | ProjectRequest::PullStatus { .. }
+            | ProjectRequest::CreatePull { .. } => {
+                anyhow::bail!("repository requests are answered beside the loop")
+            }
+            ProjectRequest::PullSummaries => self.pull_summaries().await?,
             ProjectRequest::Files { id, path } => {
                 Response::Files(project::files(&project::find(state, &id).await?, &path).await?)
             }

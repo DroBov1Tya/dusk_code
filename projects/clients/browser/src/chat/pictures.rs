@@ -6,6 +6,7 @@ use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
+use crate::ui::{Icon, IconName};
 use dusk_protocol::client::MAX_PICTURE_UPLOAD;
 
 #[derive(Clone)]
@@ -24,8 +25,9 @@ impl Picture {
 
 /// Reads the files that are pictures into `pictures`; a file too large or of another
 /// kind is refused with a toast.
-pub fn add_files(files: Vec<web_sys::File>, pictures: RwSignal<Vec<Picture>>) {
+pub fn add_files(files: Vec<web_sys::File>, id: Option<String>) {
     let app = crate::state::state();
+    let generation = app.draft_generation.get_untracked();
     for file in files {
         if !matches!(file.type_().as_str(), "image/png" | "image/jpeg") {
             app.fail(format!("{} is not a PNG or JPEG picture", file.name()));
@@ -39,19 +41,27 @@ pub fn add_files(files: Vec<web_sys::File>, pictures: RwSignal<Vec<Picture>>) {
             ));
             continue;
         }
+        let id = id.clone();
         spawn_local(async move {
             let Ok(buffer) = JsFuture::from(file.array_buffer()).await else {
                 return app.fail(format!("cannot read {}", file.name()));
             };
             let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
             let preview = web_sys::Url::create_object_url_with_blob(&file).unwrap_or_default();
-            pictures.update(|list| {
-                list.push(Picture {
-                    name: file.name(),
-                    bytes,
-                    preview,
-                })
-            });
+            let picture = Picture {
+                name: file.name(),
+                bytes,
+                preview,
+            };
+            if id.as_deref().map_or_else(
+                || app.draft_generation.get_untracked() == generation,
+                |id| app.chat(id).is_some(),
+            ) {
+                app.pending_pictures
+                    .update(|pending| pending.entry(id).or_default().push(picture));
+            } else {
+                picture.forget();
+            }
         });
     }
 }
@@ -85,13 +95,13 @@ pub fn Strip(pictures: RwSignal<Vec<Picture>>) -> impl IntoView {
                 {move || pictures.get().into_iter().enumerate().map(|(index, picture)| view! {
                     <div class="picture" title=picture.name.clone()>
                         <img src=picture.preview.clone() alt=picture.name.clone() />
-                        <button class="icon" title="Take it back" on:click=move |_| {
+                        <button class="icon" title="Remove picture" aria-label="Remove picture" on:click=move |_| {
                             pictures.update(|list| {
                                 if index < list.len() {
                                     list.remove(index).forget();
                                 }
                             })
-                        }>"×"</button>
+                        }><Icon name=IconName::Close /></button>
                     </div>
                 }).collect_view()}
             </div>
@@ -100,8 +110,8 @@ pub fn Strip(pictures: RwSignal<Vec<Picture>>) -> impl IntoView {
 }
 
 /// The hidden file input behind the attach button.
-pub fn pick(input: &web_sys::HtmlInputElement, pictures: RwSignal<Vec<Picture>>) {
-    add_files(files_of(input.files()), pictures);
+pub fn pick(input: &web_sys::HtmlInputElement, id: Option<String>) {
+    add_files(files_of(input.files()), id);
     input.set_value("");
 }
 

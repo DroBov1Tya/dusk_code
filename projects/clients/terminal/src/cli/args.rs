@@ -155,7 +155,7 @@ pub fn parse_args() -> Args {
                     Arg::new("access")
                         .long("access")
                         .value_name("MODE")
-                        .value_parser(["ask", "sandbox", "arbiter", "full"])
+                        .value_parser(["ask", "sandbox", "auto", "arbiter", "full"])
                         .help("Approval mode of this chat (default: the one in the settings)"),
                 )
                 .arg(

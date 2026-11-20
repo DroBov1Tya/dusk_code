@@ -15,8 +15,6 @@ projects/
     terminal/        `duskcode`
     desktop/         `duskcode-gui`
     browser/         the web page, built to wasm and embedded by the server
-  plugins/
-    telegram/        the program of the built-in telegram plugin
   evals/             tasks that measure the engine, and their runner
 ```
 
@@ -56,111 +54,141 @@ Regenerate with `scripts/structure-map.sh` in the commit that changes the tree.
 ```
 agent/  (2)
 catalog/  (5)
-client/  (18)
+client/  (21)
   command/  (2)
-  request/  (9)
-config/  (12)
-model/  (6)
-project/  (6)
+  hello/  (3)
+  request/  (10)
+config/  (13)
+model/  (7)
+plugin/  (13)
+  contract/  (4)
+project/  (8)
 release/  (4)
-system/  (4)
-thread/  (21)
+system/  (3)
+text/  (4)
+thread/  (34)
+  block/  (6)
   message/  (6)
-  transcript/  (5)
-tools/  (6)
+  transcript/  (8)
+tools/  (7)
 ```
+
 
 ### core
 
 ```
 backup/  (13)
   archive/  (11)
-catalog/  (6)
-client/  (21)
-  serve/  (11)
-config/  (12)
+catalog/  (11)
+  history/  (4)
+client/  (34)
+  scope/  (5)
+  serve/  (19)
+config/  (14)
   file/  (6)
 init/  (5)
 mcp/  (4)
-message/  (17)
+message/  (18)
   commands/  (9)
   sources/  (6)
-platform/  (18)
-  linux/  (2)
-  macos/  (10)
-    simulator/  (8)
-plugins/  (10)
+platform/  (12)
+  linux/  (4)
+  macos/  (2)
+plugins/  (60)
+  broker/  (5)
+  contract/  (6)
   platform/  (5)
-project/  (8)
-providers/  (29)
+  store/  (30)
+    connector/  (2)
+  ui/  (7)
+    phone/  (2)
+project/  (32)
+  episodes/  (4)
+  forge/  (9)
+  git/  (8)
+  ledger/  (4)
+providers/  (30)
   anthropic/  (4)
   google/  (5)
   openai/  (6)
   output/  (3)
   transport/  (3)
 release/  (8)
-runtime/  (63)
-  agent/  (16)
-    agent/  (7)
-  api/  (16)
+runtime/  (123)
+  agent/  (32)
+    agent/  (16)
+    repeats/  (8)
+  api/  (18)
   goal/  (10)
     verification/  (7)
   jobs/  (3)
-  thread/  (13)
-    runner/  (6)
+  team/  (22)
+    tests/  (8)
+  thread/  (33)
+    context/  (2)
+    runner/  (23)
 secrets/  (5)
-state/  (32)
+state/  (67)
   agents/  (4)
   db/  (3)
-  project/  (3)
-  thread/  (19)
-    conversation/  (7)
+  project/  (5)
+  thread/  (51)
+    conversation/  (11)
     goal/  (3)
-    work/  (5)
+    work/  (31)
 terminal/  (4)
-tools/  (52)
+tools/  (74)
   agents/  (4)
-  computer/  (18)
+  computer/  (21)
     backend/  (5)
     overlay/  (3)
-  console/  (6)
-  files/  (4)
-  harness/  (11)
+  console/  (12)
+    shape/  (7)
+  files/  (9)
+    map/  (3)
+  harness/  (20)
+    tasks/  (7)
 voice/  (15)
   local/  (7)
 ```
 
+
 ### clients/desktop
 
 ```
-columns/  (34)
-  inspector/  (13)
+columns/  (33)
+  inspector/  (18)
+    overview/  (3)
   sidebar/  (4)
-  simulator/  (6)
   terminal/  (4)
   topbar/  (3)
-dev/  (2)
-modal/  (11)
-pages/  (79)
+dev/  (6)
+modal/  (12)
+pages/  (121)
   artifacts/  (3)
-  chat/  (41)
+  chat/  (59)
     audio/  (4)
-    composer/  (5)
+    composer/  (6)
     dictation/  (3)
-    messages/  (7)
+    dock/  (3)
+    messages/  (18)
     model_menu/  (4)
-  connectors/  (12)
-    voice/  (5)
+  customize/  (24)
+    plugins/  (18)
   file/  (2)
-  review/  (3)
+  review/  (4)
   schedules/  (3)
-  settings/  (14)
+  settings/  (22)
+    ai/  (6)
     providers/  (6)
-platform/  (3)
-ui/  (7)
-  theme/  (2)
-workspace/  (5)
+  welcome/  (3)
+platform/  (4)
+plugins/  (10)
+ui/  (14)
+  theme/  (3)
+workspace/  (6)
 ```
+
 
 ### server
 
@@ -178,17 +206,20 @@ start, stop). Everything else is the core's.
 ### clients/browser
 
 ```
-api/  (8)
+api/  (9)
 auth/  (2)
-chat/  (18)
+chat/  (29)
   data/  (2)
-  inspector/  (7)
-columns/  (2)
-pages/  (24)
-  connectors/  (8)
+  inspector/  (8)
+  shown/  (4)
+columns/  (3)
+pages/  (32)
+  customize/  (15)
+    workshop/  (7)
   settings/  (11)
-ui/  (5)
+ui/  (7)
 ```
+
 
 The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the typed calls by domain,
 `state` what the whole page knows, `chat/data` the transcript as plain data (testable without a
@@ -197,41 +228,36 @@ browser), `markdown` model output as DOM text only. It draws and calls; it decid
 ### clients/terminal
 
 ```
-app/  (31)
+app/  (34)
   composer/  (5)
-  keys/  (3)
-  panels/  (8)
+  keys/  (4)
+  panels/  (9)
     settings/  (5)
   thread/  (7)
 cli/  (7)
 host/  (4)
 screensaver/  (12)
   scenes/  (6)
-session/  (12)
-  actions/  (7)
-ui/  (50)
+session/  (14)
+  actions/  (8)
+ui/  (58)
   sidebar/  (7)
-  text/  (5)
-  thread/  (14)
+  text/  (6)
+  thread/  (16)
     input/  (8)
-    transcript/  (3)
-  windows/  (20)
-    panels/  (14)
+    transcript/  (5)
+  windows/  (25)
+    panels/  (19)
     settings/  (4)
 ```
 
-A number is the count of Rust files in a directory. `evals` and `external/telegram` are small and keep their own layout.
+
+A number is the count of Rust files in a directory. `evals` is small and keeps its own layout.
 
 When a file grows past what one reason to change holds, split it the way the existing ones were: a type's `impl` blocks by area into files of a directory module that keeps the type's path (`runtime/api`, `config/file`, `runtime/agent/agent`), tests into a `tests` file or directory beside the code.
 
-### plugins/telegram
-
-```
-app/  (13)
-  bot/  (9)
-```
-
 ### evals
 
-Flat: `args`, `run`, `task`, `sandbox`, `score` beside `main.rs`; the tasks are in
-`projects/evals/tasks/`.
+Flat: `args`, `overrides`, `task`, `sandbox`, `score` beside `main.rs`, and `run/`: the runner,
+the core it starts on a runtime of its own so a run can kill it (`core`), and where it kills
+(`kill`). The tasks are in `projects/evals/tasks/`.

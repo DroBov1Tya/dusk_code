@@ -1,14 +1,18 @@
-//! The page: sign-in first, then the sidebar, the main view and the inspector.
+//! The page: sign-in first, then the workspace.
 
 use crate::{
     auth,
-    chat::{Chat, inspector::Inspector, subagent::SubagentWindow},
-    columns::Sidebar,
+    chat::subagent::SubagentWindow,
+    columns::Workspace,
     pages::{
-        artifacts::Artifacts, connectors::Connectors, project::ProjectPage, settings::SettingsPage,
+        artifacts::Artifacts,
+        customize::Customize,
+        project::ProjectPage,
+        settings::SettingsPage,
+        welcome::{self, ChatOrWelcome, Step},
     },
     state::{AppState, View, state},
-    ui::theme,
+    ui::{IconDefinitions, theme},
 };
 use leptos::{prelude::*, task::spawn_local};
 
@@ -70,7 +74,7 @@ fn SignIn(note: Option<String>, auth: RwSignal<Auth>) -> impl IntoView {
     };
     view! {
         <div class="signin">
-            <h1>"duskcode"</h1>
+            <h1><img class="brand-emblem" src="mark.png" alt="" width="36" height="36" />"duskcode"</h1>
             <p>"Paste the token this run of duskcode printed, or open the address it showed."</p>
             <input
                 type="password"
@@ -96,21 +100,23 @@ fn Shell(auth: RwSignal<Auth>) -> impl IntoView {
         )))
     });
     Effect::new(move |_| theme::apply(&app.theme.get()));
+    crate::chat::seen::watch(app);
+    let welcome = RwSignal::new(Step::Hidden);
+    welcome::ask(welcome);
     view! {
-        <div class="app">
-            <Sidebar />
+        <IconDefinitions />
+        <Workspace>
             <main class="main">{move || match state().view.get() {
-                View::Chat(id) => view! { <Chat id /> }.into_any(),
+                View::Chat(id) => view! { <ChatOrWelcome id step=welcome /> }.into_any(),
                 View::Settings(page) => view! { <SettingsPage page /> }.into_any(),
-                View::Connectors(tab) => view! { <Connectors tab /> }.into_any(),
+                View::Customize(tab) => view! { <Customize tab /> }.into_any(),
                 View::Artifacts => view! { <Artifacts /> }.into_any(),
                 View::Schedules => view! { <crate::pages::schedules::Schedules /> }.into_any(),
                 View::Project(id) => view! { <ProjectPage id /> }.into_any(),
             }}</main>
-            <Inspector />
-            <SubagentWindow />
-            <Toast />
-        </div>
+        </Workspace>
+        <SubagentWindow />
+        <Toast />
     }
 }
 

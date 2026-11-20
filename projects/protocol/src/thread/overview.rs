@@ -1,0 +1,160 @@
+//! The Overview of a thread: what its tools did, what it changed and its event log, as the
+//! core counts them from what it keeps. Progress and members are the plan's and the team's
+//! answers; tokens and context come with their own events.
+
+use serde::{Deserialize, Serialize};
+
+use crate::thread::{Line, plural};
+
+/// The most used tools an `Overview` names.
+pub const OVERVIEW_TOOLS: usize = 8;
+/// The newest changed paths an `Overview` names.
+pub const OVERVIEW_PATHS: usize = 5;
+/// The newest log lines an `Overview` holds.
+pub const OVERVIEW_LOG: usize = 20;
+/// The most log lines one page of `WorkRequest::Events` holds.
+pub const EVENTS_PAGE: u32 = 100;
+/// The longest text of a log line.
+pub const LOG_CHARS: usize = 160;
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Overview {
+    #[serde(default)]
+    pub activity: Activity,
+    #[serde(default)]
+    pub changes: ChangeSum,
+    /// Newest first, at most `OVERVIEW_LOG`.
+    #[serde(default)]
+    pub log: Vec<LogEntry>,
+}
+
+/// What the thread's tools did, from every call it made.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Activity {
+    pub tool_runs: u64,
+    /// Most used first, at most `OVERVIEW_TOOLS`.
+    pub by_tool: Vec<ToolRuns>,
+    /// The subagents the thread asked.
+    pub agents_asked: u32,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolRuns {
+    /// As the model called it: data, drawn as plain text.
+    pub name: String,
+    pub runs: u64,
+}
+
+/// What the thread changed in its project, from the change ledger.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangeSum {
+    /// Distinct paths.
+    pub files: u32,
+    /// Lines, from the diffs that were kept.
+    pub added: u64,
+    pub removed: u64,
+    /// Newest first, at most `OVERVIEW_PATHS`.
+    pub newest: Vec<ChangedPath>,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangedPath {
+    /// Relative to the project folder.
+    pub path: String,
+    pub added: u64,
+    pub removed: u64,
+}
+
+impl Activity {
+    /// "12 tool runs · 1 agent asked".
+    pub fn summary(&self) -> String {
+        format!(
+            "{} \u{00B7} {} asked",
+            plural(self.tool_runs, "tool run"),
+            plural(self.agents_asked, "agent")
+        )
+    }
+}
+
+impl ChangeSum {
+    /// "3 files · +40 −2".
+    pub fn summary(&self) -> String {
+        format!(
+            "{} \u{00B7} +{} \u{2212}{}",
+            plural(self.files, "file"),
+            self.added,
+            self.removed
+        )
+    }
+
+    /// Changed paths past the newest ones listed.
+    pub fn more(&self) -> usize {
+        (self.files as usize).saturating_sub(self.newest.len())
+    }
+}
+
+/// One line of a thread's event log, written by the core from what it stored.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogEntry {
+    /// Unix milliseconds.
+    pub at: i64,
+    pub kind: LogKind,
+    pub text: Line<LOG_CHARS>,
+}
+
+/// How a log line ended, which picks its glyph.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogKind {
+    Started,
+    Done,
+    Stopped,
+    Failed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summaries_count_in_the_plural_unless_one() {
+        let activity = Activity {
+            tool_runs: 1,
+            by_tool: Vec::new(),
+            agents_asked: 2,
+        };
+        assert_eq!(activity.summary(), "1 tool run \u{00B7} 2 agents asked");
+        let path = ChangedPath {
+            path: "a".into(),
+            added: 1,
+            removed: 0,
+        };
+        let changes = ChangeSum {
+            files: 3,
+            added: 40,
+            removed: 2,
+            newest: vec![path.clone(), path],
+        };
+        assert_eq!(changes.summary(), "3 files \u{00B7} +40 \u{2212}2");
+        assert_eq!(changes.more(), 1);
+        let one = ChangeSum {
+            files: 1,
+            ..ChangeSum::default()
+        };
+        assert_eq!(one.summary(), "1 file \u{00B7} +0 \u{2212}0");
+        assert_eq!(one.more(), 1);
+        let listed = ChangeSum {
+            files: 0,
+            newest: changes.newest.clone(),
+            ..ChangeSum::default()
+        };
+        assert_eq!(listed.more(), 0);
+    }
+}

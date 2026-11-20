@@ -1,11 +1,11 @@
 //! The controls around the message box: the access inside it, the mode and the model
-//! under it, and how full the context is beside it. Each picker opens upward from its
-//! own control.
+//! under it. Each picker opens upward from its own control.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::{
     client::{Answer, Command},
-    model::Effort,
+    model::{Effort, ProviderStatus},
 };
 use gpui_kit::{
     component::{
@@ -62,142 +62,6 @@ pub fn mode(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .children(menu)
 }
 
-/// How full the context is: a ring with the share beside it; the counts and the cost
-/// on hover.
-/// How much of its rate limits the current model's account has used, from what the
-/// provider last reported: the tightest of its windows, as a ring like the context's.
-pub fn limits(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
-    let limits = ws.status.limits.as_ref()?;
-    let used = [&limits.requests, &limits.tokens]
-        .into_iter()
-        .flatten()
-        .filter(|window| window.limit > 0)
-        .map(|window| 1. - window.remaining as f32 / window.limit as f32)
-        .fold(None, |most: Option<f32>, share| {
-            Some(most.map_or(share, |most| most.max(share)))
-        })?
-        .clamp(0., 1.);
-    let theme = cx.theme();
-    let (muted, accent, warning, danger, border) = (
-        theme.muted_foreground,
-        theme.primary,
-        theme.warning,
-        theme.danger,
-        theme.border,
-    );
-    let meter = if used > 0.9 {
-        danger
-    } else if used > 0.7 {
-        warning
-    } else {
-        accent
-    };
-    let tip = SharedString::from(format!("Rate limits: {}", limits.text()));
-    Some(
-        div()
-            .id("limits-ring")
-            .relative()
-            .size(px(super::composer::SIDE_MARK))
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(div().absolute().inset_0().child(super::ring::render(
-                super::composer::SIDE_MARK,
-                used,
-                meter,
-                border,
-            )))
-            .child(
-                div()
-                    .text_size(px(9.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(muted)
-                    .child(format!("{:.0}", used * 100.)),
-            )
-            .tooltip(move |window, cx| {
-                gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
-            }),
-    )
-}
-
-pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
-    let theme = cx.theme();
-    let (muted, accent, warning, danger, border) = (
-        theme.muted_foreground,
-        theme.primary,
-        theme.warning,
-        theme.danger,
-        theme.border,
-    );
-    let (used, limit) = ws
-        .shown_chat()
-        .and_then(|chat| chat.tokens)
-        .unwrap_or((0, ws.status.input_limit));
-    let share = if limit == 0 {
-        0.
-    } else {
-        (used as f32 / limit as f32).min(1.)
-    };
-    let meter = if share > 0.9 {
-        danger
-    } else if share > 0.7 {
-        warning
-    } else {
-        accent
-    };
-    let mut tip = format!(
-        "{} of {} tokens",
-        widgets::short(used),
-        widgets::short(limit)
-    );
-    if let Some(cost) = ws.shown_chat().and_then(|chat| chat.cost.clone()) {
-        tip.push_str(&format!(" \u{00B7} {cost}"));
-    }
-    let tip = SharedString::from(tip);
-    // The share in the ring's middle, the same 32 px as the buttons across the box.
-    div()
-        .id("context-ring")
-        .relative()
-        .size(px(super::composer::SIDE_MARK))
-        .flex()
-        .items_center()
-        .justify_center()
-        // Nearly full, the ring breathes: time to compact, said before the limit says it.
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .child(super::ring::render(
-                    super::composer::SIDE_MARK,
-                    share,
-                    meter,
-                    border,
-                ))
-                .with_animation(
-                    if share > 0.85 {
-                        "context-breath"
-                    } else {
-                        "context-still"
-                    },
-                    Animation::new(std::time::Duration::from_millis(2600)).repeat(),
-                    move |ring, phase| {
-                        let breath = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-                        ring.opacity(if share > 0.85 { 0.5 + breath * 0.5 } else { 1. })
-                    },
-                ),
-        )
-        .child(
-            div()
-                .text_size(px(9.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(muted)
-                .child(format!("{:.0}", share * 100.)),
-        )
-        .tooltip(move |window, cx| {
-            gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
-        })
-}
-
 /// The Models button at the right of the composer's row: one click opens the models and
 /// the effort, upward from the button.
 pub fn models(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Div {
@@ -240,10 +104,7 @@ pub(super) fn picker_panel(cx: &App) -> Div {
         .flex_col()
         .gap_0p5()
         .rounded_xl()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .body()
 }
 
@@ -291,6 +152,8 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Lists the providers at once, then asks each for its models on its own, so one that
+    /// answers shows while a slow one is still pending.
     pub fn load_models(&mut self, cx: &mut Context<Self>) {
         if self.models_loading {
             return;
@@ -299,17 +162,88 @@ impl Workspace {
         cx.notify();
         self.core.call(
             cx,
-            |client| async move { client.command(Command::Model { name: None }).await },
-            |ws, result, cx| {
-                ws.models_loading = false;
-                match result {
-                    Ok(Answer::Providers { providers, .. }) => ws.providers = providers,
-                    Ok(_) => ws.fail(anyhow::anyhow!("the core gave no models"), cx),
-                    Err(error) => ws.fail(error, cx),
+            |client| async move { client.command(Command::Provider { name: None }).await },
+            |ws, result, cx| match result {
+                Ok(Answer::Providers { providers, .. }) => {
+                    ws.ask_providers(providers.into_iter().map(|p| p.name).collect(), cx)
                 }
-                cx.notify();
+                other => {
+                    ws.models_loading = false;
+                    match other {
+                        Ok(_) => ws.fail(anyhow::anyhow!("the core gave no providers"), cx),
+                        Err(error) => ws.fail(error, cx),
+                    }
+                    cx.notify();
+                }
             },
         );
+    }
+
+    fn ask_providers(&mut self, names: Vec<String>, cx: &mut Context<Self>) {
+        // What an earlier check found stays on screen until the new answer replaces it.
+        let mut known: std::collections::HashMap<_, _> = std::mem::take(&mut self.providers)
+            .into_iter()
+            .map(|status| (status.name.clone(), status))
+            .collect();
+        self.providers = names
+            .iter()
+            .map(|name| {
+                known.remove(name).unwrap_or_else(|| ProviderStatus {
+                    name: name.clone(),
+                    models: Ok(Vec::new()),
+                    balance: None,
+                    limits: None,
+                    enabled: true,
+                    failure: None,
+                })
+            })
+            .collect();
+        self.models_pending = names.iter().cloned().collect();
+        self.models_loading = !names.is_empty();
+        for name in names {
+            let asked = name.clone();
+            self.core.call(
+                cx,
+                move |client| async move {
+                    client
+                        .command(Command::Provider { name: Some(asked) })
+                        .await
+                },
+                move |ws, result, cx| {
+                    ws.models_pending.remove(&name);
+                    ws.models_loading = !ws.models_pending.is_empty();
+                    let status = match result {
+                        Ok(Answer::Providers { providers, .. }) => {
+                            match providers.into_iter().next() {
+                                Some(status) => status,
+                                None => {
+                                    return ws.provider_failed(
+                                        &name,
+                                        "the core gave no answer",
+                                        cx,
+                                    );
+                                }
+                            }
+                        }
+                        // A provider that fails shows its own error; the others go on.
+                        Ok(_) => return ws.provider_failed(&name, "the core gave no answer", cx),
+                        Err(error) => return ws.provider_failed(&name, &format!("{error:#}"), cx),
+                    };
+                    if let Some(slot) = ws.providers.iter_mut().find(|p| p.name == status.name) {
+                        *slot = status;
+                    }
+                    cx.notify();
+                },
+            );
+        }
+        cx.notify();
+    }
+
+    fn provider_failed(&mut self, name: &str, error: &str, cx: &mut Context<Self>) {
+        if let Some(slot) = self.providers.iter_mut().find(|p| p.name == name) {
+            slot.models = Err(error.to_owned());
+        }
+        cx.notify();
     }
 
     pub fn choose_model(&mut self, name: String, cx: &mut Context<Self>) {

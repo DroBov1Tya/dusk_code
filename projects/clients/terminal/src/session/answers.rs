@@ -7,11 +7,12 @@ use dusk_core::client::Client;
 use dusk_protocol::{
     client::{Answer, Command},
     model::Effort,
+    thread::{ContextReport, Overview},
 };
 
 use super::{
     actions::set_update_note,
-    run::{JOBS_PERIOD, SYSTEM_PERIOD},
+    run::{JOBS_PERIOD, OVERVIEW_PERIOD, SYSTEM_PERIOD},
     thread::{OpenThread, close},
 };
 use crate::app::{
@@ -214,5 +215,55 @@ pub async fn preview(client: &Client, app: &mut App, thread_id: String) {
     };
     if let Some(Panel::Threads(list)) = &mut app.panel {
         list.preview = Some(Preview::new(thread_id, &history));
+    }
+}
+
+/// The core's Overview of a thread and what its context holds, for the /overview panel.
+pub async fn read_overview(
+    client: &Client,
+    thread_id: &str,
+) -> anyhow::Result<(Overview, ContextReport)> {
+    let overview = client.work().overview(thread_id).await?;
+    let command = Command::Context {
+        thread_id: Some(thread_id.to_owned()),
+    };
+    match client.command(command).await? {
+        Answer::Context(report) => Ok((overview, report)),
+        other => anyhow::bail!("the core answered {other:?}, not a context report"),
+    }
+}
+
+/// Reads the plan and the team again, and the open Overview, after a turn ended or the
+/// plan or team changed; at most once every `OVERVIEW_PERIOD`.
+pub async fn refresh_overview(client: &Client, app: &mut App) {
+    if !app.overview_stale || app.overview_read.elapsed() < OVERVIEW_PERIOD {
+        return;
+    }
+    let Some(thread_id) = app.thread_id.clone() else {
+        app.overview_stale = false;
+        return;
+    };
+    app.overview_stale = false;
+    app.overview_read = Instant::now();
+    let work = client.work();
+    match work.plan_tasks(&thread_id, 1).await {
+        Ok(page) => app.plan = Some(page.counts),
+        Err(error) => return app.error(format!("cannot read the plan: {error:#}")),
+    }
+    match work.team(&thread_id).await {
+        Ok(Some(team)) => app.team_heard(team, true),
+        Ok(None) => app.team = None,
+        Err(error) => return app.error(format!("cannot read the team: {error:#}")),
+    }
+    if matches!(app.panel, Some(Panel::Overview(_))) {
+        match read_overview(client, &thread_id).await {
+            Ok((overview, context)) => {
+                if let Some(Panel::Overview(view)) = &mut app.panel {
+                    view.overview = overview;
+                    view.context = context;
+                }
+            }
+            Err(error) => app.error(format!("cannot read the Overview: {error:#}")),
+        }
     }
 }

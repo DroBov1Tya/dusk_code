@@ -19,6 +19,9 @@ const MAX_CALL_BYTES: usize = 1024 * 1024;
 pub struct TagSplitter {
     state: State,
     pending: String,
+    /// Bytes at the start of `pending` already searched for a closing tag, so a long
+    /// call fed a few bytes at a time is not searched again from its start.
+    searched: usize,
     calls: u32,
 }
 
@@ -85,7 +88,7 @@ impl TagSplitter {
                     Ok(false)
                 }
             },
-            State::ToolCall => match self.pending.find(CALL_CLOSE) {
+            State::ToolCall => match self.find_call_close() {
                 Some(at) => {
                     let body = self.take(at, CALL_CLOSE.len());
                     events.extend(self.call_events(&body)?);
@@ -97,14 +100,25 @@ impl TagSplitter {
                         self.pending.len() <= MAX_CALL_BYTES,
                         "inline tool call is too large"
                     );
+                    self.searched = self.pending.len();
                     Ok(false)
                 }
             },
         }
     }
 
+    /// Where `</tool_call>` starts in `pending`, searching only what came since the last
+    /// search, and the tail of it a split tag may have begun in.
+    fn find_call_close(&self) -> Option<usize> {
+        let from = self
+            .pending
+            .floor_char_boundary(self.searched.saturating_sub(CALL_CLOSE.len() - 1));
+        self.pending[from..].find(CALL_CLOSE).map(|at| from + at)
+    }
+
     /// Removes and returns the first `len` bytes, then drops `skip` more (a tag).
     fn take(&mut self, len: usize, skip: usize) -> String {
+        self.searched = 0;
         let rest = self.pending.split_off(len + skip);
         let mut taken = std::mem::replace(&mut self.pending, rest);
         taken.truncate(len);
@@ -212,5 +226,25 @@ mod tests {
             }
             let _ = splitter.finish();
         }
+    }
+
+    #[test]
+    fn a_long_call_fed_in_small_pieces_is_read_whole() {
+        let arguments = "x".repeat(200_000);
+        let call = format!(
+            "before<tool_call>{{\"name\": \"shell\", \"arguments\": {{\"a\": \"{arguments}\"}}}}</tool_call>after"
+        );
+        let pieces: Vec<&str> = call
+            .as_bytes()
+            .chunks(7)
+            .map(|piece| std::str::from_utf8(piece).unwrap())
+            .collect();
+        let chunked = split(&pieces).unwrap();
+        assert_eq!(chunked, split(&[&call]).unwrap());
+        assert!(
+            chunked
+                .iter()
+                .any(|event| matches!(event, ModelEvent::ToolCall { .. }))
+        );
     }
 }

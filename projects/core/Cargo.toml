@@ -14,6 +14,13 @@ serde-saphyr.workspace = true
 reqwest.workspace = true
 rmcp.workspace = true
 base64.workspace = true
+# The plugin broker reads request heads with it; already in the tree under hyper.
+httparse = "1"
+# Plugin packages from the store are .tar.gz; flate2 is already in the tree.
+tar = { version = "0.4", default-features = false }
+flate2 = "1"
+# Store updates compare versions by semver; already in the tree.
+semver = "1"
 aws-lc-rs.workspace = true
 chrono.workspace = true
 getrandom.workspace = true
@@ -24,6 +31,8 @@ regex.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
 sha2.workspace = true
+# Diffs for the change ledger; already in the tree under gpui-component.
+similar = { version = "2.7.0", default-features = false, features = ["text"] }
 sha1.workspace = true
 async-trait.workspace = true
 parking_lot.workspace = true
@@ -46,7 +55,7 @@ core-graphics = { version = "0.25", features = ["highsierra"] }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDate", "NSGeometry", "NSRunLoop", "NSString", "NSValue"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSColor", "NSGraphics", "NSResponder", "NSRunningApplication", "NSScreen", "NSView", "NSWindow", "objc2-core-foundation", "objc2-quartz-core"] }
-objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CAAnimation", "CALayer", "CAMediaTiming", "CAMediaTimingFunction", "CAShapeLayer", "CATransaction", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CABase", "CAAnimation", "CALayer", "CAMediaTiming", "CAMediaTimingFunction", "CAShapeLayer", "CATransaction", "objc2-core-foundation", "objc2-core-graphics"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColor", "CGPath"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 
@@ -55,9 +64,11 @@ landlock = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSButton", "NSCell", "NSControl", "NSWorkspace", "libc"] }
 
 [dev-dependencies]
 proptest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

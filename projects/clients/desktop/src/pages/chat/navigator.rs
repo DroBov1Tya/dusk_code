@@ -1,5 +1,7 @@
 //! A compact index of the user's sent messages, beside the composer.
 
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use std::cell::Cell;
 
 use gpui_kit::{
@@ -22,15 +24,14 @@ const GAP: f32 = 2.;
 
 pub fn render(
     ws: &Workspace,
-    sent: &[(usize, String)],
+    sent: &[(usize, usize)],
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     let theme = cx.theme();
-    let (foreground, mut panel, border, raised, accent) = (
+    let (foreground, mut panel, raised, accent) = (
         theme.foreground,
         theme.popover,
-        theme.border,
         theme.list_hover,
         theme.primary,
     );
@@ -71,8 +72,14 @@ pub fn render(
             .flex()
             .flex_col()
             .gap(px(GAP));
-        for (number, (row, text)) in sent.iter().enumerate() {
-            let row = *row;
+        let items = ws
+            .shown_chat()
+            .map_or(&[][..], |chat| chat.items.as_slice());
+        for (number, &(row, item)) in sent.iter().enumerate() {
+            let text = match items.get(item) {
+                Some(crate::pages::chat::transcript::Item::User { text, .. }) => text.as_str(),
+                _ => "",
+            };
             let words = super::messages::label(text);
             let preview = if words.is_empty() {
                 "Message".to_owned()
@@ -101,6 +108,7 @@ pub fn render(
                     .rounded_md()
                     .cursor_pointer()
                     .hover(move |line| line.bg(raised))
+                    .press(raised, cx)
                     .child(
                         div()
                             .flex_none()
@@ -141,10 +149,8 @@ pub fn render(
             .gap_1()
             .p_2()
             .rounded_xl()
-            .border_1()
-            .border_color(border)
+            .elevation(Level::Floating, cx)
             .bg(panel)
-            .shadow_lg()
             .occlude()
             .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
                 if !*hovered {
@@ -197,6 +203,7 @@ pub fn render(
                 .cursor_pointer()
                 .when(open, |button| button.bg(selected))
                 .hover(move |button| button.bg(raised))
+                .press(raised, cx)
                 .tooltip(|window, cx| Tooltip::new("Message history").build(window, cx))
                 .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
                     if *hovered {

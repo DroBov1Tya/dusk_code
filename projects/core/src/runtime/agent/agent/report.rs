@@ -1,4 +1,5 @@
-//! What the agent tells about itself: its phase, its effort, its tokens, its events.
+//! What the agent tells about itself: its phase, its effort, its tokens, its turn's
+//! progress, its events.
 
 use super::Agent;
 use crate::runtime::{
@@ -64,7 +65,9 @@ impl Agent {
         let specs = source.specs();
         let counted = async {
             let mut tokens = self.state.thread_tokens(&self.thread_id).await?;
-            let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+            let stub_results = source.config.current().limits().stub_results;
+            let conversation =
+                Conversation::load(&self.state, &self.thread_id, stub_results).await?;
             tokens.current.tool_specs = spec_tokens(&specs);
             tokens.context = conversation.tokens(&specs);
             anyhow::Ok(tokens)
@@ -75,6 +78,20 @@ impl Agent {
                 limit: source.limit(),
             }),
             Err(error) => warn!("cannot count thread tokens: {error:#}"),
+        }
+    }
+
+    /// The turn's totals after one of its model calls, counted here so no client sums
+    /// usage. Like the token count, a failure is logged and the turn goes on.
+    pub(super) async fn report_progress(&self, turn_id: &str) {
+        match self.state.turn_spend(turn_id).await {
+            Ok(spend) => self.emit(ThreadEvent::TurnProgress {
+                turn_id: turn_id.to_owned(),
+                steps: spend.steps,
+                tokens: spend.tokens,
+                cost_micro_usd: spend.cost_micro_usd,
+            }),
+            Err(error) => warn!("thread {}: {error:#}", self.thread_id),
         }
     }
 

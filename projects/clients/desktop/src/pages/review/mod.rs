@@ -4,6 +4,9 @@
 
 mod diff;
 mod files;
+mod git;
+
+pub use git::{GitConfirm, confirm as git_confirm};
 
 use diff::diff;
 use files::{files, stat};
@@ -11,14 +14,14 @@ use files::{files, stat};
 use dusk_protocol::project::{DiffLine, FileDiff};
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, Icon, IconName,
         button::{Button, ButtonVariants},
     },
     *,
 };
 
 use crate::{
-    ui::widgets,
+    ui::{Type, widgets},
     workspace::{Center, Workspace},
 };
 
@@ -34,11 +37,13 @@ pub struct Review {
     pub loading: bool,
     rows: Vec<Row>,
     list: ListState,
+    pub git: git::GitBox,
 }
 
 impl Review {
-    pub fn new() -> Self {
+    pub fn new(window: &mut Window, cx: &mut App) -> Self {
         Self {
+            git: git::GitBox::new(window, cx),
             files: Vec::new(),
             selected: 0,
             loading: false,
@@ -75,7 +80,7 @@ impl Review {
     }
 }
 
-pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (border, muted, success, danger) = (
         theme.border,
@@ -94,13 +99,13 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
         .items_center()
         .gap_3()
         .px_4()
-        .py_3()
+        .h(px(crate::ui::size::BAR))
+        .flex_none()
         .border_b_1()
         .border_color(border)
         .child(
             Button::new("review-back")
                 .ghost()
-                .small()
                 .icon(IconName::ArrowLeft)
                 .label("Chat")
                 .on_click(cx.listener(|ws, _, _, cx| {
@@ -108,7 +113,12 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
                     cx.notify();
                 })),
         )
-        .child(div().font_weight(FontWeight::SEMIBOLD).child("Changes"))
+        .child(
+            div()
+                .body()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child("Changes"),
+        )
         .child(stat(
             ws.review.files.len(),
             added,
@@ -121,7 +131,6 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(
             Button::new("review-refresh")
                 .ghost()
-                .small()
                 .icon(IconName::RefreshCw)
                 .tooltip("Read the changes again")
                 .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
@@ -131,9 +140,12 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
             widgets::muted("Reading the changes...", cx)
         } else {
             crate::ui::empty(
-                IconName::Github,
-                "Nothing to review",
-                "The work tree matches the last commit.",
+                Icon::default().path(crate::ui::icons::GIT_COMPARE),
+                "Nothing to review: the work tree matches the last commit.",
+                Some(
+                    crate::ui::action("review-empty-again", "Check again")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
+                ),
                 cx,
             )
         };
@@ -157,6 +169,7 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex()
         .flex_col()
         .child(header)
+        .child(git::bar(ws, window, cx))
         .child(body)
 }
 

@@ -2,6 +2,7 @@
 //! once; after the first turn the model names the thread from that message.
 
 use anyhow::{Context, Result};
+use dusk_protocol::text::clip_chars;
 use tracing::warn;
 
 use crate::runtime::{
@@ -31,7 +32,16 @@ impl Agent {
         if thread.context("thread is gone")?.title.is_some() {
             return Ok(());
         }
-        self.set_title(fallback_title(&message.content)).await
+        let title = fallback_title(&message.content);
+        if !title.is_empty()
+            && self
+                .state
+                .set_first_title(&self.thread_id, &title, self.depth == 0)
+                .await?
+        {
+            self.emit(ThreadEvent::TitleChanged { title });
+        }
+        Ok(())
     }
 
     /// After the thread's first turn, asks the model for a name. Failing to get one only
@@ -49,7 +59,10 @@ impl Agent {
 
     async fn ask_for_title(&self, inbox: &mut Inbox) -> Result<Result<(), Stop>> {
         // A subagent's thread keeps the start of its task as its name: nobody browses it.
-        if self.depth > 0 || self.state.count_turns(&self.thread_id).await? != 1 {
+        if self.depth > 0
+            || self.state.count_turns(&self.thread_id).await? != 1
+            || !self.state.claim_pending_title(&self.thread_id).await?
+        {
             return Ok(Ok(()));
         }
         let messages = self.state.messages_from(&self.thread_id, 1, 50).await?;
@@ -70,7 +83,10 @@ impl Agent {
         };
         // Not shown to the client: the title arrives as one event.
         let mut output = ModelOutput::default();
-        let generated = generation::generate(&*choice.provider, request, &mut output, |_| {});
+        let idle = std::time::Duration::from_secs(
+            self.config.current().limits().model_timeout_seconds.into(),
+        );
+        let generated = generation::generate(&*choice.provider, request, &mut output, idle, |_| {});
         let generated = match inbox.race(generated).await {
             Ok(generated) => generated,
             Err(stop) => return Ok(Err(stop)),
@@ -88,14 +104,14 @@ impl Agent {
         }
         generated?;
         let title = clean_title(&output.text).context("the model gave no title")?;
-        self.set_title(title).await?;
+        if self
+            .state
+            .finish_title_attempt(&self.thread_id, &title)
+            .await?
+        {
+            self.emit(ThreadEvent::TitleChanged { title });
+        }
         Ok(Ok(()))
-    }
-
-    async fn set_title(&self, title: String) -> Result<()> {
-        self.state.set_title(&self.thread_id, &title).await?;
-        self.emit(ThreadEvent::TitleChanged { title });
-        Ok(())
     }
 }
 
@@ -128,8 +144,5 @@ fn one_line(text: &str) -> String {
 }
 
 fn clip(text: &str, chars: usize) -> String {
-    match text.char_indices().nth(chars) {
-        Some((end, _)) => text[..end].to_owned(),
-        None => text.to_owned(),
-    }
+    clip_chars(text, chars, "")
 }

@@ -11,19 +11,19 @@
 //! the call, since a check that could not run has not allowed anything; other hooks that
 //! fail are logged and skipped.
 
-use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
+use std::{process::Stdio, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    process::Command,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::warn;
 
-use super::manifest::{HookConfig, HookEvent};
+use super::{
+    isolation::Isolation,
+    manifest::{HookConfig, HookEvent},
+};
 
 /// Far above any decision; a hook that prints more is not one to trust.
 const MAX_ANSWER_BYTES: u64 = 64 * 1024;
@@ -35,8 +35,7 @@ pub struct Hook {
     pub config: HookConfig,
     /// The program and its arguments, `./` resolved to the plugin's folder.
     pub command: Vec<String>,
-    pub folder: PathBuf,
-    pub env: Vec<(String, String)>,
+    pub isolation: Isolation,
 }
 
 /// The hooks of every plugin that is on; replaced whole when plugins change.
@@ -109,6 +108,42 @@ impl Hooks {
     }
 }
 
+impl Hooks {
+    /// The checks before a call, then before each call it runs inside, with that tool's
+    /// name and its own arguments, as if it were called alone. `base` is what every hook
+    /// is told about the thread. A deny from any of them refuses the whole call.
+    pub async fn before_tool(
+        &self,
+        tool: &str,
+        arguments: &Value,
+        within: &[(String, Value)],
+        base: &Value,
+    ) -> Option<String> {
+        let mut details = base.clone();
+        details["tool"] = json!(tool);
+        details["arguments"] = arguments.clone();
+        if let Some(denied) = self
+            .run(HookEvent::BeforeTool, Some(tool), details)
+            .await
+            .denied
+        {
+            return Some(denied);
+        }
+        for (index, (name, inner)) in within.iter().enumerate() {
+            let number = index + 1;
+            let mut details = base.clone();
+            details["tool"] = json!(name);
+            details["arguments"] = inner.clone();
+            details["within"] = json!({ "tool": tool, "step": number });
+            let outcome = self.run(HookEvent::BeforeTool, Some(name), details).await;
+            if let Some(denied) = outcome.denied {
+                return Some(format!("step {number} ({name}): {denied}; no step ran"));
+            }
+        }
+        None
+    }
+}
+
 fn applies(hook: &Hook, event: HookEvent, tool: Option<&str>) -> bool {
     hook.config.event == event
         && (hook.config.tools.is_empty()
@@ -116,14 +151,10 @@ fn applies(hook: &Hook, event: HookEvent, tool: Option<&str>) -> bool {
 }
 
 async fn run_one(hook: &Hook, input: &Value) -> Result<Answer> {
-    let (program, arguments) = hook
-        .command
-        .split_first()
-        .context("the hook has no command")?;
-    let mut child = Command::new(program)
-        .args(arguments)
-        .current_dir(&hook.folder)
-        .envs(hook.env.iter().map(|(key, value)| (key, value)))
+    let program = hook.command.first().context("the hook has no command")?;
+    let mut child = hook
+        .isolation
+        .command(&hook.command)?
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -179,6 +210,16 @@ mod tests {
     use super::*;
     use crate::plugins::manifest::HookConfig;
 
+    fn isolation() -> Isolation {
+        let paths = crate::testing::temp_paths("hook");
+        let folder = paths.rules_root().join("plugins/test");
+        let data = paths.config_root().join("plugin-data/test");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::create_dir_all(&data).unwrap();
+        let permissions = Default::default();
+        Isolation::new(&paths, &folder, &data, &permissions, Vec::new(), None).unwrap()
+    }
+
     fn hook(event: HookEvent, script: &str) -> Hook {
         Hook {
             plugin: "test".into(),
@@ -188,9 +229,8 @@ mod tests {
                 command: Vec::new(),
                 timeout: 2,
             },
-            command: vec!["sh".into(), "-c".into(), script.into()],
-            folder: std::env::temp_dir(),
-            env: Vec::new(),
+            command: vec!["/bin/sh".into(), "-c".into(), script.into()],
+            isolation: isolation(),
         }
     }
 
@@ -200,6 +240,37 @@ mod tests {
         hooks
             .run(HookEvent::BeforeTool, Some(tool), json!({ "tool": tool }))
             .await
+    }
+
+    #[tokio::test]
+    async fn every_call_inside_a_batch_meets_its_own_checks() {
+        let mut scoped = hook(
+            HookEvent::BeforeTool,
+            r#"if grep -q '"step":2'; then echo '{"decision":"deny","reason":"no typing"}'; fi"#,
+        );
+        scoped.config.tools = vec!["type_text".into()];
+        let hooks = Hooks::default();
+        hooks.set(vec![scoped]);
+        let within = [
+            ("click".to_owned(), json!({"x": 1, "y": 2})),
+            ("type_text".to_owned(), json!({"text": "hi"})),
+        ];
+        let base = json!({ "thread": "t" });
+        let denied = hooks
+            .before_tool("computer_actions", &json!({}), &within, &base)
+            .await;
+        assert_eq!(
+            denied.as_deref(),
+            Some("step 2 (type_text): plugin test refused: no typing; no step ran")
+        );
+        // The same step alone in a batch of one is checked as step 1, and allowed here.
+        let alone = [("type_text".to_owned(), json!({"text": "hi"}))];
+        assert!(
+            hooks
+                .before_tool("computer_actions", &json!({}), &alone, &base)
+                .await
+                .is_none()
+        );
     }
 
     #[tokio::test]

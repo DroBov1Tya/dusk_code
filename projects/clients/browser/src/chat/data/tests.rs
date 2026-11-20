@@ -1,81 +1,134 @@
-use super::*;
-use dusk_protocol::model::ToolCall;
-use dusk_protocol::tools::ToolResult;
+//! What the page keeps beside the protocol's chat; the chat's own rules are tested in the
+//! protocol.
 
-fn call(id: &str) -> ToolCall {
-    ToolCall {
-        id: id.into(),
-        name: "bash".into(),
-        arguments: serde_json::json!({ "command": "ls\nmore" }),
+use super::*;
+use dusk_protocol::{
+    model::ModelEvent,
+    thread::{MessageRole, Turn, TurnStatus},
+    tools::Question,
+};
+
+fn message(role: MessageRole, content: &str) -> Message {
+    Message {
+        message_id: "m".into(),
+        thread_id: "t".into(),
+        sequence: 1,
+        role,
+        content: content.into(),
+        reasoning: None,
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        artifacts: Vec::new(),
+        from_thread_id: None,
+        from_job_id: None,
+        content_tokens: 0,
+        tool_calls_tokens: 0,
+        reasoning_tokens: 0,
+        created_at: 0,
+    }
+}
+
+fn question(text: &str) -> Question {
+    Question {
+        question: text.into(),
+        options: vec!["A".into()],
+        multiple: false,
     }
 }
 
 #[test]
-fn streamed_text_joins_one_answer_and_a_tool_splits_it() {
+fn a_sent_message_is_queued_until_the_core_takes_it_in() {
     let mut chat = ChatData::default();
-    chat.apply(ThreadEvent::Model(ModelEvent::Text("Hel".into())));
-    chat.apply(ThreadEvent::Model(ModelEvent::Text("lo".into())));
-    chat.apply(ThreadEvent::ToolStarted(call("1")));
-    chat.apply(ThreadEvent::Model(ModelEvent::Text("Done".into())));
-    let kinds: Vec<&str> = chat
-        .items
-        .iter()
-        .map(|entry| match &entry.item {
-            Item::Assistant { .. } => "answer",
-            Item::Tool(_) => "tool",
-            _ => "other",
-        })
-        .collect();
-    assert_eq!(kinds, ["answer", "tool", "answer"]);
-    assert!(matches!(&chat.items[0].item, Item::Assistant { text, .. } if text == "Hello"));
+    chat.sent("hello".into());
+    assert_eq!(chat.pending, ["hello"]);
+    chat.apply(ThreadEvent::UserMessage(message(
+        MessageRole::User,
+        "hello",
+    )));
+    assert!(chat.pending.is_empty());
+    assert!(matches!(&chat.items[0], Item::User { text, .. } if text == "hello"));
 }
 
 #[test]
-fn a_tool_result_lands_on_its_call() {
+fn a_second_question_waits_behind_the_first() {
     let mut chat = ChatData::default();
-    chat.apply(ThreadEvent::ToolStarted(call("1")));
-    chat.apply(ThreadEvent::ToolFinished {
-        call_id: "1".into(),
-        result: ToolResult::text("out".into()),
-    });
-    let Item::Tool(tool) = &chat.items[0].item else {
-        panic!("no tool");
+    chat.apply(ThreadEvent::Question(question("one")));
+    chat.apply(ThreadEvent::Question(question("two")));
+    assert_eq!(
+        chat.questions.shown().map(|q| q.question.as_str()),
+        Some("one")
+    );
+    assert_eq!(chat.questions.place(), (1, 2));
+}
+
+#[test]
+fn a_streamed_piece_is_told_to_its_item_alone() {
+    let turn = Turn {
+        turn_id: "turn".into(),
+        thread_id: "t".into(),
+        last_sequence: 1,
+        response_message_id: None,
+        status: TurnStatus::Running,
+        started_at: 0,
+        finished_at: None,
+        error_message: None,
+        waiting: None,
+        steps: 0,
+        tokens: 0,
+        cost_micro_usd: 0,
     };
-    assert_eq!((tool.state, tool.output.as_str()), (ToolState::Done, "out"));
-    assert_eq!(tool.detail, "ls");
+    let mut chat = ChatData::default();
+    let started = chat.apply(ThreadEvent::TurnStarted(turn.clone()));
+    assert!(!chat.told(&started));
+    let text = |piece: &str| ThreadEvent::Model(ModelEvent::Text(piece.into()));
+    // The first words make the answer drawn: rows move, the whole chat is told.
+    let first = chat.apply(text("Hel"));
+    assert!(!chat.told(&first));
+    let next = chat.apply(text("lo"));
+    assert!(chat.told(&next));
+    assert!(matches!(&chat.items[0], Item::Assistant { text, .. } if text == "Hello"));
+    chat.apply(ThreadEvent::TurnFinished(turn));
+    assert_eq!(chat.moved, 1);
 }
 
 #[test]
-fn an_approval_shows_until_it_is_closed() {
-    let mut chat = ChatData::default();
-    let request = ApprovalRequest {
-        id: 4,
-        request: dusk_protocol::tools::Request::Command {
-            command: "rm x".into(),
-        },
-        session: None,
+fn skipping_moves_on_and_the_last_skip_sends_every_answer() {
+    let ask = |text: &str| Question {
+        question: text.into(),
+        options: vec!["a".into(), "b".into()],
+        multiple: false,
     };
-    chat.apply(ThreadEvent::Approval(request));
-    assert_eq!(chat.approvals.len(), 1);
-    chat.apply(ThreadEvent::ApprovalClosed { id: 4 });
-    assert!(chat.approvals.is_empty());
+    let (first, second) = (ask("One?"), ask("Two?"));
+    let mut chat = ChatData::default();
+    chat.apply(ThreadEvent::Question(first.clone()));
+    chat.apply(ThreadEvent::Question(second.clone()));
+    assert_eq!(chat.answer_questions(QuestionQueue::skip), None);
+    assert_eq!(chat.questions.shown(), Some(&second));
+    let sent = chat.answer_questions(QuestionQueue::skip).unwrap();
+    assert_eq!(sent, [first.skipped(), second.skipped()].join("\n\n"));
+    assert!(chat.questions.is_empty());
 }
 
 #[test]
-fn a_subagents_events_go_to_its_own_chat() {
+fn the_composer_offers_the_chats_own_suggestion_until_the_user_speaks() {
     let mut chat = ChatData::default();
-    chat.apply(ThreadEvent::SubagentStarted {
-        call_id: "c".into(),
-        thread_id: "sub".into(),
-        agent: "general".into(),
-        task: "look".into(),
-        effort: None,
-    });
     chat.apply(ThreadEvent::Subagent {
-        thread_id: "sub".into(),
-        event: Box::new(ThreadEvent::Model(ModelEvent::Text("hi".into()))),
+        thread_id: "child".into(),
+        event: Box::new(ThreadEvent::NextSuggested {
+            text: "from a subagent".into(),
+        }),
     });
-    assert!(chat.items.is_empty());
-    assert_eq!(chat.agent_chats["sub"].items.len(), 1);
-    assert!(matches!(chat.agents[0].state, AgentState::Writing));
+    assert_eq!(chat.suggestion.ghost(""), None);
+    chat.apply(ThreadEvent::NextSuggested {
+        text: "commit it".into(),
+    });
+    assert_eq!(chat.suggestion.ghost(""), Some("commit it"));
+    // Typing hides it and Tab over text keeps its meaning; the empty box shows it again.
+    assert_eq!(chat.suggestion.ghost("c"), None);
+    assert_eq!(chat.suggestion.accept("c"), None);
+    assert_eq!(chat.suggestion.accept("").as_deref(), Some("commit it"));
+    chat.apply(ThreadEvent::Queued {
+        message_id: "m".into(),
+    });
+    assert_eq!(chat.suggestion.ghost(""), None);
 }

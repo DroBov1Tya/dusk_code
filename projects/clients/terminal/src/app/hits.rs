@@ -2,15 +2,19 @@
 
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+use dusk_protocol::thread::Retry;
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum Focus {
+    #[default]
     Input,
     /// Walking the foldable entries; the index is the selected one.
     Browse(usize),
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Default)]
 pub enum Activity {
+    #[default]
     Idle,
     Thinking,
     Writing,
@@ -18,7 +22,8 @@ pub enum Activity {
     Compacting,
     /// /fork is describing the thread for a new one.
     Forking,
-    Retrying(u32),
+    /// A model call is tried again; the instant is when the event came, for the countdown.
+    Retrying(Retry, Instant),
 }
 
 /// The button pressed last, which darkens for `PRESS` after the click.
@@ -48,6 +53,8 @@ pub enum Button {
     Copy,
     /// Puts a sent message back into the box.
     Edit,
+    /// Sends the running command to the background; the agent goes on.
+    Background,
 }
 
 /// A paste chip in the message box on the last drawn frame.

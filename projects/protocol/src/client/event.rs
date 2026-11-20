@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::thread::ThreadEvent;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
     Thread {
@@ -17,4 +18,30 @@ pub enum Event {
     /// The terminal's shell ended, by itself or because the terminal was closed. `code`
     /// is its exit code, or none when a signal ended it.
     TerminalClosed { id: String, code: Option<i32> },
+    /// The view of a plugin's part this client opened, replacing the one before.
+    PluginView {
+        plugin: String,
+        part: String,
+        root: crate::plugin::Widget,
+    },
+    /// A new picture for a `screen` widget of an open part, as JPEG.
+    PluginFrame {
+        plugin: String,
+        part: String,
+        widget: String,
+        jpeg: Vec<u8>,
+    },
+    /// The repository of a saved project was changed through the core: open views of
+    /// it read it again. Given to clients that may read projects.
+    GitChanged { project_id: String },
+    /// A project's repository status changed: its pull requests or their checks, or
+    /// the work tree. Given to clients that may read projects.
+    RepositoryStatus {
+        project_id: String,
+        status: Box<crate::project::RepositoryStatus>,
+    },
+    /// A plugin's short note, or why its interface stopped.
+    PluginNotice { plugin: String, text: String },
+    /// The core is about to stop, for every client; sent before the events close.
+    CoreStopping { reason: String },
 }

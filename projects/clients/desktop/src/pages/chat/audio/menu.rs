@@ -1,5 +1,6 @@
 //! What `...` on a card offers.
 
+use crate::ui::elevation::{Elevation, Level};
 use crate::{ui::widgets, workspace::Workspace};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
@@ -31,10 +32,7 @@ pub fn menu(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Opt
             .flex()
             .flex_col()
             .rounded_lg()
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.popover)
-            .shadow_lg()
+            .elevation(Level::Floating, cx)
             .child(
                 widgets::menu_item("audio-menu-reveal", cx)
                     .child(widgets::icon(IconName::FolderOpen, muted))

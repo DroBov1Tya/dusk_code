@@ -2,13 +2,42 @@
 
 use dusk_protocol::{
     model::ModelEvent,
-    thread::{ThreadEvent, TurnStatus},
+    thread::{RetryRow, ThreadEvent, TurnStatus, retry_row, turn_spend},
 };
 
-use super::{Activity, App, Entry, Focus, Poll, Tone, compact_number};
+use std::time::Instant;
+
+use super::{Activity, App, Entry, Focus, Tone};
 
 impl App {
     pub fn apply(&mut self, event: ThreadEvent) {
+        self.suggestion.hear(&event);
+        // The chat folds the event as every client's does, and says the same lines. This
+        // client shows its own message as it sends it, and a goal's note its own way.
+        if !matches!(
+            event,
+            ThreadEvent::UserMessage(_) | ThreadEvent::Goal { .. }
+        ) {
+            self.transcript.apply(event.clone());
+        }
+        // The chat did not take the user's message in: it is told that no question waits.
+        if matches!(event, ThreadEvent::UserMessage(_)) {
+            self.transcript.answered();
+        }
+        // The retry row is the footer's activity: one state, replaced in place. Events
+        // that end it hand over to the arms below, which name the next activity.
+        match retry_row(&event) {
+            Some(RetryRow::Show(retry)) => {
+                self.activity = Activity::Retrying(retry, Instant::now())
+            }
+            Some(RetryRow::Clear) if matches!(self.activity, Activity::Retrying(..)) => {
+                self.activity = Activity::Thinking;
+            }
+            _ => {}
+        }
+        if let Some(spend) = turn_spend(&event) {
+            self.turn_spend = spend;
+        }
         match event {
             // Crash recovery may admit a pending request already in the snapshot.
             ThreadEvent::UserMessage(message)
@@ -36,10 +65,10 @@ impl App {
                 }
                 self.show_local_unsent(message);
             }
-            ThreadEvent::ProviderUnavailable => {
+            ThreadEvent::NoModel => {
                 self.provider_available = false;
                 self.transcript.notice(
-                    "Provider unavailable. You can continue reading this chat; use /connect or /model to choose a provider.",
+                    "You can go on reading this chat; /connect or /model chooses a provider.",
                     Tone::Info,
                 );
             }
@@ -53,7 +82,6 @@ impl App {
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => {
                 self.provider_available = true;
                 self.record_output(&text);
-                self.transcript.add_reasoning(&text);
                 if !self.compacting {
                     self.activity = Activity::Thinking;
                 }
@@ -61,88 +89,62 @@ impl App {
             ThreadEvent::Model(ModelEvent::Text(text)) if self.compacting => {
                 self.provider_available = true;
                 self.record_output(&text);
-                self.transcript.add_summary(&text);
             }
             ThreadEvent::Model(ModelEvent::Text(text)) => {
                 self.provider_available = true;
                 self.record_output(&text);
-                self.transcript.add_answer(&text);
                 self.activity = Activity::Writing;
             }
             ThreadEvent::ToolStarted(call) => {
                 self.activity = Activity::Tool(call.name.clone());
-                self.transcript.start_tool(call);
             }
-            ThreadEvent::ToolFinished { call_id, result } => {
+            ThreadEvent::ToolFinished { .. } => {
                 self.jobs_stale = true;
-                self.transcript.finish_tool(&call_id, result);
                 self.activity = Activity::Thinking;
             }
             ThreadEvent::TurnFinished(turn) => {
+                self.overview_stale = true;
                 self.turn_running = false;
                 self.last_turn_duration_ms = turn
                     .finished_at
-                    .map(|finished| finished.saturating_sub(turn.started_at).max(0) as u64);
+                    .map(|finished| finished.saturating_sub(turn.started_at).max(0));
                 self.turn_started_at = None;
                 self.output_samples.clear();
-                self.transcript.stop_running_tools();
                 match turn.status {
                     TurnStatus::Interrupted => self.transcript.notice("stopped", Tone::Info),
-                    TurnStatus::Failed => {
-                        let error = turn.error_message.unwrap_or_else(|| "turn failed".into());
-                        self.error(error);
-                    }
+                    // `TurnFailed` came just before and said why.
+                    TurnStatus::Failed => {}
                     _ => {
                         if let Some(ms) = self.last_turn_duration_ms {
-                            let took = dusk_protocol::thread::duration_words(ms as i64);
+                            let took = dusk_protocol::thread::duration_words(ms);
                             self.transcript
                                 .notice(format!("Worked for {took}"), Tone::Info);
                         }
                     }
                 }
             }
-            ThreadEvent::Retrying { attempt, error } => {
-                self.activity = Activity::Retrying(attempt);
-                let text = format!("attempt {attempt} failed, trying again: {error}");
-                self.transcript.notice(text, Tone::Info);
-            }
+            ThreadEvent::TurnFailed(failure) => tracing::warn!("{}", failure.text()),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
-            ThreadEvent::OutputLimitReached => {
-                let text = "the answer reached the model's output limit".to_owned();
-                self.transcript.notice(text, Tone::Info);
-            }
+            ThreadEvent::Pins(pins) => self.pins = pins,
             ThreadEvent::CompactionStarted => {
                 self.compacting = true;
                 self.activity = Activity::Compacting;
             }
-            ThreadEvent::CompactionFinished(compaction) => {
+            ThreadEvent::CompactionFinished(_) | ThreadEvent::CompactionFailed { .. } => {
                 self.compacting = false;
                 self.after_compaction();
-                let text = format!(
-                    "context compacted: messages up to #{} now live in the summary above",
-                    compaction.through_sequence
-                );
-                self.transcript.notice(text, Tone::Info);
-            }
-            ThreadEvent::CompactionFailed { error } => {
-                self.compacting = false;
-                self.after_compaction();
-                self.error(format!("compaction failed: {error}"));
             }
             ThreadEvent::Tokens { tokens, limit } => {
                 self.tokens = tokens;
                 self.limit = limit;
             }
-            ThreadEvent::ContextTooLarge { tokens, limit } => self.error(format!(
-                "the context is ~{} tokens, past the limit of {}: compact it with /compact",
-                compact_number(tokens),
-                compact_number(limit)
-            )),
-            ThreadEvent::Rejected { reason } => self.error(reason),
+            ThreadEvent::ContextTooLarge { .. } => self
+                .transcript
+                .notice("/compact makes it smaller.", Tone::Info),
             ThreadEvent::Forked { summary } => self.forked = Some(summary),
             ThreadEvent::Undone { text } => self.undone = Some(text),
             ThreadEvent::Failed(error) => {
-                self.error(format!("thread stopped: {error}"));
+                tracing::warn!("thread stopped: {error}");
                 self.stop_work();
             }
             ThreadEvent::SubagentStarted {
@@ -150,46 +152,45 @@ impl App {
                 agent,
                 task,
                 effort,
+                model,
+                task_id,
                 ..
             } => {
                 let parent = self.thread_id.clone();
-                self.start_subagent(thread_id, agent, task, effort, parent);
+                self.start_subagent(thread_id, agent, task, (effort, model), parent, task_id);
             }
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
-            ThreadEvent::FromJob(message) => {
-                self.jobs_stale = true;
-                self.transcript.job_result(&message.content);
-            }
-            ThreadEvent::FromAgent(message) => {
-                let from = message.from_thread_id.unwrap_or_default();
-                self.transcript
-                    .push(Entry::from_agent(from, message.content));
-            }
+            ThreadEvent::FromJob(_) => self.jobs_stale = true,
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            // A task of the plan moved: the member rows and the task's lines follow it.
+            ThreadEvent::TaskChanged(task) => {
+                match self
+                    .tasks
+                    .iter_mut()
+                    .find(|known| known.task_id == task.task_id)
+                {
+                    Some(known) => *known = task,
+                    None => self.tasks.push(task),
+                }
+                self.overview_stale = true;
+            }
+            ThreadEvent::Team(team) => {
+                self.team_heard(team, false);
+                self.overview_stale = true;
+            }
             ThreadEvent::Goal {
                 goal,
                 note,
                 started,
             } => self.goal_changed(goal, note, started),
-            // A second question waits behind the first instead of taking its place.
-            ThreadEvent::Question(question) if self.poll.is_some() => {
-                self.polls_waiting.push_back(question)
-            }
-            ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
+            ThreadEvent::Question(question) => self.ask_question(question),
             ThreadEvent::Approval(request) => self.ask_approval(request, None),
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
             ThreadEvent::ArbiterDecided {
                 what,
                 allow,
                 reason,
-            } => self.arbiter_decided(what, allow, reason),
-            ThreadEvent::PicturesRefused { model } => self.transcript.notice(
-                format!("{model} does not take pictures; it gets their paths instead"),
-                Tone::Info,
-            ),
-            ThreadEvent::AnswerCut { error } => self.error(format!(
-                "the answer broke off ({error}); what it wrote is kept"
-            )),
+            } => self.arbiter_decided(what, allow, reason, false),
             ThreadEvent::Idle => {
                 self.turn_running = false;
                 self.activity = Activity::Idle;

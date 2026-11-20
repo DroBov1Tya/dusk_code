@@ -1,16 +1,14 @@
 //! What the shown chat's next request carries, as one bar in colored parts and a row
 //! per part: its tokens and its share of the window, then the free space.
 
+use crate::ui::Type;
 use dusk_protocol::{
     client::{Answer, Command},
     thread::ContextSection,
 };
 use gpui_kit::{component::ActiveTheme, *};
 
-use crate::{
-    ui::widgets,
-    workspace::{Right, Workspace},
-};
+use crate::{ui::widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(report) = &ws.context else {
@@ -48,7 +46,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .flex_row()
             .items_center()
             .gap_2()
-            .text_sm()
+            .small()
             .child(div().size(px(10.)).rounded_sm().bg(swatch))
             .child(
                 div()
@@ -115,7 +113,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 /// What a part is made of, largest first; skills and MCP tools also say how often
 /// they were used, here and in every chat.
 fn items(section: &ContextSection, muted: Hsla, cx: &App) -> Div {
-    let mut list = div().flex().flex_col().gap_1().pl_5().pb_1().text_xs();
+    let mut list = div().flex().flex_col().gap_1().pl_5().pb_1().meta();
     if section.items.is_empty() {
         return list.child(div().text_color(muted).child("nothing"));
     }
@@ -200,10 +198,9 @@ impl Workspace {
         );
     }
 
-    /// The shown thread counted its context again: the open Statistics follow it.
+    /// The shown thread counted its context again: the open Overview follows it.
     pub fn context_counted(&mut self, thread_id: &str, cx: &mut Context<Self>) {
-        let open = !self.right_hidden && !self.folded.contains(&Right::Statistics);
-        if open && self.shown.as_deref() == Some(thread_id) {
+        if self.overview_open() && self.shown.as_deref() == Some(thread_id) {
             self.load_context(cx);
         }
     }

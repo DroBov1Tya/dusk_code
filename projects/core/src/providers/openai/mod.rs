@@ -8,5 +8,4 @@ pub mod sign_in;
 mod stream;
 
 pub use client::OpenAiCompatible;
-pub use responses::{ChatGpt, ResponseStream};
-pub use stream::CompletionStream;
+pub use responses::ChatGpt;

@@ -7,7 +7,8 @@ use super::FIRST;
 use crate::workspace::{Center, Picker, Workspace};
 
 impl Workspace {
-    /// The first models the menu lists, as `provider/model`, each picked by its digit.
+    /// The first models of the provider in use, as `provider/model`, each picked by its
+    /// digit in More models while that provider is unfolded there.
     pub fn first_models(&self) -> Vec<String> {
         let current = self.status.model.clone().unwrap_or_default();
         let provider = current.split('/').next().unwrap_or_default();
@@ -19,6 +20,9 @@ impl Workspace {
         let Some((p, Ok(models))) = mine.map(|p| (p, &p.models)) else {
             return Vec::new();
         };
+        if !self.models_open.contains(&p.name) {
+            return Vec::new();
+        }
         models
             .iter()
             .take(FIRST)
@@ -26,8 +30,9 @@ impl Workspace {
             .collect()
     }
 
-    /// While a menu over the model bar is open, Escape closes it; in the model menu
-    /// the digits 1-6 pick its models, before the text box takes them.
+    /// While a menu over the model bar is open, Escape closes it; in More models the
+    /// digits 1-6 pick the first models of the provider in use, before the text box
+    /// takes them.
     pub fn menu_keys(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         // Escape and the arrows are the shell's while it has the keyboard.
         if self.terminal_focused(window) {
@@ -52,7 +57,7 @@ impl Workspace {
             .parse::<usize>()
             .ok()
             .filter(|d| (1..=FIRST).contains(d));
-        if picker != Picker::Model || self.model_input.focus_handle(cx).is_focused(window) {
+        if picker != Picker::MoreModels || self.model_input.focus_handle(cx).is_focused(window) {
             return;
         }
         if let Some(name) = digit.and_then(|digit| self.first_models().get(digit - 1).cloned()) {

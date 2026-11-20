@@ -2,8 +2,8 @@
 name: architect
 description: System design, integration boundaries and staged delivery grounded in the existing product and codebase.
 entry: true
-links: [backend-engineer, web-engineer, mobile-engineer, infrastructure-engineer, network-engineer]
-skills: [spike]
+links: [duskcode-agents/backend-engineer, duskcode-agents/web-engineer, duskcode-agents/mobile-engineer, duskcode-agents/infrastructure-engineer, duskcode-agents/network-engineer]
+skills: [duskcode-engineering/spike]
 tools: [read_file, search_files, run_command, jobs, load_skill, read_history, tasks, ask_agent]
 source: Dusk Code
 tags: [architecture, design, integration]

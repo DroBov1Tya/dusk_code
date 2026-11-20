@@ -45,7 +45,7 @@ pub fn ApprovalPicker(current: ApprovalPolicy) -> impl IntoView {
             {[
                 (ApprovalPolicy::Ask, "Ask", "Every file outside the project and every command asks you."),
                 (ApprovalPolicy::Sandbox, "Sandbox", "Commands run in a sandbox; the rest asks."),
-                (ApprovalPolicy::Arbiter, "Arbiter", "A model decides in your place and explains."),
+                (ApprovalPolicy::Arbiter, "Auto", "A model decides in your place and explains."),
                 (ApprovalPolicy::FullAccess, "Full access", "Nothing asks. Use only where a mistake is cheap."),
             ].map(|(policy, name, hint)| view! {
                 <label class="option">

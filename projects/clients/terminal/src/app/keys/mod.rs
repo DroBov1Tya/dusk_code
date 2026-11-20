@@ -3,9 +3,10 @@
 
 mod input;
 mod panels;
+mod workshop;
 
 use super::{
-    Action, App, Focus, Panel,
+    Action, App, Focus, Panel, TabMove,
     mouse::inside,
     panels::{Connection, Preset},
 };
@@ -128,6 +129,7 @@ impl App {
             return Action::None;
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
         let typing = self.panel.is_none() && self.focus == Focus::Input;
         if typing && key.code == KeyCode::Esc && self.input.anchor.take().is_some() {
             return Action::None;
@@ -163,7 +165,22 @@ impl App {
         if self.panel.is_some() {
             return self.panel_key(key);
         }
+        // A reply row takes Alt+1 to Alt+4 before tabs do, while it is shown.
+        if alt
+            && let KeyCode::Char(digit @ '1'..='4') = key.code
+            && let Some(action) = self.reply_key(digit)
+        {
+            return action;
+        }
         match key.code {
+            // Tabs take Alt, which the box and the transcript leave free.
+            KeyCode::Char('t') if alt => return Action::Tab(TabMove::New),
+            KeyCode::Char('w') if alt => return Action::Tab(TabMove::Close),
+            KeyCode::Right if alt => return Action::Tab(TabMove::Next),
+            KeyCode::Left if alt => return Action::Tab(TabMove::Previous),
+            KeyCode::Char(digit @ '1'..='9') if alt => {
+                return Action::Tab(TabMove::Go(digit as usize - '1' as usize));
+            }
             KeyCode::Char('t') if ctrl => return Action::Command(Command::Resume { cwd: None }),
             KeyCode::Char('n') if ctrl => return Action::Command(Command::New),
             KeyCode::Char('o') if ctrl => return Action::Command(Command::Settings),

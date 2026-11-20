@@ -17,11 +17,12 @@ use crate::{init::paths::Paths, state::State};
 
 use super::{
     BACKUPS, FORMAT, MAGIC, MAX_MANIFEST_BYTES, VERSION,
-    files::{Temporary, private_dir, private_file, sync_directory},
+    files::{Temporary, sync_directory},
     inventory::{Inventory, collect},
     manifest::{Kind, Manifest, validate_manifest},
     verify::{directory_tree, inspect_tree_path},
 };
+use crate::init::files::{new_private_dir, new_private_file};
 
 /// Export only the standard database. A custom database needs an explicit migration
 /// policy; silently backing up the unused default would lose history on the new machine.
@@ -68,7 +69,7 @@ pub async fn export(
     let snapshot = temporary.path.join("state.db");
     // SQLite permits an empty destination. Pre-create it with 0600 rather than allowing
     // SQLite to choose permissions, and keep it behind the private staging directory.
-    private_file(&snapshot)?.sync_all()?;
+    new_private_file(&snapshot)?.sync_all()?;
     let snapshot_name = snapshot.to_str().context("snapshot path is not UTF-8")?;
     sqlx::query("VACUUM INTO ?")
         .bind(snapshot_name)
@@ -118,7 +119,7 @@ pub fn export_files(
     temporary: Temporary,
 ) -> Result<PathBuf> {
     let data = temporary.path.join("data");
-    private_dir(&data)?;
+    new_private_dir(&data)?;
     let mut inventory = Inventory::default();
     collect(
         paths.config_root(),
@@ -151,7 +152,7 @@ pub fn export_files(
         "archive manifest is too large"
     );
     let archive_path = temporary.path.join("archive");
-    let mut output = BufWriter::new(private_file(&archive_path)?);
+    let mut output = BufWriter::new(new_private_file(&archive_path)?);
     output.write_all(MAGIC)?;
     output.write_all(&(json.len() as u64).to_le_bytes())?;
     output.write_all(&json)?;
@@ -192,4 +193,66 @@ pub fn export_files(
     sync_directory(parent)?;
     sync_directory(&temporary.path)?;
     Ok(destination.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        state::{EpisodeKind, NewEpisode, Recall, State},
+        testing::temp_dir,
+    };
+
+    use super::rebuild_snapshot_search;
+
+    /// Episodes are keyed by an integer id, which VACUUM keeps, so their search index
+    /// needs no rebuild in a snapshot, unlike the messages'.
+    #[tokio::test]
+    async fn a_snapshot_finds_its_episodes() {
+        let dir = temp_dir("export_episodes");
+        let state = State::open(dir.join("state.db")).await.unwrap();
+        state.create_project("p", "P", "", "/work/p").await.unwrap();
+        let mut ids = Vec::new();
+        for n in 1..=3u32 {
+            let episode = NewEpisode {
+                project: "/work/p".into(),
+                thread_id: None,
+                turn_id: None,
+                kind: EpisodeKind::Verified,
+                signature: format!("{n:064x}"),
+                tool: "run_command".into(),
+                model: "model".into(),
+                problem: format!("snapshot problem p{n}x"),
+                failed: String::new(),
+                worked: "cargo test".into(),
+                lesson: String::new(),
+            };
+            ids.push(state.record_episode(&episode).await.unwrap());
+        }
+        // A gap before the rows that stay, which a renumbering VACUUM would close.
+        assert!(state.remove_episode("/work/p", ids[0]).await.unwrap());
+
+        let snapshot = dir.join("snapshot.db");
+        sqlx::query("VACUUM INTO ?")
+            .bind(snapshot.to_str().unwrap())
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        state.close().await;
+        rebuild_snapshot_search(&snapshot).await.unwrap();
+
+        let restored = State::open(&snapshot).await.unwrap();
+        sqlx::query(
+            "INSERT INTO episodes_search (episodes_search, rank) VALUES ('integrity-check', 1)",
+        )
+        .execute(&restored.pool)
+        .await
+        .unwrap();
+        let Recall::Found(found) = restored.recall_episodes("/work/p", "p3x").await.unwrap() else {
+            panic!("the query has a usable word");
+        };
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, ids[2]);
+        assert_eq!(found[0].problem, "snapshot problem p3x");
+        restored.close().await;
+    }
 }

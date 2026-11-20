@@ -1,6 +1,6 @@
 //! The streamed response, parsed from raw bytes into model events.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::{Result, anyhow, bail};
 use reqwest::Response;
@@ -10,57 +10,20 @@ use uuid::Uuid;
 
 use super::signatures::Signatures;
 use crate::providers::{
-    errors::Transient,
+    errors::{ProviderError, ProviderErrorKind, ended_early},
     output::{FinishReason, ModelEvent, Usage},
-    transport::sse::SseDecoder,
+    transport::sse::{EventParser, SseDecoder, SseStream},
 };
 
 /// Events of one streamed response, read lazily from the network.
-pub struct GenerateStream {
-    response: Response,
-    parser: GenerateParser,
-    pending: VecDeque<ModelEvent>,
-    finished: bool,
-}
+pub type GenerateStream = SseStream<GenerateParser>;
 
-impl GenerateStream {
-    pub fn new(response: Response, signatures: Arc<Signatures>) -> Self {
-        Self {
-            response,
-            parser: GenerateParser::new(signatures),
-            pending: VecDeque::new(),
-            finished: false,
-        }
-    }
-
-    pub async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
-        loop {
-            if let Some(event) = self.pending.pop_front() {
-                return Ok(Some(event));
-            }
-            if self.finished {
-                return Ok(None);
-            }
-            // Mark first so an error also ends the stream.
-            self.finished = true;
-            let chunk = self
-                .response
-                .chunk()
-                .await
-                .map_err(|_| Transient("cannot read provider stream".into()))?;
-            match chunk {
-                Some(bytes) => {
-                    self.pending.extend(self.parser.feed(&bytes)?);
-                    self.finished = self.parser.done;
-                }
-                None => self.parser.finish()?,
-            }
-        }
-    }
+pub fn stream(response: Response, signatures: Arc<Signatures>) -> GenerateStream {
+    SseStream::new(response, GenerateParser::new(signatures))
 }
 
 /// Network-independent parser, so the protocol can be tested from raw bytes.
-struct GenerateParser {
+pub struct GenerateParser {
     decoder: SseDecoder,
     signatures: Arc<Signatures>,
     /// Function calls seen so far: the next one's index.
@@ -133,6 +96,29 @@ struct WireUsage {
     thoughts_token_count: u64,
 }
 
+impl EventParser for GenerateParser {
+    fn decoder(&mut self) -> &mut SseDecoder {
+        &mut self.decoder
+    }
+
+    fn parse(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
+        self.parse_chunk(data)
+    }
+
+    fn done(&self) -> bool {
+        self.done
+    }
+
+    /// The stream has no closing event: EOF before a finish reason is a cut stream.
+    fn finish(&mut self) -> Result<()> {
+        if !self.done {
+            self.done = true;
+            bail!(ended_early());
+        }
+        Ok(())
+    }
+}
+
 impl GenerateParser {
     fn new(signatures: Arc<Signatures>) -> Self {
         Self {
@@ -142,28 +128,6 @@ impl GenerateParser {
             usage: Usage::default(),
             done: false,
         }
-    }
-
-    fn feed(&mut self, bytes: &[u8]) -> Result<Vec<ModelEvent>> {
-        let mut events = Vec::new();
-        for data in self.decoder.feed(bytes)? {
-            if self.done {
-                break;
-            }
-            events.extend(self.parse_chunk(&data)?);
-        }
-        Ok(events)
-    }
-
-    /// The stream has no closing event: EOF before a finish reason is a cut stream.
-    fn finish(&mut self) -> Result<()> {
-        if !self.done {
-            self.done = true;
-            bail!(Transient(
-                "provider stream ended before the response was complete".into()
-            ));
-        }
-        Ok(())
     }
 
     fn parse_chunk(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
@@ -264,7 +228,10 @@ fn finish_reason(reason: &str, called: bool) -> Result<FinishReason> {
         | "IMAGE_RECITATION" => FinishReason::ContentFilter,
         // The model slipped; the same request often passes when sent again.
         "MALFORMED_FUNCTION_CALL" | "MALFORMED_RESPONSE" | "OTHER" => {
-            bail!(Transient("model answer was malformed".into()))
+            bail!(ProviderError::new(
+                ProviderErrorKind::Interrupted,
+                "model answer was malformed"
+            ))
         }
         _ => bail!("model stopped for an unsupported reason"),
     })

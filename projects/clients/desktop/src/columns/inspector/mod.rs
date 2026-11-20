@@ -1,16 +1,19 @@
 //! The right column, the engineering side, as modules stacked one under another like
 //! the TUI's sidebar: where the chat works, its context, what it wrote, the project's
 //! git and files, and the chat's todo list, subagents and background jobs. Each module
-//! folds on its header.
+//! folds on its header and is dragged to another place by its grip (see `order`).
 
-mod activity;
+pub mod checks;
 pub mod context;
 mod environment;
 mod files;
 pub mod git;
 pub mod jobs;
 pub mod mascot;
+pub mod order;
+pub mod overview;
 pub mod plan;
+pub mod pulls;
 mod screenshots;
 mod sources;
 mod todo;
@@ -24,38 +27,33 @@ use gpui_kit::{
 
 use crate::{
     pages::settings::SettingsPage,
-    ui::{Type, widgets},
+    ui::{Type, widgets, widgets::Focusable as _},
     workspace::{Center, Right, Workspace},
 };
 
 pub const WIDTH: f32 = 300.;
 
-const MODULES: &[(Right, &str)] = &[
-    (Right::Arbiter, "Arbiter"),
-    (Right::Statistics, "Statistics"),
-    (Right::Screenshots, "Screenshots"),
-    (Right::Git, "Changes"),
-    (Right::Files, "Files"),
-    (Right::Touched, "Touched"),
-    (Right::Plan, "Plan"),
-    (Right::Todo, "Todo"),
-    (Right::Jobs, "Jobs"),
-    (Right::Sources, "Sources"),
-];
-
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (panel, border, muted) = (theme.sidebar, theme.sidebar_border, theme.muted_foreground);
-    let mut column = div().flex().flex_col().pb_6();
-    let shown: Vec<_> = MODULES
+    let mut column =
+        div().flex().flex_col().pb_6().on_drop(
+            cx.listener(|ws, dragged: &order::Dragged, _, cx| ws.drop_module(dragged, cx)),
+        );
+    let shown: Vec<Right> = ws
+        .right_order
         .iter()
-        .filter(|(module, _)| ws.has_content(*module))
+        .copied()
+        .filter(|module| ws.has_content(*module))
         .collect();
-    for (index, (module, title)) in shown.into_iter().enumerate() {
-        let module = *module;
+    for (index, module) in shown.into_iter().enumerate() {
+        let title = title(module);
         let open = !ws.folded.contains(&module);
+        let group = SharedString::from(format!("module-head-{}", module.key()));
         let header = div()
-            .id(("module", index))
+            // Named by the module, not its place, so the focus follows it when it moves.
+            .id(group.clone())
+            .group(group.clone())
             .flex()
             .flex_row()
             .items_center()
@@ -63,9 +61,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .h(px(44.))
             .px_4()
             .cursor_pointer()
+            .focusable_row(cx)
             // Every header starts with its icon, on the grid of the rows below.
             .child(
-                Icon::new(module_icon(module))
+                module_icon(module)
                     .size(px(crate::ui::size::ICON_LARGE))
                     .text_color(muted),
             )
@@ -74,7 +73,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .flex_1()
                     .body()
                     .font_weight(FontWeight::MEDIUM)
-                    .child(*title),
+                    .child(title),
             )
             // A folded module still says how it stands.
             .children(
@@ -83,6 +82,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .flatten()
                     .map(|text| div().meta().text_color(muted).child(text)),
             )
+            .child(order::grip(module, title, group, cx))
             .child(widgets::icon(
                 if open {
                     IconName::ChevronDown
@@ -91,6 +91,17 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 },
                 muted,
             ))
+            .on_key_down(cx.listener(move |ws, event: &KeyDownEvent, _, cx| {
+                let keys = &event.keystroke;
+                let alt_only = keys.modifiers.alt
+                    && !keys.modifiers.control
+                    && !keys.modifiers.platform
+                    && !keys.modifiers.shift;
+                if alt_only && matches!(keys.key.as_str(), "up" | "down") {
+                    cx.stop_propagation();
+                    ws.step_module(module, keys.key == "up", cx);
+                }
+            }))
             .on_click(cx.listener(move |ws, _, _, cx| {
                 if !ws.folded.remove(&module) {
                     ws.folded.insert(module);
@@ -103,6 +114,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             }));
         // The rule between modules stops short of the column's edges.
         let mut section = div()
+            .relative()
             .flex()
             .flex_col()
             .when(index > 0, |section| {
@@ -112,7 +124,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         if open {
             let body = match module {
                 Right::Arbiter => arbiter_summary(ws, cx),
-                Right::Statistics => statistics(ws, cx),
+                Right::Overview => overview_column(ws, cx),
+                Right::Team => crate::pages::team::module::render(ws, cx),
                 Right::Screenshots => screenshots::render(ws, cx),
                 Right::Git => git::render(ws, cx),
                 Right::Files => files::render(ws, cx),
@@ -127,7 +140,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 div().pb_3().child(body),
             ));
         }
-        column = column.child(section);
+        let section = section.children(order::indicator(ws, module, cx));
+        let section = order::target(section, module, cx);
+        column = column.child(order::settle(ws, module, section, window, cx));
     }
     div()
         .w(px(WIDTH))
@@ -150,18 +165,35 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .child(footer(ws, cx))
 }
 
-fn module_icon(module: Right) -> IconName {
+fn title(module: Right) -> &'static str {
     match module {
-        Right::Arbiter => IconName::Eye,
-        Right::Statistics => IconName::ChartPie,
-        Right::Screenshots => IconName::Frame,
-        Right::Git => IconName::Github,
-        Right::Files => IconName::Folder,
-        Right::Touched => IconName::FileText,
-        Right::Plan => IconName::Map,
-        Right::Todo => IconName::CircleCheck,
-        Right::Jobs => IconName::SquareTerminal,
-        Right::Sources => IconName::File,
+        Right::Arbiter => "Arbiter",
+        Right::Overview => "Overview",
+        Right::Team => "Team",
+        Right::Screenshots => "Screenshots",
+        Right::Git => "Changes",
+        Right::Files => "Files",
+        Right::Touched => "Touched",
+        Right::Plan => "Plan",
+        Right::Todo => "Todo",
+        Right::Jobs => "Jobs",
+        Right::Sources => "Sources",
+    }
+}
+
+fn module_icon(module: Right) -> Icon {
+    match module {
+        Right::Arbiter => IconName::Eye.into(),
+        Right::Overview => IconName::LayoutDashboard.into(),
+        Right::Team => IconName::Bot.into(),
+        Right::Screenshots => IconName::Frame.into(),
+        Right::Git => Icon::default().path(crate::ui::icons::GIT_BRANCH),
+        Right::Files => IconName::Folder.into(),
+        Right::Touched => IconName::FileText.into(),
+        Right::Plan => IconName::Map.into(),
+        Right::Todo => IconName::CircleCheck.into(),
+        Right::Jobs => IconName::SquareTerminal.into(),
+        Right::Sources => IconName::File.into(),
     }
 }
 
@@ -173,11 +205,11 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
             let count = chat.map_or(0, |chat| chat.exchanges.len());
             (count > 0).then(|| count.to_string())
         }
-        Right::Statistics => ws
+        Right::Overview => ws
             .context
             .as_ref()
             .map(|report| format!("{}%", report.total * 100 / report.limit.max(1))),
-        Right::Screenshots => chat.map(|chat| chat.screenshots.len().to_string()),
+        Right::Screenshots => chat.map(|chat| chat.screenshots().count().to_string()),
         Right::Git => ws.git.as_ref().map(|git| {
             let branch = git.branch.as_deref().unwrap_or("detached");
             match git.changes.len() {
@@ -186,6 +218,7 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
             }
         }),
         Right::Files | Right::Plan => None,
+        Right::Team => crate::pages::team::module::summary(ws),
         Right::Touched => Some(ws.touched.len().to_string()),
         Right::Todo => chat.map(|chat| {
             let items = chat.tasks.iter().flat_map(|task| &task.items);
@@ -229,7 +262,7 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .items_center()
         .gap_3()
         .px_4()
-        .text_sm()
+        .small()
         .child(div().flex_1().text_color(muted).child(format!(
             "{asked} asked · {allowed} allowed · {denied} denied"
         )))
@@ -245,38 +278,34 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         )
 }
 
-/// The context, then the activity, each under a small caption when it has anything.
-fn statistics(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let mut column = div().flex().flex_col().gap_3();
-    if ws.context.is_some() {
-        column = column
-            .child(widgets::caption("Context", cx))
-            .child(context::render(ws, cx));
-    }
-    if ws
-        .shown_chat()
-        .is_some_and(|chat| !chat.activity().is_empty())
-    {
-        column = column
-            .child(widgets::caption("Activity", cx))
-            .child(activity::render(ws, cx));
-    }
-    column
+/// The Overview's sections in one column, and the way to its page.
+fn overview_column(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let sections = overview::sections::all(ws, overview::Form::Narrow, cx);
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            div().px_4().pb_1().child(
+                gpui_kit::component::button::Button::new("overview-open")
+                    .label("Open")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.open_overview(cx))),
+            ),
+        )
+        .children(sections)
 }
 
 impl Workspace {
     /// A module shows only once it has something to show.
-    fn has_content(&self, module: Right) -> bool {
+    pub fn has_content(&self, module: Right) -> bool {
         let chat = self.shown_chat();
         match module {
             Right::Arbiter => {
                 self.status.approvals == dusk_protocol::config::ApprovalPolicy::Arbiter
                     || chat.is_some_and(|chat| !chat.exchanges.is_empty())
             }
-            Right::Statistics => {
-                self.context.is_some() || chat.is_some_and(|chat| !chat.activity().is_empty())
-            }
-            Right::Screenshots => chat.is_some_and(|chat| !chat.screenshots.is_empty()),
+            Right::Overview => chat.is_some(),
+            Right::Team => crate::pages::team::module::has_content(self),
+            Right::Screenshots => chat.is_some_and(|chat| chat.screenshots().next().is_some()),
             Right::Git => self
                 .git
                 .as_ref()
@@ -292,9 +321,9 @@ impl Workspace {
 
     /// Asks the core again for what the open modules show.
     pub fn refresh_inspector(&mut self, cx: &mut Context<Self>) {
-        for (module, _) in MODULES {
-            if !self.folded.contains(module) {
-                self.refresh_module(*module, cx);
+        for module in Right::ALL {
+            if !self.folded.contains(&module) {
+                self.refresh_module(module, cx);
             }
         }
         // The repository decides whether the Changes module shows at all, and the footer
@@ -309,18 +338,25 @@ impl Workspace {
         if self.folded.contains(&Right::Sources) {
             self.load_sources(cx);
         }
+        // The Overview opened as a page follows the shown chat with its module folded.
+        if self.folded.contains(&Right::Overview) && self.center == Center::Overview {
+            self.refresh_module(Right::Overview, cx);
+        }
     }
 
     fn refresh_module(&mut self, module: Right, cx: &mut Context<Self>) {
         match module {
             Right::Git => self.load_git(cx),
             Right::Files => self.load_folder(String::new(), cx),
-            Right::Statistics => self.load_context(cx),
+            Right::Overview => {
+                self.load_context(cx);
+                self.load_overview(cx);
+            }
             Right::Jobs => self.load_jobs(cx),
             Right::Sources => self.load_sources(cx),
             Right::Plan => self.load_plan(cx),
             Right::Touched => self.load_touched(cx),
-            Right::Arbiter | Right::Screenshots | Right::Todo => {}
+            Right::Arbiter | Right::Screenshots | Right::Todo | Right::Team => {}
         }
     }
 }
@@ -386,7 +422,7 @@ fn footer(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .pt_1()
                     .flex()
                     .justify_end()
-                    .text_xs()
+                    .meta()
                     .text_color(muted)
                     .cursor_pointer()
                     .hover(|version| version.text_color(cx.theme().foreground))

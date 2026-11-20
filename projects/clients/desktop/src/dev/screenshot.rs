@@ -4,31 +4,68 @@
 //!
 //! - `wait=MS`: let the core answer and the window draw;
 //! - `project=N`, `thread=N`: choose the Nth project or chat of the lists;
-//! - `center=chat|review|settings|connectors|artifacts|schedules`; `review`: open the review page;
-//! - `settings=PAGE` (appearance, model, chat, safety, me, notifications, vcs, memory,
+//! - `center=chat|review|settings|customize|artifacts|schedules` (`connectors` still works); `review`: open the review page;
+//! - `settings=PAGE` (appearance, llm, voice, image, video, chat, safety, me, notifications, vcs, memory,
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
-//! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all`: open a window; unfold the right column;
+//! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all|lower`: open a window; unfold the right column, or only its lower modules;
 //! - `detail=mcp|skill`: open the window of the first of those;
-//! - `simulator`: open the iOS Simulator panel, as its button in the header would;
-//!   `simulator=devices`: open its menu of devices;
+//! - with `DUSK_MASCOT=MS` in the environment every subagent's mascot is held that many
+//!   milliseconds into its activity, so done and failed can be seen mid-motion;
+//! - with `DUSK_SWAP=MS` in the environment a change of the working row's words is held
+//!   that many milliseconds into its swap (`fake=activity-thinking`, then `-steps`);
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
-//! - `fake=agents`: six subagents of different roles at different points of their work;
+//! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
-//! - `fake=limits`: rate limits in the status, as a provider reports them;
-//! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
+//! - `fake=limits`: API rate limits; `fake=plan-limits|plan-unavailable`: ChatGPT plan usage;
+//! - `fake=plugins`: about 200 made-up plugin parts of 60 plugins in the status (see
+//!   `dev::plugins`); `plugins=menu`: open the menu of them; `plugins=search:TEXT`: type
+//!   in its search; `plugins=open:PLUGIN/PART`: open a part with a made-up view, such as
+//!   `ios-simulator/phone` (side dock, a phone), `notes/scratch` (bottom dock),
+//!   `translator/translate` (window), `telegram/account` (Settings), `plugin-07/part-1`;
+//!   `plugins=fold:right|bottom`: fold a dock away or back; `plugins=real:PLUGIN/PART`:
+//!   open a part of a real plugin through the core; `plugins=height:PX`: set the bottom
+//!   dock's height as a drag would; `plugins=notice:TEXT`: a plugin's note;
+//! - `fake=store`: thirty made-up listings in the Workshop (see `dev::store`); `workshop`:
+//!   show the Workshop; `workshop=install:NAME|remove:NAME`: its window that asks first;
+//!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
+//! - `fake=blocks|blocks-working|blocks-wait|blocks-decision`: a chat with a Flow, Checks and
+//!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
+//! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
+//!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
+//!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
+//! - `fake=team|team-ended`: after `fake=chat`, the chat leads a team of seven members on
+//!   eight tasks, one in each status, running or ended on its steps (see `dev::team`);
+//! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
+//!   icon, and a chat that links two of them, drawn as chips;
+//! - `fake=forge-signin|forge-unserved`: the quiet line in Changes when the forge asks to sign in,
+//!   or no plugin serves the host;
+//! - `fake=approval|approval-long|question`: put a request for approval (a long heredoc
+//!   command for `approval-long`), or a question, in the shown chat;
+//! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
+//!   menu; `fake=sentpicture`: a user's message with a picture thumbnail under it;
+//!   `viewer=picture`: the same picture large over the window;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
+//! - `hover=X,Y`: move the pointer to a point of the window; `down=X,Y`, `move=X,Y`,
+//!   `up=X,Y`: press the left button there, move with it held, let it go, as a click
+//!   (`down` then `up`) or a drag (`down`, a few `move`, `up`) would;
+//!   `press=X,Y` is `down` alone, for the pressed look;
+//! - `fake=welcome`: no providers, so the chat page shows the welcome; `welcome=form`: its
+//!   form, as the button opens it; `welcome=address:URL`: type the address in it;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
 //! - `terminal`: show or hide the terminal panel; `run=COMMAND`: type the command in its
-//!   shown shell, with Return;
+//!   shown shell, with Return; `select=ROW:FROM-TO`: cells of a row selected;
 //! - `type=TEXT`: put the text in the message box; `idle=MIN`: as if left alone that long,
 //!   for the mist;
-//! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
+//! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse; `sidebar=project|recent`: how
+//!   the side panel lists the chats;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
+//! - `size=WxH`: resize the window, as a drag of its edge would;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
 //!   for that many minutes, for the header's sky;
+//! - `wheel=X,Y,DY`: scroll DY pixels at a point (negative goes down);
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
 
 use std::{path::PathBuf, time::Duration};
@@ -37,7 +74,7 @@ use gpui_kit::{component::input::InputState, *};
 
 use crate::{
     modal::Modal,
-    pages::{connectors::Shelf, settings::SettingsPage},
+    pages::{customize::Shelf, settings::SettingsPage},
     workspace::{Center, Picker, Workspace},
 };
 
@@ -62,8 +99,16 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                     let image = cx
                         .update_window(window, |_, window, cx| {
                             // The window may not be on screen, so it draws no frames of
-                            // its own: draw the current state, then render that frame.
-                            window.draw(cx).clear(cx);
+                            // its own: draw the current state, then render that frame. A
+                            // draw may ask for the next frame (the Workshop's grid does, once
+                            // it has measured its page), so deliver those until none is left,
+                            // as the platform's frame loop would.
+                            for _ in 0..8 {
+                                window.draw(cx).clear(cx);
+                                if window.simulate_next_frame(cx) == 0 {
+                                    break;
+                                }
+                            }
                             window.render_to_image()
                         })
                         .ok()
@@ -93,6 +138,79 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                             None => eprintln!("no such key {key}"),
                         }
                     }
+                }
+                // The pointer moved to a point of the window, as the mouse would.
+                "hover" => {
+                    let at = value
+                        .split_once(',')
+                        .and_then(|(x, y)| Some(point(px(x.parse().ok()?), px(y.parse().ok()?))));
+                    match at {
+                        Some(position) => {
+                            let _ = cx.update_window(window, |_, window, cx| {
+                                window.dispatch_event(
+                                    PlatformInput::MouseMove(MouseMoveEvent {
+                                        position,
+                                        pressed_button: None,
+                                        modifiers: Modifiers::default(),
+                                    }),
+                                    cx,
+                                );
+                            });
+                        }
+                        None => eprintln!("hover=X,Y: {value}"),
+                    }
+                }
+                // A turn of the wheel at a point, for what is below a scrolled window's fold.
+                "wheel" => {
+                    let parts: Vec<f32> = value.split(',').filter_map(|v| v.parse().ok()).collect();
+                    let [x, y, dy] = parts[..] else {
+                        eprintln!("wheel=X,Y,DY: {value}");
+                        continue;
+                    };
+                    let event = PlatformInput::Scroll(ScrollEvent {
+                        position: point(px(x), px(y)),
+                        delta: ScrollDelta::Pixels(point(px(0.), px(dy))),
+                        ..Default::default()
+                    });
+                    let _ = cx.update_window(window, |_, window, cx| {
+                        window.draw(cx).clear(cx);
+                        window.dispatch_event(event, cx);
+                    });
+                }
+                // The left button pressed, moved with it held, or let go at a point.
+                "down" | "press" | "move" | "up" => {
+                    let at = value
+                        .split_once(',')
+                        .and_then(|(x, y)| Some(point(px(x.parse().ok()?), px(y.parse().ok()?))));
+                    let Some(position) = at else {
+                        eprintln!("{name}=X,Y: {value}");
+                        continue;
+                    };
+                    let event = match name {
+                        "down" | "press" => PlatformInput::MouseDown(MouseDownEvent {
+                            button: MouseButton::Left,
+                            position,
+                            modifiers: Modifiers::default(),
+                            click_count: 1,
+                            first_mouse: false,
+                        }),
+                        "move" => PlatformInput::MouseMove(MouseMoveEvent {
+                            position,
+                            pressed_button: Some(MouseButton::Left),
+                            modifiers: Modifiers::default(),
+                        }),
+                        _ => PlatformInput::MouseUp(MouseUpEvent {
+                            button: MouseButton::Left,
+                            position,
+                            modifiers: Modifiers::default(),
+                            click_count: 1,
+                        }),
+                    };
+                    let _ = cx.update_window(window, |_, window, cx| {
+                        // The press is hit against the last frame, so draw the state now.
+                        window.draw(cx).clear(cx);
+                        window.dispatch_event(event, cx);
+                    });
                 }
                 "quit" => break,
                 other => {
@@ -139,9 +257,17 @@ fn act(
             ws.center = match value {
                 "review" => Center::Review,
                 "settings" => Center::Settings,
-                "connectors" => Center::Connectors,
+                "customize" | "connectors" => Center::Customize,
                 "artifacts" => Center::Artifacts,
                 "schedules" => Center::Schedules,
+                "overview" => {
+                    ws.overview.back = Some(Center::Chat);
+                    Center::Overview
+                }
+                "team" => {
+                    ws.team_page.back = Some(Center::Chat);
+                    Center::Team
+                }
                 _ => Center::Chat,
             };
             if ws.center == Center::Schedules {
@@ -151,15 +277,21 @@ fn act(
         }
         "review" => ws.open_review(cx),
         "quiet" => ws.quiet = true,
+        // The window's size, as a drag of its edge would set it.
+        "size" => match value.split_once('x').map(|(w, h)| (w.parse(), h.parse())) {
+            Some((Ok(width), Ok(height))) => window.resize(size(px(width), px(height))),
+            _ => eprintln!("size=WIDTHxHEIGHT: {value}"),
+        },
         // A turn of the shown chat that began `value` minutes ago and goes on.
         "working" => {
             let minutes: i64 = value.parse().unwrap_or(7);
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
                 chat.working = true;
-                chat.activity_boundaries.push(chat.items.len());
+                let end = chat.items.len();
+                chat.activity_boundaries.push(end);
                 chat.boundary_times
                     .push(dusk_protocol::system::now_ms() - minutes * 60_000);
-                chat.boundary_spend.push((0, 0));
+                chat.boundary_spend.push(None);
             }
         }
         "detail" => {
@@ -175,8 +307,17 @@ fn act(
             }
         }
         "settings" => {
+            use crate::pages::settings::ai::Tab;
+
+            let ai_tab = match value {
+                "ai" | "llm" | "model" => Some(Tab::Llm),
+                "voice" => Some(Tab::Voice),
+                "image" => Some(Tab::Image),
+                "video" => Some(Tab::Video),
+                _ => None,
+            };
             ws.settings_page = match value {
-                "model" => SettingsPage::Model,
+                _ if ai_tab.is_some() => SettingsPage::Ai,
                 "chat" => SettingsPage::Chat,
                 "safety" => SettingsPage::Safety,
                 "me" => SettingsPage::AboutMe,
@@ -187,25 +328,26 @@ fn act(
                 "keyboard" => SettingsPage::Keyboard,
                 "updates" => SettingsPage::Updates,
                 "usage" => SettingsPage::Usage,
+                "plugins" => SettingsPage::Plugins,
                 _ => SettingsPage::Appearance,
             };
             ws.center = Center::Settings;
             ws.load_settings(cx);
-            ws.load_page(ws.settings_page, cx);
+            if let Some(tab) = ai_tab {
+                ws.select_ai_tab(tab, cx);
+            } else {
+                ws.load_page(ws.settings_page, cx);
+            }
         }
         "shelf" => {
             ws.shelf = match value {
                 "skills" => Shelf::Skills,
                 "plugins" => Shelf::Plugins,
                 "tools" => Shelf::Tools,
-                "voice" => {
-                    ws.load_voice_models(cx);
-                    Shelf::Voice
-                }
                 "agents" => Shelf::Agents,
                 _ => Shelf::Connectors,
             };
-            ws.center = Center::Connectors;
+            ws.center = Center::Customize;
             ws.load_settings(cx);
         }
         "artifacts" => {
@@ -216,6 +358,15 @@ fn act(
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
+            // After `fake=team`: the yes Stop team asks for, the budget form and a task's card.
+            "team-stop" => ws.ask_stop_team(cx),
+            // The card of task #4, blocked on the lead with a note.
+            "task-card" => ws.open_task_card("t4", cx),
+            "team-budget" => {
+                if let Some(team) = ws.overview.team.clone() {
+                    ws.ask_team_budget(&team, window, cx);
+                }
+            }
             // The arbiter's window, with a few things said so its timeline has rows.
             "whatsnew" => {
                 ws.modal = Some(crate::modal::Modal::WhatsNew {
@@ -290,6 +441,10 @@ fn act(
             if ws.providers.is_empty() {
                 ws.load_models(cx);
             }
+            // The mode's button reads the modes as it opens its menu; so does this.
+            if ws.settings.is_none() {
+                ws.load_settings(cx);
+            }
             ws.picker = Some(match value {
                 "mode" => Picker::Mode,
                 "access" => Picker::Access,
@@ -315,8 +470,24 @@ fn act(
         "dawn" => ws.dawn(cx),
         "terminal" => ws.toggle_terminal(window, cx),
         "run" => ws.type_in_terminal(format!("{value}\r").into_bytes(), cx),
+        // Cells of a row of the shown shell selected, as a drag would: `select=ROW:FROM-TO`.
+        "select" => {
+            let cells = value.split_once(':').and_then(|(row, cols)| {
+                let (from, to) = cols.split_once('-')?;
+                Some((row.parse().ok()?, from.parse().ok()?, to.parse().ok()?))
+            });
+            match cells {
+                Some((row, from, to)) => ws.terminal.select_cells(row, from, to),
+                None => eprintln!("select=ROW:FROM-TO: {value}"),
+            }
+            cx.notify();
+        }
         "type" => {
-            ws.fill_composer = Some(value.to_owned());
+            ws.edit_draft(
+                ws.shown.clone(),
+                crate::pages::chat::composer::Change::Replace(value.to_owned()),
+                cx,
+            );
             cx.notify();
         }
         "menu" => {
@@ -342,7 +513,7 @@ fn act(
                 }
                 "voice" => {
                     ws.modal = Some(Modal::VoiceMissing {
-                        speech: crate::pages::connectors::voice::Speech::Recognition,
+                        speech: crate::pages::settings::ai::voice::Speech::Recognition,
                     })
                 }
                 "rollback" => {
@@ -357,13 +528,125 @@ fn act(
             }
             cx.notify();
         }
-        "simulator" if value == "devices" => ws.toggle_device_menu(cx),
-        "simulator" => ws.toggle_simulator(cx),
         "right" => {
+            use crate::workspace::Right;
             ws.folded.clear();
+            // `right=lower`: the tall upper modules folded, so the lower ones are in sight.
+            if value == "lower" {
+                ws.folded
+                    .extend([Right::Overview, Right::Git, Right::Files, Right::Arbiter]);
+            }
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
         }
+        // A board of 200 tasks in the Overview; the next real answer replaces it.
+        "fake" if value == "overview" => {
+            ws.overview.chat = ws.shown.clone();
+            ws.overview.overview = Some(Default::default());
+            ws.overview.plan = Some(dusk_protocol::thread::PlanCounts {
+                open: 120,
+                claimed: 4,
+                running: 6,
+                blocked: 10,
+                review: 5,
+                done: 50,
+                failed: 5,
+            });
+            cx.notify();
+        }
+        "fake" if value == "pulls" => fake_pulls(ws, cx),
+        "fake" if value == "unread" => fake_unread(ws, cx),
+        "fake" if value == "forge-signin" || value == "forge-unserved" => {
+            fake_forge(ws, value == "forge-signin", cx)
+        }
+        "fake" if value == "plugins" => {
+            ws.status.plugin_parts = std::sync::Arc::new(super::plugins::parts());
+            cx.notify();
+        }
+        "plugins" => {
+            let (what, arg) = value.split_once(':').unwrap_or((value, ""));
+            match what {
+                "menu" => ws.toggle_plugins_menu(cx),
+                "open" => super::plugins::open(ws, arg, cx),
+                // Through the core, from a real plugin's process.
+                "real" => {
+                    if let Some((plugin, part)) = arg.split_once('/') {
+                        let key = crate::plugins::Key {
+                            plugin: plugin.into(),
+                            part: part.into(),
+                        };
+                        ws.open_plugin_part(key, cx);
+                    }
+                }
+                "search" => {
+                    let search = ws.plugins.search.clone();
+                    search.update(cx, |search, cx| {
+                        search.set_value(arg.to_owned(), window, cx)
+                    });
+                }
+                "fold" => {
+                    let dock = match arg {
+                        "bottom" => &mut ws.plugins.bottom,
+                        _ => &mut ws.plugins.right,
+                    };
+                    dock.collapsed = !dock.collapsed;
+                }
+                // As if the bottom dock's edge were dragged to this height.
+                "height" => match arg.parse::<f32>() {
+                    Ok(height) => ws.plugins.bottom_height = height,
+                    Err(_) => eprintln!("plugins=height wants a number: {arg}"),
+                },
+                "notice" => ws.plugin_notice("notes", arg, cx),
+                other => eprintln!("no such plugins step: {other}"),
+            }
+            cx.notify();
+        }
+        "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
+        "fake" if value == "mcp" => super::polish::mcp(ws, cx),
+        "fake"
+            if matches!(
+                value,
+                "retry" | "unreachable" | "busy-threads" | "limits-high" | "agent-tree"
+            ) || value.starts_with("activity-") =>
+        {
+            super::polish::state(ws, value, cx)
+        }
+        "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
+        "fake" if value == "team" || value == "team-ended" => super::team::fake(ws, value, cx),
+        "fake" if value.starts_with("team-") => super::team_sizes::fake(ws, value, cx),
+        // The Team page's layers, and a long plan's done waves shown.
+        "layer" => {
+            use crate::pages::team::Layer;
+            match value {
+                "people" => ws.team_page.layer = Layer::People,
+                "plan" => ws.team_page.layer = Layer::Plan,
+                "unfold" => ws.team_page.unfold = true,
+                _ => ws.team_page.layer = Layer::Both,
+            }
+            cx.notify();
+        }
+        // The transcript scrolled so its Nth row is at the top.
+        "scroll" => {
+            ws.list.scroll_to(ListOffset {
+                item_ix: value.parse().unwrap_or(0),
+                offset_in_item: px(0.),
+            });
+            cx.notify();
+        }
+        // The chat's folds, as a click on each would open them.
+        "open" => {
+            match value {
+                "pins" => ws.pins.open = true,
+                "plan" => ws.dock.plan_open = true,
+                "panel" => ws.toggle_panel(cx),
+                "done" => ws.todo_done_open = true,
+                other => eprintln!("no such fold: {other}"),
+            }
+            cx.notify();
+        }
+        "fake" if value == "store" => super::store::fake(ws, cx),
+        "fake" if value == "suggest" => super::store::suggest(ws, cx),
+        "workshop" => super::store::step(ws, value, window, cx),
         "fake" if value == "limits" => {
             use dusk_protocol::model::{RateLimit, RateLimits};
             ws.status.limits = Some(RateLimits {
@@ -373,7 +656,120 @@ fn act(
                     resets_in: Some(360),
                 }),
                 tokens: None,
+                plan: Vec::new(),
             });
+            cx.notify();
+        }
+        "fake" if value == "welcome" => {
+            ws.providers.clear();
+            ws.center = Center::Chat;
+            ws.welcome.step = crate::pages::welcome::Step::Intro;
+            cx.notify();
+        }
+        // Two providers, to look at a row's switch and buttons.
+        "fake" if value == "providers" => {
+            use dusk_protocol::model::ProviderStatus;
+            ws.providers = ["chatgpt", "openrouter"]
+                .into_iter()
+                .map(|name| ProviderStatus {
+                    name: name.into(),
+                    models: Ok(Vec::new()),
+                    balance: None,
+                    limits: None,
+                    enabled: true,
+                    failure: None,
+                })
+                .collect();
+            cx.notify();
+        }
+        // The chatgpt provider with a list of models and one in use, to look at the model
+        // menu: the menu alone shows only the model in use; `picker=more` opens the rest.
+        "fake" if value == "models" => {
+            use dusk_protocol::model::{Model, ProviderStatus};
+            let model = |id: &str| Model {
+                id: id.into(),
+                context_window: None,
+                max_output: None,
+            };
+            let names = [
+                "gpt-5.6-luna",
+                "gpt-5.7-nova",
+                "gpt-5.8-vega",
+                "gpt-6.1-sol",
+                "gpt-6.2-rigel",
+                "gpt-6-sol",
+                "gpt-6.3-atlas",
+            ];
+            ws.providers = vec![ProviderStatus {
+                name: "chatgpt".into(),
+                models: Ok(names.into_iter().map(model).collect()),
+                balance: None,
+                limits: None,
+                enabled: true,
+                failure: None,
+            }];
+            ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
+            cx.notify();
+        }
+        // A user's message with a picture thumbnail under it. The bytes are decoded here
+        // in place of the core, so a window with no real chat can show the card.
+        "fake" if value == "sentpicture" => {
+            use crate::pages::chat::messages::SentPicture;
+            use crate::pages::chat::transcript::{Item, Transcript};
+            let name = "diagram.png";
+            let image = std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, demo_png()));
+            let thread_id = "shot".to_owned();
+            let mut chat = Transcript::default();
+            chat.push(
+                Item::User {
+                    text: format!(
+                        "Here is the layout {}",
+                        dusk_protocol::thread::source_tag(name)
+                    ),
+                    sequence: Some(1),
+                    answered: Vec::new(),
+                },
+                0,
+            );
+            ws.sent_pictures
+                .insert((thread_id.clone(), name.into()), SentPicture::Ready(image));
+            ws.chats.insert(thread_id.clone(), chat);
+            ws.shown = Some(thread_id);
+            ws.center = Center::Chat;
+            cx.notify();
+        }
+        // The same picture large over the window, as a click on the thumbnail opens it.
+        "viewer" if value == "picture" => {
+            let image = std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, demo_png()));
+            ws.open_picture(image.into(), window, cx);
+        }
+        // The ChatGPT plan's windows, as its sign-in reports them.
+        "fake" if value == "plan-limits" => {
+            use dusk_protocol::model::{PlanWindow, RateLimits};
+            ws.status.chatgpt_model = true;
+            ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
+            ws.status.limits = Some(RateLimits {
+                requests: None,
+                tokens: None,
+                plan: vec![
+                    PlanWindow {
+                        minutes: Some(300),
+                        used_percent: 22,
+                        resets_in: Some(7_800),
+                    },
+                    PlanWindow {
+                        minutes: Some(10_080),
+                        used_percent: 64,
+                        resets_in: Some(259_200),
+                    },
+                ],
+            });
+            cx.notify();
+        }
+        "fake" if value == "plan-unavailable" => {
+            ws.status.chatgpt_model = true;
+            ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
+            ws.status.limits = None;
             cx.notify();
         }
         "fake" if value == "agents" => {
@@ -389,6 +785,7 @@ fn act(
                 ("sre-engineer", "Measure memory growth"),
                 ("docs", "Read the old notes"),
                 ("general", "Summarize the findings"),
+                ("architect", "Plan the cache layout"),
             ];
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
                 for (index, (role, task)) in roles.iter().enumerate() {
@@ -399,6 +796,8 @@ fn act(
                         agent: (*role).into(),
                         task: (*task).into(),
                         effort: None,
+                        model: Some("chatgpt/gpt-5.5".into()),
+                        task_id: None,
                     });
                     let inner = match index {
                         1 => Some(ThreadEvent::ToolStarted(ToolCall {
@@ -419,6 +818,11 @@ fn act(
                             arguments: serde_json::json!({"path": "notes.md"}),
                         })),
                         6 => Some(ThreadEvent::Failed("the provider is unavailable".into())),
+                        7 => Some(ThreadEvent::ToolStarted(ToolCall {
+                            id: "t7".into(),
+                            name: "update_plan".into(),
+                            arguments: serde_json::json!({}),
+                        })),
                         _ => None,
                     };
                     if let Some(event) = inner {
@@ -433,7 +837,7 @@ fn act(
         }
         "fake" if value == "agentchat" => {
             // A subagent's chat with a run of steps and an answer, in the window.
-            use crate::pages::chat::transcript::{Item, Transcript};
+            use crate::pages::chat::transcript::Item;
             use dusk_protocol::thread::{Tool, ToolState};
             let step = |index: usize, name: &str, detail: &str| {
                 Item::Tool(Tool {
@@ -445,22 +849,50 @@ fn act(
                     state: ToolState::Done,
                 })
             };
-            let mut inner = Transcript::default();
-            inner.items.push(Item::User {
-                text: "Add expiry to the cache".into(),
-                sequence: Some(1),
+            // A step with long arguments and a multi-line answer, to show the selectable
+            // Arguments and Answer cells; it is left unfolded below.
+            let long = Item::Tool(Tool {
+                call_id: "c0".into(),
+                name: "run_command".into(),
+                detail: "cargo test -p cache --all-features".into(),
+                arguments:
+                    "{\"command\": \"cargo test -p cache --all-features -- --nocapture expiry\", \
+                     \"cwd\": \"/Users/me/work/cache\", \"timeout_ms\": 120000}"
+                        .into(),
+                output: "running 3 tests\ntest ttl::expires_after_deadline ... ok\n\
+                         test ttl::keeps_live_entries ... ok\ntest ttl::evicts_on_read ... ok\n\
+                         test result: ok. 3 passed; 0 failed"
+                    .into(),
+                state: ToolState::Done,
             });
-            inner.items.push(step(1, "read_file", "src/cache.rs"));
-            inner.items.push(step(2, "search_files", "ttl"));
-            inner.items.push(step(3, "run_command", "cargo test"));
-            inner.items.push(step(4, "run_command", "cargo clippy"));
-            inner.items.push(Item::Assistant {
-                text: "Entries now expire after the time set in `ttl`; the tests pass.".into(),
-                reasoning: String::new(),
-            });
+            let mut inner = crate::pages::chat::transcript::Log::default();
+            inner.push(
+                Item::User {
+                    text: "Add expiry to the cache".into(),
+                    sequence: Some(1),
+                    answered: Vec::new(),
+                },
+                0,
+            );
+            inner.push(long, 0);
+            inner.push(step(2, "read_file", "src/cache.rs"), 0);
+            inner.push(step(2, "search_files", "ttl"), 0);
+            inner.push(step(3, "run_command", "cargo test"), 0);
+            inner.push(step(4, "run_command", "cargo clippy"), 0);
+            inner.push(
+                Item::Assistant {
+                    text: "Entries now expire after the time set in `ttl`; the tests pass.".into(),
+                    reasoning: String::new(),
+                },
+                0,
+            );
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
                 chat.agent_chats.insert("fake-agent".into(), inner);
             }
+            // Unfold the run and its first step, so its Arguments and Answer show.
+            use crate::pages::chat::messages::{RUN, STEP};
+            ws.unfolded.insert(("fake-agent".into(), 1 | RUN));
+            ws.unfolded.insert(("fake-agent".into(), 1 | STEP));
             ws.modal = Some(Modal::AgentChat {
                 agent: "fake-agent".into(),
                 name: "backend-engineer".into(),
@@ -469,18 +901,59 @@ fn act(
         }
         "demo" => {
             // A chat that holds a sound card, to look at the player.
-            use crate::pages::chat::transcript::{Clip, Item, Transcript};
+            use crate::pages::chat::transcript::{Item, Transcript};
             let mut chat = Transcript::default();
-            chat.items.push(Item::User {
-                text: "Say it once more, slower".into(),
-                sequence: Some(1),
+            chat.push(
+                Item::User {
+                    text: "Say it once more, slower".into(),
+                    sequence: Some(1),
+                    answered: Vec::new(),
+                },
+                0,
+            );
+            chat.push(
+                Item::Audio(dusk_protocol::tools::Card {
+                    id: "0192-ab".into(),
+                    title: Some("scales-voice-b-revised.mp3".into()),
+                    mime_type: "audio/mpeg".into(),
+                    duration_ms: 6_000,
+                    kind: dusk_protocol::tools::CardKind::Audio,
+                    ..Default::default()
+                }),
+                0,
+            );
+            // A sound the user sent, and work handed to a subagent with its model.
+            chat.push(
+                Item::User {
+                    text: format!(
+                        "Compare it with mine {}",
+                        dusk_protocol::thread::sound_tag("0192-cd", "/Users/me/voice-take.m4a")
+                    ),
+                    sequence: Some(2),
+                    answered: Vec::new(),
+                },
+                0,
+            );
+            chat.push(
+                Item::Tool(dusk_protocol::thread::Tool {
+                    call_id: "ask-1".into(),
+                    name: "ask_agent".into(),
+                    detail: "Compare the two takes".into(),
+                    arguments: "{}".into(),
+                    output: String::new(),
+                    state: dusk_protocol::thread::ToolState::Running,
+                }),
+                0,
+            );
+            chat.apply(dusk_protocol::thread::ThreadEvent::SubagentStarted {
+                call_id: "ask-1".into(),
+                thread_id: "0000000a-fake".into(),
+                agent: "general".into(),
+                task: "Compare the two takes".into(),
+                effort: None,
+                model: Some("chatgpt/gpt-5.5".into()),
+                task_id: None,
             });
-            chat.items.push(Item::Audio(Clip {
-                id: "0192-ab".into(),
-                title: Some("scales-voice-b-revised.mp3".into()),
-                mime: "audio/mpeg".into(),
-                duration: Some(Duration::from_secs(6)),
-            }));
             ws.chats.insert("demo".into(), chat);
             ws.shown = Some("demo".into());
             cx.notify();
@@ -506,12 +979,28 @@ fn act(
                     ],
                     multiple: false,
                 }),
+                "approval-long" => ThreadEvent::Approval(ApprovalRequest {
+                    id: 2,
+                    request: Request::Command {
+                        command: (0..60).fold(
+                            "python3 - <<'EOF'\nimport json, pathlib\n".to_owned(),
+                            |text, line| {
+                                text + &format!(
+                                    "print(json.dumps({{'row': {line}, 'path': str(pathlib.Path.cwd() / 'data' / 'part-{line}.json')}}))\n"
+                                )
+                            },
+                        ) + "EOF",
+                    },
+                    session: None,
+                    steps: Vec::new(),
+                }),
                 _ => ThreadEvent::Approval(ApprovalRequest {
                     id: 1,
                     request: Request::Command {
                         command: "cargo test --workspace".into(),
                     },
                     session: Some("cargo".into()),
+                    steps: Vec::new(),
                 }),
             };
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
@@ -520,6 +1009,19 @@ fn act(
             cx.notify();
         }
         "theme" => crate::ui::theme::change(cx, |prefs| prefs.theme = value.to_owned()),
+        "sidebar" => {
+            use crate::columns::sidebar::Order;
+            let order = if value == "recent" {
+                Order::Recent
+            } else {
+                Order::Project
+            };
+            crate::ui::theme::change(cx, |prefs| prefs.chats_by = order);
+        }
+        "welcome" => match value.split_once(':') {
+            Some(("address", address)) => ws.welcome_address(address, window, cx),
+            _ => ws.welcome_form(window, cx),
+        },
         "file" => {
             let (path, line) = match value.rsplit_once(':') {
                 Some((path, line)) if line.parse::<u32>().is_ok() => (path, line.parse().ok()),
@@ -529,4 +1031,257 @@ fn act(
         }
         other => eprintln!("no such step: {other}"),
     }
+}
+
+/// A small PNG for the picture-thumbnail and viewer shots: a soft gradient with a frame.
+pub(super) fn demo_png() -> Vec<u8> {
+    use image::{ImageFormat, RgbImage};
+    let (w, h) = (640u32, 400u32);
+    let mut image = RgbImage::from_fn(w, h, |x, y| {
+        let r = 40 + (x * 120 / w) as u8;
+        let g = 60 + (y * 120 / h) as u8;
+        image::Rgb([r, g, 180])
+    });
+    for x in 0..w {
+        for y in [0, 1, h - 2, h - 1] {
+            image.put_pixel(x, y, image::Rgb([230, 230, 240]));
+        }
+    }
+    for y in 0..h {
+        for x in [0, 1, w - 2, w - 1] {
+            image.put_pixel(x, y, image::Rgb([230, 230, 240]));
+        }
+    }
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    let _ = image.write_to(&mut bytes, ImageFormat::Png);
+    bytes.into_inner()
+}
+
+/// A repository whose forge asks to sign in, or has no plugin: the quiet line in Changes.
+fn fake_forge(ws: &mut Workspace, sign_in: bool, cx: &mut Context<Workspace>) {
+    use dusk_protocol::project::{Forge, ForgeSignIn, RepositoryStatus};
+    let host = "github.com".to_owned();
+    ws.repository = Some(RepositoryStatus {
+        repository: "dusk_code".to_owned(),
+        branch: Some("main".to_owned()),
+        forge: if sign_in {
+            Forge::SignIn(ForgeSignIn {
+                host,
+                plugin: "github".to_owned(),
+                hint: "gh auth login".to_owned(),
+            })
+        } else {
+            Forge::Unserved { host, offer: None }
+        },
+        ..Default::default()
+    });
+    cx.notify();
+}
+
+/// Pull requests in every state, for the Changes module and a chat row's icon.
+/// Three loose chats at the top of the list: one unread, one read, one unread whose
+/// agent works again, so its ring stands where the dot would be.
+fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    let chats = [
+        ("fake-unread", "Answered while you were away", true),
+        ("fake-read", "Read and quiet", false),
+        ("fake-unread-working", "Unread but at work again", true),
+    ];
+    for (index, (id, title, unread)) in chats.into_iter().enumerate() {
+        ws.threads.insert(
+            index,
+            dusk_protocol::thread::Thread {
+                id: id.to_owned(),
+                source: "gui".to_owned(),
+                created_at: 0,
+                title: Some(title.to_owned()),
+                active_at: 0,
+                parent_thread_id: None,
+                agent: None,
+                name: None,
+                project: None,
+                temporary: false,
+                owner: None,
+                unread,
+            },
+        );
+    }
+    let mut working = crate::pages::chat::transcript::Transcript::default();
+    working.working = true;
+    ws.chats.insert("fake-unread-working".to_owned(), working);
+    cx.notify();
+}
+
+fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    use dusk_protocol::project::{
+        Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
+        RepositoryStatus,
+    };
+    use dusk_protocol::project::{Forge, ForgeStatus};
+    let Some(project) = ws.selected_project().cloned() else {
+        return;
+    };
+    let now = crate::columns::inspector::checks::now();
+    let pull = |number, title: &str, state, checks: Checks| PullStatus {
+        number,
+        title: title.to_owned(),
+        state,
+        branch: "pr-status".to_owned(),
+        author: "octo-dev".to_owned(),
+        created: Some(now - 4 * 3600 - 60 * number as i64),
+        updated: Some(now - 600),
+        added: 10 * number,
+        removed: 7 * number,
+        files: Some(number),
+        url: format!("https://github.com/example/repo/pull/{number}"),
+        checks_url: format!("https://github.com/example/repo/pull/{number}/checks"),
+        checks,
+    };
+    let check = |name: &str, stage, started: i64, finished: Option<i64>| Check {
+        name: name.to_owned(),
+        workflow: "ci".to_owned(),
+        stage,
+        url: "https://github.com/example/repo/actions/runs/1".to_owned(),
+        started: Some(now - started),
+        finished: finished.map(|ago| now - ago),
+    };
+    // A list as the core gives it: failed, running, queued, passed, skipped.
+    let checks = |passed: u32, running: u32, failed: u32, queued: u32, skipped: u32, state| {
+        let mut list = Vec::new();
+        for n in 0..failed {
+            list.push(check(
+                &format!("test (shard {n})"),
+                CheckStage::Failed,
+                400,
+                Some(200),
+            ));
+        }
+        for n in 0..running {
+            let name = format!("check (target {n})");
+            list.push(check(&name, CheckStage::Running, 192 - 60 * n as i64, None));
+        }
+        for _ in 0..queued {
+            list.push(check("web", CheckStage::Queued, 0, None));
+        }
+        for name in ["fmt", "deny", "clippy"].iter().take(passed as usize) {
+            list.push(check(name, CheckStage::Passed, 400, Some(380)));
+        }
+        for _ in 0..skipped {
+            list.push(check("changes", CheckStage::Skipped, 400, Some(398)));
+        }
+        Checks {
+            total: passed + running + failed + queued + skipped,
+            passed,
+            running,
+            failed,
+            state: Some(state),
+            list,
+        }
+    };
+    let pulls = vec![
+        pull(
+            12,
+            "Show pull requests and CI in Changes",
+            PullState::Open,
+            // One of each, so the checks window shows every group.
+            checks(4, 2, 1, 1, 1, CheckState::Pending),
+        ),
+        pull(
+            11,
+            "Draft: a quieter sidebar",
+            PullState::Draft,
+            Checks::default(),
+        ),
+        pull(
+            9,
+            "Split the forge",
+            PullState::Merged,
+            checks(10, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        pull(
+            7,
+            "Bump parking_lot",
+            PullState::Closed,
+            checks(8, 0, 2, 0, 1, CheckState::Failing),
+        ),
+    ];
+    ws.pulls.insert(
+        project.id.clone(),
+        PullSummary {
+            project_id: project.id.clone(),
+            pulls: pulls[..2].to_vec(),
+            checks: Some(CheckState::Pending),
+        },
+    );
+    ws.repository = Some(RepositoryStatus {
+        repository: "dusk_code".to_owned(),
+        branch: Some("pr-status".to_owned()),
+        stat: DiffStat {
+            files: 23,
+            added: 1473,
+            removed: 625,
+        },
+        unavailable: None,
+        forge: Forge::Served(Box::new(ForgeStatus {
+            plugin: "github".to_owned(),
+            name: "GitHub".to_owned(),
+            repository: "example/repo".to_owned(),
+            pull_prefix: "https://github.com/example/repo/pull/".to_owned(),
+            pulls,
+            unavailable: None,
+        })),
+    });
+    if let Some(git) = ws.git.as_mut() {
+        git.stat = DiffStat {
+            files: 23,
+            added: 1473,
+            removed: 625,
+        };
+        git.changes = vec![dusk_protocol::project::Change {
+            path: "src/lib.rs".to_owned(),
+            kind: dusk_protocol::project::ChangeKind::Modified,
+            staged: false,
+        }];
+    }
+    ws.threads.insert(
+        0,
+        dusk_protocol::thread::Thread {
+            id: "fake-pulls".to_owned(),
+            source: "gui".to_owned(),
+            created_at: 0,
+            title: Some("Pull request status".to_owned()),
+            active_at: 0,
+            parent_thread_id: None,
+            agent: None,
+            name: None,
+            project: Some(project.dir.to_string_lossy().into_owned()),
+            temporary: false,
+            owner: None,
+            unread: false,
+        },
+    );
+    crate::pages::chat::pull_link::show(ws, cx);
+    let mut chat = crate::pages::chat::transcript::Transcript::default();
+    chat.extend(
+        vec![
+            crate::pages::chat::transcript::Item::User {
+                text: "Where is https://github.com/example/repo/pull/12 now?".into(),
+                sequence: Some(1),
+                answered: Vec::new(),
+            },
+            crate::pages::chat::transcript::Item::Assistant {
+                text: "It is open: https://github.com/example/repo/pull/12 builds on \
+                   https://github.com/example/repo/pull/9, which is merged. A fork has its own, \
+                   https://github.com/someone/fork/pull/3, which stays a plain link."
+                    .into(),
+                reasoning: String::new(),
+            },
+        ],
+        0,
+    );
+    let thread_id = ws.shown.clone().unwrap_or_else(|| "shot".to_owned());
+    ws.chats.insert(thread_id.clone(), chat);
+    ws.shown = Some(thread_id);
+    ws.center = crate::workspace::Center::Chat;
+    cx.notify();
 }

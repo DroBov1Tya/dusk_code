@@ -1,0 +1,562 @@
+//! The lead's actions on the plan: add the whole plan, edit, show, review, fail, reopen,
+//! and run or stop the team. Each answers one line, except `show`. Everything the lead
+//! writes is model text: checked here and in the store, and made plain where echoed.
+
+use std::sync::Arc;
+
+use anyhow::{Context, Result, anyhow, bail, ensure};
+use dusk_protocol::thread::TeamBudget;
+use serde::Deserialize;
+
+use super::{
+    check::{self, TaskArguments},
+    team::{GatesYes, TeamRunner},
+    text::{self, Shown},
+};
+use crate::{
+    catalog::agents::Agents,
+    config::Limits,
+    state::{
+        MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
+        PlanTask, State, TaskEdit, short_task_id, timestamp_ms,
+    },
+    tools::ToolContext,
+};
+
+/// What a chat's `tasks` needs for the plan form, handed in by the launcher.
+pub struct Lead {
+    pub(super) agents: Arc<Agents>,
+    pub(super) team: Arc<dyn TeamRunner>,
+}
+
+/// The plan form's arguments; the schema the lead reads is `text::schema`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanArguments {
+    action: PlanAction,
+    tasks: Option<Vec<TaskArguments>>,
+    budget: Option<BudgetArguments>,
+    id: Option<String>,
+    ids: Option<Vec<String>>,
+    text: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum PlanAction {
+    Add,
+    Run,
+    Review,
+    Show,
+    Edit,
+    Fail,
+    Reopen,
+    Stop,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct BudgetArguments {
+    at_once: Option<u32>,
+    steps: Option<u32>,
+    tokens: Option<u64>,
+    minutes: Option<u32>,
+}
+
+/// What the lead is answered, and whether the plan changed, so clients are told.
+pub struct Answer {
+    pub text: String,
+    pub changed: bool,
+}
+
+fn changed(text: String) -> Answer {
+    Answer {
+        text,
+        changed: true,
+    }
+}
+
+impl PlanAction {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Run => "run",
+            Self::Review => "review",
+            Self::Show => "show",
+            Self::Edit => "edit",
+            Self::Fail => "fail",
+            Self::Reopen => "reopen",
+            Self::Stop => "stop",
+        }
+    }
+
+    /// The fields the action reads besides `action`.
+    fn fields(self) -> &'static [&'static str] {
+        match self {
+            Self::Add => &["tasks"],
+            Self::Run => &["budget"],
+            Self::Review => &["id", "ids", "text"],
+            Self::Show | Self::Reopen => &["id"],
+            Self::Edit => &["id", "tasks", "text"],
+            Self::Fail => &["id", "text"],
+            Self::Stop => &[],
+        }
+    }
+}
+
+impl PlanArguments {
+    /// A field the action does not read is refused, not ignored: the lead meant something.
+    fn refuse_unused(&self) -> Result<()> {
+        let given = [
+            ("tasks", self.tasks.is_some()),
+            ("budget", self.budget.is_some()),
+            ("id", self.id.is_some()),
+            ("ids", self.ids.is_some()),
+            ("text", self.text.is_some()),
+        ];
+        for (field, present) in given {
+            ensure!(
+                !present || self.action.fields().contains(&field),
+                "{} does not take `{field}`",
+                self.action.name()
+            );
+        }
+        Ok(())
+    }
+}
+
+/// A field the action needs.
+fn needed<T>(field: Option<T>, name: &str, action: &str) -> Result<T> {
+    field.with_context(|| format!("{action} needs `{name}`"))
+}
+
+impl Lead {
+    pub fn new(agents: Arc<Agents>, team: Arc<dyn TeamRunner>) -> Self {
+        Self { agents, team }
+    }
+
+    pub async fn call(
+        &self,
+        state: &State,
+        thread: &str,
+        arguments: PlanArguments,
+        context: &ToolContext,
+    ) -> Result<Answer> {
+        arguments.refuse_unused()?;
+        let PlanArguments {
+            action,
+            tasks,
+            budget,
+            id,
+            ids,
+            text,
+        } = arguments;
+        let name = action.name();
+        match action {
+            PlanAction::Add => {
+                let tasks = needed(tasks, "tasks", name)?;
+                self.add(state, thread, tasks, context).await
+            }
+            PlanAction::Edit => {
+                let id = needed(id, "id", name)?;
+                self.edit(state, thread, &id, tasks, text, context).await
+            }
+            PlanAction::Show => match id {
+                Some(id) => show_task(state, thread, &id).await,
+                None => self.show(state, thread).await,
+            },
+            PlanAction::Review => review(state, thread, id, ids, text).await,
+            PlanAction::Fail => fail(state, thread, &needed(id, "id", name)?, text).await,
+            PlanAction::Reopen => reopen(state, thread, &needed(id, "id", name)?).await,
+            PlanAction::Run => self.run(state, thread, budget, context).await,
+            PlanAction::Stop => {
+                self.team.stop(thread).await?;
+                Ok(changed("stopped".into()))
+            }
+        }
+    }
+
+    /// The whole plan in one call. A call run again, as after a restart, finds its tasks
+    /// already in the plan and answers as the first time.
+    async fn add(
+        &self,
+        state: &State,
+        thread: &str,
+        tasks: Vec<TaskArguments>,
+        context: &ToolContext,
+    ) -> Result<Answer> {
+        ensure!(
+            !tasks.is_empty(),
+            "add needs `tasks`: the whole plan, [{{\"text\": ...}}, ...]"
+        );
+        ensure!(
+            tasks.len() <= MAX_TASKS_AN_ADD,
+            "more than {MAX_TASKS_AN_ADD} tasks in one add; add the first phase now"
+        );
+        let new = check::new_tasks(tasks, context, &self.agents).await?;
+        let plan = state.plan(thread).await.map_err(explain)?;
+        if let Some(ids) = replayed(&new, &plan)? {
+            return Ok(changed(added(&ids)));
+        }
+        let added_tasks = state.add_plan_tasks(thread, &new).await.map_err(explain)?;
+        let ids: Vec<&str> = added_tasks
+            .iter()
+            .map(|task| task.task_id.as_str())
+            .collect();
+        Ok(changed(added(&ids)))
+    }
+
+    async fn edit(
+        &self,
+        state: &State,
+        thread: &str,
+        id: &str,
+        tasks: Option<Vec<TaskArguments>>,
+        text: Option<String>,
+        context: &ToolContext,
+    ) -> Result<Answer> {
+        let edit = match (tasks, text) {
+            (Some(_), Some(_)) => bail!("edit takes `text`, or one task in `tasks`, not both"),
+            (Some(mut tasks), None) => {
+                ensure!(tasks.len() == 1, "edit takes one task in `tasks`");
+                check::task_edit(tasks.remove(0), context, &self.agents).await?
+            }
+            (None, Some(text)) => TaskEdit {
+                description: Some(text),
+                ..TaskEdit::default()
+            },
+            (None, None) => bail!("edit needs `text`, or one task in `tasks` with what changes"),
+        };
+        match state.edit_plan_task(thread, id, &edit).await {
+            Ok(task) => Ok(changed(format!("edited #{}", short_task_id(&task.task_id)))),
+            Err(PlanError::Illegal { task, from, .. }) => bail!(
+                "task #{} is {}; edit changes only a task not yet started. Fail it and add \
+                 a new one instead",
+                short_task_id(&task),
+                from.as_str()
+            ),
+            Err(error) => Err(explain(error)),
+        }
+    }
+
+    async fn show(&self, state: &State, thread: &str) -> Result<Answer> {
+        let plan = state.plan(thread).await.map_err(explain)?;
+        let mut shown = Vec::with_capacity(plan.len());
+        for task in &plan {
+            shown.push(Shown {
+                task,
+                member: member(state, task).await?,
+            });
+        }
+        let team = self.team.team(thread).await?;
+        Ok(Answer {
+            text: text::plan(&shown, team.as_ref()),
+            changed: false,
+        })
+    }
+
+    async fn run(
+        &self,
+        state: &State,
+        thread: &str,
+        budget: Option<BudgetArguments>,
+        context: &ToolContext,
+    ) -> Result<Answer> {
+        let budget = team_budget(budget.unwrap_or_default(), &context.config.limits())?;
+        let plan = state.plan(thread).await.map_err(explain)?;
+        ensure!(
+            plan.iter()
+                .any(|task| !matches!(task.status, PlanStatus::Done | PlanStatus::Failed)),
+            "the plan has nothing left to do; add tasks first, or reopen a failed one"
+        );
+        let started = self
+            .team
+            .run(thread, budget, context.progress.clone())
+            .await?;
+        let gates = match started.gates {
+            GatesYes::Refused => {
+                "; the user did not allow its gate commands, so a gated task waits for your \
+                 review"
+            }
+            GatesYes::Allowed | GatesYes::NotAsked => "",
+        };
+        Ok(changed(format!(
+            "running: {} given out{gates}",
+            started.given
+        )))
+    }
+}
+
+/// `added 7 tasks: #5d01aa3c #77aa01bc ...`, in the order of the add.
+fn added(ids: &[&str]) -> String {
+    let noun = if ids.len() == 1 { "task" } else { "tasks" };
+    let ids: Vec<String> = ids
+        .iter()
+        .map(|id| format!("#{}", short_task_id(id)))
+        .collect();
+    format!("added {} {noun}: {}", ids.len(), ids.join(" "))
+}
+
+/// The tasks of the plan this add already made, when it is a call run again: every task
+/// of it has a twin not done, each twin used once. Some twins and not all is a task
+/// written twice, which is refused.
+fn replayed<'a>(new: &[NewTask], plan: &'a [PlanTask]) -> Result<Option<Vec<&'a str>>> {
+    let mut twins: Vec<&str> = Vec::new();
+    let mut first_twin = None;
+    let mut missing = false;
+    for (index, task) in new.iter().enumerate() {
+        let twin = plan.iter().find(|old| {
+            old.status != PlanStatus::Done
+                && !twins.contains(&old.task_id.as_str())
+                && same(task, old)
+        });
+        match twin {
+            Some(old) => {
+                twins.push(&old.task_id);
+                first_twin.get_or_insert((index, old.task_id.as_str()));
+            }
+            None => missing = true,
+        }
+    }
+    match (missing, first_twin) {
+        (false, _) => Ok(Some(twins)),
+        (true, None) => Ok(None),
+        (true, Some((index, id))) => bail!(
+            "task {} is the same as #{} already in the plan; leave it out, or reopen #{} \
+             if it failed",
+            index + 1,
+            short_task_id(id),
+            short_task_id(id)
+        ),
+    }
+}
+
+fn same(new: &NewTask, old: &PlanTask) -> bool {
+    new.description.trim() == old.description
+        && new.role == old.role
+        && new.phase == old.phase
+        && new.acceptance == old.acceptance
+        && new.brief == old.brief
+        && new.gate == old.gate
+        && new.files == old.files
+}
+
+/// The member that holds a task, by the name its thread goes by.
+async fn member(state: &State, task: &PlanTask) -> Result<Option<String>> {
+    let holds = matches!(
+        task.status,
+        PlanStatus::Claimed | PlanStatus::Running | PlanStatus::Blocked | PlanStatus::Review
+    );
+    let Some(owner) = task.owner_thread_id.as_deref().filter(|_| holds) else {
+        return Ok(None);
+    };
+    Ok(state
+        .load_thread(owner)
+        .await?
+        .and_then(|thread| thread.name))
+}
+
+async fn show_task(state: &State, thread: &str, id: &str) -> Result<Answer> {
+    let task = state.plan_task(thread, id).await.map_err(explain)?;
+    let plan = state.plan(thread).await.map_err(explain)?;
+    let after: Vec<(String, Option<PlanStatus>)> = task
+        .depends_on
+        .iter()
+        .map(|id| {
+            let status = plan.iter().find(|task| &task.task_id == id);
+            (id.clone(), status.map(|task| task.status))
+        })
+        .collect();
+    let shown = Shown {
+        member: member(state, &task).await?,
+        task: &task,
+    };
+    Ok(Answer {
+        text: text::task(&shown, &after),
+        changed: false,
+    })
+}
+
+/// Accepts tasks in review, or sends one back with what to redo. Run again, an accepted
+/// task is done and a rejected one is at work with the same note: both answer as before.
+async fn review(
+    state: &State,
+    thread: &str,
+    id: Option<String>,
+    ids: Option<Vec<String>>,
+    text: Option<String>,
+) -> Result<Answer> {
+    match (id, ids, text) {
+        (None, Some(ids), None) => accept(state, thread, &ids).await,
+        (Some(id), None, Some(text)) => reject(state, thread, &id, &text).await,
+        _ => bail!("review accepts `ids`, or rejects one `id` with `text` to redo"),
+    }
+}
+
+async fn accept(state: &State, thread: &str, ids: &[String]) -> Result<Answer> {
+    ensure!(!ids.is_empty(), "review needs `ids` to accept");
+    ensure!(
+        ids.len() <= MAX_OPEN_TASKS,
+        "more than {MAX_OPEN_TASKS} ids in one review"
+    );
+    let mut accepted: Vec<String> = Vec::new();
+    for id in ids {
+        let task_id = match state.pass_task(thread, id, PassedBy::Lead).await {
+            Ok(task) => task.task_id,
+            Err(PlanError::Illegal {
+                task,
+                from: PlanStatus::Done,
+                ..
+            }) => task,
+            Err(PlanError::Illegal { task, from, .. }) => {
+                return Err(partly(
+                    &accepted,
+                    anyhow!(
+                        "task #{} is {}; review takes a task in review, which show marks [?]",
+                        short_task_id(&task),
+                        from.as_str()
+                    ),
+                ));
+            }
+            Err(error) => return Err(partly(&accepted, explain(error))),
+        };
+        accepted.push(format!("#{}", short_task_id(&task_id)));
+    }
+    Ok(changed(format!("accepted {}", accepted.join(" "))))
+}
+
+/// An error after some tasks were accepted says which, so the lead does not repeat them.
+fn partly(accepted: &[String], error: anyhow::Error) -> anyhow::Error {
+    if accepted.is_empty() {
+        return error;
+    }
+    anyhow!("accepted {}, then: {error:#}", accepted.join(" "))
+}
+
+async fn reject(state: &State, thread: &str, id: &str, text: &str) -> Result<Answer> {
+    ensure!(!text.trim().is_empty(), "review needs `text`: what to redo");
+    let task = match state.rework_task(thread, id, text, timestamp_ms()?).await {
+        Ok(task) => task,
+        Err(PlanError::Illegal { task, from, .. }) => {
+            let found = state.plan_task(thread, &task).await.map_err(explain)?;
+            let again =
+                matches!(from, PlanStatus::Running | PlanStatus::Failed) && found.note == text;
+            ensure!(
+                again,
+                "task #{} is {}; review takes a task in review, which show marks [?]",
+                short_task_id(&task),
+                from.as_str()
+            );
+            found
+        }
+        Err(error) => return Err(explain(error)),
+    };
+    let line = match task.status {
+        PlanStatus::Failed => format!(
+            "#{} failed: sent back {MAX_REWORKS} times already",
+            short_task_id(&task.task_id)
+        ),
+        _ => format!(
+            "sent back #{} to redo ({} of {MAX_REWORKS})",
+            short_task_id(&task.task_id),
+            task.reworks
+        ),
+    };
+    Ok(changed(line))
+}
+
+/// Run again on a failed task, it is already so.
+async fn fail(state: &State, thread: &str, id: &str, note: Option<String>) -> Result<Answer> {
+    let task_id = match state
+        .fail_task(thread, id, note.as_deref().unwrap_or_default())
+        .await
+    {
+        Ok(task) => task.task_id,
+        Err(PlanError::Illegal {
+            task,
+            from: PlanStatus::Failed,
+            ..
+        }) => task,
+        Err(PlanError::Illegal {
+            task,
+            from: PlanStatus::Done,
+            ..
+        }) => bail!(
+            "task #{} is done, which is final; add a new task for more work",
+            short_task_id(&task)
+        ),
+        Err(error) => return Err(explain(error)),
+    };
+    Ok(changed(format!("failed #{}", short_task_id(&task_id))))
+}
+
+/// Run again on an open task, it is already so.
+async fn reopen(state: &State, thread: &str, id: &str) -> Result<Answer> {
+    let task_id = match state.reopen_task(thread, id).await {
+        Ok(task) => task.task_id,
+        Err(PlanError::Illegal {
+            task,
+            from: PlanStatus::Open,
+            ..
+        }) => task,
+        Err(PlanError::Illegal { task, from, .. }) => bail!(
+            "task #{} is {}; reopen takes a failed or blocked task",
+            short_task_id(&task),
+            from.as_str()
+        ),
+        Err(error) => return Err(explain(error)),
+    };
+    Ok(changed(format!("reopened #{}", short_task_id(&task_id))))
+}
+
+/// The budget the lead asked for, each part held to its ceiling; a part left out is the
+/// ceiling. Asking above one is refused with it, never cut.
+fn team_budget(asked: BudgetArguments, limits: &Limits) -> Result<TeamBudget> {
+    let at_once_ceiling = u64::try_from(limits.team_members_at_once()).unwrap_or(u64::MAX);
+    let at_once = within("at_once", asked.at_once.map(u64::from), at_once_ceiling)?;
+    let steps = within(
+        "steps",
+        asked.steps.map(u64::from),
+        u64::from(limits.team_max_steps),
+    )?;
+    let tokens = within("tokens", asked.tokens, limits.team_max_tokens)?;
+    let minutes = within(
+        "minutes",
+        asked.minutes.map(u64::from),
+        u64::from(limits.team_max_minutes),
+    )?;
+    TeamBudget::new(
+        u32::try_from(at_once)?,
+        u32::try_from(steps)?,
+        tokens,
+        u32::try_from(minutes)?,
+    )
+}
+
+fn within(name: &str, asked: Option<u64>, ceiling: u64) -> Result<u64> {
+    let Some(asked) = asked else {
+        return Ok(ceiling);
+    };
+    ensure!(asked >= 1, "budget.{name} must be at least 1");
+    ensure!(
+        asked <= ceiling,
+        "budget.{name} {asked} is above the ceiling {ceiling}; give {ceiling} or less, or \
+         ask the user to raise it in the settings"
+    );
+    Ok(asked)
+}
+
+/// The store's refusal with the call that gets past it.
+fn explain(error: PlanError) -> anyhow::Error {
+    let hint = match &error {
+        PlanError::NoSuchTask(_) | PlanError::Ambiguous(_) => "; show prints the ids",
+        PlanError::Cycle(_) => "; take one of them out of `after`",
+        PlanError::UnknownDependency(_) => {
+            "; `after` takes keys of this add, or ids that show prints"
+        }
+        PlanError::DuplicateKey(_) => "; give each task its own key",
+        PlanError::TooLong { .. } => "; write it shorter",
+        _ => "",
+    };
+    anyhow!("{error}{hint}")
+}

@@ -56,6 +56,20 @@ impl Drop for TemporaryRoot {
     }
 }
 
+/// Every temporary chat's folder in the temporary folder, this process's and others',
+/// resolved: what a plugin's call must not see. Only real folders, never a link.
+pub fn folders() -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(std::env::temp_dir()) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(PREFIX))
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter_map(|entry| entry.path().canonicalize().ok())
+        .collect()
+}
+
 /// A folder is abandoned when nobody holds its lock. The temporary folder may be shared
 /// with other users, so only real folders are touched, never a link to one.
 fn sweep(base: &Path) {

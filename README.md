@@ -1,27 +1,12 @@
-# duskcode
+# <img src="projects/clients/desktop/assets/mark.png" alt="" width="40" height="40"> duskcode
 
-An open-source coding agent in Rust: one core, three clients. It reads and edits your
-project, runs commands, hands work to specialist agents, and keeps everything it knows on
-your machine.
+An open-source coding agent in Rust. Open the same chats from the desktop app, terminal,
+or browser. Chat history is stored locally, and you choose which model provider to use.
 
-<p align="center">
-  <img src="docs/screenshots/desktop.png" alt="The desktop window: a chat with its steps, the context, the tool runs and the todo list" width="900">
-</p>
-
-- **One core, thin clients.** The desktop window, the terminal client and the web client
-  draw the same threads over one protocol. A feature lands in the core once.
-- **Any model you can reach.** OpenAI, Anthropic, Google, any OpenAI-compatible server,
-  local models, or your ChatGPT plan with no API key.
-- **Local by default.** No account, no telemetry, no project servers. Chats are a SQLite
-  file, secrets are in the system keychain.
-- **Readable.** MIT, about one binary per client, agents and skills as Markdown you can edit.
-
-## The clients
-
-| Desktop | Terminal | Web |
-| --- | --- | --- |
-| <img src="docs/screenshots/desktop-subagents.png" alt="The subagents window: agents by the zone of their work" width="290"> | <img src="docs/screenshots/terminal.png" alt="The terminal client: the rail, the steps of a turn and the answer" width="290"> | <img src="docs/screenshots/web.png" alt="The web client: a chat with the task list beside it" width="290"> |
-| `duskcode-gui`: chats and projects, a file viewer and editor, your own terminal in a panel, subagents and the arbiter in windows of their own. macOS and Linux. | `duskcode`: full screen in any terminal, 24-bit colour, keyboard and mouse. Runs on a server over SSH. | `duskcode --web`: the same chats in a browser, served by the core. `--global` opens it to other devices on your network. |
+[Website](https://drobov1tya.github.io/dusk_code/) ·
+[Releases](https://github.com/DroBov1Tya/dusk_code/releases) ·
+[Plugin Workshop](https://drobov1tya.github.io/duskcode-workshop/) ·
+[Plugins repository](https://github.com/DroBov1Tya/duskcode-workshop)
 
 ## Install
 
@@ -34,17 +19,33 @@ The installer asks what to install: the terminal client, the desktop client, or 
 downloads a release build for macOS arm64 or Linux x86_64 / arm64 and checks it against
 the digest GitHub keeps for the release.
 
-Then, from a project folder:
-
-```sh
-duskcode
-```
+Open the desktop app or run `duskcode` from a project folder. Run `duskcode --web` to
+open the browser client. [Connect a model](#connect-a-model) to start a chat.
 
 `/update` installs a newer release; `duskcode remove` uninstalls and asks first.
 
+<p align="center">
+  <img src="docs/screenshots/desktop.png" alt="The duskcode desktop app showing a project chat and its task list" width="900">
+</p>
+
+- **One core, thin clients.** The desktop window, the terminal client and the web client
+  draw the same threads over one protocol. A feature lands in the core once.
+- **Choice of model.** OpenAI, Anthropic, Google, any OpenAI-compatible server,
+  local models, or your ChatGPT plan with no API key.
+- **Local by default.** Chats are saved in SQLite on your machine. Duskcode needs no
+  account, and tracing is off by default. Model requests go to the provider you configure.
+- **Readable.** MIT, about one binary per client, agents and skills as Markdown you can edit.
+
+## The clients
+
+| Desktop | Terminal | Web |
+| --- | --- | --- |
+| <img src="docs/screenshots/desktop-subagents.png" alt="The subagents window: agents by the zone of their work" width="290"> | <img src="docs/screenshots/terminal.png" alt="The terminal client: the rail, the steps of a turn and the answer" width="290"> | <img src="docs/screenshots/web.png" alt="The web client: a chat with the task list beside it" width="290"> |
+| `duskcode-gui`: chats and projects, a file viewer and editor, your own terminal in a panel, subagents and the arbiter in windows of their own. macOS and Linux. | `duskcode`: full screen in any terminal, 24-bit colour, keyboard and mouse. Runs on a server over SSH. | `duskcode --web`: the same chats in a browser, served by the core. `--global` opens it to other devices on your network. |
+
 ## Connect a model
 
-`/connect` in the terminal, or Settings, Model in the desktop window.
+`/connect` in the terminal, or Settings → AI → LLM in the desktop window.
 
 | How | What it needs |
 | --- | --- |
@@ -79,7 +80,8 @@ account only in its own apps. Claude models work here with an API key.
 
 ## What it does
 
-- **Modes**: MAIN for direct work, ORCHESTRATOR to delegate, PLAN to plan first; your own
+- **Modes**: MAIN for direct work, ORCHESTRATOR to delegate, TEAM to have a
+  plan run by a team, PLAN to plan first; your own
   modes are Markdown files.
 - **Tools**: read, search and edit files, run commands in the foreground or as background
   jobs, look at pictures, and on a desktop see the screen and use the mouse and keyboard.
@@ -89,8 +91,11 @@ account only in its own apps. Claude models work here with an API key.
   approval nobody can give is denied.
 - **Skills, MCP servers and plugins**: skills are loaded when a task needs them; MCP
   servers add tools, with OAuth where the server asks; plugins bring skills, agents,
-  providers, hooks and platforms such as the built-in Telegram bot
-  ([docs/plugins.md](docs/plugins.md)).
+  providers, hooks, platforms and panels. Each runs in a sandbox, never sees your keys
+  and installs in one click from the signed store, the
+  [Workshop](https://drobov1tya.github.io/duskcode-workshop/); its plugins, Telegram
+  among them, live in [duskcode-workshop](https://github.com/DroBov1Tya/duskcode-workshop)
+  ([writing one](docs/plugins.md)).
 - **Memory you can read**: notes per project and about you, as plain files. A temporary
   chat is kept in memory only and leaves nothing on disk.
 - **Long work**: task lists, goals with acceptance criteria (`/goal`), scheduled runs,
@@ -99,6 +104,22 @@ account only in its own apps. Claude models work here with an API key.
 - **Voice**: dictation and reading aloud through servers you connect or models
   installed on the machine.
 - **Headless**: `duskcode run "prompt"` prints the answer; `--json` adds the usage.
+
+### Git
+
+A saved project's repository is managed from the Changes page of the desktop app: stage
+or unstage a file, stage all, commit, discard a file's changes (after a yes), make a
+branch, fetch, pull (fast-forward only) and push (after a yes, to the upstream or to
+`origin` as a new one). The core also merges with a list of conflicts, aborts a merge,
+adds and removes worktrees beside the repository, and reads and opens pull requests
+through the GitHub CLI when `gh` is installed and signed in, or through a plugin that
+serves the remote's host while `plugin_contracts` is on. Either way a pull request on
+GitHub is made by `gh pr create`, the GitHub plugin's included; the clients show them
+in the Changes module and as chips on pull request links in chat. Git runs with an argument vector and never a shell, with your own hooks,
+config and credential helper; the app never reads a token.
+
+It never forces a push, amends a commit, prunes worktrees or removes a worktree that has
+uncommitted or untracked files.
 
 ## How it is built
 
@@ -118,22 +139,20 @@ account only in its own apps. Claude models work here with an API key.
 | `projects/core` | All logic and state: providers, runtime, tools, agents, config |
 | `projects/server` | The way into the core from outside its process: the web server today |
 | `projects/clients/terminal`, `desktop`, `browser` | What a person sees: they draw and call the core; the browser page is Leptos, WebAssembly |
-| `projects/plugins/telegram` | The bot of the built-in `telegram` plugin |
 | `projects/evals` | Tasks that measure the engine, and their runner |
 | `resources/` | Shipped modes, agents, skills, plugins and prompts |
 
 [docs/structure.md](docs/structure.md) says where a file goes;
-[docs/agent-engine.md](docs/agent-engine.md) describes a turn.
+[docs/features.md](docs/features.md) lists the features and their switches.
 
 ## Security and privacy
 
-- **Secrets live in the system keychain** (macOS Keychain, Secret Service on Linux), in
-  one item. They are never written to `config.yml`, logs, chat history or backups, never
-  shown in the interface and never sent to a model. Without a keychain they stay in the
-  private config file.
-- **Nothing phones home.** The program talks to the providers, voice servers and MCP
-  servers you configure, and to GitHub to look for a newer release; that request carries
-  no chat data. Tracing is off unless you set an endpoint.
+- **Secrets live in the system keychain** (macOS Keychain, Secret Service on Linux) when
+  available. Without one, provider API keys stay in the private config file. Secrets stay
+  out of logs, chat history and model context.
+- **Network connections.** Duskcode connects to the providers, voice servers and MCP
+  servers you configure. It also checks GitHub for updates and fetches the signed catalog
+  when you open the Workshop. Tracing is off unless you set an endpoint.
 - **Files and git only inside saved projects.** Paths are canonicalized; `..` and
   symlinks that lead out are refused.
 - **Model output is data.** It is drawn as Markdown, links open only as http(s), and
@@ -166,12 +185,29 @@ scripts/build-web.sh                  # the web page, embedded by the next build
 ```
 
 `Cargo.lock` is committed, so a build uses the dependency versions of a release.
-[CONTRIBUTING.md](CONTRIBUTING.md) has the rules of the code.
+
+### Keeping the build folder small
+
+Cargo never deletes old artifacts, so `target/` only grows. Give each worktree its own
+target folder and never share one `CARGO_TARGET_DIR` between worktrees: each path builds
+its own copy of every crate anyway, so a shared folder only piles them up. Delete a
+worktree's target folder with the worktree. Now and then run `scripts/clean-build.sh`
+from the repository root: it removes what was not used for 7 days (`--days N` to change
+that, `cargo sweep` when it is installed), or everything with `--all`.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rules of the code, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) says how we treat each other.
+
+## Documentation
+
+[docs/structure.md](docs/structure.md), [docs/features.md](docs/features.md),
+[docs/web.md](docs/web.md) and [docs/plugins.md](docs/plugins.md) describe the program.
 
 ## Limitations
 
-- Pre-1.0: commands, configuration and the database schema may change. Patch versions
-  are pre-releases.
+- Pre-1.0: commands, configuration and the database schema may change. Full releases are
+  tagged on `stable`, beta pre-releases on `beta`, nightlies on `main`.
+  A nightly builds only the programs (terminal, desktop) whose code changed since the
+  previous tag (`scripts/release-plan.sh`); its notes name the previous tag for the rest.
 - Release builds are for macOS arm64 and Linux; there is no Windows build.
 - The macOS app is signed with the project's own certificate, not an Apple Developer
   ID, so the first start needs your confirmation.

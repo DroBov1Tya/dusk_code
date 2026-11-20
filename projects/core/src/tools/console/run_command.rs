@@ -28,11 +28,16 @@ use crate::tools::{
     tool::{Tool, ToolContext, ToolKind},
 };
 
-use super::process::{CommandEnv, Running};
+use super::process::{CommandEnv, Running, exit_line, report};
+use super::shape::Shaped;
 use crate::runtime::jobs::Launch;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 120;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
+/// Added while old results are sent as stubs, so a model reads one back instead of
+/// running the command again.
+const STUB_SENTENCE: &str = " A result shown as `[result N put away ...]` is stored; get it \
+    with read_history, run again only if something changed.";
 
 #[derive(Default)]
 pub struct RunCommand {
@@ -112,7 +117,7 @@ impl RunCommand {
         let scope = &*context.scope;
         let confinement = confinement(context).await;
         let marker = scope.workspace().join(format!(
-            ".dusk-cwd-{}-{}",
+            "{MARKER}{}-{}",
             std::process::id(),
             NEXT_MARKER.fetch_add(1, Ordering::Relaxed)
         ));
@@ -135,17 +140,13 @@ impl RunCommand {
             }
             _ => None,
         };
-        let before = match &context.state {
-            Some(_) => Some(super::file_changes::snapshot(scope.cwd()).await),
-            None => None,
-        };
+        let watch = super::file_changes::watch(context).await;
         let ran = run(
             &script,
             &self.start_dir(scope),
             &CommandEnv::default()
                 .var("DUSK_CWD_FILE", &marker)
                 .secrets(project_env(context).await?),
-            scope,
             confinement.as_ref(),
             timeout,
             handed.as_ref().map(|handed| handed.request()),
@@ -181,11 +182,8 @@ impl RunCommand {
                 )));
             }
         };
-        if let (Some(before), Some(state)) = (before, &context.state) {
-            let touched = before.touched(&super::file_changes::snapshot(scope.cwd()).await);
-            if let Err(error) = state.note_thread_files(&context.thread_id, &touched).await {
-                tracing::warn!("cannot note the files a command changed: {error:#}");
-            }
+        if let Some(watch) = watch {
+            watch.record(context, MARKER).await;
         }
         if let Some(note) = self.keep_dir(scope, ended) {
             result.content.push_str(&format!("\n{note}"));
@@ -195,6 +193,8 @@ impl RunCommand {
 }
 
 static NEXT_MARKER: AtomicU64 = AtomicU64::new(0);
+/// The name of the file a command leaves its last folder in starts with this.
+const MARKER: &str = ".dusk-cwd-";
 
 fn inside(scope: &ToolScope, dir: &Path) -> bool {
     dir.is_dir()
@@ -262,11 +262,21 @@ impl Tool for RunCommand {
             " Set background=true to start a long command and continue immediately. Returns job_id after spawn; the result joins this agent automatically at a safe boundary, even after this turn ends. Jobs survive turn cancellation; use jobs(action=cancel) to stop one. At most 8 jobs per thread and 64 per runtime; commands are limited to 16 KiB. Incomplete jobs are never restarted after application restart."
         } else {
             ""
+        } + if context.config.limits().stub_results {
+            STUB_SENTENCE
+        } else {
+            ""
         }
     }
 
     fn parameters(&self) -> Value {
         schema::of::<RunCommandArguments>()
+    }
+
+    /// Only a command that ended in the foreground has an exit code and output of its own.
+    fn shape(&self, arguments: &Value, result: &crate::tools::ToolResult) -> Option<Shaped> {
+        result.exit_code?;
+        super::shape::shape(arguments["command"].as_str()?, &result.content)
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
@@ -303,12 +313,10 @@ async fn run(
     script: &str,
     dir: &Path,
     env: &CommandEnv,
-    scope: &ToolScope,
     confinement: Option<&Confinement>,
     timeout_seconds: u64,
     detach: Option<watch::Receiver<bool>>,
 ) -> Result<Ran> {
-    let skills = super::skill_saves::snapshot(scope).await;
     let mut running = Running::start(script, dir, confinement, env)?;
     let detached = async {
         let Some(mut detach) = detach else {
@@ -328,25 +336,12 @@ async fn run(
         () = detached => return Ok(Ran::Detached(running)),
     };
     let (stdout, stderr, failure) = running.collect().await;
-    let code = match status.code() {
-        Some(code) => code.to_string(),
-        None => "none (terminated by a signal)".into(),
-    };
-    let mut output = format!("exit code: {code}");
-    for (name, text) in [("stdout", stdout), ("stderr", stderr)] {
-        if !text.is_empty() {
-            output.push_str(&format!("\n{name}:\n{text}"));
-        }
-    }
-    if let Some(failure) = failure {
-        output.push_str(&format!("\n{failure}"));
-    }
-    if let Some(before) = skills
-        && let Some(saved) = super::skill_saves::saved(scope, &before).await
-    {
-        // Last line, where clients look for it.
-        output.push_str(&format!("\n{}", saved.stored()));
-    }
+    let output = report(
+        exit_line(status.code()),
+        &stdout,
+        &stderr,
+        failure.as_deref(),
+    );
     Ok(Ran::Done(crate::tools::ToolResult {
         content: output,
         is_error: !status.success(),
@@ -366,6 +361,20 @@ pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String
         command.len() <= MAX_USER_COMMAND_BYTES,
         "command is longer than {MAX_USER_COMMAND_BYTES} bytes"
     );
+    Ok(run_check(command, context, DEFAULT_TIMEOUT_SECONDS)
+        .await?
+        .content)
+}
+
+/// Runs a command nobody's tool call started, such as a task's gate, in the folder of
+/// `context` and confined as that thread's own commands are. The caller has had it
+/// approved. Answers its exit code and capped output; an error when it could not start
+/// or ran out of time.
+pub async fn run_check(
+    command: &str,
+    context: &ToolContext,
+    timeout_seconds: u64,
+) -> Result<crate::tools::ToolResult> {
     platform::login_path::load().await;
     let confinement = confinement(context).await;
     let scope = &*context.scope;
@@ -373,15 +382,14 @@ pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String
         command,
         scope.cwd(),
         &CommandEnv::default().secrets(project_env(context).await?),
-        scope,
         confinement.as_ref(),
-        DEFAULT_TIMEOUT_SECONDS,
+        timeout_seconds,
         None,
     )
     .await?;
     match ran {
-        Ran::Done(result) => Ok(result.content),
-        Ran::Detached(_) => bail!("a command the user runs is never handed on"),
+        Ran::Done(result) => Ok(result),
+        Ran::Detached(_) => bail!("a command nobody watches is never handed on"),
     }
 }
 
@@ -430,7 +438,43 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::testing::{temp_dir, tool_context};
+    use crate::testing::{temp_dir, tool_context, tool_context_with};
+
+    /// The description with stubs off is the one every cached prompt already holds.
+    #[test]
+    fn the_description_gains_the_stub_sentence_only_with_the_switch_on() {
+        let scope = scope("shell-description");
+        let tool = RunCommand::default();
+        let off = tool.description(&tool_context_with(
+            &scope,
+            "limits:\n  stub_results: false\n",
+        ));
+        let before = format!(
+            "Run a command with sh -c. The first starts in {}; the folder a command ends in \
+             carries over to the next, so `cd` once, not in every command. Stdin is empty. \
+             Returns the exit code, stdout and stderr; a long stream keeps its first 8 KiB \
+             and last 24 KiB. A non-zero exit code is a failed result. Put temporary and \
+             downloaded files in {}. Change files here too: a quoted heredoc \
+             (cat > file <<'EOF') for a new file; for an edit, a short script that replaces \
+             one exact, unique piece and fails otherwise; then check with git diff. Do more \
+             per call: join commands with `&&` or `;`, and keep output small with `head`, \
+             `tail` or `grep`; never dump whole logs or files. Never wait with `sleep`. \
+             The project may hold environment variables the user set, such as API tokens: \
+             `env` lists them with the values masked; use them as `$NAME` and never print \
+             or copy a value.",
+            scope.cwd().display(),
+            scope.workspace().display()
+        );
+        assert_eq!(off, before);
+        let on = tool_context_with(&scope, "limits:\n  stub_results: true\n");
+        assert_eq!(
+            tool.description(&on),
+            format!(
+                "{before} A result shown as `[result N put away ...]` is stored; get it with \
+                 read_history, run again only if something changed."
+            )
+        );
+    }
 
     fn scope(name: &str) -> ToolScope {
         let root = temp_dir(name);
@@ -466,30 +510,6 @@ mod tests {
             0,
             "no marker left"
         );
-    }
-
-    /// A skill saved by a command gets the notice clients look for; invalid text does not.
-    #[tokio::test]
-    async fn a_command_that_saves_a_skill_reports_it() {
-        let skills = temp_dir("shell-skill-save").join("skills");
-        fs::create_dir_all(&skills).unwrap();
-        let scope = scope("shell-skill-save")
-            .share(&skills)
-            .with_skills(&skills);
-        let folder = skills.canonicalize().unwrap().join("greet");
-        let write = |text: &str| {
-            json!({ "command": format!(
-                "mkdir -p '{0}' && printf '%s' '{text}' > '{0}/SKILL.md'",
-                folder.display()
-            )})
-        };
-        let saved = run_tool(&scope, write("---\ndescription: Greets.\n---\nSay hi."))
-            .await
-            .unwrap();
-        let notice = crate::catalog::skills::SkillSave::from_result(&saved).unwrap();
-        assert_eq!(notice.name, "greet");
-        let invalid = run_tool(&scope, write("no front matter")).await.unwrap();
-        assert!(crate::catalog::skills::SkillSave::from_result(&invalid).is_none());
     }
 
     #[tokio::test]
@@ -540,7 +560,6 @@ mod tests {
             script,
             scope.cwd(),
             &CommandEnv::default(),
-            &scope,
             None,
             10,
             Some(request),
@@ -571,7 +590,6 @@ mod tests {
             "sleep 30 & echo started",
             scope.cwd(),
             &CommandEnv::default(),
-            &scope,
             None,
             10,
             None,
@@ -599,7 +617,6 @@ mod tests {
             "echo \"token=$TOKEN\"; echo \"mode=$MODE\"; echo \"again=$TOKEN\" >&2",
             scope.cwd(),
             &CommandEnv::default().secrets(secrets),
-            &scope,
             None,
             10,
             None,

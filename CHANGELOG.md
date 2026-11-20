@@ -1,8 +1,540 @@
 # Changelog
 
 What changed in each release. A release's section here is also its notes on GitHub.
-Patch versions are pre-releases; minor versions are full releases, made after end-to-end
-testing.
+Nightly versions are pre-releases tagged on main; full releases are tagged on `release/X.Y`
+branches after end-to-end testing. Entries of unreleased changes live in `changes/`.
+
+## Unreleased
+
+## 0.77.0 - 2026-11-20
+
+### Added
+
+- The desktop app has a Team page: the lead and its members in layers with who gave, handed in or waits on whom, and the plan in waves by dependency, a task standing right of everything it needs; pointing at a member or a task lights the other layer. A narrow Team module in the right column shows who is at work and opens the page.
+
+- The Overview's Members show each member's task, model and steps and tokens, and a click opens the member's chat (the agent chat window in the desktop app, the subagent view in the browser, tab and enter in the terminal's /overview).
+
+- A team's members show as the chat's agents: the agents button, the Subagents window and the Arbiter list them with their task. `SubagentStarted` carries the plan task a member was given (`task_id`).
+
+- A running team can be stopped (after a yes) and its budget changed from the Overview's Progress in the desktop app and the browser, and with `s` and `b` in the terminal's /overview. Tokens may be written as 400k or 4M.
+
+- A click on a task of the plan strip opens its card: why it is blocked or failed and what it waits on, its brief, acceptance, files, gate, dependencies, attempts and reworks, steps, tokens and changed files, and its member's chat a click away. In the terminal an unfolded task in the sidebar shows the same card.
+
+- A chat the agent answered, asked something in, asked a yes in, or ended a turn in while you were looking elsewhere is marked unread: a steady accent dot before its title (the title one weight heavier) in the desktop and web sidebars, a `•` in the terminal's chat list. The working ring still wins while the agent works. The mark goes once the chat is shown in a window or tab in front, is kept across restarts, and clears on every client at once. A turn you stopped yourself, your own messages, progress inside a turn and agents' talk to each other mark nothing. Protocol: `Thread.unread`, `ThreadRequest::Seen { thread_id }`, `ThreadEvent::Unread(bool)`.
+
+- The Workshop lists connectors: a service's own MCP server, such as Notion, Linear or GitHub, added to your connectors from Customize, Connectors, Discover after a window that shows its address or the pinned package it runs, who runs it, what it reaches and the keys it will ask for. Signing in goes through the existing MCP sign-in; Remove takes the server out again. A source without a key may offer only remote connectors to a public https address, never one that runs a program. The agent's Workshop search finds them too.
+
+### Changed
+
+- When the agent moves from one kind of work to the next, the words beside the mark no longer cut over: the old ones rise and fade as the new ones come up, the mark changes with them, and the time and counts after them glide to their new place. The phrase of a running turn's heading changes the same way. Under reduced motion the change is instant.
+
+- In the browser, a Customize tab with nothing installed opens on its Workshop's Discover, as in the desktop app, until you pick Discover or Installed.
+
+- Protocol 37: each MCP tool in the settings carries `short_name`, the server's own name for it, so clients no longer split `server__tool` themselves and a server whose name holds `__` shows its tools right.
+
+- Sizes, times and counts read the same in the terminal, desktop and browser apps. File and memory sizes show one decimal from KB up (`1.5 KB`, `12.0 MB`, up to TB) in every app; the desktop artifacts, Workshop file list and Usage page used other units. Elapsed clocks show `00:06` everywhere, the desktop audio player included. Check and pull request times on the desktop say "just now" instead of "now ago". Counts take their plural only when they are not one in the terminal Overview ("1 tool run", "1 file", "1 call").
+
+- A skill change row shows the first line of the agent's reason in every app, without a colon when there is none. The browser no longer shows control and text-direction characters from skill data; the terminal marks them with `?` in the reason as it did in the name.
+
+- A team says how it stands and why it ended ("ended — ran out of steps after 57 min", "stopped", "done") in the Overview's Progress, the plan strip and the terminal's rail and /overview; once a team ended, the plan strip no longer names a task as in work. Task and member words, glyphs and colours now come from one place for all three clients.
+
+- The Workshop search finds the same listings in every app: the terminal now looks in tags, and the browser looks in a local pack's title and description. The category menu lists the fixed categories in their order, then any other, in the terminal and browser as on the desktop.
+
+### Fixed
+
+- The appsec-reviewer agent finds its two security skills again after the Workshop renamed their pack to dev-workflow-skills.
+
+- A skill or agent file that starts with a byte order mark is read with its front matter instead of being refused.
+
+- The desktop app shows a skill's front matter apart from its text when the file has Windows line endings or blanks after the closing `---`, and a body line that starts with `---` no longer ends the front matter early.
+
+- A platform plugin that writes lines it should not no longer fills the log with one warning a line: dropped lines are reported at most once a minute, with their count.
+
+- A size just under the next unit reads `1.0 MB` instead of `1024.0 KB`, at every unit. A plan window of zero minutes is named "Plan limit". A turn length too large to count no longer overflows. In the terminal, a tab in a skill change's reason shows as a space, the team budget line counts steps the way the other apps do (`5k`), and "1 tool", "1 line" and "1 file" are counted in the singular.
+
+### Security
+
+- One set of hidden characters now guards every place the core cleans or checks untrusted text: bidi controls and marks, line separators, zero-width and other invisible format characters, blank fillers, variation selectors that hide bytes (FE00-FE0D, E0100-E01EF) and the Unicode tag block. Labels the model shows (`show` blocks, pins) and plugin listings now also refuse left-to-right and right-to-left marks, zero-width spaces, byte order marks and stray tags; emoji joined by zero-width joiners, soft hyphens and subdivision flags still work. A plugin's command line, programs and source address refuse every hidden character. Plugin file previews escape every hidden character, skill change reasons and team task lines drop or mark them, and MCP tool names reach clients cleaned.
+
+- Workshop sources without a key are held tighter. No source but the official one can bring an agent named like a built-in one (`general` and the shipped agents), and such a folder is not used. Agents from an Unverified source are marked in `ask_agent`'s list and their prompt, and a skill's or agent's third-party text is now closed after it, with lines that forge its markers taken out. A damaged store record makes everything the store installed count as unverified instead of dropping the marks. `add_workshop_source` is refused at once in scheduled, headless and API chats instead of waiting for an answer, and the source's name comes from its address. A review's hash covers the item's kind and the pack.yml written for it, a first install shows its instruction file whole, one item's pinned files are capped at 32 MiB, near-duplicate names are caught more widely, and the official list's names stay taken while it cannot be read.
+
+- The config file is read without following a link swapped in after its checks, without blocking on a FIFO, and only up to 1 MiB. The logs folder is refused when it is a symlink, as every other config folder already is. MCP sign-in tokens and shipped files are saved through the same atomic private write as the rest of the config, so two saves of a token never share a staging file and a failed save leaves none behind.
+
+- The update check and the resource check read GitHub's answers up to a fixed size instead of without end.
+
+## 0.76.0 - 2026-11-19
+
+### Added
+
+- Settings > Safety configures auto mode's arbiter: the model it judges on (empty uses the chat's) and its review prompt, shown in full with "Reset to default" and capped at 8000 characters. The prompt only guides: the answer format is fixed in code, an unclear or failed answer (or `ASK`) now goes to the user instead of denying, and the arbiter is still only asked about what the approval mode leaves to it.
+
+- A chat can be linked from another one: "Copy link" in the desktop sidebar menu and the web chat menu, or `/link` in the terminal, copies `dusk://thread/<id>`; pasted into a message, it lets the agent read that chat's messages, and only a chat whose link the user wrote, through `read_history` with `thread`, read-only and paged as before.
+
+- Every connector row now has a letter avatar: the first letter of its name on a tile whose color the name picks from eight theme colors, the same on every run, in the desktop connector cards and the web MCP list. A bundled icon slot is ready for icons from the signed catalog.
+
+- Plugins can serve pull requests and CI for a host (switch plugin_contracts, off by default).
+
+- Fork from a message: every message of the user and the agent shows "Fork from here" on hover, in the desktop app and the browser. It opens a new chat in the same project and mode, titled "<title> (fork)", holding the history up to and including that message with its tool results and attached files. When the chat was compacted before that message, the new one starts from that summary and the messages after it. Nothing running comes along. Protocol 35: `ThreadRequest::ForkAt { thread_id, message_id, cwd }`.
+
+- At the end of a turn the agent can propose your likely next message, such as a yes to its question or "run the tests". It shows greyed in the empty message box of the desktop app, the browser and the terminal; Tab fills it in, typing hides it, Esc puts it away. It is never sent on its own and goes stale as soon as you send something or a new turn starts.
+
+- The protocol is published as a JSON Schema in `docs/api/schema.json`, generated from the wire types, with the handshake types first. CI regenerates it and fails when it differs, and, while `OLDEST_PROTOCOL` is unchanged, when a property or variant was removed or a property became required, so the schema can only grow.
+
+- Pull requests in more detail. A link in a chat to a pull request of the project's own GitHub repository is drawn in the desktop app as a chip with its state and title; under the pointer a card shows the author, when it was opened, the lines and files it changes and its state. A pull request in Changes unfolds to every one of its checks, failed first, with its workflow and time; a line opens the check's page, and the web client lists them under the row too. The core reads one pull request by number only from the project's own repository, keeps the answer a few minutes and reads each at most once at a time.
+
+- Pull requests and their CI in the desktop's Changes module: the work tree's line with the repository name and its added and removed lines, then one row per pull request of the current branch and the project's other open ones, with its state (open, draft, merged, closed), title, number and lines, and a dot for its checks (passed, running, failed). A click opens the pull request on GitHub. The web client's project page shows the same list.
+  A chat in the desktop sidebar shows a pull request icon with a count when its project's branch has pull requests, tinted by their worst checks; its tooltip names them.
+  The core reads this through the GitHub CLI and keeps it fresh while a window shows the project: every 30 seconds while a check runs, every 5 minutes otherwise, at once after a change made through the app, and later after each failure. Without `gh`, signed out, or off GitHub, the list is left out with a quiet note.
+
+- A question the agent asks has a Skip button in the desktop, browser and terminal (Ctrl+S): it skips only that question, the next one shows, and the agent is told to decide that one itself and say what it assumed. Esc and Decline work as before.
+
+- A shell code block's Run button turns while its command runs; under the pointer it becomes an X that stops the command and everything it started, and the command card says it was stopped. A command run from a code block no longer holds up the app's other requests to the core while it runs.
+
+- Skills now improve in practice: one built-in skill, skill-evolve, replaces skill-improve and skill-from-practice; loading a skill reminds the agent to update it when what worked differs; every skill change a tool makes, a deletion included, is shown in the chat with its diff and can be undone.
+
+- TEAM mode: the chat writes a plan and the core runs it with a team. Each task goes to a member with a card, an allowlist of tools and the chat's approval mode; a command gate is run by the core and sends a failed task back twice at most; a task waiting for your confirmation no longer stalls the team and can be confirmed from the desktop plan row; a role can answer on its own model (`team.models`); what members and gates print is cleared of secrets before the lead reads it; and a team goes on after a restart. Other modes keep classic subagents; `limits.plan_graph: false` switches teams off.
+
+- The web client catches up with the desktop: a clean install greets you with one "connect my own AI" button and a short form; a plan strip sits above the composer with a confirm for tasks waiting on you, and finished tasks fold under "Done (N)"; pinned messages show in a drawer at the top of the chat; the composer has a panel tab with the folder and one ring for the plan's usage limits; links to the project's own pull requests become chips with a card; a failed turn says so quietly with "Send again"; choice buttons are square; pull request rows show a passed/total CI count that lists the checks on a click.
+
+- The desktop app greets a clean install, one with no provider connected, with one large "I want to connect my own AI" button; it opens a form with a name, an address and a token, which the core checks and saves as an OpenAI-compatible provider under the name typed (the address's host when it is left empty), the token going to the keychain, and the new chat starts on the server's first model. A failed check says plainly whether the address cannot be reached, the token was refused or the server is not OpenAI-compatible: a provider check now carries that kind as `failure` next to its error text. "Not now" hides the screen until the next start, and it does not come back once a provider is connected.
+
+- The agent can suggest from the Workshop: `search_workshop` finds plugins, skills, packs, agents and connectors in the store, and `suggest_from_workshop` puts a card of up to six of them in the chat, when the user asks or a listing clearly helps. The rows are the store's own listings, never the model's text, and show whether each is installed now. In the desktop app a row's Add opens the Workshop's install with its confirmation, and a click on a row opens the listing; the browser shows the card with each listing's state, and the terminal lists it with `/plugins store <name>`, which now opens the Workshop narrowed to that name. Neither tool installs or switches on anything.
+
+- Workshop supports third-party sources with an optional signing key. Sources without a key are marked Unverified and can offer commit-pinned skills, packs and agents. Each install or update requires reviewing the files and changes. The agent can suggest adding a source, which requires owner approval.
+
+- The Workshop's listing page has a Contents tab: the file tree of the copy installed here or of the checked package, with a read-only preview of a text file (Markdown drawn, front matter apart; programs show their size only), answered by the core only for a path it listed, escaped and capped at 256 KiB. Single skills are offered on the Skills page under its own Discover | Installed switch (`StoreRequest::List` takes `kinds`), while packs and plugins stay under Plugins; a skill the Workshop installed is marked as from there. A format 3 plugin entry names the MCP servers (`mcp`), programs and skills it brings; they are lines of what the user agrees to, checked against its `plugin.yml`, shown on a Connectors tab with "Not added", "Added" or "Yours is used", and grouped in the install window as what runs on this computer or sends data elsewhere. A card's byline no longer carries the updated date, and each page opens on Discover while nothing is installed there.
+
+- The Workshop reads list format 3, which says who made each entry (author, license, origin, categories), and still reads format 2. In the official list, work by somebody else than duskcode is marked Verified instead of Official; a list can only lower a tier, never raise it. Covers and screenshots whose header declares more pixels than 2400x1260 (3200x2000 for a screenshot), or an animated WebP, are refused before anything decodes them. The desktop Workshop shows "by author · version · N skills · updated date" on each card and page, categories as chips, the license and origin, a "Workshop  Discover | Installed" switch, and Overview and Skills tabs on a pack's page; the web client shows the author, license and categories.
+
+- A skill or pack may come straight from its author's GitHub repository: the list pins a commit and the SHA-256 of every file, "Install from source" fetches exactly those files and refuses any changed, extra or missing one before writing anything, and the install keeps its author, license and source.
+
+### Changed
+
+- While the agent works, the chat shows what kind of work it is, each with its own quiet look: a spark that changes shape beside a shimmering word while it thinks, nothing but the growing text while it writes, three lines being written while it plans, a small live mark on the running step, a dot for each agent at work, a steady ring while it waits for you, and lines drawn together while it compacts. The desktop app, the browser and the terminal choose the kind the same way, and everything stands still under reduced motion.
+
+- A pull request's CI in Changes is a small pill with a dot and "passed/total" on the row's second line, with a tooltip saying whether checks are in progress, passed or failed. Its window, "CI monitoring", groups the checks by state (Failed, In progress, Queued, Passed, Skipped) with a count each; a group unfolds to its checks, and Failed starts open.
+
+- The three-dot pill over the message box is now a small tab on the box's top edge; it opens a panel attached to the box with the chat's project folder (a click opens it in the file manager) and small rings for the context and each rate limit window the provider reports (5 hours, week, requests and tokens per minute), their numbers on hover. Cmd+E (Ctrl+E) opens and closes it.
+  The context ring no longer stands beside the box; it lives in that panel.
+  Pinned messages moved to a thin "N pinned" handle at the top of the chat; a click pulls their list down over the chat, a second click or Escape folds it.
+  The once/every-time button of a source now says that unpinning stops sending it with every request.
+  The tab on the box's top edge shows only while the pointer is over the box or the tab itself, not anywhere over the chat; it stays while the panel is open or the tab has the keyboard.
+
+- The real mouse is its own tool, `physical_input` (click, double, right click, scroll), off until switched on under Tools and asked for each use; `click` only presses through Accessibility on macOS, `scroll` is gone, and an old click asking for the pointer is refused with a message naming the new tool.
+  The agent cursor glides to each Accessibility press (250 to 400 ms by distance, eased out), ripples where it lands and fades after three idle seconds; a missing Accessibility permission and a control that cannot be pressed now say what to do next.
+
+- The page of connectors, skills, plugins, tools and agents is called Customize in the desktop app and on the web; Connectors is the name of its shelf of MCP servers only (the web's MCP tab is called Connectors too). A `gui.json` whose rail still names `connectors` opens Customize. Every shelf with something in the store has its own "Workshop  Discover | Installed": Connectors offers the plugins that bring an MCP server, Skills single skills and packs, Plugins plugins and Agents agents (`dusk_protocol::plugin::Scope` says which listings each shelf holds); Tools has none, since the store lists no tools. Discover on the Connectors shelf stays there instead of jumping to the Plugins Workshop, and an empty Installed list says "Nothing installed yet" with a button to that shelf's Discover.
+
+- `project_graph` is now a file map, not a code graph: it answers what lies where in the project by file and folder names, as an indented tree that folds deeper folders to `name/ (N files)` to stay under 300 lines and 12 KiB, one folder of it on `path`, or the paths matching `find` (a part of a path or a glob). It walks the folder on each call as the change ledger does and stores nothing; the agent reads files itself. The tree-sitter parsers, the background indexer and its tables are gone: migration 0039 drops `graph_files`, `graph_symbols` and `graph_refs`, and the `tree-sitter` and `tree-sitter-rust` dependencies are removed. The tool name and `limits.project_graph` stay, so saved configs still apply.
+
+- Pull requests and CI read through a neutral forge type. A project with no remote shows nothing; a project on another host shows "Pull requests on {host} come from a plugin."; a signed-out or missing gh shows a copyable `gh auth login` hint instead of "GitHub CLI is not installed or signed in".
+
+- The desktop app's surfaces now stand at three heights drawn by one rule: the page, a raised card (a hairline, with a soft shadow on a light theme and a lit top edge on a dark one) and a floating menu or window with a deep shadow. Cards, the message box, menus and windows look the same on every page.
+  A provider error in a chat is a quiet row with a thin red edge instead of a red slab across the column, and the error a chat ends with has a Send again button that sends your last message once more. A message that opens a turn has more air above it, and what a turn spent is on the line of "Worked for".
+  The side panel lists every chat once. A switch at its top, "By project | Recent", chooses between the chats under their projects (those of no project after them) and one list by last activity; the choice is remembered. A chat at work shows a small turning ring instead of a dot.
+  Every empty page says in one line what goes there and offers one button for the next step: a new chat, a new task, the Workshop, clearing the search, adding a project.
+  A Workshop listing without a cover gets one made from its name, two theme colors run into each other with the first letter large and faint, the same on every machine, instead of a grey box.
+  Rows, cards and tiles answer a press: the fill dips and the top edge sinks by a pixel until release.
+  On macOS the app reads the system's "Reduce motion" setting at start and then draws its animations at rest.
+
+- Desktop: a pull request in Changes shows its checks as a dot and a "passed/total" count; a click opens a window over the column with every check, kept live, in place of the list that unfolded under the row and the hover card. The right column's modules can be reordered by the grip that shows on a header under the pointer, or with Alt+Up and Alt+Down on a focused header; the order is kept in `gui.json`.
+
+- The logo is the new violet icosahedron mark: the app icon on macOS and Linux (all icns and theme sizes), the title bar and welcome mark, the README, and the browser client favicon (16 and 32 px) and touch icon (180 px).
+
+- The subagents' mascot is Sundown, a small sun half set on its horizon, in place of the pixel fox, in Desktop and the browser. Each activity has its own calm rhythm (thinking breathes under orbiting motes, writing bobs, searching darts its eyes under a turning light, reading traces a line, planning shuts its eyes under three stars, running rises with turning rays); a change of activity blends over 280 ms, done hops clear of the horizon once and failed sets below it and greys, and both then hold still. Mascots side by side blink and glance on their own.
+
+- The desktop app moves with a little more care, briefly (120-250 ms, eased out) and only once, never while idle or on scroll, and not at all with reduced motion: a page switch (chat, settings, Workshop and the rest) fades in, new messages and blocks fade and rise in (not the ones already stored when a chat opens), a module of the right column dragged or moved with Alt+Up/Down slides into its new place, and the model, mode and plugin list menus open like the other menus.
+
+- A nightly pre-release builds and publishes only the programs whose code changed since the previous tag, and its notes say which and where the rest are; full releases still build everything.
+
+- The approval mode once shown as arbiter is called auto in every client; saved settings and chats keep working, and the terminal still takes `arbiter`.
+  The plan strip in the desktop chat keeps each task's status in one column at the right edge.
+  The desktop Todo panel shows open tasks first and folds finished ones under "Done (N)", closed until clicked.
+  A chat shows it is at work in the desktop and web sidebars while its subagents or team members work, even after its own turn has ended.
+  On the desktop Advanced page, clicking a limit's number lets you type it: Enter or leaving the box sets it within the limit's bounds, Escape keeps the old one.
+  A picture in the desktop chat opens over the whole window: wheel, pinch or + and - to zoom, 0 to fit, drag to move, Escape or a click beside it to close.
+
+- A step reuses the context the size check after the previous step just read, instead of loading the whole thread again, unless a message joined in between.
+
+- System usage counts the processes the app started (MCP servers, plugin programs, commands, terminals) along with its own: memory and CPU show the total, and the desktop names each part.
+
+- TEAM mode: when the lead runs the plan in a chat whose approval mode asks, the user is asked once, in the usual approval card, to let the plan's gate commands run unasked; the yes covers exactly the listed lines for that team, a gate added or changed later waits for the lead until the next run asks again, and a no leaves gated tasks to the lead's review as before.
+  A chat keeps the mode the user last wrote to it in: switching the mode for another chat no longer pauses a team, and a lead woken by its team keeps TEAM mode.
+  A member's hand-in that changed files outside its task's `files` waits for the lead with the paths named, and its gate does not run; ignored paths such as build output never count.
+  Stopping a team kills the gate commands it is running. A gate runs at most `limits.team_gate_seconds` (300 by default) and a team at most `limits.team_max_gate_runs` gates (128 by default).
+  Desktop: a long agent report in the chat list no longer makes the list jump when it scrolls back into sight.
+
+- The desktop window had a second pass for evenness. The context ring is back beside the message box, with its percent inside; the panel over the box shows one ring for the plan's limits, the fuller of its windows, and a card under the pointer with a row and a bar for each window. The row "Using ChatGPT plan" over the box is gone: the card has the way to the plan's page. A request for approval has one filled button, the yes; Deny is an outline. The working row's counts stand at even distances and do not step as they tick. A terminal's sixteen colors, its selection and the panel's shade come from the theme, each theme its own; selected text in fields and messages is lighter again. The review page's buttons are the size of its fields. An agent's card shows two lines of what it is for, all cards one height, and what the tree could not read is a quiet group under it. Connectors' states stand in one column. Text sizes that stood beside the type scale now use it.
+
+- The desktop window had a pass for evenness. The plan strip, a request for approval and a question now stand at the message box's own edges at every window width; the plan's rows have air under the last one and approval buttons are the size of the other controls. The panel's rings have a track that can be seen, so they read as meters. Reply options under an agent's question have a button's corners instead of a pill's. The tab on the message box's upper edge is out of sight until the pointer is over the chat (it stays while the panel is open or the keyboard is on it) and has the panel's color. The dot of a pull request's checks opens a "CI monitoring" card under the pointer: how many passed, run and failed, and a way to the checks' page. Selected text is easier to see, in the terminal too; the terminal's text starts where its tabs do. Pictures in the chat have round corners, the chevrons of a turn's rows stand in one column, a task without items draws no empty bar in the Todo, and the Connectors, AI and settings pages start and align alike.
+
+- The default Dusk theme has softer, warmer off-white text and slightly warmer surfaces.
+
+### Fixed
+
+- Taking in a message and its effect on the goal (another agent's message makes proofs stale, the user's ends a wait for them) now happen together, so a crash between them no longer loses or repeats the goal change.
+
+- An approval card no longer grows past the window with a long command: the command shows three lines and scrolls inside its box (lines wrap), "Show all" opens it up to the room the dock has, and the dock takes at most half the window, so Allow and Deny stay in view. Each command of a plan's gate approval gets the same box.
+
+- A pending commit status of a pull request is listed with the queued checks, as the GitHub plugin lists it, not with the running ones.
+
+- A long first line in a chat code block now wraps before the Copy and Run icons in the corner instead of running under them.
+
+- A pull request a plugin may have made is never reported as "could not be read": the plugin's own words are shown, or that it may have been made and to check the forge. Its page must be on the forge's host.
+
+- With plugin_contracts off a contract plugin is not confined at all, so no broker listens for it and no "cannot start here" shows.
+
+- Scrolling up through a chat with long answers no longer throws the view to another message: the desktop keeps each message's parsed text while the chat is shown, so a long answer scrolled back into sight comes at its real height instead of empty for a frame.
+  In the desktop terminal, Tab and Shift+Tab go to the shell (completion works) instead of moving the focus, and away from a Mac Control+C and the window's other Control shortcuts reach the shell while it has the keyboard.
+  The desktop terminal selects text with the mouse: drag for cells, double-click for a word, triple-click for a line, Shift-click to extend; Cmd+C (Ctrl+Shift+C) copies it.
+
+- Clicks on a plugin's phone screen did nothing: the overlay that records where the screen is drawn sat below the picture, so no press fell inside it. It is pinned over the screen now, and the screen sends touches by phase as they happen (`touch`, `scroll`, `key`, `text` events, in order), so a press, a long press, a drag, the wheel, keys and typed text reach the iOS Simulator. MCP tool calls tell the server the chat's project folder in `_meta`, so the simulator installs only apps built there.
+
+- The mode list shows the summary of a built-in mode whose prompt file is missing or blank, from the prompt the chat actually uses.
+
+- A source sent once goes to the model in full with one request only; later steps of the same turn name it by its path instead of sending it again.
+
+- The Agents page no longer lists a warning for every agent of a Workshop pack that is not installed.
+
+- "New branch" on the review page switches to the new branch, carrying the work tree's changes along.
+  A failed commit keeps the typed message.
+
+- The chat list, every turn loaded, the plan view, picture cards, agent answers and deleting a chat no longer read whole threads or whole tables: new indexes and single-row queries find what they need. The token panel and the goal checks now end on a damaged database whose agent threads point at each other, as the other walks of the thread tree already did, and the task board takes `#id` as printed and prefers an exact id.
+
+- A team no longer believes its chat is in TEAM mode when the chat's stored mode is one that no longer exists; the chat runs in the setting's mode, and the team follows it.
+
+### Security
+
+- A contract plugin call runs in a session of its own, with no controlling terminal of the core's to push keystrokes into.
+
+- On Linux a contract plugin call handles every file right the kernel's Landlock knows, truncation and device ioctls among them, so it can no longer empty a file in your home or the project it may only read; where Landlock is older than Linux 6.2 such a plugin does not start and says why.
+
+- No plugin opens the keychain: a manifest that asks for `keychain` is refused, and a plugin that may connect and read is shown that it can send what it reads to the addresses it may reach.
+
+## 0.75.0 - 2026-11-18
+
+### Added
+
+- The Workshop reads store format 2 (kind, category, tags, cover, stars, dates) and
+  mirrors added under `workshop.sources` in `config.yml`, each pinned to its own key;
+  listings carry a tier (Official, Verified, Community, Local), sort in the core, offer
+  semver updates, and "update all" skips updates that ask for more.
+- The terminal client keeps threads in tabs: Alt+T opens one, Alt+W closes the shown one,
+  Alt+Left/Right and Alt+1..9 move between them, and `/tab` does the same. Once there are
+  two, the tabs stand in the header where the title was; a tab in the background keeps
+  taking its thread's events and marks work, a question or an end not yet seen. Closing a
+  tab stops nothing: a thread still at work is closed once its work ends, and its tab comes
+  back if the agent asks something meanwhile.
+- A running command in the terminal transcript offers a background button beside hide and
+  copy; it sends the command to the background as Ctrl+B does, and the agent goes on.
+
+- Two helpers so every client decides the same: `Checks::summary()` words the head of a Checks block ("3 passed · 1 failed"), and `Question::light()` says whether an `ask_user` question is short enough to be drawn as reply buttons.
+
+- The web client keeps the blocks the agent shows with the `show` tool (a flow, a list of checks, reply choices) as their own items of the chat, live and after a reload, in place of the tool step of the call. Until each kind has its own view a block is drawn as its plain text in a frame marked "From the agent"; a call that was not shown stays a tool step. `show` is still off by default, so nothing changes until it is switched on.
+
+- The web client now draws what the agent shows: a flow as stacked layers with cards and arrows, a list of checks with a glyph and word for each state and a summary, and reply choices as pills under the answer. A short `ask_user` question is drawn as the same pills instead of the card, with "Other..." opening the card. Pills answer only while they are the last thing in the chat. A `{{tone: label}}` in an answer is a coloured label in one of six tones. The working row keeps its place while the turn runs: elapsed time in a box of fixed width, and the words change for a wait on the provider or the user and for compaction. All of it is text from the model drawn as text; `show` is still off by default.
+
+- A change ledger: the files each command changes in its project are found by walking the project before and after it, with or without git, and recorded with their thread, turn and call, sizes, a content hash and, when the text before was read earlier in this run, a capped unified diff (never for `.env*` files or anything under `.ssh`). Recording is on by default (`limits.record_changes`) and also feeds the chat's list of changed files; clients read the ledger with `WorkRequest::FileChanges` (protocol 16). The agent's read-only `changes` tool asks it by path, time and thread, and stays off until `tools:` switches it on.
+
+- Community files: a Code of Conduct, issue forms for bugs and feature requests, a contributor path for a first change and for writing a skill, and a README note on the maintainers' working notes.
+
+- Compaction that keeps the recent tail, behind `limits.compact_tail` (off by default): the summary covers only the older part, and the newest messages, at most `limits.compact_tail_tokens` (16,000, from 2,000 to 64,000) and never more than a fifth of the input limit, stay word for word; a cut never parts a call from its result, and when none keeps a tail everything is summarized as before. `limits.compact_early` (off by default) also compacts between turns once the context passes 60% of the input limit. With `limits.stub_results` on, a compaction puts the kept tail's old results away at once and its summary ends with an index of up to 30 stored results it covers. The summary prompt asks for a "Decisions" section only with `compact_tail` on and a "Stored results worth reading" section only with `stub_results` on; with both off it is unchanged.
+
+- Computer use: `computer_actions` runs up to 20 clicks, typing, keys, scrolls and
+  screenshots in one call, checked and asked for together before the first runs, with
+  every click read in the picture taken before the batch. Every client and chat platform
+  lists each step of the request; tool switches, plugin hooks and the arbiter judge each
+  step as if it were called alone. `press_keys` now refuses line breaks and control
+  characters in the keys and shows them by their normal names. A chat platform
+  gets a request whole or cannot allow it: one too long for its message can only be
+  denied there and is answered in the app.
+
+- An optional solid fill for the desktop's destructive confirmations: a palette that sets `danger_button` (all built-in ones do) draws Remove, Delete and Remove all as a clear red button with a readable label instead of the kit's pale tint; a palette without it looks as before.
+
+- The desktop's transcript keeps a block the model showed with `show` (a flow, checks or reply buttons) as its own item and row, in place of that call's step, live and in a reopened chat alike; until each kind is drawn it shows as its plain text in a card marked "from the agent". A call that was not shown stays a step, and nothing changes while `show` is off. The working row moved into its own file.
+
+- The desktop draws what the model shows with `show`: a Flow as stacked layers with their cards in a grid, a Checks list with state glyphs and its summary, and reply buttons under the answer. A short `ask_user` question is answered with the same buttons instead of a card; they are live only after the turn ended and while nothing came after them. The working row has fixed boxes for the elapsed time and the step, shows the provider wait and the wait for your decision with the protocol's words, and its figure stands still for a decision or with reduced motion.
+
+- Desktop: a plan strip above the composer, one line with the plan's counts from the core, its bar and the task in work, unfolding (Cmd+P, Ctrl+Shift+P) to numbered rows with a state glyph and word, six in sight in a virtual list; and a views tab on the composer's edge (Cmd+E, Ctrl+E) whose menu opens the Overview. The board follows `TaskChanged`.
+
+- Episodes are written down, behind `limits.episodes` (off by default), for a chat whose folder is a saved project: a `fixed` one when the same error came back twice or more in a turn and then a foreground `run_command` of the same program and first argument exited 0 (the error that failed last, with the attempts, the passing command and up to four files the change ledger recorded in between; three a turn at most), and a `verified` one when a goal's verification passes (its objective and its command checks). The failure ladder's count now also runs for `limits.episodes`; its notes still need `limits.failure_ladder`. With `limits.episode_lesson` also on, the result of the passing call asks the model to end its answer with a `Lesson:` line, which is cleaned and stored on the turn's episodes. A new `EpisodeRecorded` event says an episode was written, and the eval runner counts it as `episodes`; the protocol is at version 19.
+
+- An episode store in the state database (migration 0035): a project's episodes, each what ended a problem in it, with a trigram search index, counted again instead of copied when the same one recurs, at most 500 a project (the least seen, oldest go first), kept when their chat is deleted and removed with their project. Searches take only the words of a query, each as a quoted phrase, so query text is never read as search syntax. Nothing writes or reads episodes yet.
+
+- The eval runner records a token ledger per run (cached, uncached and cache-written prompt tokens, completion and reasoning tokens), provider retries and re-runs of identical tool calls, and prints tokens per solved task next to the pass rate. A timed-out run now keeps what it spent and is left out of the per-run means. `--set NAME=VALUE` changes a key of the run's config to compare a mechanism on and off, refuses unknown keys, and is recorded in the report so `--compare` shows what differed.
+
+- A failure ladder for a model stuck on one error, behind `limits.failure_ladder` (off by default): when the same error comes back within a turn through calls that differ, the third time its result tells the model to stop varying the call, the fifth asks for a different plan, and the eighth ends the turn as failed with the error and the attempts, without running the rest of that step's calls; a subagent reports that failure to its asker, and a goal pauses. Two errors are the same when the tool, the program a command runs and the last error lines match once numbers, paths, durations, hex ids and quoted text are made alike; digits inside a name such as `test_1` stay, so working through numbered tests is not a loop. The thresholds are `limits.failure_note_at`, `failure_replan_at` and `failure_stop_at` (3, 5, 8). A new `RepeatNotice` event says when the core stepped in, for the existing note on an identical call too, and the eval runner counts it as `repeat_notices`, with turns it stopped as `repeat_stops`; the protocol is at version 13.
+
+- Git from the app: the core stages, commits, branches, merges with a conflict list, adds and removes worktrees, fetches, pulls fast-forward only and pushes without force, and reads and opens pull requests through `gh`; the desktop Changes page stages, commits, makes branches, pulls and pushes (protocol 27).
+
+- The indexer of the project graph: with `limits.project_graph` on (off by default), one background worker keeps the symbols and refs of each saved project current. It refreshes a project when a thread starts in its folder, indexes the files the change ledger recorded as they change, and refreshes at the end of a turn the ledger could not record. A file whose size and change time are the stored ones is not opened, links are never followed, `.env*` files and `.ssh` are never read, and a project past 50,000 files, 20,000 source files or 1,500,000 refs has no graph. Nothing reads the index yet.
+
+- The parser of the project graph: one Rust file in, the names it defines (functions, methods, types, traits, constants, modules, tests, each with its parent and its lines) and the names it refers to (uses with the first line and a count, imports with their path as written) out. Nothing calls it yet and no switch turns it on; the store and the indexer come next. It reads source as untrusted input: files over 512 KiB, lines over 5,000 bytes, more than 2,000 symbols and parses over 250 ms are skipped with the reason, names are identifiers of at most 128 characters, and the text of strings and comments is never kept. Adds `tree-sitter` 0.27.2 and `tree-sitter-rust` 0.24.2, pinned exactly and linked statically.
+
+- The store of the project graph, behind switches that stay off: migration 0034 adds `graph_files`, `graph_symbols` and `graph_refs` (the structure of a saved project's source, never its text; removed with the project), and the core can replace one file's rows in a transaction, remove files, read stamps and counts, and answer `where`, `uses`, `touches` (with the files the change ledger saw changed in the same turns) and `tests` from it. Nothing builds the index yet. `limits.project_graph`, `limits.episodes` and `limits.episode_lesson` are new switches, all off, read by nothing yet; the tool names `project_graph` and `recall` stay off until `tools:` switches them on.
+
+- The `project_graph` tool: the agent asks where a name is defined, which files use it (rows matched by name alone start with `?`), which files depend on a file, with its tests and the files changed with it, and which tests cover a file or a symbol, answered from the project's index in at most 16 rows and 2 KiB. A file changed on disk since it was indexed is marked and indexed again. It stays off until `tools: { project_graph: true }` and is offered only once the index of the thread's project is ready in this run (`limits.project_graph`).
+
+- Pinned messages in the core: `ThreadRequest::Pin` pins or unpins one of a chat's messages (at most eight, the user's and the agent's words), `ThreadRequest::Pins` reads them, and `ThreadEvent::Pins` tells every client of the chat after a change or an /undo. A pin carries a plain one-line excerpt the core cuts to 120 characters and whether a compaction summed its message up; it goes with its message and its chat, and nothing of it reaches the model. Protocol 26. The desktop shows a 36 px bar of the pins at the top of the chat (a click or Cmd+Shift+P goes to the message, the chevron lists them all with an unpin button) and a pin button among a message's tools; the terminal names the first pin in its header and takes `/pins`, `/pin` (the last answer) and `/unpin N`.
+
+- The plan's store (migration 0036): a task has a status (open, claimed, running, blocked, review, done, failed), the tasks it depends on, the files only it may change, an owner thread and a lease; `done` stays for older clients and always equals `status = 'done'`. A plan is the tasks of a chat's root thread, shared by the agent threads under it and reached from no other chat. The store adds many tasks in one call with dependencies between them, refuses a cycle, answers what is ready, gives a task out atomically, and makes every other move of the state machine as one checked transaction. Nothing calls it yet: the board and its tool work as before.
+
+- The lead's plan form of `tasks`, behind `limits.plan_graph` and only for a chat in ORCHESTRATOR mode: `add` writes the whole plan in one call (keys, `after`, role, files, acceptance, gate or confirm, brief, phase), `edit`, `show`, `review`, `fail`, `reopen`, and `run`/`stop` through a seam the team runtime fills. Files are resolved inside the project, roles are checked against the agents catalog, gates by the goal's rules; a call run again after a restart changes nothing more. Anywhere else the tool is byte for byte the board, which no longer touches a task the team has given out.
+
+- A turn whose provider cannot serve it now (rate limited, out of quota, out of reach, overloaded) waits and goes on by itself instead of failing: the wait is stored with the turn, outlasts a restart, ends at the user's stop, ends early at the user's message, and gives up after a day with the same `TurnFailed` as before (`limits.wait_for_provider`, on by default; the eval runner turns it off). A context too large for the model is compacted and the step tried again, twice at most, and with `limits.shrink_context` (off by default) a summary whose own request is too large covers the older half. A turn a restart resumes now tells a bot it is at work, an agent stopped by a restart wakes the agent that asked it, the answer to a restart's question reaches the thread with no model chosen and is never taken from an older tap, and the texts about a cut-off call say it may still be running.
+
+- The `recall` tool: the agent asks what ended a problem before in this project and gets up to three notes from earlier turns (an error that kept coming back with the call that passed, or a check that passed), at most 2 KiB, only from the project of the thread's folder. It stays off until `tools: { recall: true }` and is offered only while the project has an episode; nothing records episodes yet.
+
+- A turn cut off by a restart now goes on where it stopped instead of ending as interrupted: a call that may simply run again is run, and one that may already have taken effect is never repeated without asking (Continue, Check first or Stop); an agent in that case stops and its chat is told. A turn left more than `limits.resume_within_seconds` (an hour by default) asks before it spends tokens, and an interrupted goal review runs again while attempts remain. Calls skipped because the same error kept coming back now say so instead of blaming the user.
+
+- Shaped command output, behind `limits.shape_output` (off by default): the output of `cargo` (build, check, clippy, test), `pytest`, `npm`/`pnpm`/`yarn`, `tsc` and git transfers is sent to the model without build progress, passing tests, install notices and transfer progress, with identical warnings and lines folded into one with a count, and ends with a line saying how many lines were left out and that `read_history {"result": N}` returns the whole output, which stays stored. Errors, failures, warnings and `file:line` lines always stay; piped or chained commands, programs without rules of their own (their output may be a file's content), diffs, file dumps and lines that cannot be followed are sent unchanged, repeated lines included. The shaped text is decided once when the result is stored and kept in a new table, so requests stay the same bytes. Clients get `ThreadEvent::ResultShaped` (protocol 18) and ignore it; evals count shaped results and the tokens they save.
+
+- Workshop items can show up to 8 screenshots with captions in their detail window: format 2 lists name them like covers (`.png` or `.webp`, at most 1 MiB, checked by size, SHA-256 and first bytes), listings carry their count and captions, and `StoreRequest::Screenshot` fetches one only as the last signed list named it. The cover response is now `Response::Media`, shared by covers and screenshots.
+
+- The `show` tool lets the model put a structured block in the chat instead of drawing it in text: a flow of layers joined by arrows, a list of checks with their states, or two to four reply buttons under an answer. In its own text the model can write a coloured label as `{{success: Passed}}`, from a fixed set of tones each client maps to its theme. Blocks are stored with the call that made them and read back as plain text by `read_history`; The tool is off until the clients draw blocks; `tools: { show: true }` in the config switches it on (see `docs/blocks.md`).
+
+- Eval reports count stub moves, the results they put away and the tokens they saved, `read_history` retrievals of one stored result, and finished compactions; the means line and `--compare` show them, and older reports still load.
+
+- With `limits.stub_results` on, old results of `run_command`, `read_file`, `search_files` and `read_history` are put away before a step when it pays for the provider cache it breaks: each is sent as a one-line stub that names the `read_history {"result": N}` call that returns it, `run_command`'s description says to read one back instead of running again, and the thread reports each move as `ThreadEvent::ResultsStubbed` (protocol 17). Moves never touch a message at or before the newest stub, and Anthropic providers move only once the cache is cold. It stays off by default.
+
+- The `read_history` tool can return one stored tool result by its message number, paged by lines or searched with context; it stays off until the stub store brings its switch. The read-only `jobs` and `changes` calls run together with other reads, and files read together with `paths` feed the change ledger like a single read.
+
+- Stubs for old tool results: a stored stub can be sent in place of a tool result's text, with the context size counted to match (`limits.stub_results`, `stub_keep_steps`, `stub_min_tokens`). Nothing changes until `stub_results` is switched on, and nothing writes stubs yet; the full text always stays stored.
+
+- Eval tasks for teams, from the design of the plan graph: `team-fan-out` (four independent modules), `team-chain` (schema, API and command line, each needing the one before), `team-chain-kill` (the chain with a kill) and `team-small` (three short tasks at once, to see what a plan costs when none is needed). Each part has its own files and check command, and the tasks run for one agent as well. A task's `run.yml` may set `kill_after`: the runner kills the core at a tool event picked by `--seed` and starts it again on the same folders, to test recovery; the report records where.
+
+- The protocol of the plan graph and teams (protocol 21): a `Task` now carries its `status` (`TaskStatus`: open, claimed, running, blocked, review, done, failed), dependencies, role, phase, acceptance, brief, gate (a `GoalCheck`), files, owner, attempts, reworks, what it waits on, note, model and the steps, tokens and changes of its turns; each new field has a default, a task without a status takes it from `done`, and one whose `done` and status disagree is refused. New requests `WorkRequest::PlanTasks`, `Team`, `ConfirmTask`, `StopTeam` and `SetTeamBudget` (a `TeamBudget` refused past the largest ceilings), answers `Response::PlanPage` and `Response::Team`, and events `ThreadEvent::TaskChanged` and `ThreadEvent::Team`. Scopes classify the requests (reads as thread reads, confirm and stop as thread writes, the budget with the approval mode); the core does not serve them yet and answers with an error.
+
+- The team's runtime in the core (`runtime/team/`), behind `limits.plan_graph`, which stays off: with it on, in ORCHESTRATOR mode, the lead's `tasks` `run` has the core carry out the plan with no model call of its own. It gives each ready task to a member, a thread of its own under the chat with the task as its first message, the chat's approval mode and no tool to start agents, change the plan or write memory; keeps a 120 s lease on the task while the member works and gives it out again when the lease runs out, three times at most; takes the member's answer as the hand-in; and ends the team when every task is done, a budget of steps, tokens or time is spent, it is stopped, or nothing can start and the lead changes nothing. The lead is written to in one line of 400 bytes at most, only when a task waits for it, failed or is blocked, and at the end. Command gates are not run yet: such a task waits for the lead's review.
+
+- The plan and team requests are served: `PlanTasks` pages a chat's plan, `Team` reads its team, and `ConfirmTask`, `StopTeam` and `SetTeamBudget` change it as the user, each announcing `TaskChanged` or `Team` to the clients that may read the chat. A task now carries all its fields on the board too, with its steps, tokens and changed files counted from its turns.
+
+- The team's store (migration 0037): one team a chat, kept on its root thread, with a status, the reason it ended and a budget of members at once, steps, tokens and minutes. A run starts within the user's ceilings and, after an end, starts again in the same row; the lead may only lower a running team's budget, the user may raise it up to the ceilings. What a run used is counted from the model calls of the chat's whole thread tree since it started, never stored, and one check tells the dispatcher whether another task or step may go ahead or which budget is spent. Ending a team gives its tasks at work back to open. A team is reached only through a thread of its own chat. Nothing calls it yet.
+
+- Settings for teams of agents, all off or at their defaults and read by nothing yet: the `limits` switches `plan_graph`, `task_packets`, `member_worktrees`, `peer_messages` and `procedures`; the ceilings `team_at_once` (1 to 8, at most `max_agents_at_work` in effect), `team_max_steps` (10 to 5,000), `team_max_tokens` (100,000 to 100,000,000) and `team_max_minutes` (5 to 1,440); and a `team` section with `model` and `models` per role, as `provider/model`.
+
+- The terminal shows a block the agent made with `show` (a flow, checks or reply choices) as its own entry in place of the tool step, live and in a reopened chat, as its plain text under a head that says it is from the agent; the boxed drawing comes later. Labels `{{tone: label}}` in the agent's text are drawn in the tone's colour on the raised surface (a new `WARNING` yellow for warnings), stay whole when a line wraps, show as `[label]` with `NO_COLOR`, and copying a message copies their words without the braces.
+
+- The terminal draws the blocks the agent shows: a flow as a box a layer with its title in the border, cards in columns and an arrow between layers (the emphasised layer in the accent; under 60 columns it stays plain text), and checks as one line a check with a glyph for its state, its counts at the right and the summary above. Both still say "from the agent". `show` is still off by default. The terminal also shows reply choices from the agent, and a short `ask_user` question, as one row above the message box (`reply · from the agent  [1] Yes  [2] No`) while they are the last thing in the thread; Alt+1 to Alt+4 answers with the label (while the row is shown they take the place of the tab shortcuts of the same number), and a short question also takes the plain number or Enter on the row under the cursor. A longer question keeps its card.
+
+- The working row shows what the running turn has used, counted by the core: `Working · 2m 14s · 18.4k tokens · step 7` in the desktop and browser chat, ` · 18.4k tok · step 7` in the terminal footer. A new `TurnProgress` event carries the turn's steps, tokens and cost after each model call, and every `Turn` carries the same totals, so a chat opened mid-turn and a finished turn's fold show them too. Clients no longer count steps or diff the thread's spend, and they share one number format (`short_count`). Protocol version 22.
+
+- A running turn can wait, for the user's decision or for a provider until a set time, and the wait is stored with the turn (migration 0030) so a restart finds it; clients get a `TurnWaiting` event and one shared line for it. Protocol version 15.
+
+- The Workshop installs skills, skill packs and agent packs, not only plugins: one package for any system, unpacked under the plugin rules into `skills/` or `agents/`; updates and removal keep files you edited. Skill packs, the built-in skills as `duskcode` among them, can be switched off whole (`skill_packs:` in `config.yml`). Two built-in skills are new, `computer-use` and `token-thrift`; the other skills and most agents moved to Workshop packs, and copies earlier versions installed stay as your own.
+
+  A Workshop pack must name the skills and agents it links to by path (`duskcode-agents/backend-engineer`); an ignored test (`DUSKCODE_WORKSHOP_DIST`) installs the built packs and checks every link resolves.
+
+- The Workshop is a storefront in the desktop app, the terminal and the browser. A featured hero of official picks with a strip of their covers, then shelves of capsules: Official, Verified, Community, the core's New, Recently updated and Top rated picks (`StoreList.picks`), and the built-in and local packs, each with "See all". Capsules keep the art's 1200x630, show Installed or Update on the cover's corner and warn when another source offers the same name. One Filters button beside the search opens Sort, Category, Tier and Kind, and what is on shows as removable chips. A listing opens a window like a store page: a gallery of its cover and screenshots with captions, arrows, a strip and the Left and Right keys, its facts, tags, buttons, warnings, permissions, page and dates. A pack has a page with its skills and their switches. Sources that could not be read get a line each, installing names the source and tier, and "Update all" shows what was updated and what was left with why. The browser browses and switches but does not install; the terminal keeps its keys (Tab for the category, Ctrl+O for the order).
+
+### Changed
+
+- An answer to the agent's questions is one rounded card in the desktop, browser and
+  terminal clients: a row for each question, the chosen options and your own words muted
+  under it, "Declined" for a refusal. It is read back from the real `ask_user` calls, so
+  text that only looks like an answer stays a plain message.
+- A model call that stays silent can be given up on sooner or later: Advanced settings now
+  hold the seconds of silence before a call is dropped and the tries of one call, in every
+  client. The defaults are the old 120 seconds and 6 tries.
+- Icons: the changes, the branch and Version control use git icons instead of the GitHub mark, and Connectors uses a blocks icon, in the desktop and browser clients.
+- Phone panels are calmer: a toolbar's device menu is the device's name over its
+  system, icon buttons are small with their names as tooltips, a centered row of icons
+  is one small bar under the screen, and Shut down stands apart behind a rule and warns
+  under the pointer. The phone grows to fill the panel, with a thin bezel, a light rim
+  and the screen centered in it.
+
+- The Workshop shows stars only where they are honest. A listing of the official list or of a verified mirror shows none: its count was the Workshop's own repository's or a vendor's whole repository's, not the item's, and the core drops it whatever the list says. A listing from a mirror you added shows its count only beside the GitHub repository its page names, as "122 GitHub stars of owner/name", on the listing's page, never on a card. The "Top rated" shelf and the "Most stars" sort are gone from every client, so a mirror cannot push its items up by writing a big number. `Listing.stars` became `Listing.repo_stars`, and the protocol is version 24.
+
+- The Statistics module is now the Overview in every client: progress and members of the plan's team, tokens, context, changes, tool activity and an event log, each section absent when it has nothing to say. The new `WorkRequest::Overview` and `WorkRequest::Events` (protocol 23) answer from the core: tool runs from `tool_executions`, lines changed from the change ledger, and the log from the thread's turns and team, so no client counts them any more. The desktop draws it in the right column and as a page ("Open"), the browser as a tab that widens, the terminal in the rail (with the plan's line and members) and in `/overview`.
+
+- A failed model call now says what happened, such as "could not reach api.example.com: connection refused", instead of "provider completion request failed". Provider failures carry a kind (unreachable, timed out, rate limited, overloaded, auth, quota, refused, too long, interrupted) that decides retries and reaches clients in the `Retrying` event with the planned wait and the attempt limit; the log gets the underlying cause without URLs, keys or request bodies. Retry jitter comes from the system's random source. Protocol version 12.
+
+- `read_file` can read several files in one call: with `paths` (2 to 8 files, each from its start) every file comes back in a section headed by its path, a file that cannot be read gets its own error line, and the sections share the 64 KiB cap equally; it is behind `limits.read_many_files` (off by default), and with it off the tool is offered exactly as before. The read-only calls of one step (`read_file`, `search_files`, `read_history`, `load_skill`, and MCP tools that say `readOnlyHint`) now run together, at most 8 at once, with results stored in call order as before; `limits.parallel_reads: false` runs them one by one.
+
+- Releases follow the rust-lang model: nightlies are tagged on `main`, beta pre-releases on `beta`, full releases on `stable`; `main` is promoted to `beta` and `beta` to `stable` by merge commit, and the release workflow and CI follow these branches instead of `release/X.Y`.
+
+- Tools now say whether a call may be repeated after its result was lost; nothing uses it yet.
+
+- When a provider fails, the chat shows one retry row that updates in place with a countdown to the next attempt, instead of a growing list of retries. The providers settings page shows whether each provider is answering or failing.
+
+- A provider that cannot answer no longer fills the chat with a row per attempt and two error rows. A model call being tried again is one state that each `Retrying` replaces and the call's first answer ends (`transcript::retry_row`), and a failed turn ends with one `TurnFailed` event that carries the kind and the number of attempts; it is stored with the turn and shown again when the chat is opened. A host that cannot be reached, or does not answer in time, is tried for `limits.retry_unreachable_seconds` (300 by default, 10 to 3600) instead of `max_attempts`, so a short network drop costs no turn; the event's `max_attempts` is then empty. The status carries each configured provider's health (answering since, or failing with a kind since, and when it last answered), and changes only when that class changes. `ProviderUnavailable` is now `NoModel` and means only that no model is chosen. Protocol version 13.
+
+- The `show` tool is on by default, since every client draws its blocks; `tools: { show: false }` switches it off. The desktop draws the labels in an answer (`{{success: Passed}}`) in their tone, as the browser and the terminal do. `scripts/clean-build.sh` removes build artifacts not used for a week.
+
+- With `limits.stable_prefix` (off by default; the eval runner turns it on with `--set`), a thread keeps each tool's description as it first showed it until its next compaction, so a memory rewritten through `remember`, or a skill or an agent added mid-thread, no longer changes the start of every later request and the provider's cache of it holds. Tool schemas no longer carry the integer widths schemars names (`"format": "uint64"`) or `null` in an enum of a field that is a string, which every request paid for.
+
+- The finished features are on by default: `failure_ladder`, `shrink_context`, `stable_prefix`, `read_many_files`, `stub_results`, `compact_tail`, `compact_early`, `shape_output`, `project_graph`, `episodes`, `episode_lesson`, and the `changes`, `project_graph` and `recall` tools. Each can be switched off in `config.yml` (`limits:` and `tools:`). The team features stay off.
+
+- The protocol is version 20: the Workshop's `StoreRequest::Screenshot` and `Response::Media` changed its shape. A screenshot is in the same scope area as a cover, reading the store, so a browser may fetch it and a scope bound to chats may not.
+
+- The Workshop panel in the terminal uses up to 100 columns instead of 70, and shows a listing's kind in brackets at the right of its name. Bidirectional controls in store text are removed with the other controls.
+
+- Links to the Workshop use its new name, `duskcode-workshop`: the repository was renamed and its page moved to `https://drobov1tya.github.io/duskcode-workshop/`.
+
+### Fixed
+
+- Pictures in the desktop chat keep their proportions and are never enlarged, and all of them
+  have lightly rounded corners.
+- The interim remarks of a running turn no longer fold away after the next step when the
+  desktop or web client opens a chat whose turn was already running; a chat is now in
+  place before its thread opens, and a client that joins mid-turn is told the turn is
+  still going.
+
+- The browser's Workshop draws the desktop's card, placeholder, grid and hero. A card has one height whatever its text: the cover at 40:21, cropped to fill, with nothing drawn over it; the name and kind; two lines of text, the first taken by a warning (a name another source offers, or why it cannot run here); the tier mark and one slot that says the state or that installing happens in the app. A listing without a cover shows its kind's glyph, drawn in the page, with a shimmer while the cover comes and an "Offline" mark when it failed without a network; a failed cover is asked again on the next read. The hero, the shelves and the results share one grid of 1 to 4 columns from the page's measured width; a shelf shows one row and pages by a row with its arrows instead of scrolling sideways. The hero is 280 px high with dots and keeps the keyboard focus when it changes.
+
+- The Workshop's listing window keeps the gallery's caption whole above its fold in a short window, a cover still coming shows the kind's quiet glyph and "Loading" instead of an empty box, and the remove confirmation starts with the keyboard on Cancel and its Remove button outlined in the danger colour.
+
+- Desktop Workshop: a card's cover is rounded inside its border at the card's inner width, nothing is drawn over it, and every card of a row is one height with two lines of text and a footer of the tier mark and one slot (a button or a state). A listing without a cover shows a quiet placeholder drawn in code with its kind's glyph, an empty box while the cover comes, and "Offline" when it could not be fetched while the store could not be read; the pale letter tile is gone. The hero, shelves and results share one grid of one to four columns measured from the page's own width, and the hero is one card 280 px high with dots instead of a strip of thumbnails. A listing's window puts its cover in a header, shows only screenshots in its gallery on a 16:10 stage fitted whole, gives Remove the danger colour apart from the main action, writes dates as "11 Nov 2026" and shows its page's host and path; a link that names a user before its host is not shown. Skills, tools, MCP servers and installed plugins are rows of one card instead of fixed 360 px cards that left the right edge ragged. A listing at work shows its turning ring beside "Installing".
+
+- The Overview opened as a page has a Back button and Escape returns to the page it was opened from, and its progress bar stays one bar (one segment a status, not a segment a task) with 200 tasks, in the desktop and the browser client. The `fake=overview` screenshot step shows a board of 200 tasks, and the `screenshot` build compiles again.
+
+### Removed
+
+- Design documents, plans, measurement logs and HTML mockups left the repository (they live with the maintainers); `docs/features.md` now says what the shipped features do and which switch turns each on.
+
+### Security
+
+- CI checks the supply chain on every pull request: cargo-deny (RustSec advisories, licenses, crate sources), osv-scanner over the lockfiles and gitleaks over the history; Dependabot proposes weekly cargo and action updates. CI also builds the web client for wasm and checks Linux arm64; releases are built with the same Rust 1.99.1 as CI and carry a CycloneDX SBOM of each program.
+
+- Every client attached to the core now carries a scope, and the core checks each request against it before anything runs. The terminal and the desktop app have the full scope. A browser has the same reach as before, but the core enforces it now instead of the web bridge: no stopping the core, no terminal, no plugin parts, no Workshop installs, no switching a plugin on, no file writes and no config text of a saved MCP server. A scope can also be bound to chosen chats, which then are the only ones a client can read, drive, list or hear from; nothing uses that yet.
+
+- Episodes are cleaned before they are stored: every text of one is made plain as a stub is (one line, no invisible or bidirectional characters, no brackets of its own, so it cannot pass for a harness note), loses every value of the project's variables (`<secret>`) and everything shaped like a secret (`<redacted>`: the value after words such as `token`, `password` or `Authorization`, keys with a known prefix, PEM blocks, the user part of a URL, long runs of base64 or hex), and is cut to its column. An episode is not written for a folder that is not a saved project's, or when one of its commands names an `.env*` file or anything under `.ssh`. Nothing records episodes yet.
+
+- The project graph could store text from a comment as a name. While tree-sitter recovers from a syntax error the Rust grammar reads comments and strings as code, so a stray byte followed by a doc comment turned the words of the next comment into symbols; and a comment inside a `use` path was stored with the path even in a file with no error. The text of every string and comment is now replaced by spaces before the parser reads a file, by a lexer that follows the compiler's rules, so in a file the compiler can split into tokens none of it reaches the index. A file with unpaired quotes is still best effort: what follows the broken quote is dropped.
+
+- Fixes from a security review of the project graph, episodes and shaped output. The graph now also caps a project at 400,000 symbols, and a refresh at 50 files too slow to parse or 30 s of reading and parsing; past either the project has no graph, as past the refs cap. An episode is cleaned from the whole failing command and error lines (up to 16 KiB) and cut only afterwards, so a key or a project variable cut in half by the failure ladder's 100- and 400-character listing no longer escapes redaction, and a `.env` named late in a long command is refused; the ladder's notes to the model are unchanged. Changing a saved project's folder now deletes the episodes and graph of the old folder instead of carrying them to the new one, and removing a project or an episode updates whether `recall` is offered. Shaped output no longer folds repeated lines for programs it has no rules for (their output may be a file's content), and a cargo warning counted by its rule is not counted again.
+
+- The MCP client takes rmcp 3.10, which caps the body a hostile MCP server can send (RUSTSEC-2026-0462).
+
+## 0.74.4 - 2026-11-16
+
+### Fixed
+
+- The core compiles on Linux again: the macOS overlay helper stays on macOS, and
+  plugin executable lookup has an explicit path type on Linux.
+
+## 0.74.3 - 2026-11-16
+
+### Added
+
+- On macOS, the iOS Simulator and vphone panels can install AXe through Homebrew or
+  download the notarized vphone Launchpad. Both panels recheck their setup afterward.
+- Phone panels keep the device picker and Refresh together and put Home, Lock and
+  Shut down controls below the live screen.
+- The Desktop composer shows ChatGPT plan usage for each reported window and links to
+  usage settings.
+- Answered questions show the question and selected options in the chat, and background
+  job results have their own compact row. Unclear answers stay as text.
+
+### Changed
+
+- Desktop Settings moves model and voice setup under Agent → AI. Image and video
+  generation tabs are placeholders and do not yet generate media.
+- The Desktop navigation rail uses a house icon for Chats.
+
+### Fixed
+
+- The message box keeps what is typed and attached for each chat: another chat shows its
+  own unsent text or an empty box, in the Desktop, the web page and the terminal.
+- A Desktop chat keeps its scroll position as a long message grows, and follows the end
+  again when the reader returns there.
+- Desktop AI settings align the Voice cards and fit the category controls in narrow panes.
+- Desktop keeps assistant text in order with collapsed activity and leaves retry
+  messages visible during a turn.
+- Chats make at most one automatic title request after their first turn. A title chosen
+  by the user is kept.
+- ChatGPT sign-in records cache writes when the provider reports them. OpenAI Responses
+  requests also carry a stable prompt cache key for the thread.
+- Invalid configuration YAML reports the location and a safe diagnostic without echoing
+  arbitrary unknown keys or values.
+- Desktop Settings → About me reports whether the profile and snippets are saved, and
+  keeps an unsaved profile when the page is reopened. The web page confirms when the
+  profile has been saved and reports save errors.
+
+## 0.74.2 - 2026-11-15
+
+### Added
+
+- Plugins may run Xcode's tools (`exec: [xcrun]`) and connect to the Unix sockets of the
+  folders they name (`sockets:`), both shown before a plugin is switched on.
+- Pictures an MCP tool returns reach the model, checked like any image.
+- A picture sent into a chat now shows as a thumbnail in your message; a click opens it
+  large over the window, closed by Escape or a click outside. The bytes come from the
+  core, by the source's name, never read from a path by the client.
+
+### Fixed
+
+- OpenAI-compatible servers now receive the output budget their model catalogue reports,
+  so a server's smaller default does not cut a reasoning model off before its tool call.
+- The model's stream is no longer cut by estimating the provider's tokens from byte counts.
+
+- A file or picture sent into a chat is no longer re-sent in full on the next turn when
+  a turn that read it ended by failing (such as a ChatGPT stream error), being
+  interrupted, or calling tools. A source counts as delivered once any model call of the
+  turn took it.
+- A tool step's Arguments and Answer can now be selected and copied in part, not only in
+  whole through the copy button.
+- A used-up ChatGPT plan now says so, instead of "the provider is unavailable" after
+  five retries; a chat too long for the model says to compact it.
+- The log no longer warns on every ChatGPT answer that it came without a content type.
+- A chat scrolled up to read stays where it is when the agent starts a new thought,
+  instead of jumping higher.
+
+- The weekly window of a ChatGPT plan now shows in the limits ring: it is read from the
+  answer's stream as well, and kept per account rather than per renewed token.
+
+### Changed
+
+- The browser workspace now follows the desktop layout with a navigation rail, a chat list
+  and an inspector. On smaller screens, navigation and the inspector open when needed.
+- The model menu now shows only the model in use; every other model is chosen under More
+  models, where the provider in use opens unfolded and its first six models keep their
+  number-key shortcuts.
+- The iOS Simulator panel and the agent's `ios_simulator` tool move from the app into the
+  plugin ios-simulator, installed from the Workshop. A saved window layout that still
+  names the simulator loads without it.
+
+## 0.74.1 - 2026-11-14
+
+### Added
+
+- Plugins can add parts to the desktop window: an icon in the header, the rail or beside
+  the message box, or a page under Settings, opening a panel, a bottom panel or a
+  window. A part is drawn from a tree of the window's own widgets that the plugin's
+  program sends, including a live screen that takes taps and swipes. Pinned parts show
+  their icon; the rest are under a Plugins button with search and folding groups, and
+  panels open as tabs of one dock, so many plugins stay calm.
+- Plugin isolation: every program a plugin runs starts with an empty environment, under
+  the system's sandbox, without access to the config folder, other plugins or the
+  keychain. It reaches the network only through the core's broker and only to the
+  origins its manifest lists; a plugin's own key is put into its requests by the core
+  and never seen by the plugin unless it is marked handed. The permissions are shown
+  before a plugin is switched on, and an update that asks for more turns it off.
+- A plugin store: the core lists the plugins of a signed `index.json` and installs one
+  after checking the signature, the package's hash and size, every path in it and that
+  its manifest asks for what the list showed. A browser may look but not install.
+- A Workshop under Plugins in the desktop app and the terminal (`w` in `/plugins`, or
+  `/plugins store`) to install, update and remove plugins of the store in one step.
+- The chat shows which model each subagent runs on, in the Subagents window, its chat
+  and the terminal's side panel.
+- A sound file named in a message (mp3, wav, ogg, flac, m4a) shows as a card that plays
+  in the desktop app; the model still gets its path.
+- The limits ring for Sign in with ChatGPT: the 5-hour and weekly windows of the plan,
+  read from the ChatGPT backend's own headers.
+- While the agent works, typing shows the Send button beside a small Stop, so a message
+  can join the turn by click as well as by Enter.
+- `platforms` and `clients` in `plugin.yml`: the systems a plugin is built for and the
+  clients that can draw its parts.
+
+### Changed
+
+- The `secrets` field of `plugin.yml` is now `permissions.keys`, with the origins each
+  key may go to. The built-in Telegram plugin asks for api.telegram.org only and is off
+  after this update until you switch it on again. On Linux, plugins that need the
+  network do not start, since Landlock cannot hold them to the broker.
+- Telegram is no longer in the binary: it is a plugin of the store, installed from
+  the Workshop (macOS for now). The copy older versions put in the config folder is
+  removed at start unless you edited it.
 
 ## 0.74.0 - 2026-11-14
 

@@ -3,8 +3,11 @@
 //! figure with a bubble that says what it does this moment: thinking, writing, or the tool
 //! it runs. A figure that works moves; one that is done rests. A click opens its chat.
 
-use dusk_protocol::thread::AgentState;
-use std::time::Duration;
+use crate::ui::press::Press;
+use dusk_protocol::{
+    system::now_ms,
+    thread::{AgentState, clock_words},
+};
 
 use gpui_kit::{
     component::{
@@ -34,15 +37,15 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
     else {
         return div().p_5().child(crate::ui::empty(
             IconName::Bot,
-            "No subagents yet",
-            "When the agent asks others for help, they appear here at work.",
+            "No subagents yet. When the agent asks others for help, they appear here at work.",
+            None,
             cx,
         ));
     };
     let theme = cx.theme();
     let muted = theme.foreground.mix_oklab(theme.muted_foreground, 0.16);
     let (signal, surface) = (theme.warning, theme.muted);
-    let working = chat.agents.values().filter(|agent| agent.working).count();
+    let working = chat.agents.values().filter(|agent| agent.working()).count();
     let mut zones: Vec<(Zone, Vec<(&String, &Agent)>)> =
         Zone::ALL.iter().map(|zone| (*zone, Vec::new())).collect();
     for (id, agent) in &chat.agents {
@@ -57,8 +60,8 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
     let mut stage = div().grid().grid_cols(columns).gap_3();
     for (name, mut members) in zones {
         // Those at work first, then the oldest.
-        members.sort_by_key(|(_, agent)| (!agent.working, agent.started));
-        let busy = members.iter().filter(|(_, agent)| agent.working).count();
+        members.sort_by_key(|(_, agent)| (!agent.working(), agent.started_at));
+        let busy = members.iter().filter(|(_, agent)| agent.working()).count();
         let mut card = div()
             .flex()
             .flex_col()
@@ -142,7 +145,7 @@ struct Progress {
     said: Option<String>,
 }
 
-fn progress(transcript: &crate::pages::chat::transcript::Transcript) -> Progress {
+fn progress(transcript: &crate::pages::chat::transcript::Log) -> Progress {
     use crate::pages::chat::transcript::Item;
     let steps = transcript
         .items
@@ -201,6 +204,7 @@ fn figure(
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
+        .press(hover, cx)
         .child(mascot::render(
             SharedString::from(format!("mascot-{id}")),
             &agent.state,
@@ -227,7 +231,14 @@ fn figure(
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(agent.name.clone()),
                         )
-                        .child(div().meta().text_color(muted).child(agent.role.clone())),
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .meta()
+                                .text_color(muted)
+                                .child(agent.role_and_model()),
+                        ),
                 )
                 .child(div().small().truncate().child(headline(&agent.task)))
                 .child(
@@ -261,7 +272,7 @@ fn figure(
                                 .meta()
                                 .flex_none()
                                 .text_color(muted)
-                                .child(clock(agent.run_time())),
+                                .child(clock_words(agent.run_ms(now_ms()))),
                         ),
                 )
                 .children(progress.and_then(|p| p.said).map(|said| {
@@ -273,7 +284,7 @@ fn figure(
                 })),
         )
         // One agent is stopped or put away from its own row; the row itself opens it.
-        .child(if agent.working {
+        .child(if agent.working() {
             let id = id.to_owned();
             Button::new(SharedString::from(format!("agent-stop-{id}")))
                 .ghost()
@@ -299,7 +310,7 @@ fn figure(
         .child(widgets::icon(IconName::ChevronRight, muted))
         .on_click(cx.listener(move |ws, _, window, cx| {
             ws.open_agent_chat(&open, cx);
-            ws.agents_modal_focus.focus(window, cx);
+            ws.modal_focus.focus(window, cx);
         }))
 }
 
@@ -311,18 +322,4 @@ fn headline(task: &str) -> String {
         .find(|line| !line.is_empty())
         .unwrap_or_default()
         .to_owned()
-}
-
-/// `01:24`, or `1:02:03` past an hour.
-fn clock(time: Duration) -> String {
-    let seconds = time.as_secs();
-    match seconds {
-        0..3600 => format!("{:02}:{:02}", seconds / 60, seconds % 60),
-        _ => format!(
-            "{}:{:02}:{:02}",
-            seconds / 3600,
-            seconds / 60 % 60,
-            seconds % 60
-        ),
-    }
 }

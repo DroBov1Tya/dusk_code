@@ -4,7 +4,7 @@
 use crate::{
     api,
     state::{Chat as ChatSignal, View, state},
-    ui::{compact, run},
+    ui::{Icon, IconName, compact, run},
 };
 use dusk_protocol::config::ApprovalPolicy;
 use leptos::prelude::*;
@@ -39,7 +39,7 @@ pub fn Access(id: Option<String>, chat: ChatSignal) -> impl IntoView {
             <option value="default">"default access"</option>
             <option value="ask">"ask"</option>
             <option value="sandbox">"sandbox"</option>
-            <option value="arbiter">"arbiter"</option>
+            <option value="arbiter">"auto"</option>
             <option value="full_access">"full access"</option>
         </select>
     }
@@ -59,7 +59,7 @@ pub fn Mode() -> impl IntoView {
     };
     view! {
         <button class="under" title="Next mode" on:click=move |_| run(api::next_mode(), |_| ())>
-            {mode}<span class="caret"></span>
+            {mode}<Icon name=IconName::ChevronDown />
         </button>
     }
 }
@@ -83,8 +83,8 @@ pub fn Model() -> impl IntoView {
     };
     view! {
         <button class="under" title=full
-            on:click=move |_| app.view.set(View::Settings(crate::pages::settings::Page::Model))>
-            {short}<span class="caret"></span>
+            on:click=move |_| app.show(View::Settings(crate::pages::settings::Page::Model))>
+            {short}<Icon name=IconName::ChevronDown />
         </button>
     }
 }

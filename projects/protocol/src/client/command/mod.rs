@@ -8,6 +8,7 @@ use crate::config::Settings;
 use crate::model::{Effort, ProviderStatus};
 use crate::release::UpdateInfo;
 use crate::thread::{ContextReport, JobInfo, Source, Thread, UndoPoint};
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Command {
     /// Writes a portable archive of config and chat data; never sends it anywhere.
@@ -22,6 +23,10 @@ pub enum Command {
     Temporary,
     /// Lists the providers with their models, or switches to `provider/model`.
     Model { name: Option<String> },
+    /// Answers `Providers` with the enabled providers at once, none of them asked yet
+    /// (`name` none), or with the one provider checked; a client asks each on its own to
+    /// show them as they answer.
+    Provider { name: Option<String> },
     /// What a client offers to switch: tools, skills, agents and limits.
     Settings,
     /// What the next request of the thread carries; a client fills in its open thread.
@@ -68,6 +73,7 @@ impl Command {
 }
 
 /// What a client command answers.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Answer {
     /// The archive contains config secrets as well as chat history.

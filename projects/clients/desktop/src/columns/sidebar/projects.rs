@@ -1,6 +1,7 @@
 //! The projects, each folding over its chats. A project row is quiet until the pointer
 //! is over it; its chats sit indented below with their own, lighter hover.
 
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -12,33 +13,26 @@ use gpui_kit::{
 use super::threads;
 use crate::{ui::widgets, workspace::Workspace};
 
-pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (muted, hover) = (theme.muted_foreground, theme.accent);
-    let mut list = div().flex().flex_col().child(
-        div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .justify_between()
-            .pr_3()
-            .child(widgets::caption("Projects", cx))
-            .child(
-                Button::new("add-project")
-                    .ghost()
-                    .small()
-                    .icon(IconName::Plus)
-                    .tooltip("Add a project")
-                    .on_click(cx.listener(|ws, _, window, cx| ws.open_form(None, window, cx))),
-            ),
-    );
+    let mut list = div().flex().flex_col();
     if ws.projects.is_empty() {
-        list = list.child(widgets::muted(
-            "A project is a folder the agents work in. Its chats gather under it.",
-            cx,
-        ));
+        list = list
+            .child(widgets::muted(
+                "A project is a folder the agents work in. Its chats gather under it.",
+                cx,
+            ))
+            .child(
+                div().px_3().pb_2().child(
+                    crate::ui::action("sidebar-empty-project", "Add a project")
+                        .small()
+                        .on_click(cx.listener(|ws, _, window, cx| ws.open_form(None, window, cx))),
+                ),
+            );
     }
-    for project in ws.projects.clone() {
+    let grouped = threads::Grouped::new(ws, cx);
+    for project in &ws.projects {
         let open = !ws.collapsed.contains(&project.id);
         let id = project.id.clone();
         let chevron = if open {
@@ -59,6 +53,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .rounded_md()
             .cursor_pointer()
             .hover(move |row| row.bg(hover))
+            .press(hover, cx)
             .child(widgets::icon(chevron, muted))
             .child(widgets::icon(IconName::Folder, muted))
             .child(
@@ -100,8 +95,16 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .on_click(cx.listener(move |ws, _, _, cx| ws.toggle_project(&id, cx)));
         list = list.child(header);
         if open {
-            list = list.child(threads::render(ws, &project, window, cx));
+            list = list.child(threads::render(ws, grouped.of(project), cx));
         }
+    }
+    // The chats of no saved project close the list, so every chat has one place.
+    if !grouped.loose.is_empty() {
+        let mut rows = div().flex().flex_col().gap_0p5();
+        for thread in &grouped.loose {
+            rows = rows.child(threads::chat_row(ws, thread, None, cx));
+        }
+        list = list.child(widgets::caption("No project", cx)).child(rows);
     }
     list
 }
@@ -114,6 +117,7 @@ impl Workspace {
             |ws, result, cx| match result {
                 Ok(projects) => {
                     ws.projects = projects;
+                    ws.load_pull_summaries(cx);
                     cx.notify();
                 }
                 Err(error) => ws.fail(error, cx),
@@ -137,6 +141,7 @@ impl Workspace {
         self.files.clear();
         self.expanded.clear();
         self.git = None;
+        self.repository = None;
         self.refresh_inspector(cx);
     }
 }

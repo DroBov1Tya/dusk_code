@@ -28,6 +28,8 @@ use anyhow::{Context, Result, anyhow, ensure};
 use serde::Deserialize;
 use serde_json::Value;
 
+pub use dusk_protocol::catalog::split_front_matter;
+
 use crate::init::{files::read_regular, paths::is_plain_folder_name};
 
 pub use dusk_protocol::catalog::{NodeText, Problem};
@@ -40,7 +42,6 @@ const MAX_TAGS: usize = 6;
 const MAX_TAG_CHARS: usize = 24;
 const MAX_DEPTH: usize = 8;
 const MAX_NODES: usize = 1000;
-const FENCE: &str = "---";
 /// Folders that hold dependencies or build output, never nodes, and can be huge.
 const SKIPPED: [&str; 6] = [
     "node_modules",
@@ -116,6 +117,15 @@ pub fn front_skills(text: &str) -> Vec<String> {
         .map_or_else(Vec::new, |front| front.skills)
 }
 
+/// The tools an agent's front matter gives it: `Some(None)` for every tool, when it
+/// names none; `None` when the front matter cannot be read.
+pub fn front_tools(text: &str) -> Option<Option<Vec<String>>> {
+    split_front_matter(text)
+        .ok()
+        .and_then(|(front, _)| serde_saphyr::from_str::<FrontMatter>(front).ok())
+        .map(|front| front.tools)
+}
+
 impl Graph {
     /// Reads the tree of `file` nodes now, so new and edited ones apply at once. Symlinks
     /// are not followed; depth and size are bounded. A missing directory has no nodes.
@@ -181,6 +191,9 @@ impl Graph {
                 .links
                 .iter()
                 .filter(|link| !self.nodes.contains_key(*link))
+                // `pack/name` is an agent of a Workshop pack: without the pack it is
+                // simply not installed, which is no fault of the agent that names it.
+                .filter(|link| !link.contains('/'))
             {
                 self.skipped.push(Problem {
                     node: node.name.clone(),
@@ -218,7 +231,7 @@ fn subfolders(folder: &Path) -> impl Iterator<Item = String> {
     names.into_iter()
 }
 
-fn is_node_folder_name(name: &str) -> bool {
+pub(crate) fn is_node_folder_name(name: &str) -> bool {
     is_plain_folder_name(name) && !SKIPPED.contains(&name)
 }
 
@@ -331,7 +344,7 @@ pub fn save_node_text(directory: &Path, file: &str, name: &str, text: &str) -> R
 
 /// The node's file by name; the name is folder names joined by `/`, never a way out of
 /// the directory.
-fn node_file(directory: &Path, file: &str, name: &str) -> Result<PathBuf> {
+pub fn node_file(directory: &Path, file: &str, name: &str) -> Result<PathBuf> {
     ensure!(
         !name.is_empty() && name.split('/').all(is_plain_folder_name),
         "invalid name {name:?}"
@@ -371,25 +384,6 @@ fn plain(value: &Value) -> Option<String> {
 pub fn read_text(file: &Path) -> Result<String> {
     let bytes = read_regular(file, MAX_NODE_BYTES).context("cannot read the file")?;
     String::from_utf8(bytes).map_err(|_| anyhow!("the file is not valid UTF-8 text"))
-}
-
-/// Splits `---\n<front>\n---\n<body>`.
-pub fn split_front_matter(text: &str) -> Result<(&str, &str)> {
-    let rest = text
-        .strip_prefix(FENCE)
-        .and_then(|rest| {
-            rest.strip_prefix('\n')
-                .or_else(|| rest.strip_prefix("\r\n"))
-        })
-        .context("the file must start with a --- front matter line")?;
-    let mut offset = 0;
-    for line in rest.split_inclusive('\n') {
-        if line.trim_end() == FENCE {
-            return Ok((&rest[..offset], &rest[offset + line.len()..]));
-        }
-        offset += line.len();
-    }
-    Err(anyhow!("front matter has no closing --- line"))
 }
 
 #[cfg(test)]

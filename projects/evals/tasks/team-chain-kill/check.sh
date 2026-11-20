@@ -1,0 +1,1 @@
+../team-chain/check.sh

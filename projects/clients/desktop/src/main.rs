@@ -5,9 +5,10 @@
 //! - `columns`: the side columns: the `sidebar` (projects, chats, search) and the
 //!   `inspector` (git, files, context, todo, agents, jobs);
 //! - `pages`: what the middle column shows: the `chat`, the `artifacts` the agents made, the
-//!   `connectors` (servers, skills, plugins, tools, speech), the `settings`, the `review` of
+//!   `customize` page (connectors, skills, plugins, tools, agents), the `settings`, the `review` of
 //!   changes and a `file` in full;
 //! - `modal`: what opens over the window: search, a new project, a file viewer, confirmations;
+//! - `plugins`: the parts plugins add: their icons, the menu of them, the docks they open in;
 //! - `ui`: the design system: its scale and pieces, the `widgets` and the `theme`;
 //! - `platform`: what the window takes from the machine: the icon and notifications;
 //! - `dev`: tools for working on the window, behind their cargo features.
@@ -19,6 +20,7 @@ mod dev;
 mod modal;
 mod pages;
 mod platform;
+mod plugins;
 mod ui;
 mod workspace;
 
@@ -26,7 +28,7 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use dusk_core::app::{self, Paths};
-use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
+use dusk_protocol::client::Hello;
 use gpui_kit::*;
 
 /// The source the threads this client creates carry.
@@ -50,15 +52,13 @@ fn main() -> Result<()> {
         .context("cannot start the async runtime")?;
     let paths = Paths::from_home()?;
     let _restore_guard = app::RestoreGuard::startup(&paths, None)?;
-    let telemetry = app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "gui").ok();
+    let telemetry =
+        app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "gui", app::LogRole::Owner).ok();
     let look_file = paths.config_root().join("gui.json");
     let home = paths.workspace_root().to_path_buf();
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: THREAD_SOURCE.to_owned(),
-    };
+    let hello = Hello::new(THREAD_SOURCE);
     let hub = runtime.block_on(app::start_hub(paths, None))?;
-    let client = hub.attach(hello)?;
+    let client = hub.attach_owner(hello, dusk_core::client::Scope::full())?;
     let (client, events, status) = core::split(client);
     let shutdown = Arc::clone(&client);
     let runtime = Arc::new(runtime);
@@ -73,6 +73,7 @@ fn main() -> Result<()> {
             gpui_kit::init(cx);
             workspace::keys::bind(cx);
             platform::icon::set_dock_icon();
+            cx.set_reduce_motion(platform::motion::reduced());
             ui::theme::init(look_file, cx);
             let core = core::Core::new(client, Arc::clone(&runtime), Arc::clone(&hub));
             let options = WindowOptions {

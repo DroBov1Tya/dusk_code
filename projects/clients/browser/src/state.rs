@@ -5,12 +5,12 @@ use crate::{
     api,
     chat::data::ChatData,
     link::{self, Conn, Handlers},
-    pages::{connectors::Tab, settings::Page},
+    pages::{customize::Tab, settings::Page},
     ui::theme,
 };
 use dusk_protocol::{
     client::{Event, Status},
-    project::Project,
+    project::{Project, RepositoryStatus},
     thread::{Thread, ThreadEvent},
 };
 use leptos::{prelude::*, task::spawn_local};
@@ -23,7 +23,7 @@ pub enum View {
     /// A chat; none is a draft whose thread is made with its first message.
     Chat(Option<String>),
     Settings(Page),
-    Connectors(Tab),
+    Customize(Tab),
     Artifacts,
     Schedules,
     Project(String),
@@ -37,16 +37,24 @@ pub struct AppState {
     pub projects: RwSignal<Vec<Project>>,
     pub chats: RwSignal<HashMap<String, Chat>>,
     pub view: RwSignal<View>,
+    navigation: RwSignal<u64>,
+    pub draft_generation: RwSignal<u64>,
     /// The project a draft chat starts in and the sidebar highlights.
     pub project: RwSignal<Option<String>>,
     /// The chat about to start is a temporary one: kept in memory, gone with the core.
     pub temporary_next: RwSignal<bool>,
+    /// Unsent messages by chat, none for the draft chat; in memory only.
+    drafts: StoredValue<HashMap<Option<String>, crate::chat::Draft>>,
+    pub dictations: RwSignal<HashMap<Option<String>, Vec<String>>>,
+    pub pending_pictures: RwSignal<HashMap<Option<String>, Vec<crate::chat::Picture>>>,
     pub toast: RwSignal<Option<String>>,
     pub theme: RwSignal<String>,
     /// A subagent chat shown in a window over the page: its parent chat and thread.
     pub subagent: RwSignal<Option<(String, String)>>,
     /// Whether an answer is being read aloud.
     pub speaking: RwSignal<bool>,
+    /// The last repository status the core sent, and the project it is of.
+    pub repository: RwSignal<Option<(String, RepositoryStatus)>>,
 }
 
 thread_local! {
@@ -73,12 +81,18 @@ impl AppState {
             projects: RwSignal::new(Vec::new()),
             chats: RwSignal::new(HashMap::new()),
             view: RwSignal::new(View::Chat(None)),
+            navigation: RwSignal::new(0),
+            draft_generation: RwSignal::new(0),
             project: RwSignal::new(None),
             temporary_next: RwSignal::new(false),
+            drafts: StoredValue::new(HashMap::new()),
+            dictations: RwSignal::new(HashMap::new()),
+            pending_pictures: RwSignal::new(HashMap::new()),
             toast: RwSignal::new(None),
             theme: RwSignal::new(theme::stored()),
             subagent: RwSignal::new(None),
             speaking: RwSignal::new(false),
+            repository: RwSignal::new(None),
         }
     }
 
@@ -172,12 +186,24 @@ impl AppState {
                     .threads
                     .with_untracked(|threads| threads.iter().any(|t| t.id == thread_id));
                 let renamed = matches!(*event, ThreadEvent::TitleChanged { .. });
+                if let ThreadEvent::Unread(unread) = *event {
+                    crate::chat::seen::heard(self, &thread_id, unread);
+                }
                 // /fork wrote its summary: the new chat starts from it.
                 if let ThreadEvent::Forked { summary } = &*event {
                     self.fork(thread_id.clone(), summary.clone());
                 }
                 match self.chat(&thread_id) {
-                    Some(chat) => chat.update(|data| data.apply(*event)),
+                    // Streamed text is told to its item alone; the rest to the whole chat.
+                    Some(chat) => {
+                        let applied = chat.try_update_untracked(|data| data.apply(*event));
+                        let told = applied.is_some_and(|applied| {
+                            chat.with_untracked(|data| data.told(&applied))
+                        });
+                        if !told {
+                            chat.notify();
+                        }
+                    }
                     None if !listed => self.refresh(),
                     None => {}
                 }
@@ -186,16 +212,35 @@ impl AppState {
                 }
             }
             // A terminal is the desktop window's; the core never sends one to a browser.
-            Event::Terminal { .. } | Event::TerminalClosed { .. } => {}
+            // Terminals and plugin parts are drawn by the desktop app only.
+            Event::Terminal { .. }
+            | Event::TerminalClosed { .. }
+            | Event::PluginView { .. }
+            | Event::PluginFrame { .. }
+            | Event::PluginNotice { .. }
+            // The page notices the closing socket itself.
+            | Event::CoreStopping { .. }
+            // The project page reads the repository when it opens.
+            | Event::GitChanged { .. } => {}
+            Event::RepositoryStatus { project_id, status } => {
+                self.repository.set(Some((project_id, *status)))
+            }
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chat(&thread_id) {
                     chat.update(|data| {
                         data.ended = true;
                         data.working = false;
+                        data.live = Default::default();
                     });
                 }
             }
         }
+    }
+
+    /// Selecting a page supersedes pending navigation requests.
+    pub fn show(self, view: View) {
+        self.navigation.update(|n| *n = n.wrapping_add(1));
+        self.view.set(view);
     }
 
     /// The folder a thread works in: its project's, or the workspace root.
@@ -223,11 +268,27 @@ impl AppState {
             .with_untracked(|projects| projects.iter().find(|p| p.id == id).cloned())
     }
 
+    fn advance_draft(self) {
+        self.draft_generation.update(|n| *n = n.wrapping_add(1));
+        self.dictations.update(|pending| {
+            pending.remove(&None);
+        });
+        if let Some(pictures) = self
+            .pending_pictures
+            .try_update(|pending| pending.remove(&None).unwrap_or_default())
+        {
+            for picture in pictures {
+                picture.forget();
+            }
+        }
+    }
+
     /// A draft chat in a project, or in the workspace root without one.
     pub fn new_chat(self, project: Option<String>) {
         self.project.set(project);
+        self.advance_draft();
         self.temporary_next.set(false);
-        self.view.set(View::Chat(None));
+        self.show(View::Chat(None));
     }
 
     /// A new chat that is never written to disk, made with its first message.
@@ -238,27 +299,83 @@ impl AppState {
             .set(Some("Temporary chat: kept in memory only".to_owned()));
     }
 
-    /// Opens a listed chat: its history, then the thread itself.
+    /// The unsent message of a chat, handed to the box that shows it.
+    pub fn take_draft(self, chat: &Option<String>) -> crate::chat::Draft {
+        self.drafts
+            .try_update_value(|drafts| drafts.remove(chat))
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    /// Keeps what a chat's box held when it left the page. A chat that is no longer open
+    /// here was closed or deleted, and its draft goes with it.
+    pub fn keep_draft(self, chat: Option<String>, draft: crate::chat::Draft) {
+        let open = chat.as_deref().is_none_or(|id| self.chat(id).is_some());
+        if !open || (draft.text.is_empty() && draft.pictures.is_empty()) {
+            return draft.pictures.iter().for_each(|picture| picture.forget());
+        }
+        self.drafts.update_value(|drafts| {
+            drafts.insert(chat, draft);
+        });
+    }
+
+    /// A closed or deleted chat takes its draft with it.
+    pub fn drop_draft(self, thread_id: &str) {
+        self.dictations.update(|pending| {
+            pending.remove(&Some(thread_id.to_owned()));
+        });
+        if let Some(pictures) = self.pending_pictures.try_update(|pending| {
+            pending
+                .remove(&Some(thread_id.to_owned()))
+                .unwrap_or_default()
+        }) {
+            for picture in pictures {
+                picture.forget();
+            }
+        }
+        for picture in self.take_draft(&Some(thread_id.to_owned())).pictures {
+            picture.forget();
+        }
+    }
+
+    /// Opens a listed chat: its history first, then the thread itself.
     pub fn open_chat(self, thread_id: String) {
+        self.navigation.update(|n| *n = n.wrapping_add(1));
+        let navigation = self.navigation.get_untracked();
         if self.chat(&thread_id).is_some() {
-            self.view.set(View::Chat(Some(thread_id)));
+            self.show(View::Chat(Some(thread_id)));
             return;
         }
         spawn_local(async move {
             let cwd = self.cwd_of(&thread_id);
-            let history = api::messages(&thread_id).await;
-            let opened = api::resume(&thread_id, cwd).await;
-            let (history, thread_id) = match (history, opened) {
-                (Ok(history), Ok(id)) => (history, id),
-                (Err(error), _) | (_, Err(error)) => return self.fail(error),
+            let history = match api::messages(&thread_id).await {
+                Ok(history) => history,
+                Err(error) => return self.fail(error),
             };
-            let mut data = ChatData::from_history(&history);
-            data.tasks = api::tasks(&thread_id).await.unwrap_or_default();
-            data.access = api::get_approvals(&thread_id).await.unwrap_or_default();
+            // The chat is in place before the thread opens, so the answer to that and
+            // the turn another client already runs are applied, not dropped.
             self.chats.update(|chats| {
-                chats.insert(thread_id.clone(), RwSignal::new(data));
+                chats
+                    .entry(thread_id.clone())
+                    .or_insert_with(|| RwSignal::new(ChatData::from_history(&history)));
             });
-            self.view.set(View::Chat(Some(thread_id)));
+            if let Err(error) = api::resume(&thread_id, cwd).await {
+                self.chats.update(|chats| {
+                    chats.remove(&thread_id);
+                });
+                return self.fail(error);
+            }
+            if self.navigation.get_untracked() == navigation {
+                self.show(View::Chat(Some(thread_id.clone())));
+            }
+            let tasks = api::tasks(&thread_id).await.unwrap_or_default();
+            let access = api::get_approvals(&thread_id).await.unwrap_or_default();
+            if let Some(chat) = self.chat(&thread_id) {
+                chat.update(|data| {
+                    data.tasks = tasks;
+                    data.access = access;
+                });
+            }
         });
     }
 
@@ -271,10 +388,23 @@ impl AppState {
         now: bool,
         pictures: Vec<crate::chat::Picture>,
     ) {
+        let navigation = self.navigation.get_untracked();
+        let cwd = match self.project.get_untracked() {
+            Some(id) => self
+                .project_by_id(&id)
+                .map(|p| p.dir.display().to_string())
+                .unwrap_or_else(|| self.workspace_dir()),
+            None => self.workspace_dir(),
+        };
+        let temporary = self.temporary_next.get_untracked();
+        if thread_id.is_none() {
+            self.advance_draft();
+            self.temporary_next.set(false);
+        }
         spawn_local(async move {
             let thread_id = match thread_id {
                 Some(id) => id,
-                None => match self.start_thread().await {
+                None => match self.start_thread(cwd, temporary, navigation).await {
                     Ok(id) => id,
                     Err(error) => return self.fail(error),
                 },
@@ -306,16 +436,12 @@ impl AppState {
         });
     }
 
-    async fn start_thread(self) -> Result<String, String> {
-        let cwd = match self.project.get_untracked() {
-            Some(id) => self
-                .project_by_id(&id)
-                .map(|p| p.dir.display().to_string())
-                .unwrap_or_else(|| self.workspace_dir()),
-            None => self.workspace_dir(),
-        };
-        let temporary = self.temporary_next.get_untracked();
-        self.temporary_next.set(false);
+    async fn start_thread(
+        self,
+        cwd: String,
+        temporary: bool,
+        navigation: u64,
+    ) -> Result<String, String> {
         let thread_id = match temporary {
             true => api::new_temporary_thread(cwd).await?,
             false => api::new_thread(cwd).await?,
@@ -323,12 +449,15 @@ impl AppState {
         self.chats.update(|chats| {
             chats.insert(thread_id.clone(), RwSignal::new(ChatData::default()));
         });
-        self.view.set(View::Chat(Some(thread_id.clone())));
+        if self.navigation.get_untracked() == navigation {
+            self.show(View::Chat(Some(thread_id.clone())));
+        }
         self.refresh();
         Ok(thread_id)
     }
 
     fn fork(self, from: String, summary: String) {
+        let navigation = self.navigation.get_untracked();
         spawn_local(async move {
             let cwd = self.cwd_of(&from);
             match api::fork(summary, cwd).await {
@@ -336,7 +465,35 @@ impl AppState {
                     self.chats.update(|chats| {
                         chats.insert(thread_id.clone(), RwSignal::new(ChatData::default()));
                     });
-                    self.view.set(View::Chat(Some(thread_id)));
+                    if self.navigation.get_untracked() == navigation {
+                        self.show(View::Chat(Some(thread_id)));
+                    }
+                    self.refresh();
+                }
+                Err(error) => self.fail(error),
+            }
+        });
+    }
+
+    /// A new chat from `from`'s history up to and including `message_id`, shown once made.
+    pub fn fork_at(self, from: String, message_id: String) {
+        let navigation = self.navigation.get_untracked();
+        spawn_local(async move {
+            let cwd = self.cwd_of(&from);
+            let made = async {
+                let thread_id = api::fork_at(&from, &message_id, cwd).await?;
+                let history = api::messages(&thread_id).await?;
+                api::Res::Ok((thread_id, history))
+            };
+            match made.await {
+                Ok((thread_id, history)) => {
+                    let data = ChatData::from_history(&history);
+                    self.chats.update(|chats| {
+                        chats.insert(thread_id.clone(), RwSignal::new(data));
+                    });
+                    if self.navigation.get_untracked() == navigation {
+                        self.show(View::Chat(Some(thread_id)));
+                    }
                     self.refresh();
                 }
                 Err(error) => self.fail(error),
@@ -351,8 +508,9 @@ impl AppState {
             self.chats.update(|chats| {
                 chats.remove(&thread_id);
             });
+            self.drop_draft(&thread_id);
             if self.view.get_untracked() == View::Chat(Some(thread_id)) {
-                self.view.set(View::Chat(None));
+                self.show(View::Chat(None));
             }
         });
     }

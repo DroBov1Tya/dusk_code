@@ -1,0 +1,186 @@
+//! The top of the rail, the Overview in short: the model and its mode on a card, the
+//! context gauge, the activity of the turn, and the plan's line and its members while
+//! the chat has a plan.
+
+use dusk_protocol::thread::{AUTO_COMPACT_PERCENT, ThreadTokens, clock_words, plural};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::Style,
+    text::{Line, Span},
+    widgets::{Block, Padding, Paragraph},
+};
+
+use super::{
+    Sidebar,
+    section::{GAUGE, PAD, fill, row, ruled},
+};
+use crate::app::compact_number;
+use crate::ui::theme::{
+    ACCENT, DEEP, DUSK, HAIRLINE, NEGATIVE, RAISED, TEXT, TEXT_MUTED, TEXT_SOFT, USER_BAR, bold,
+    dusk, fg,
+};
+use crate::ui::windows::panels::{
+    fit,
+    overview::{member_line, plan_line, status_line},
+};
+
+/// The Overview without a plan: eleven lines and a blank one below.
+const BASE_HEIGHT: u16 = 12;
+/// The members the rail names; /overview lists them all.
+const MEMBERS_SHOWN: usize = 4;
+
+impl Sidebar<'_> {
+    /// The rows the Overview takes: the plan adds its heading and its line, a team its
+    /// status and members.
+    pub fn overview_height(&self) -> u16 {
+        if !self.has_plan() {
+            return BASE_HEIGHT;
+        }
+        let team = self
+            .app
+            .team
+            .as_ref()
+            .map_or(0, |team| 1 + team.members.len().min(MEMBERS_SHOWN) as u16);
+        BASE_HEIGHT + 3 + team
+    }
+
+    fn has_plan(&self) -> bool {
+        self.app.plan.is_some_and(|counts| counts.total() > 0)
+    }
+
+    pub fn overview(&self, frame: &mut Frame, area: Rect) {
+        let width = area.width.saturating_sub(2 * PAD) as usize;
+        let share = if self.app.limit == 0 {
+            0.0
+        } else {
+            (self.app.tokens.context as f64 / self.app.limit as f64).clamp(0.0, 1.0)
+        };
+        let percent = share * 100.0;
+        let near_compaction = percent >= AUTO_COMPACT_PERCENT as f64;
+        let ThreadTokens { model_calls, .. } = self.app.tokens;
+        let elapsed = self
+            .app
+            .elapsed_ms()
+            .map(clock_words)
+            .unwrap_or_else(|| "--:--".into());
+        let time_label = if self.app.turn_started_at.is_some() {
+            "turn"
+        } else {
+            "last turn"
+        };
+        let mut calls = format!(" \u{00B7} {}", plural(model_calls, "call"));
+        if let Some(cost) = self.app.tokens.cost() {
+            calls.push_str(&format!(" \u{00B7} {cost}"));
+        }
+        let rate = self
+            .app
+            .approximate_tokens_per_second()
+            .map(|value| format!("~{value:.1} tok/s"))
+            .unwrap_or_else(|| "--".into());
+        let context_color = if near_compaction {
+            NEGATIVE
+        } else {
+            dusk(share)
+        };
+        let mode = match self.app.effort {
+            Some(effort) => format!(
+                "{} \u{00B7} effort {}",
+                self.app.mode.to_lowercase(),
+                effort.name()
+            ),
+            None => self.app.mode.to_lowercase(),
+        };
+        let filled = ((width as f64) * share).round() as usize;
+        // The gauge warms toward its end, and a notch marks where compaction starts.
+        let notch = width * AUTO_COMPACT_PERCENT as usize / 100;
+        let gauge: Vec<Span> = (0..width)
+            .map(|cell| {
+                let color = match cell {
+                    _ if cell < filled && near_compaction => NEGATIVE,
+                    _ if cell < filled => dusk(cell as f64 / width.max(1) as f64),
+                    _ if cell == notch => TEXT_MUTED,
+                    _ => HAIRLINE,
+                };
+                Span::styled(GAUGE, fg(color))
+            })
+            .collect();
+        // The model and its mode on a card, with the mode's colour down its edge.
+        let edge = if self.app.mode == "MAIN" {
+            ACCENT
+        } else {
+            DUSK
+        };
+        let card = |text: &str, style: Style| {
+            Line::from(vec![
+                Span::styled(USER_BAR, fg(edge).bg(RAISED)),
+                Span::styled(
+                    format!(" {}", fill(text, width.saturating_sub(2))),
+                    style.bg(RAISED),
+                ),
+            ])
+        };
+        let mut lines = vec![
+            Line::default(),
+            card(&self.app.model, bold(TEXT)),
+            card(&mode, fg(TEXT_SOFT)),
+            Line::default(),
+            ruled(
+                "Context",
+                Some(Span::styled(format!("{percent:.0}%"), bold(context_color))),
+                width,
+            ),
+            Line::from(gauge),
+            Line::from(Span::styled(
+                format!(
+                    "{} of {}{}",
+                    compact_number(self.app.tokens.context),
+                    compact_number(self.app.limit),
+                    if near_compaction {
+                        "  compacting soon"
+                    } else {
+                        ""
+                    }
+                ),
+                fg(TEXT_SOFT),
+            )),
+            Line::default(),
+            ruled("Activity", None, width),
+            row(
+                vec![Span::styled(format!("{time_label}{calls}"), fg(TEXT_SOFT))],
+                Span::styled(elapsed, fg(ACCENT)),
+                width,
+            ),
+            row(
+                vec![Span::styled("output", fg(TEXT_SOFT))],
+                Span::styled(rate, fg(TEXT_SOFT)),
+                width,
+            ),
+        ];
+        if let Some(counts) = self.app.plan.filter(|_| self.has_plan()) {
+            let team = self.app.team.as_ref();
+            lines.push(Line::default());
+            lines.push(ruled("Plan", None, width));
+            lines.push(Line::from(Span::styled(
+                fill(&plan_line(counts), width),
+                fg(TEXT_SOFT),
+            )));
+            if let Some(team) = team {
+                lines.push(fit(vec![status_line(team, "")], width).remove(0));
+            }
+            for member in team
+                .iter()
+                .flat_map(|team| &team.members)
+                .take(MEMBERS_SHOWN)
+            {
+                lines.push(fit(vec![member_line(member, "")], width).remove(0));
+            }
+        }
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(TEXT).bg(DEEP))
+                .block(Block::new().padding(Padding::horizontal(PAD))),
+            area,
+        );
+    }
+}

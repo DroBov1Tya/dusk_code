@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tools::Card;
 /// What the model gets back from a call.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolResult {
     pub content: String,
@@ -25,6 +26,7 @@ impl ToolResult {
 }
 
 /// Window inventory or one kind of access to a retained window selection.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WindowAccess {
     List,

@@ -6,7 +6,12 @@ use std::path::PathBuf;
 use crate::config::{ApprovalPolicy, ContextPolicy, McpStatus, PluginInfo};
 use crate::model::Effort;
 use crate::release::InstallProgress;
+
+/// Where a signed-in user can see and manage ChatGPT plan usage.
+pub const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/settings/usage";
+
 /// The sign-in with a ChatGPT account, which connects OpenAI without an API key.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChatGpt {
     #[default]
@@ -23,6 +28,7 @@ pub enum ChatGpt {
 
 /// Everything a client shows that changes without being asked: sent again whole
 /// whenever any of it changes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
     /// The model threads talk to, as `provider/model`.
@@ -51,9 +57,19 @@ pub struct Status {
     /// How the sign-in with ChatGPT stands.
     #[serde(default)]
     pub chatgpt: ChatGpt,
+    /// The selected model uses a ChatGPT plan connection.
+    #[serde(default)]
+    pub chatgpt_model: bool,
+    /// The parts switched-on plugins add to the window.
+    #[serde(default)]
+    pub plugin_parts: std::sync::Arc<Vec<crate::plugin::Part>>,
     /// The rate limits of the current model's account, when its provider reports them.
     #[serde(default)]
     pub limits: Option<crate::model::RateLimits>,
+    /// How the calls to each configured provider went, by name; a provider not asked
+    /// since the core started is missing.
+    #[serde(default)]
+    pub provider_health: Vec<crate::model::ProviderHealth>,
     /// Where pictures of messages and tool results are kept.
     pub artifacts_dir: PathBuf,
     /// Where a chat without a project works: the root of the workspace folders.

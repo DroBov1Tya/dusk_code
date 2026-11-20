@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use super::{Tool, ToolContext, ToolKind};
-use crate::{BoxFuture, mcp::McpServer};
+use super::{Tool, ToolContext, ToolKind, registry::ToolResult};
+use crate::{BoxFuture, mcp::McpServer, state::artifacts::ArtifactStore};
 
 /// Models accept tool names this long at most.
 const MAX_NAME: usize = 64;
@@ -19,11 +19,17 @@ pub struct McpTool {
     remote: String,
     description: String,
     schema: Value,
+    /// The server's own hint that a call may run again; see `RemoteTool::repeatable`.
+    repeatable: bool,
+    /// The server's hint that a call changes nothing; see `RemoteTool::read_only`.
+    read_only: bool,
+    /// Where the pictures it returns are kept for the model.
+    pictures: ArtifactStore,
 }
 
 impl McpTool {
     /// Every tool of the server whose name fits what models accept.
-    pub fn all(server: &Arc<McpServer>) -> Vec<Self> {
+    pub fn all(server: &Arc<McpServer>, pictures: &ArtifactStore) -> Vec<Self> {
         server
             .tools
             .iter()
@@ -34,6 +40,9 @@ impl McpTool {
                     remote: tool.name.clone(),
                     description: tool.description.clone(),
                     schema: tool.input_schema.clone(),
+                    repeatable: tool.repeatable,
+                    read_only: tool.read_only,
+                    pictures: pictures.clone(),
                 })
             })
             .collect()
@@ -66,8 +75,58 @@ impl Tool for McpTool {
         self.schema.clone()
     }
 
-    fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
-        Box::pin(self.server.client.call_tool(&self.remote, arguments))
+    /// The hint comes from the server and is not trusted for anything beyond repeating
+    /// that server's own call.
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        self.repeatable
+    }
+
+    /// Trusted as little as `repeatable`: a server that lies can only make its own calls
+    /// run together. The skills folder is watched around every MCP call whatever this says.
+    fn read_only(&self, _arguments: &Value) -> bool {
+        self.read_only
+    }
+
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
+        Box::pin(async move {
+            Ok(self
+                .server
+                .client
+                .call_tool(&self.remote, arguments, Some(context.scope.cwd()))
+                .await?
+                .text)
+        })
+    }
+
+    /// Pictures in the result become cards the model sees, such as a device's screen.
+    fn call_result<'a>(
+        &'a self,
+        arguments: Value,
+        context: ToolContext,
+    ) -> BoxFuture<'a, ToolResult> {
+        Box::pin(async move {
+            let output = self
+                .server
+                .client
+                .call_tool(&self.remote, arguments, Some(context.scope.cwd()))
+                .await?;
+            let mut result = ToolResult::text(output.text);
+            for bytes in output.images {
+                let store = self.pictures.clone();
+                let title = self.server.name.clone();
+                let card = tokio::task::spawn_blocking(move || {
+                    super::harness::picture_card(&store, bytes, &title)
+                })
+                .await?;
+                match card {
+                    Ok(card) => result.artifacts.push(card),
+                    Err(error) => result
+                        .content
+                        .push_str(&format!("\n[a picture that could not be read: {error}]")),
+                }
+            }
+            Ok(result)
+        })
     }
 }
 

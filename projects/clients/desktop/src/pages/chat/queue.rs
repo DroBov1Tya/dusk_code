@@ -155,16 +155,38 @@ impl Workspace {
         self.send_text(pending.thread_id, text, now, cx);
     }
 
+    /// Sends the chat's last message once more, after a call that failed.
+    pub fn send_again(&mut self, thread_id: &str, cx: &mut Context<Self>) {
+        let Some(text) = self
+            .chats
+            .get(thread_id)
+            .and_then(|chat| chat.last_sent())
+            .map(str::to_owned)
+        else {
+            return;
+        };
+        self.send_text(thread_id.to_owned(), text, false, cx);
+    }
+
     fn send_text(&mut self, thread_id: String, text: String, now: bool, cx: &mut Context<Self>) {
         cx.notify();
         if text.is_empty() {
             return;
         }
+        let (origin, retry) = (thread_id.clone(), text.clone());
         self.core.call(
             cx,
             move |client| async move { client.threads().send(&thread_id, text, now).await },
-            |ws, result, cx| {
+            move |ws, result, cx| {
                 if let Err(error) = result {
+                    ws.edit_draft(
+                        Some(origin),
+                        super::composer::Change::Restore(super::composer::Draft {
+                            text: retry,
+                            ..Default::default()
+                        }),
+                        cx,
+                    );
                     ws.fail(error, cx);
                 }
             },

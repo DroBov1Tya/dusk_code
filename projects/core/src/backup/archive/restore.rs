@@ -12,15 +12,13 @@ use crate::init::paths::Paths;
 
 use super::{
     MAGIC, MAX_MANIFEST_BYTES,
-    files::{
-        Temporary, copy_hash, open_regular_input, private_dir, private_file, set_executable,
-        sync_directory,
-    },
+    files::{Temporary, copy_hash, open_regular_input, set_executable, sync_directory},
     manifest::{Kind, Manifest, validate_manifest},
     restore_guard::{pending_restore_path, require_no_pending_restore, restore_guard},
     transaction::{finish_install, publish_transaction},
     verify::{directory_tree, inspect_tree_path},
 };
+use crate::init::files::{new_private_dir, new_private_file};
 
 /// Nothing in the application is initialized here. Validate the entire manifest and
 /// payload, in private staging, before installing either root. Other Dusk processes must
@@ -94,9 +92,9 @@ pub fn restore(paths: &Paths, archive: &Path) -> Result<()> {
         }
         .join(relative);
         if entry.kind == Kind::Directory {
-            private_dir(&target)?;
+            new_private_dir(&target)?;
         } else {
-            let mut output = private_file(&target)?;
+            let mut output = new_private_file(&target)?;
             let (copied, hash) =
                 copy_hash(&mut Read::by_ref(&mut input).take(entry.size), &mut output)?;
             ensure!(copied == entry.size, "archive payload is truncated");

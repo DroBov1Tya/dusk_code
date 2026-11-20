@@ -1,13 +1,18 @@
 //! Answers as the model writes them: a little markdown, drawn instead of shown raw.
-//! Headings, lists, quotes, `code`, **bold** and fenced blocks; the rest is plain text.
+//! Headings, lists, quotes, `code`, **bold**, `{{tone: label}}` and fenced blocks; the
+//! rest is plain text.
 
+use dusk_protocol::thread::{self as protocol, Tone};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
 };
 
 use super::{
-    theme::{ACCENT, BULLET, CODE_BAR, DUSK, GUTTER, TEXT, TEXT_MUTED, bold, dim, fg, thought},
+    format::printable,
+    theme::{
+        self, ACCENT, BULLET, CODE_BAR, DUSK, GUTTER, TEXT, TEXT_MUTED, bold, dim, fg, thought,
+    },
     wrap,
 };
 
@@ -286,7 +291,7 @@ fn classify(source: &str) -> (Vec<Span<'static>>, usize, &str, Style) {
     (Vec::new(), 0, source, Style::new())
 }
 
-/// `code` and **bold** inside a line.
+/// `code`, **bold** and labels inside a line.
 fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut rest = text;
@@ -297,11 +302,11 @@ fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
             .flatten()
             .min();
         let Some(at) = next else {
-            spans.push(Span::styled(rest.to_owned(), emphasis(base, strong)));
+            marked(rest, emphasis(base, strong), &mut spans);
             break;
         };
         if at > 0 {
-            spans.push(Span::styled(rest[..at].to_owned(), emphasis(base, strong)));
+            marked(&rest[..at], emphasis(base, strong), &mut spans);
         }
         rest = &rest[at..];
         if let Some(after) = rest.strip_prefix("**") {
@@ -316,7 +321,7 @@ fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
                 rest = &code[end + 1..];
             }
             None => {
-                spans.push(Span::styled(rest.to_owned(), emphasis(base, strong)));
+                marked(rest, emphasis(base, strong), &mut spans);
                 break;
             }
         }
@@ -324,10 +329,132 @@ fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
     spans
 }
 
+/// A run of text that is not code, with the labels in it drawn.
+fn marked(text: &str, style: Style, spans: &mut Vec<Span<'static>>) {
+    for span in protocol::marks(text) {
+        spans.push(match span {
+            protocol::Span::Text(text) => Span::styled(text.to_owned(), style),
+            protocol::Span::Mark { tone, text } => mark(tone, text, style, theme::no_color()),
+        });
+    }
+}
+
+/// A label with a space each side on the raised surface in its tone's colour, one piece
+/// the wrap keeps whole; without colour, in brackets in the style of the text around it.
+fn mark(tone: Tone, label: &str, around: Style, no_color: bool) -> Span<'static> {
+    // The protocol keeps control characters out of a label; the terminal does not rely on that.
+    let label = printable(label);
+    if no_color {
+        Span::styled(format!("[{label}]"), around)
+    } else {
+        Span::styled(format!(" {label} "), theme::tone(tone))
+    }
+}
+
 fn emphasis(base: Style, strong: bool) -> Style {
     if strong {
         base.add_modifier(Modifier::BOLD)
     } else {
         base
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend, widgets::Paragraph};
+
+    fn spans(text: &str, width: usize) -> Vec<Vec<Span<'static>>> {
+        let lines = render(text, width);
+        for line in &lines {
+            assert!(line.width() <= width, "{line:?} is over {width}");
+        }
+        lines.into_iter().map(|line| line.spans).collect()
+    }
+
+    fn labels(lines: &[Vec<Span<'static>>]) -> Vec<(String, Style)> {
+        let spans = lines
+            .iter()
+            .flatten()
+            .filter(|span| span.style.bg.is_some());
+        spans
+            .map(|span| (span.content.to_string(), span.style))
+            .collect()
+    }
+
+    #[test]
+    fn each_tone_is_a_label_in_its_colour_on_the_raised_surface() {
+        // With `NO_COLOR` set where the tests run, labels are brackets, tested on their own.
+        if theme::no_color() {
+            return;
+        }
+        for tone in Tone::ALL {
+            let text = format!("Build {{{{{}: 3 failed}}}} today.", tone.name());
+            let lines = spans(&text, 80);
+            assert_eq!(labels(&lines), [(" 3 failed ".into(), theme::tone(tone))]);
+            let words: String = lines.iter().flatten().map(|span| &*span.content).collect();
+            assert_eq!(words, "Build  3 failed  today.");
+        }
+        assert_eq!(theme::tone(Tone::Warning).fg, Some(theme::WARNING));
+        assert!(
+            theme::tone(Tone::Accent)
+                .add_modifier
+                .contains(Modifier::BOLD)
+        );
+    }
+
+    #[test]
+    fn what_is_not_exactly_a_label_stays_text() {
+        for text in [
+            "an {{urgent: unknown tone}} here",
+            "in `{{info: code}}` it is code",
+            "a {{danger: rm\x1b[2J\x07}} escape",
+            "a {{danger: admin\u{202e}exe}} turn",
+            "a {{info: [link](http://x)}} link",
+        ] {
+            assert!(labels(&spans(text, 80)).is_empty(), "{text}");
+        }
+    }
+
+    #[test]
+    fn no_text_from_a_label_reaches_the_terminal_raw() {
+        let text = "x {{danger: rm\x1b[2J\x07}} {{success: \u{6570}\u{636e} ok}} y";
+        let lines = render(text, 20);
+        let mut terminal = Terminal::new(TestBackend::new(20, 4)).expect("test terminal");
+        terminal
+            .draw(|frame| frame.render_widget(Paragraph::new(lines), frame.area()))
+            .expect("draw");
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(!screen.contains(['\x1b', '\x07']), "{screen}");
+        assert!(screen.contains('\u{6570}'), "{screen}");
+    }
+
+    #[test]
+    fn a_label_at_the_end_of_a_line_moves_down_whole() {
+        if theme::no_color() {
+            return;
+        }
+        let lines = spans("Lint ends {{danger: 2 failed}} now", 14);
+        let whole = lines.iter().position(|line| {
+            line.iter()
+                .any(|span| span.content == " 2 failed " && span.style.bg.is_some())
+        });
+        assert_eq!(whole, Some(1), "{lines:?}");
+        // Wider than the line, it breaks where it runs out, as a long word does.
+        let long = format!("{{{{info: {}}}}}", "x".repeat(30));
+        assert!(spans(&long, 12).len() > 2);
+    }
+
+    #[test]
+    fn without_colour_a_label_is_in_brackets() {
+        let around = bold(DUSK);
+        let span = mark(Tone::Danger, "3 failed", around, true);
+        assert_eq!((&*span.content, span.style), ("[3 failed]", around));
     }
 }

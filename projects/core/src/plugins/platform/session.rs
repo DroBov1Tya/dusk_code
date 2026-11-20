@@ -1,13 +1,17 @@
 //! One run of a platform's program, bridged to its thread: events go out as lines,
 //! what the user did comes back in.
 
-use std::{collections::BTreeMap, process::Stdio};
+use std::{
+    collections::BTreeMap,
+    process::Stdio,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use parking_lot::RwLock;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{ChildStdin, Command},
+    io::{AsyncWriteExt, BufReader},
+    process::ChildStdin,
 };
 use tracing::warn;
 
@@ -19,10 +23,58 @@ use crate::{
 };
 
 use super::{
+    super::lines::{Line, Lines},
     PlatformSpec,
     thread::{new_thread, open_thread},
     wire::{FromPlatform, MAX_LINE_BYTES, ToPlatform},
 };
+
+/// The longest approval text a platform is sent. Telegram cuts a message at 4096
+/// characters, and its plugin at less; a cut request would allow steps the user never
+/// saw, so a longer one is not offered for a yes at all.
+const MAX_APPROVAL_CHARS: usize = 3500;
+
+/// What the platform shows for a yes: the title and every step, or `None` when that
+/// does not fit, and the request may then only be denied there.
+fn approvable_text(request: &ApprovalRequest) -> Option<String> {
+    let text = request.text("the agent");
+    (text.chars().count() <= MAX_APPROVAL_CHARS).then_some(text)
+}
+
+/// Whether `event` says a turn is at work, so the user can stop it: one that starts, one
+/// a restart resumed, and one that waits for the user or the provider.
+fn at_work(event: &ThreadEvent) -> bool {
+    matches!(
+        event,
+        ThreadEvent::TurnStarted(_) | ThreadEvent::TurnRunning(_) | ThreadEvent::TurnWaiting(_)
+    )
+}
+
+/// How often dropped lines are reported: a plugin that writes nothing but bad lines
+/// would otherwise fill the log with one warning each.
+const DROP_REPORT_EVERY: Duration = Duration::from_secs(60);
+
+/// Counts the platform's lines that were dropped, and says when to report them.
+#[derive(Default)]
+struct Dropped {
+    since_report: u64,
+    reported_at: Option<Instant>,
+}
+
+impl Dropped {
+    /// Counts one dropped line; answers how many to report now, the first at once and
+    /// then at most one report a `DROP_REPORT_EVERY`.
+    fn count(&mut self, now: Instant) -> Option<u64> {
+        self.since_report += 1;
+        let due = self
+            .reported_at
+            .is_none_or(|at| now.duration_since(at) >= DROP_REPORT_EVERY);
+        due.then(|| {
+            self.reported_at = Some(now);
+            std::mem::take(&mut self.since_report)
+        })
+    }
+}
 
 /// One run of a platform's program, bridged to its thread.
 pub(super) struct Session<'a> {
@@ -46,11 +98,10 @@ impl<'a> Session<'a> {
         spec: &'a PlatformSpec,
         statuses: &RwLock<BTreeMap<String, String>>,
     ) -> Result<()> {
-        let (program, arguments) = spec.command.split_first().context("no command")?;
-        let mut child = Command::new(program)
-            .args(arguments)
-            .current_dir(&spec.folder)
-            .envs(spec.env.iter().map(|(key, value)| (key, value)))
+        let program = spec.command.first().context("no command")?;
+        let mut child = spec
+            .isolation
+            .command(&spec.command)?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -58,7 +109,9 @@ impl<'a> Session<'a> {
             .spawn()
             .with_context(|| format!("cannot start {program}"))?;
         let stdin = child.stdin.take().context("no stdin")?;
-        let mut lines = BufReader::new(child.stdout.take().context("no stdout")?).lines();
+        let mut stdout = BufReader::new(child.stdout.take().context("no stdout")?);
+        let mut lines = Lines::new(MAX_LINE_BYTES);
+        let mut dropped = Dropped::default();
         let thread = open_thread(launcher, &spec.plugin, None).await?;
         let mut session = Session {
             launcher,
@@ -74,19 +127,29 @@ impl<'a> Session<'a> {
         };
         loop {
             tokio::select! {
-                line = lines.next_line() => {
-                    let Some(line) = line.context("cannot read the platform")? else {
-                        return Ok(());
+                line = lines.next(&mut stdout) => {
+                    let line = match line.context("cannot read the platform")? {
+                        Line::Full(line) => line,
+                        Line::End => return Ok(()),
+                        // A line past the cap is no message of the protocol: dropped
+                        // unread, and the session goes on.
+                        Line::TooLong => {
+                            if let Some(count) = dropped.count(Instant::now()) {
+                                warn!("plugin {}: {count} line(s) over the limit dropped", spec.plugin);
+                            }
+                            continue;
+                        }
                     };
-                    if line.len() > MAX_LINE_BYTES {
-                        continue;
-                    }
-                    match serde_json::from_str::<FromPlatform>(&line) {
+                    match serde_json::from_slice::<FromPlatform>(&line) {
                         Ok(FromPlatform::Status { text }) => {
                             statuses.write().insert(spec.plugin.clone(), text);
                         }
                         Ok(input) => session.take(input).await?,
-                        Err(error) => warn!("plugin {}: not a message: {error}", spec.plugin),
+                        Err(error) => {
+                            if let Some(count) = dropped.count(Instant::now()) {
+                                warn!("plugin {}: {count} line(s) dropped, the last not a message: {error}", spec.plugin);
+                            }
+                        }
                     }
                 }
                 event = session.thread.output.next_event() => match event {
@@ -117,8 +180,10 @@ impl<'a> Session<'a> {
     /// Passes on what the user should see of a thread event.
     async fn show(&mut self, event: ThreadEvent) -> Result<()> {
         match event {
-            ThreadEvent::TurnStarted(_) => {
-                self.answer.clear();
+            event if at_work(&event) => {
+                if matches!(event, ThreadEvent::TurnStarted(_)) {
+                    self.answer.clear();
+                }
                 self.working = true;
                 self.send(ToPlatform::Working { on: true }).await
             }
@@ -231,9 +296,20 @@ impl<'a> Session<'a> {
         let Some(request) = self.approvals.first() else {
             return Ok(());
         };
-        let (id, text) = (request.id, request.request.describe("the agent"));
+        let id = request.id;
         self.shown = Some(id);
-        self.send(ToPlatform::Approval { id, text }).await
+        match approvable_text(request) {
+            Some(text) => self.send(ToPlatform::Approval { id, text }).await,
+            // No button: deny still answers it, the app can still allow it.
+            None => {
+                let note = format!(
+                    "{} The request is too long to show here in full, so it cannot be \
+                     allowed here: answer it in the duskcode app, or deny it with /deny.",
+                    request.title("The agent")
+                );
+                self.reply(&note).await
+            }
+        }
     }
 
     /// Does what the user did on the platform, as if at the keyboard.
@@ -262,11 +338,27 @@ impl<'a> Session<'a> {
         else {
             return self.reply("Nothing is waiting for that approval.").await;
         };
+        let unseen = self
+            .approvals
+            .iter()
+            .any(|request| request.id == id && approvable_text(request).is_none());
+        if allow && self.launcher.approvals.owner_only(id) {
+            return self
+                .reply("Only the owner can allow that, in the app; you can deny it.")
+                .await;
+        }
+        if allow && unseen {
+            return self
+                .reply("That request is too long to allow here: answer it in the app, or deny it.")
+                .await;
+        }
         let decision = if allow {
             Decision::Once
         } else {
             Decision::Deny
         };
+        // No thread check, unlike `answer_approval`: `id` was found above among the
+        // requests this chat's own events asked.
         self.launcher.approvals.answer(id, decision);
         Ok(())
     }
@@ -392,5 +484,80 @@ impl<'a> Session<'a> {
             }
             None => "Goal: none".into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::Request;
+    use dusk_protocol::tools::ApprovalStep;
+
+    /// A plugin that writes only bad lines gets one warning a minute, not one a line,
+    /// and each warning counts every line dropped since the last.
+    #[test]
+    fn dropped_lines_are_reported_at_most_once_a_minute() {
+        let start = Instant::now();
+        let mut dropped = Dropped::default();
+        assert_eq!(dropped.count(start), Some(1));
+        for second in 1..60 {
+            assert_eq!(dropped.count(start + Duration::from_secs(second)), None);
+        }
+        assert_eq!(dropped.count(start + DROP_REPORT_EVERY), Some(60));
+        assert_eq!(dropped.count(start + DROP_REPORT_EVERY), None);
+    }
+
+    fn batch(steps: usize, typed: usize) -> ApprovalRequest {
+        let text = "x".repeat(typed);
+        let keyboard = |action: String| Request::Keyboard { action };
+        ApprovalRequest {
+            id: 1,
+            request: keyboard(format!("{steps} computer actions")),
+            session: None,
+            steps: (1..=steps)
+                .map(|number| ApprovalStep {
+                    number,
+                    request: keyboard(format!("type \"{text}\"")),
+                    allowed: false,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_request_too_long_to_show_whole_is_never_offered_for_a_yes() {
+        let short = approvable_text(&batch(3, 20)).expect("fits");
+        assert!(short.contains("3. using the keyboard"), "{short}");
+        // Twenty typed steps of 200 shown characters would be cut by the platform.
+        assert!(approvable_text(&batch(20, 200)).is_none());
+    }
+
+    /// A turn a restart resumed, or one that waits, can be stopped from the platform.
+    #[test]
+    fn a_resumed_or_waiting_turn_is_at_work() {
+        use dusk_protocol::thread::{Turn, TurnWait};
+        let turn = Turn {
+            turn_id: "t".into(),
+            thread_id: "thread".into(),
+            last_sequence: 1,
+            response_message_id: None,
+            status: TurnStatus::Running,
+            started_at: 1,
+            finished_at: None,
+            error_message: None,
+            waiting: Some(TurnWait::Decision { since: 1 }),
+            steps: 0,
+            tokens: 0,
+            cost_micro_usd: 0,
+        };
+        for event in [
+            ThreadEvent::TurnStarted(turn.clone()),
+            ThreadEvent::TurnRunning(turn.clone()),
+            ThreadEvent::TurnWaiting(turn.clone()),
+        ] {
+            assert!(at_work(&event), "{event:?}");
+        }
+        assert!(!at_work(&ThreadEvent::TurnFinished(turn)));
+        assert!(!at_work(&ThreadEvent::Idle));
     }
 }

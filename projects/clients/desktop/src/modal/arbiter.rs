@@ -3,6 +3,7 @@
 //! right what passed between them, newest first: tasks given, reports back, approval
 //! requests and the arbiter's answers.
 
+use crate::ui::Type;
 use std::time::Duration;
 
 use gpui_kit::{
@@ -12,6 +13,7 @@ use gpui_kit::{
 };
 
 use super::sphere;
+use crate::ui::looping::Loop;
 use crate::{
     pages::chat::transcript::{CHAT, ExchangeKind},
     ui::widgets,
@@ -75,13 +77,11 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
     for agent in chat.agents.values() {
         let dot = div().size(px(6.)).flex_none().rounded_full();
         // The one at work breathes; the others rest.
-        let dot = if agent.working {
+        let dot = if agent.working() {
             dot.bg(accent)
-                .with_animation(
-                    SharedString::from(format!("arbiter-agent-{}", agent.name)),
-                    Animation::new(Duration::from_millis(1400)).repeat(),
-                    |dot, at| dot.opacity(0.35 + 0.65 * (at * std::f32::consts::TAU).cos().abs()),
-                )
+                .looping(Duration::from_millis(1400), |dot, at| {
+                    dot.opacity(0.35 + 0.65 * (at * std::f32::consts::TAU).cos().abs())
+                })
                 .into_any_element()
         } else {
             dot.bg(muted.opacity(0.45)).into_any_element()
@@ -92,7 +92,8 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .min_h(px(40.))
+                // Two lines a row: air between rows, or the names read as one block.
+                .py_1p5()
                 .child(dot)
                 .child(
                     div()
@@ -100,10 +101,10 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .child(div().text_sm().truncate().child(agent.name.clone()))
+                        .child(div().small().truncate().child(agent.name.clone()))
                         .child(
                             div()
-                                .text_xs()
+                                .meta()
                                 .text_color(muted)
                                 .truncate()
                                 .child(agent.role.clone()),
@@ -111,7 +112,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .meta()
                         .text_color(muted)
                         .child(said(&agent.name).to_string()),
                 ),
@@ -146,7 +147,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                     })
                     .child(value.to_string()),
             )
-            .child(div().text_xs().text_color(muted).child(label))
+            .child(div().meta().text_color(muted).child(label))
     };
     let state = if on { success } else { muted };
     let middle = div()
@@ -154,12 +155,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
         .flex_col()
         .items_center()
         .gap_4()
-        .child(sphere::render(
-            SharedString::from(format!("arbiter-sphere-{thread_id}")),
-            chat.arbiter_at,
-            accent,
-            warning,
-        ))
+        .child(sphere::render(chat.arbiter_at, accent, warning))
         .child(
             div()
                 .flex()
@@ -175,12 +171,12 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                         .h(px(26.))
                         .rounded_full()
                         .bg(state.opacity(0.12))
-                        .text_xs()
+                        .meta()
                         .text_color(state)
                         .child(div().size(px(6.)).rounded_full().bg(state))
                         .child(if on { "Arbiter on" } else { "Arbiter off" }),
                 )
-                .child(div().text_xs().text_color(muted).child(if on {
+                .child(div().meta().text_color(muted).child(if on {
                     "It answers the approvals in your place"
                 } else {
                     "Approvals come to you"
@@ -294,21 +290,21 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                                         .flex_1()
                                         .min_w_0()
                                         .truncate()
-                                        .text_sm()
+                                        .small()
                                         .font_weight(FontWeight::MEDIUM)
                                         .child(line),
                                 )
                                 .child(
                                     div()
                                         .flex_none()
-                                        .text_xs()
+                                        .meta()
                                         .text_color(muted)
                                         .child(format!("{ago} ago")),
                                 ),
                         )
                         .child(
                             div()
-                                .text_xs()
+                                .meta()
                                 .text_color(muted)
                                 .line_clamp(2)
                                 .child(plain(&exchange.text)),

@@ -6,7 +6,12 @@ use dusk_protocol::{
     config::{ApprovalPolicy, ContextPolicy, ContextPreset},
 };
 use gpui_kit::{
-    component::{ActiveTheme, Disableable, IconName, button::Button, input::Input, switch::Switch},
+    component::{
+        ActiveTheme, Disableable, IconName,
+        button::Button,
+        input::{Input, InputState},
+        switch::Switch,
+    },
     *,
 };
 
@@ -19,33 +24,6 @@ use crate::{
 pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -> Div {
     let body = div().flex().flex_col().gap_6();
     match page {
-        SettingsPage::Model => {
-            let model = ws
-                .status
-                .model
-                .clone()
-                .unwrap_or_else(|| "none chosen".to_owned());
-            body.child(list(
-                [
-                    line("Model", &model, cx),
-                    context_line(ws, cx),
-                    line(
-                        "Use a model by name",
-                        "For servers that do not list their models: provider/model",
-                        cx,
-                    )
-                    .child(div().w(px(240.)).child(Input::new(&ws.model_input)))
-                    .child(
-                        Button::new("model-use")
-                            .outline()
-                            .label("Use")
-                            .on_click(cx.listener(|ws, _, _, cx| ws.use_typed_model(cx))),
-                    ),
-                ],
-                cx,
-            ))
-            .child(super::providers::render(ws, cx))
-        }
         SettingsPage::Chat => body.child(list(
             [
                 line("Mode", "What the chat may do and how it is told", cx).child(
@@ -54,7 +32,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                         .child(
                             Button::new("settings-mode")
                                 .outline()
-                                .label(ws.status.mode.clone())
+                                .label(ws.status.mode.to_lowercase())
                                 .dropdown_caret(true)
                                 .tooltip("Pick a mode")
                                 .on_click(cx.listener(|ws, _, _, cx| {
@@ -63,7 +41,10 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                         )
                         .children(
                             matches!(ws.picker, Some(crate::workspace::Picker::Mode)).then(|| {
-                                widgets::on_top(crate::pages::chat::mode_menu::render(ws, true, cx))
+                                widgets::on_top(widgets::appear(
+                                    "settings-mode-open",
+                                    crate::pages::chat::mode_menu::render(ws, true, cx),
+                                ))
                             }),
                         ),
                 ),
@@ -122,7 +103,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                     ApprovalPolicy::Sandbox,
                 ),
                 (
-                    "Arbiter",
+                    "Auto",
                     "A second model answers the approvals",
                     ApprovalPolicy::Arbiter,
                 ),
@@ -183,13 +164,16 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
             None => body,
         },
         SettingsPage::Advanced => {
-            let body = match ws.settings.clone() {
-                Some(settings) => {
-                    let agents = settings.max_agents_at_work as u64;
-                    let rounds = u64::from(settings.max_goal_rounds);
-                    let mut web = vec![web_line(ws, cx), web_global_line(ws, cx)];
-                    web.extend(web_address(ws, cx));
-                    body.child(list(
+            let body =
+                match ws.settings.clone() {
+                    Some(settings) => {
+                        let agents = settings.max_agents_at_work as u64;
+                        let rounds = u64::from(settings.max_goal_rounds);
+                        let timeout = u64::from(settings.model_timeout_seconds);
+                        let attempts = u64::from(settings.max_attempts);
+                        let mut web = vec![web_line(ws, cx), web_global_line(ws, cx)];
+                        web.extend(web_address(ws, cx));
+                        body.child(list(
                         [switch_line(
                             "Log files",
                             "Written on this machine only",
@@ -208,6 +192,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                                 cx,
                             )
                             .child(stepper(
+                                ws,
                                 "agents",
                                 agents,
                                 (1, 32),
@@ -220,27 +205,126 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                                 cx,
                             )
                             .child(stepper(
+                                ws,
                                 "rounds",
                                 rounds,
                                 (1, 200),
                                 Limit::Rounds,
                                 cx,
                             )),
+                            line(
+                                "Model timeout, seconds",
+                                "How long a silent model call waits before it is given up on",
+                                cx,
+                            )
+                            .child(stepper(ws, "timeout", timeout, (5, 3600), Limit::Timeout, cx)),
+                            line(
+                                "Tries per call",
+                                "Tries of one model call that wrote nothing, the first included",
+                                cx,
+                            )
+                            .child(stepper(ws, "attempts", attempts, (1, 20), Limit::Attempts, cx)),
                         ],
                         cx,
                     ))
-                }
-                None => body,
-            };
+                    }
+                    None => body,
+                };
             body.child(super::uninstall::section(cx))
         }
-        SettingsPage::Appearance
+        SettingsPage::Ai
+        | SettingsPage::Appearance
         | SettingsPage::AboutMe
         | SettingsPage::Keyboard
         | SettingsPage::Updates
         | SettingsPage::Usage
-        | SettingsPage::Secrets => body,
+        | SettingsPage::Secrets
+        | SettingsPage::Workshop
+        | SettingsPage::Plugins => body,
     }
+}
+
+pub(super) fn llm(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let model = ws
+        .status
+        .model
+        .clone()
+        .unwrap_or_else(|| "No model selected".to_owned());
+    div()
+        .flex()
+        .flex_col()
+        .gap_5()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(super::ai::section(
+                    "Language models",
+                    "Choose what your agents use for chat and tools.",
+                    cx,
+                ))
+                .child(list(
+                    [
+                        model_line(
+                            "Active model",
+                            "",
+                            div()
+                                .body()
+                                .font_weight(FontWeight::MEDIUM)
+                                .truncate()
+                                .child(model),
+                            cx,
+                        ),
+                        context_line(ws, cx),
+                        model_line(
+                            "Use a model by name",
+                            "For providers that don't list their models.",
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(div().flex_1().min_w_0().child(Input::new(&ws.model_input)))
+                                .child(
+                                    Button::new("model-use").outline().label("Use").on_click(
+                                        cx.listener(|ws, _, _, cx| ws.use_typed_model(cx)),
+                                    ),
+                                ),
+                            cx,
+                        ),
+                    ],
+                    cx,
+                )),
+        )
+        .child(super::providers::render(ws, cx))
+}
+
+fn model_line(label: &str, hint: &str, control: Div, cx: &App) -> Div {
+    let names = div()
+        .flex_1()
+        .flex_basis(px(140.))
+        .min_w_0()
+        .child(div().body().child(label.to_owned()));
+    let names = if hint.is_empty() {
+        names
+    } else {
+        names.child(
+            div()
+                .small()
+                .text_color(cx.theme().muted_foreground)
+                .child(hint.to_owned()),
+        )
+    };
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_x_4()
+        .gap_y_2()
+        .px_4()
+        .py_3()
+        .child(names)
+        .child(control.flex_1().flex_basis(px(260.)).min_w_0())
 }
 
 /// How much of the model's window a request may fill: the model's own, or a fixed size.
@@ -251,7 +335,7 @@ fn context_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .into_iter()
             .map(|preset| (preset.name(), ContextPolicy::Fixed(preset))),
     );
-    let mut row = div().flex().flex_row().gap_1();
+    let mut row = div().flex().flex_wrap().gap_1();
     for (label, policy) in choices {
         let button = Button::new(SharedString::from(format!("context-{label}")))
             .compact()
@@ -259,16 +343,12 @@ fn context_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .on_click(cx.listener(move |ws, _, _, cx| ws.set_context_policy(policy, cx)));
         row = row.child(controls::choice(button, policy == current, cx));
     }
-    // The size in force stands in the hint: Auto alone does not say what the model has.
-    let hint = format!(
-        "The largest request, now {} tokens: the model's own window, or a fixed size",
-        match ws.status.input_limit {
-            // Whole thousands read as 128k, not 128.0k.
-            limit if limit % 1000 == 0 && limit < 1_000_000 => format!("{}k", limit / 1000),
-            limit => widgets::short(limit),
-        }
-    );
-    line("Context window", &hint, cx).child(row)
+    let limit = match ws.status.input_limit {
+        limit if limit % 1000 == 0 && limit < 1_000_000 => format!("{}k", limit / 1000),
+        limit => widgets::short(limit),
+    };
+    let hint = format!("{limit} tokens per request");
+    model_line("Context window", &hint, row, cx)
 }
 
 /// A size in characters as a few steps; one the config holds beside them shows as it is.
@@ -299,14 +379,17 @@ fn size_line(
     line(label, hint, cx).child(row)
 }
 
-#[derive(Clone, Copy)]
-enum Limit {
+#[derive(Clone, Copy, PartialEq)]
+pub enum Limit {
     Agents,
     Rounds,
+    Timeout,
+    Attempts,
 }
 
 /// A limit's number with a minus and a plus, kept inside its bounds.
 fn stepper(
+    ws: &Workspace,
     id: &'static str,
     value: u64,
     (min, max): (u64, u64),
@@ -316,7 +399,62 @@ fn stepper(
     let less =
         cx.listener(move |ws, _, _, cx| ws.set_limit(limit, value.saturating_sub(1).max(min), cx));
     let more = cx.listener(move |ws, _, _, cx| ws.set_limit(limit, (value + 1).min(max), cx));
-    controls::stepper(id, value, (min, max), less, more, cx)
+    let middle = if ws.limit_edit.limit == Some((limit, (min, max))) {
+        div()
+            .w(px(64.))
+            // Escape leaves the number as it was; the input itself only lets it pass.
+            .capture_key_down(cx.listener(|ws, event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" {
+                    ws.limit_edit.limit = None;
+                    cx.notify();
+                }
+            }))
+            .child(Input::new(&ws.limit_edit.input).appearance(false))
+            .into_any_element()
+    } else {
+        div()
+            .id(SharedString::from(format!("{id}-value")))
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_text()
+            .child(value.to_string())
+            .on_click(cx.listener(move |ws, _, window, cx| {
+                ws.limit_edit.limit = Some((limit, (min, max)));
+                ws.limit_edit.input.update(cx, |input, cx| {
+                    input.set_value(value.to_string(), window, cx);
+                    input.focus(window, cx);
+                });
+                cx.notify();
+            }))
+            .into_any_element()
+    };
+    controls::stepper(id, value, (min, max), middle, less, more, cx)
+}
+
+/// The limit whose number is being typed, with its bounds, and the box it is typed in.
+pub struct LimitEdit {
+    pub limit: Option<(Limit, (u64, u64))>,
+    pub input: Entity<InputState>,
+}
+
+impl LimitEdit {
+    pub fn new(window: &mut Window, cx: &mut App) -> Self {
+        Self {
+            limit: None,
+            input: cx.new(|cx| InputState::new(window, cx)),
+        }
+    }
+}
+
+/// The typed number held to the bounds the minus and plus keep; none for what is not a
+/// number.
+fn typed_limit(text: &str, (min, max): (u64, u64)) -> Option<u64> {
+    text.trim()
+        .parse::<u64>()
+        .ok()
+        .map(|value| value.clamp(min, max))
 }
 
 /// The switch that serves this core to browsers on this machine, with its port.
@@ -538,6 +676,18 @@ impl Workspace {
         );
     }
 
+    /// Enter or leaving the box sets the typed number; text that is no number changes
+    /// nothing.
+    pub fn commit_limit(&mut self, cx: &mut Context<Self>) {
+        let Some((limit, bounds)) = self.limit_edit.limit.take() else {
+            return;
+        };
+        cx.notify();
+        if let Some(value) = typed_limit(self.limit_edit.input.read(cx).value().as_ref(), bounds) {
+            self.set_limit(limit, value, cx);
+        }
+    }
+
     fn set_limit(&mut self, limit: Limit, value: u64, cx: &mut Context<Self>) {
         self.core.call(
             cx,
@@ -545,6 +695,8 @@ impl Workspace {
                 match limit {
                     Limit::Agents => client.settings().max_agents_at_work(value as usize).await,
                     Limit::Rounds => client.settings().max_goal_rounds(value as u32).await,
+                    Limit::Timeout => client.settings().model_timeout(value as u32).await,
+                    Limit::Attempts => client.settings().max_attempts(value as u32).await,
                 }
             },
             |ws, result, cx| match result {

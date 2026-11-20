@@ -8,10 +8,12 @@ use std::{
 };
 
 use anyhow::Result;
+use parking_lot::Mutex;
 use serde_json::Value;
 use tracing::info;
 
 use super::{
+    Shaped,
     schema::Check,
     scope::ToolScope,
     tool::{Progress, Tool, ToolContext, ToolKind},
@@ -25,7 +27,7 @@ use crate::{
 pub use dusk_protocol::tools::ToolResult;
 
 /// The model reads every result; a runaway one must not flood its context.
-const MAX_RESULT_BYTES: usize = 64 * 1024;
+pub(super) const MAX_RESULT_BYTES: usize = 64 * 1024;
 
 #[derive(Default)]
 pub struct ToolRegistry {
@@ -44,6 +46,9 @@ pub struct ToolRegistry {
     pub(crate) state: Option<Arc<crate::state::State>>,
     /// The thread these tools run for; its own mode applies.
     pub(crate) thread_id: String,
+    /// With `limits.stable_prefix`, each description as this thread first showed it, so
+    /// the start of its requests stays byte-identical and the provider's cache holds.
+    shown: Mutex<BTreeMap<String, String>>,
 }
 
 impl ToolRegistry {
@@ -74,7 +79,11 @@ impl ToolRegistry {
     pub fn add(&mut self, tool: Box<dyn Tool>) {
         // This name belongs to the core tool, including when an MCP server attempts
         // to expose a colliding name in a child thread.
-        if matches!(tool.name(), "display_image" | "display_audio") && !tool.root_only() {
+        if matches!(
+            tool.name(),
+            "display_image" | "display_audio" | dusk_protocol::plugin::SUGGEST_TOOL
+        ) && !tool.root_only()
+        {
             return;
         }
         let name = tool.name().to_owned();
@@ -97,6 +106,27 @@ impl ToolRegistry {
 
     pub fn kind_of(&self, name: &str) -> Option<ToolKind> {
         self.tools.get(name).map(|tool| tool.kind())
+    }
+
+    /// Whether the call may simply run again after its result was lost; an unknown tool
+    /// is never repeated.
+    pub fn repeatable(&self, name: &str, arguments: &Value) -> bool {
+        self.tools
+            .get(name)
+            .is_some_and(|tool| tool.repeatable(arguments))
+    }
+
+    /// The result of a call as the model is to be sent it, when the tool shapes it.
+    pub fn shape(&self, name: &str, arguments: &Value, result: &ToolResult) -> Option<Shaped> {
+        self.tools.get(name)?.shape(arguments, result)
+    }
+
+    /// Whether the call only reads, so it may run with the read-only calls next to it;
+    /// an unknown tool never does.
+    pub fn read_only(&self, name: &str, arguments: &Value) -> bool {
+        self.tools
+            .get(name)
+            .is_some_and(|tool| tool.read_only(arguments))
     }
 
     /// The skill a successful `load_skill` call named; `None` for other tools or when
@@ -123,6 +153,41 @@ impl ToolRegistry {
             .collect();
         kinds.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
         kinds
+    }
+
+    /// The calls `name` runs inside it, for hooks to judge one by one; empty for a tool
+    /// that runs none or arguments that do not parse, which the call itself refuses.
+    pub fn calls_within(&self, name: &str, arguments: &Value) -> Vec<(String, Value)> {
+        self.tools
+            .get(name)
+            .and_then(|tool| tool.calls_within(arguments).ok())
+            .unwrap_or_default()
+    }
+
+    /// A call inside another is refused as it would be alone: a tool switched off in the
+    /// mode does not run because a batch names it.
+    fn check_within(
+        &self,
+        tool: &dyn Tool,
+        arguments: &Value,
+        config: &Config,
+    ) -> std::result::Result<(), String> {
+        let within = tool
+            .calls_within(arguments)
+            .map_err(|error| format!("{error:#}"))?;
+        for (index, (name, _)) in within.iter().enumerate() {
+            let on = self
+                .tools
+                .get(name.as_str())
+                .is_some_and(|inner| self.enabled(inner.as_ref(), config));
+            if !on {
+                return Err(format!(
+                    "step {} ({name}) is switched off, so no step ran",
+                    index + 1
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn enabled(&self, tool: &dyn Tool, config: &Config) -> bool {
@@ -170,15 +235,40 @@ impl ToolRegistry {
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
         };
+        let stable = config.limits().stable_prefix;
         self.tools
             .values()
             .filter(|tool| self.enabled(tool.as_ref(), config) && tool.available(&context))
             .map(|tool| ToolSpec {
                 name: tool.name().to_owned(),
-                description: tool.description(&context),
-                parameters: tool.parameters(),
+                description: self.description(tool.as_ref(), &context, stable),
+                parameters: tool.offered_parameters(&context),
             })
             .collect()
+    }
+
+    /// What the model reads of `tool`: as it is now, or with `stable` as first shown.
+    fn description(&self, tool: &dyn Tool, context: &ToolContext, stable: bool) -> String {
+        if !stable {
+            return tool.description(context);
+        }
+        if let Some(shown) = self.shown.lock().get(tool.name()) {
+            return shown.clone();
+        }
+        // Rendered outside the lock: a description may read files.
+        let description = tool.description(context);
+        let mut shown = self.shown.lock();
+        shown
+            .entry(tool.name().to_owned())
+            .or_insert(description)
+            .clone()
+    }
+
+    /// Descriptions are rendered anew from the next request. A compaction calls it: the
+    /// calls that showed the model what changed are summarized away, and its new context
+    /// is read cold anyway.
+    pub fn refresh_descriptions(&self) {
+        self.shown.lock().clear();
     }
 
     /// Never fails: an unknown, switched-off or failed call becomes an error result for
@@ -215,6 +305,9 @@ impl ToolRegistry {
         {
             info!("tool {} called with invalid arguments", call.name);
             return error_result(problems);
+        }
+        if let Err(problem) = self.check_within(tool.as_ref(), &arguments, config) {
+            return error_result(problem);
         }
         let context = ToolContext {
             scope: Arc::clone(scope),
@@ -261,11 +354,7 @@ fn bounded(mut content: String) -> String {
         return "(no output)".into();
     }
     if content.len() > MAX_RESULT_BYTES {
-        let mut end = MAX_RESULT_BYTES;
-        while !content.is_char_boundary(end) {
-            end -= 1;
-        }
-        content.truncate(end);
+        content.truncate(content.floor_char_boundary(MAX_RESULT_BYTES));
         content.push_str("\n[output truncated]");
     }
     content
@@ -280,8 +369,8 @@ mod tests {
         state::artifacts::ArtifactStore,
         testing::{temp_dir, temp_state},
         tools::{
-            AgentState, AskUser, DisplayImage, GoalTool, NameSession, PlanEdit, ReadHistory,
-            Remember, Tasks,
+            AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Show,
+            SuggestNext, Tasks,
         },
     };
 
@@ -327,6 +416,86 @@ mod tests {
         assert_eq!(registry.kinds().len(), 1);
     }
 
+    /// A batch cannot run a tool the mode switched off: refused before anything is asked.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[tokio::test]
+    async fn a_batch_step_switched_off_refuses_the_batch() {
+        use crate::tools::{ComputerActions, PressKeys, Screen, TypeText};
+        let dir = temp_dir("registry_batch_switch");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = Arc::new(ToolScope::new(&dir, &dir).unwrap());
+        let mut config = (*crate::testing::tool_context(&scope).config).clone();
+        for (name, on) in [
+            ("computer_actions", true),
+            ("press_keys", true),
+            ("type_text", false),
+        ] {
+            config.set_tool_enabled(name, on);
+        }
+        let config = Arc::new(config);
+        let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
+        let mut registry = ToolRegistry {
+            root: true,
+            ..ToolRegistry::default()
+        };
+        registry.platform.gui = true;
+        registry.add(Box::new(ComputerActions(Arc::clone(&screen))));
+        registry.add(Box::new(PressKeys(Arc::clone(&screen))));
+        registry.add(Box::new(TypeText(screen)));
+        let call = ToolCall {
+            id: "c".into(),
+            name: "computer_actions".into(),
+            arguments: serde_json::json!({"steps": [
+                {"tool": "press_keys", "arguments": {"keys": "enter"}},
+                {"tool": "type_text", "arguments": {"text": "hi"}},
+            ]}),
+        };
+        let (events, mut asked) = tokio::sync::mpsc::unbounded_channel();
+        let progress = Progress {
+            call_id: "c".into(),
+            events,
+        };
+        let result = registry.call(&call, &scope, &config, progress).await;
+        assert!(result.is_error);
+        assert!(
+            result
+                .content
+                .contains("step 2 (type_text) is switched off"),
+            "{}",
+            result.content
+        );
+        assert!(asked.try_recv().is_err(), "nothing may be asked");
+    }
+
+    /// The real pointer is never offered until the user switches it on, in any mode.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn physical_input_is_offered_only_when_switched_on() {
+        use crate::tools::{PhysicalInput, Screen};
+        let dir = temp_dir("registry_physical");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = Arc::new(ToolScope::new(&dir, &dir).unwrap());
+        let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
+        let mut registry = ToolRegistry {
+            root: true,
+            ..ToolRegistry::default()
+        };
+        registry.platform.gui = true;
+        registry.add(Box::new(PhysicalInput(screen)));
+        let mut config = (*crate::testing::tool_context(&scope).config).clone();
+        let offered = |config: &crate::config::Config| {
+            registry
+                .specs(&scope, &Arc::new(config.clone()))
+                .iter()
+                .any(|spec| spec.name == "physical_input")
+        };
+        assert!(!offered(&config), "off by default");
+        config.set_mode_tool_enabled("plan", "physical_input", true);
+        assert!(offered(&config), "the switch is one for every mode");
+        config.set_tool_enabled("physical_input", false);
+        assert!(!offered(&config));
+    }
+
     /// Providers reject a schema that is not one plain object at the top.
     #[tokio::test]
     async fn every_schema_is_one_object_providers_accept() {
@@ -335,29 +504,32 @@ mod tests {
         let mut tools: Vec<Box<dyn Tool>> = super::super::builtin::all(&dir);
         tools.push(Box::new(Tasks::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(GoalTool::new(Arc::clone(&state), "t".into())));
-        tools.push(Box::new(NameSession::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(PlanEdit::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(ReadHistory::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(Remember::user(dir.clone())));
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
+        tools.push(Box::new(Show));
+        let paths = crate::init::paths::Paths::new(dir.join("config"), dir.join("work"));
+        tools.push(Box::new(crate::tools::SearchWorkshop::new(paths.clone())));
+        tools.push(Box::new(crate::tools::SuggestFromWorkshop::new(paths)));
+        tools.push(Box::new(SuggestNext));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
+            use crate::tools::{
+                Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
+            };
             let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
             tools.push(Box::new(Screenshot(Arc::clone(&screen))));
             tools.push(Box::new(Click(Arc::clone(&screen))));
-            tools.push(Box::new(Scroll(Arc::clone(&screen))));
+            tools.push(Box::new(PhysicalInput(Arc::clone(&screen))));
             tools.push(Box::new(TypeText(Arc::clone(&screen))));
             tools.push(Box::new(PressKeys(Arc::clone(&screen))));
+            tools.push(Box::new(ComputerActions(Arc::clone(&screen))));
             #[cfg(target_os = "macos")]
             tools.push(Box::new(crate::tools::WindowSession(screen)));
         }
-        #[cfg(target_os = "macos")]
-        tools.push(Box::new(crate::tools::IosSimulator(ArtifactStore::new(
-            dir.clone(),
-        ))));
         for tool in tools {
             let schema = tool.parameters();
             let name = tool.name();

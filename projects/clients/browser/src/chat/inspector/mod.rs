@@ -1,7 +1,10 @@
 //! The right column of a chat: its plan and tasks, subagents, changed files, background
-//! jobs and what the context holds.
+//! jobs and the Overview of how the work stands.
 
-use crate::state::{View, state};
+use crate::{
+    state::{View, state},
+    ui::{Icon, IconName},
+};
 use leptos::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -11,22 +14,24 @@ enum Tab {
     Agents,
     Changes,
     Jobs,
-    Context,
+    Overview,
 }
 
-const TABS: [(Tab, &str); 6] = [
-    (Tab::Plan, "Plan"),
-    (Tab::Tasks, "Tasks"),
-    (Tab::Agents, "Agents"),
-    (Tab::Changes, "Changes"),
-    (Tab::Jobs, "Jobs"),
-    (Tab::Context, "Context"),
+const TABS: [(Tab, &str, IconName); 6] = [
+    (Tab::Plan, "Plan", IconName::Map),
+    (Tab::Tasks, "Tasks", IconName::CircleCheck),
+    (Tab::Agents, "Agents", IconName::Bot),
+    (Tab::Changes, "Changes", IconName::FileText),
+    (Tab::Jobs, "Jobs", IconName::SquareTerminal),
+    (Tab::Overview, "Overview", IconName::LayoutDashboard),
 ];
 
 #[component]
 pub fn Inspector() -> impl IntoView {
     let app = state();
     let tab = RwSignal::new(Tab::Tasks);
+    // The Overview opened wide.
+    let wide = RwSignal::new(false);
     // Only an open chat has anything to inspect.
     let thread = move || match app.view.get() {
         View::Chat(Some(id)) => Some(id),
@@ -35,11 +40,13 @@ pub fn Inspector() -> impl IntoView {
     move || {
         let id = thread()?;
         Some(view! {
-            <aside class="inspector">
+            <aside class="inspector" class:wide=move || wide.get() && tab.get() == Tab::Overview>
                 <div class="tabs">
-                    {TABS.map(|(t, label)| view! {
-                        <button class="tab" class:active=move || tab.get() == t on:click=move |_| tab.set(t)>
-                            {label}
+                    {TABS.map(|(t, label, icon)| view! {
+                        <button class="tab" class:active=move || tab.get() == t
+                            aria-pressed=move || if tab.get() == t { "true" } else { "false" }
+                            on:click=move |_| tab.set(t)>
+                            <Icon name=icon />{label}
                         </button>
                     })}
                 </div>
@@ -50,7 +57,7 @@ pub fn Inspector() -> impl IntoView {
                         Tab::Agents => view! { <AgentsTab id=id.clone() /> }.into_any(),
                         Tab::Changes => view! { <ChangesTab id=id.clone() /> }.into_any(),
                         Tab::Jobs => view! { <JobsTab id=id.clone() /> }.into_any(),
-                        Tab::Context => view! { <ContextTab id=id.clone() /> }.into_any(),
+                        Tab::Overview => view! { <OverviewTab id=id.clone() wide=wide /> }.into_any(),
                     }}
                 </div>
             </aside>
@@ -62,12 +69,13 @@ mod agents;
 mod changes;
 mod context;
 mod jobs;
+mod overview;
 mod plan;
 mod tasks;
 
 use agents::AgentsTab;
 use changes::ChangesTab;
-use context::ContextTab;
 use jobs::JobsTab;
+use overview::OverviewTab;
 use plan::PlanTab;
 use tasks::TasksTab;

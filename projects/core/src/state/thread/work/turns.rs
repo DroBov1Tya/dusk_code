@@ -12,19 +12,48 @@ use uuid::Uuid;
 
 use super::{
     Message, State,
-    messages::{NewMessage, insert_message},
+    failure::{TurnFailure, columns},
+    messages::{NewMessage, insert_message, read_tokens},
+    resume::LOST,
     timestamp_ms,
+    waits::decode_wait,
 };
 use crate::providers::ToolCall;
 
-pub use dusk_protocol::thread::{Turn, TurnStatus};
+pub use dusk_protocol::thread::{Turn, TurnSpend, TurnStatus};
+
+/// The columns of a turn: its row and what its model calls spent, read beside it so every
+/// turn loaded carries its totals. Steps are the calls that answered; tokens and cost
+/// count every call of the turn, a compaction inside it too.
+macro_rules! turn_row {
+    () => {
+        "*, (SELECT COUNT(*) FROM model_usage u WHERE u.thread_id = turns.thread_id
+                AND u.purpose = 'answer' AND u.turn_id = turns.turn_id) AS steps,
+            (SELECT COALESCE(SUM(u.prompt_tokens + u.completion_tokens), 0) FROM model_usage u
+                WHERE u.thread_id = turns.thread_id AND u.turn_id = turns.turn_id) AS tokens,
+            (SELECT COALESCE(SUM(u.cost_micro_usd), 0) FROM model_usage u
+                WHERE u.thread_id = turns.thread_id AND u.turn_id = turns.turn_id)
+                AS cost_micro_usd"
+    };
+}
+pub(super) use turn_row;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TurnOutcome {
     Completed(TurnAnswer),
     Interrupted(Option<TurnAnswer>),
-    Failed(String),
+    Failed(TurnFailure),
+}
+
+impl TurnOutcome {
+    /// A turn that failed on something other than a model call.
+    pub fn failed(error: impl Into<String>) -> Self {
+        Self::Failed(TurnFailure {
+            error: error.into(),
+            provider: None,
+        })
+    }
 }
 
 /// What the agent wrote, stored as an assistant message.
@@ -60,13 +89,15 @@ impl State {
     /// The database allows one running turn per thread, so a second start fails.
     pub async fn start_turn(&self, thread_id: &str) -> Result<Option<Turn>> {
         let timestamp = timestamp_ms()?;
-        let row = sqlx::query(
+        let row = sqlx::query(concat!(
             "INSERT INTO turns (turn_id, thread_id, last_sequence, status, started_at)
              SELECT ?, ?, MAX(sequence), 'running', ? FROM messages
              WHERE thread_id = ? AND (role = 'user' OR from_job_id IS NOT NULL)
                AND sequence > (SELECT COALESCE(MAX(last_sequence), 0) FROM turns WHERE thread_id = ?)
              HAVING COUNT(*) > 0
-             RETURNING *",
+             RETURNING ",
+            turn_row!()
+        )
         )
         .bind(Uuid::now_v7().to_string())
         .bind(thread_id)
@@ -135,14 +166,21 @@ impl State {
                     call.name.as_str(),
                     "goal"
                         | "read_file"
+                        | "changes"
                         | "search_files"
                         | "read_history"
+                        | "recall"
+                        | "project_graph"
                         | "load_skill"
                         | "display_image"
                         | "display_audio"
+                        | "show"
+                        | "search_workshop"
+                        | "suggest_from_workshop"
                         | "tasks"
                         | "remember"
                         | "ask_user"
+                        | "suggest_next"
                         | "jobs"
                 );
                 if !approved_check && !read_only {
@@ -214,7 +252,7 @@ impl State {
         let turn = read_running_turn(&mut transaction, turn_id).await?;
         let open = open_calls(&mut transaction, &turn.thread_id).await?;
         ensure!(
-            open.iter().any(|open| open == call_id),
+            open.iter().any(|open| open.id == call_id),
             "tool call {call_id} is not waiting for a result"
         );
         let new = NewMessage::tool(call_id.to_owned(), content).with_artifacts(artifacts);
@@ -240,12 +278,30 @@ impl State {
         Ok(message)
     }
 
+    /// What the turn's model calls spent so far, for its progress after each call.
+    pub async fn turn_spend(&self, turn_id: &str) -> Result<TurnSpend> {
+        let row = sqlx::query(concat!(
+            "SELECT ",
+            turn_row!(),
+            " FROM turns WHERE turn_id = ?"
+        ))
+        .bind(turn_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("load the turn's spend")?;
+        Ok(TurnSpend::of(&decode_turn(row)?))
+    }
+
     /// Records how a running turn ended, together with its answer message.
     pub async fn finish_turn(&self, turn_id: &str, outcome: TurnOutcome) -> Result<Turn> {
-        let (status, answer, error) = match outcome {
+        let (status, answer, failure) = match outcome {
             TurnOutcome::Completed(answer) => (TurnStatus::Completed, Some(answer), None),
             TurnOutcome::Interrupted(answer) => (TurnStatus::Interrupted, answer, None),
-            TurnOutcome::Failed(error) => (TurnStatus::Failed, None, Some(error)),
+            TurnOutcome::Failed(failure) => (TurnStatus::Failed, None, Some(failure)),
+        };
+        let (kind, attempts) = match &failure {
+            Some(failure) => columns(failure)?,
+            None => (None, None),
         };
         let timestamp = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin turn finish")?;
@@ -262,14 +318,18 @@ impl State {
             }
             None => None,
         };
-        let row = sqlx::query(
+        let row = sqlx::query(concat!(
             "UPDATE turns SET status = ?, response_message_id = ?, error_message = ?,
-                finished_at = MAX(started_at, ?)
-             WHERE turn_id = ? RETURNING *",
-        )
+                error_kind = ?, attempts = ?, finished_at = MAX(started_at, ?),
+                waiting_for = NULL, waiting_since = NULL, wake_at = NULL
+             WHERE turn_id = ? RETURNING ",
+            turn_row!()
+        ))
         .bind(status.as_str())
         .bind(message.as_ref().map(|message| &message.message_id))
-        .bind(error)
+        .bind(failure.map(|failure| failure.error))
+        .bind(kind)
+        .bind(attempts)
         .bind(timestamp)
         .bind(turn_id)
         .fetch_one(&mut *transaction)
@@ -280,34 +340,44 @@ impl State {
         Ok(turn)
     }
 
-    /// A process that stopped mid-turn leaves it running; mark such turns interrupted.
-    /// A tool that was running then may or may not have taken effect, and its result says so.
-    pub async fn interrupt_running_turns(&self, thread_id: &str) -> Result<()> {
-        let timestamp = timestamp_ms()?;
+    /// A process that stopped mid-turn leaves it running; mark such a turn interrupted and
+    /// return it. A tool that was running then may have taken effect and may still run,
+    /// and its result says so.
+    pub async fn interrupt_running_turns(&self, thread_id: &str) -> Result<Option<Turn>> {
         let mut transaction = self.pool.begin().await.context("begin recovery")?;
-        let lost = "no result: the process stopped while this call ran, so it may or may not \
-                    have taken effect";
-        close_open_calls(&mut transaction, thread_id, lost, timestamp).await?;
-        sqlx::query(
-            "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?)
-             WHERE thread_id = ? AND status = 'running'",
-        )
-        .bind(timestamp)
-        .bind(thread_id)
-        .execute(&mut *transaction)
-        .await
-        .context("interrupt running turns")?;
+        let turn = interrupt(&mut transaction, thread_id).await?;
         transaction.commit().await.context("commit recovery")?;
-        Ok(())
+        Ok(turn)
     }
+}
+
+/// Interrupts the thread's running turn, if any, inside the caller's transaction.
+pub(super) async fn interrupt(
+    transaction: &mut Transaction<'_, Sqlite>,
+    thread_id: &str,
+) -> Result<Option<Turn>> {
+    let timestamp = timestamp_ms()?;
+    close_open_calls(transaction, thread_id, LOST, timestamp).await?;
+    let row = sqlx::query(concat!(
+        "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?),
+            waiting_for = NULL, waiting_since = NULL, wake_at = NULL
+         WHERE thread_id = ? AND status = 'running' RETURNING ",
+        turn_row!()
+    ))
+    .bind(timestamp)
+    .bind(thread_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .context("interrupt running turns")?;
+    row.map(decode_turn).transpose()
 }
 
 /// Calls of the thread's newest tool step that have no result yet, in call order. Older
 /// steps are always complete: the next step only starts once every call has a result.
-async fn open_calls(
+pub(super) async fn open_calls(
     transaction: &mut Transaction<'_, Sqlite>,
     thread_id: &str,
-) -> Result<Vec<String>> {
+) -> Result<Vec<ToolCall>> {
     let step = sqlx::query(
         "SELECT sequence, tool_calls_json FROM messages
          WHERE thread_id = ? AND tool_calls_json IS NOT NULL ORDER BY sequence DESC LIMIT 1",
@@ -333,8 +403,7 @@ async fn open_calls(
     .context("load tool results")?;
     Ok(calls
         .into_iter()
-        .map(|call| call.id)
-        .filter(|id| !answered.contains(id))
+        .filter(|call| !answered.contains(&call.id))
         .collect())
 }
 
@@ -344,36 +413,78 @@ async fn close_open_calls(
     result: &str,
     timestamp: i64,
 ) -> Result<()> {
-    for call_id in open_calls(transaction, thread_id).await? {
-        let new = NewMessage::tool(call_id.clone(), result.to_owned());
-        let message = insert_message(transaction, thread_id, &new, None, timestamp).await?;
-        sqlx::query(
-            "UPDATE tool_executions SET outcome = 'unknown', result_message_id = ?
-            WHERE thread_id = ? AND call_id = ? AND outcome = 'pending'",
+    for call in open_calls(transaction, thread_id).await? {
+        close_call(
+            transaction,
+            thread_id,
+            &call.id,
+            result,
+            "unknown",
+            timestamp,
         )
-        .bind(message.message_id)
-        .bind(thread_id)
-        .bind(call_id)
-        .execute(&mut **transaction)
         .await?;
     }
     Ok(())
 }
 
-async fn read_running_turn(
+/// Gives an open call the result it ends with when it did not run to its end.
+pub(super) async fn close_call(
+    transaction: &mut Transaction<'_, Sqlite>,
+    thread_id: &str,
+    call_id: &str,
+    result: &str,
+    outcome: &str,
+    timestamp: i64,
+) -> Result<()> {
+    let new = NewMessage::tool(call_id.to_owned(), result.to_owned());
+    let message = insert_message(transaction, thread_id, &new, None, timestamp).await?;
+    sqlx::query(
+        "UPDATE tool_executions SET outcome = ?, result_message_id = ?
+        WHERE thread_id = ? AND call_id = ? AND outcome = 'pending'",
+    )
+    .bind(outcome)
+    .bind(message.message_id)
+    .bind(thread_id)
+    .bind(call_id)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+impl State {
+    /// The newest turn of a thread, however it stands; `None` before its first.
+    pub async fn last_turn(&self, thread_id: &str) -> Result<Option<Turn>> {
+        let row = sqlx::query(concat!(
+            "SELECT ",
+            turn_row!(),
+            " FROM turns WHERE thread_id = ? ORDER BY started_at DESC, turn_id DESC LIMIT 1"
+        ))
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("load the newest turn")?;
+        row.map(decode_turn).transpose()
+    }
+}
+
+pub(super) async fn read_running_turn(
     transaction: &mut Transaction<'_, Sqlite>,
     turn_id: &str,
 ) -> Result<Turn> {
-    let row = sqlx::query("SELECT * FROM turns WHERE turn_id = ? AND status = 'running'")
-        .bind(turn_id)
-        .fetch_optional(&mut **transaction)
-        .await
-        .context("load running turn")?
-        .context("turn is not running")?;
+    let row = sqlx::query(concat!(
+        "SELECT ",
+        turn_row!(),
+        " FROM turns WHERE turn_id = ? AND status = 'running'"
+    ))
+    .bind(turn_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .context("load running turn")?
+    .context("turn is not running")?;
     decode_turn(row)
 }
 
-fn decode_turn(row: SqliteRow) -> Result<Turn> {
+pub(super) fn decode_turn(row: SqliteRow) -> Result<Turn> {
     let status: String = row.try_get("status")?;
     let status = match status.as_str() {
         "running" => TurnStatus::Running,
@@ -383,6 +494,7 @@ fn decode_turn(row: SqliteRow) -> Result<Turn> {
         _ => bail!("invalid stored turn status"),
     };
     let last_sequence: i64 = row.try_get("last_sequence")?;
+    let waiting = decode_wait(&row)?;
     Ok(Turn {
         turn_id: row.try_get("turn_id")?,
         thread_id: row.try_get("thread_id")?,
@@ -392,6 +504,12 @@ fn decode_turn(row: SqliteRow) -> Result<Turn> {
         started_at: row.try_get("started_at")?,
         finished_at: row.try_get("finished_at")?,
         error_message: row.try_get("error_message")?,
+        waiting,
+        steps: read_tokens(&row, "steps")?
+            .try_into()
+            .context("too many steps")?,
+        tokens: read_tokens(&row, "tokens")?,
+        cost_micro_usd: read_tokens(&row, "cost_micro_usd")?,
     })
 }
 
@@ -399,6 +517,15 @@ fn decode_turn(row: SqliteRow) -> Result<Turn> {
 mod tests {
     use super::*;
     use crate::{state::MessageRole, testing::temp_state};
+
+    #[tokio::test]
+    async fn a_turn_reads_its_spend_by_the_turn_index() {
+        let state = temp_state("turn_spend_plan").await;
+        let sql = concat!("EXPLAIN QUERY PLAN SELECT ", turn_row!(), " FROM turns");
+        let plan = crate::testing::query_plan(&state, sql).await;
+        assert!(!plan.contains("SCAN u"), "{plan}");
+        assert!(plan.contains("model_usage_turn"), "{plan}");
+    }
 
     async fn thread(name: &str) -> State {
         let state = temp_state(name).await;
@@ -473,7 +600,7 @@ mod tests {
         let result = messages.last().unwrap();
         assert_eq!(result.tool_call_id.as_deref(), Some("call_1"));
         assert!(
-            result.content.contains("may or may not"),
+            result.content.contains("may still be running"),
             "{}",
             result.content
         );

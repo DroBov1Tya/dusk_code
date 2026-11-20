@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::client::Secret;
-use crate::config::{ApprovalPolicy, ContextPolicy, ProviderKind, VoiceSettings};
+use crate::config::{ApprovalPolicy, Arbiter, ContextPolicy, ProviderKind, VoiceSettings};
 /// What `/settings` changes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SettingsRequest {
     /// Answers with the input limit it gives.
@@ -13,6 +14,10 @@ pub enum SettingsRequest {
     /// Answers with the minutes saved, after the config's bounds.
     IdleScreenMinutes(u32),
     MaxGoalRounds(u32),
+    /// Answers with the seconds saved, after the config's bounds.
+    ModelTimeout(u32),
+    /// Answers with the tries saved, after the config's bounds.
+    MaxAttempts(u32),
     MemoryChars(usize),
     /// Answers with the characters saved, after the config's bounds.
     WorkHistoryChars(usize),
@@ -22,6 +27,8 @@ pub enum SettingsRequest {
     },
     /// The version control branch prefix; empty adds none.
     BranchPrefix(String),
+    /// How auto mode's arbiter judges; empty fields go back to the defaults.
+    Arbiter(Arbiter),
     /// Answers with the mode switched to.
     NextMode,
     /// Switches to the mode of this name.
@@ -71,6 +78,12 @@ pub enum SettingsRequest {
         name: String,
         enabled: bool,
     },
+    /// Chooses the plugin a contract goes to for one host.
+    SetContractPlugin {
+        contract: String,
+        host: String,
+        plugin: String,
+    },
     /// Kept in memory for this run only, never in the config file.
     PluginSecret {
         plugin: String,
@@ -80,11 +93,14 @@ pub enum SettingsRequest {
 }
 
 /// What a switch in the settings turns on or off.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Switch {
     Agent(String),
     Tool(String),
     Skill(String),
+    /// A skill pack, by `SkillPack::name`; off hides all its skills.
+    SkillPack(String),
     Mcp(String),
     Memory,
     WorkHistory,
@@ -99,6 +115,7 @@ pub enum Switch {
 }
 
 /// Which provider a check asks: one typed in a form and not saved yet, or a saved one.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderTarget {
     New {

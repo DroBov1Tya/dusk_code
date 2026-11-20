@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::client::Command;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Request {
     Thread(ThreadRequest),
@@ -17,29 +18,40 @@ pub enum Request {
     Voice(VoiceRequest),
     /// The user's own shell in the window; the agents never see it.
     Terminal(TerminalRequest),
-    /// Xcode's iOS Simulator, for the desktop app on macOS.
-    Simulator(SimulatorRequest),
+    /// The parts plugins add to the window.
+    Plugin(PluginRequest),
+    /// The plugin store; it goes to the network, so it is answered beside the loop.
+    Store(crate::plugin::StoreRequest),
     /// Installs release `tag`; progress shows in the status until it is done.
     InstallUpdate {
         tag: String,
     },
-    /// Closes every thread and stops the core; the last request a client sends.
+    /// Closes every thread and stops the core for every attached client; the last
+    /// request a client sends. Full access only.
     Shutdown,
+    /// The clients attached to the core now.
+    Clients,
+    /// Detaches client `id`, closing its events. Full access only.
+    Disconnect {
+        id: u64,
+    },
 }
 
 mod catalog;
+mod git;
+mod plugin;
 mod project;
 mod settings;
-mod simulator;
 mod terminal;
 mod thread;
 mod voice;
 mod work;
 
 pub use catalog::CatalogRequest;
+pub use git::GitRequest;
+pub use plugin::PluginRequest;
 pub use project::ProjectRequest;
 pub use settings::{ProviderTarget, SettingsRequest, Switch};
-pub use simulator::{MAX_SIM_TEXT, SimulatorRequest};
 pub use terminal::{MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE, MAX_TERMINALS, TerminalRequest};
 pub use thread::ThreadRequest;
 pub use voice::{VoiceRequest, wav};

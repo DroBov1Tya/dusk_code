@@ -17,7 +17,7 @@ impl Workspace {
     pub fn notify_event(&mut self, thread_id: &str, event: &ThreadEvent, cx: &mut Context<Self>) {
         let (turn, alerted) = self.alerts.0.entry(thread_id.to_owned()).or_default();
         let body = match event {
-            ThreadEvent::TurnStarted(started) => {
+            ThreadEvent::TurnStarted(started) | ThreadEvent::TurnRunning(started) => {
                 *turn = Some(started.turn_id.clone());
                 *alerted = false;
                 return;

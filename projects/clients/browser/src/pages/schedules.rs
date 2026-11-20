@@ -183,7 +183,7 @@ pub fn Schedules() -> impl IntoView {
                                     <div class="row-control">
                                         {last.map(|thread_id| view! {
                                             <button class="ghost" title="Open the chat of the last run"
-                                                on:click=move |_| app.view.set(View::Chat(Some(thread_id.clone())))>"Last run"</button>
+                                                on:click=move |_| app.show(View::Chat(Some(thread_id.clone())))>"Last run"</button>
                                         })}
                                         <button class="ghost" title="Run it now, in a new chat" on:click=move |_| {
                                             run(api::run_schedule(run_id.clone()), move |_| run(api::schedules(), shown));

@@ -8,15 +8,29 @@
 //! - `catalog` — finding plugins and applying those that are on;
 //! - `install` — their skills and agents in the config folder;
 //! - `hooks` — programs run on thread events;
-//! - `platform` — programs that bring the user in from elsewhere.
+//! - `platform` — programs that bring the user in from elsewhere;
+//! - `ui` — programs that draw parts of the window;
+//! - `isolation` — how every program of a plugin is confined;
+//! - `lines` — reading a plugin program's lines with a hard cap;
+//! - `broker` — a plugin's only way to the network, which holds its keys;
+//! - `contract` — calling a program that serves a contract, once per call;
+//! - `store` — installing plugins from the signed store.
 
+pub mod broker;
 pub mod catalog;
+pub mod contract;
 pub mod hooks;
 mod install;
+pub mod isolation;
+mod lines;
 pub mod manifest;
 pub mod platform;
+pub mod store;
+pub mod ui;
 
 pub use catalog::{PluginInfo, Plugins};
 pub use hooks::Hooks;
+pub use isolation::Isolation;
 pub use manifest::HookEvent;
 pub use platform::Platforms;
+pub use ui::UiHost;

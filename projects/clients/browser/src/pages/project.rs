@@ -4,15 +4,19 @@ use super::review::DiffView;
 use crate::{
     api,
     state::{View, state},
-    ui::{Section, confirm, run},
+    ui::{Icon, IconName, Section, confirm, run},
 };
-use dusk_protocol::project::{FileDiff, FileEntry, GitInfo, Project};
+use dusk_protocol::project::{
+    Check, CheckStage, CheckState, FileDiff, FileEntry, Forge, GitInfo, Project, PullState,
+    PullStatus, RepositoryStatus,
+};
 use leptos::prelude::*;
 
 /// The dialog that adds a project (`Some(None)`) or edits one (`Some(Some(project))`).
 #[component]
 pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoView {
     let app = state();
+    let dialog = NodeRef::<leptos::html::Dialog>::new();
     let (name, description, dir) = (
         RwSignal::new(String::new()),
         RwSignal::new(String::new()),
@@ -33,6 +37,22 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
             );
         }
     });
+    Effect::new(move |_| {
+        if let Some(element) = dialog.get()
+            && element.is_connected()
+            && !element.open()
+            && element.show_modal().is_err()
+        {
+            editing.set(None);
+            app.fail("Could not open the project editor.");
+        }
+    });
+    let dismiss = move || {
+        if let Some(element) = dialog.get_untracked() {
+            element.close();
+        }
+        editing.set(None);
+    };
     let save = move |_| {
         let id = editing.get_untracked().flatten().map(|p| p.id);
         let (n, d, p) = (
@@ -41,7 +61,7 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
             dir.get_untracked(),
         );
         run(api::save_project(id, n, d, p), move |_| {
-            editing.set(None);
+            dismiss();
             app.refresh();
         });
     };
@@ -53,7 +73,7 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
             run(
                 async move { api::remove_project(&project.id).await },
                 move |()| {
-                    editing.set(None);
+                    dismiss();
                     app.refresh();
                 },
             );
@@ -61,10 +81,18 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
     };
     view! {
         <Show when=move || editing.get().is_some()>
-            <div class="overlay" on:click=move |_| editing.set(None)>
+            <dialog class="project-dialog" node_ref=dialog aria-labelledby="project-dialog-title"
+                on:click=move |_| dismiss()
+                on:keydown=move |event| {
+                    event.stop_propagation();
+                    if event.key() == "Escape" {
+                        event.prevent_default();
+                        dismiss();
+                    }
+                }>
                 <div class="dialog" on:click=|ev| ev.stop_propagation()>
-                    <h3>{move || if editing.get().flatten().is_some() { "Edit project" } else { "Add a project" }}</h3>
-                    <label>"Name"<input prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev)) /></label>
+                    <h3 id="project-dialog-title">{move || if editing.get().flatten().is_some() { "Edit project" } else { "Add a project" }}</h3>
+                    <label>"Name"<input autofocus prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev)) /></label>
                     <label>"Folder on the machine running duskcode"
                         <input placeholder="/Users/me/code/app" prop:value=move || dir.get()
                             on:input=move |ev| dir.set(event_target_value(&ev)) /></label>
@@ -73,14 +101,14 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
                             on:input=move |ev| description.set(event_target_value(&ev))></textarea></label>
                     <div class="row-actions">
                         <button class="primary" on:click=save>"Save"</button>
-                        <button class="ghost" on:click=move |_| editing.set(None)>"Cancel"</button>
+                        <button class="ghost" on:click=move |_| dismiss()>"Cancel"</button>
                         <span class="grow"></span>
                         <Show when=move || editing.get().flatten().is_some()>
                             <button class="ghost danger" on:click=remove>"Remove"</button>
                         </Show>
                     </div>
                 </div>
-            </div>
+            </dialog>
         </Show>
     }
 }
@@ -113,9 +141,25 @@ fn GitSection(id: String) -> impl IntoView {
         let id = id.clone();
         move || {
             let id = id.clone();
-            run(async move { api::git(&id).await }, move |git| {
+            let asked = id.clone();
+            run(async move { api::git(&asked).await }, move |git| {
                 info.set(Some(git))
             });
+            let asked = id.clone();
+            run(
+                async move { api::repository_status(&asked).await },
+                move |status| state().repository.set(Some((id, status))),
+            );
+        }
+    };
+    let pulls = {
+        let id = id.clone();
+        move || {
+            state()
+                .repository
+                .get()
+                .filter(|(shown, _)| *shown == id)
+                .map(|(_, status)| status)
         }
     };
     load();
@@ -162,8 +206,113 @@ fn GitSection(id: String) -> impl IntoView {
                     }).collect_view()}</ul>
                 }
             })}
+            {move || pulls().map(|status| view! {
+                <ul class="pulls">
+                    {served_pulls(&status).iter().map(|pull| pull_row(&status.repository, pull)).collect_view()}
+                </ul>
+                {forge_note(&status)}
+            })}
             <DiffView files=diff />
         </Section>
+    }
+}
+
+/// The pull requests the forge serves; none when none does.
+pub fn served_pulls(status: &RepositoryStatus) -> &[PullStatus] {
+    status.forge.served().map_or(&[], |served| &served.pulls)
+}
+
+/// The quiet line when the forge has no pull requests to show: why the core said, how
+/// to sign in (the hint is a command to copy, never run), or that a plugin serves the
+/// host. The offer's button comes with the plugins that make one.
+fn forge_note(status: &RepositoryStatus) -> impl IntoView + use<> {
+    match &status.forge {
+        Forge::SignIn(sign_in) => view! {
+            <p class="muted">{format!("{}: ", sign_in.host)}<code>{sign_in.hint.clone()}</code></p>
+        }
+        .into_any(),
+        Forge::Unserved { host, .. } => view! {
+            <p class="muted">{format!("Pull requests on {host} come from a plugin.")}</p>
+        }
+        .into_any(),
+        forge => {
+            let reason = forge
+                .served()
+                .and_then(|served| served.unavailable.clone())
+                .or_else(|| status.unavailable.clone());
+            reason
+                .map(|reason| view! { <p class="muted">{reason}</p> })
+                .into_any()
+        }
+    }
+}
+
+/// A pull request: its state, title, number and lines, and its checks as a dot and a
+/// "passed/total" count whose click opens the list of every check, as the desktop app
+/// has it. The core gives https links only.
+pub fn pull_row(repository: &str, pull: &PullStatus) -> impl IntoView + use<> {
+    let (tone, state) = match pull.state {
+        PullState::Open => ("tone-success", "open"),
+        PullState::Draft => ("tone-neutral", "draft"),
+        PullState::Merged => ("tone-accent", "merged"),
+        PullState::Closed => ("tone-danger", "closed"),
+    };
+    let dot = pull.checks.state.map(|checks| match checks {
+        CheckState::Passing => "dot on",
+        CheckState::Pending => "dot wait running",
+        CheckState::Failing => "dot off",
+    });
+    let said = format!(
+        "{} checks: {} passed, {} running, {} failed",
+        pull.checks.total, pull.checks.passed, pull.checks.running, pull.checks.failed
+    );
+    let url = Some(pull.url.clone()).filter(|url| url.starts_with("https://"));
+    let open = RwSignal::new(false);
+    let count = format!("{}/{}", pull.checks.passed, pull.checks.total);
+    let list = pull.checks.list.clone();
+    view! {
+        <li>
+            <span class=format!("tone {tone} pull-state")>{state}</span>
+            <a class="pull-title" href=url target="_blank" rel="noopener noreferrer">
+                {pull.title.clone()}
+            </a>
+            <span class="muted">{format!("{repository} #{}", pull.number)}</span>
+            <span class="add">{format!("+{}", pull.added)}</span>
+            <span class="del">{format!("\u{2212}{}", pull.removed)}</span>
+            {dot.map(|dot| view! {
+                <span class="pull-checks">
+                    <button class="pull-count" title=said.clone() aria-label=said.clone()
+                        aria-expanded=move || open.get().to_string()
+                        on:click=move |_| open.update(|o| *o = !*o)>
+                        <span class=dot></span><span class="num">{count.clone()}</span>
+                    </button>
+                    <Show when=move || open.get()>
+                        <div class="checks-pop" on:keydown=move |ev| if ev.key() == "Escape" { open.set(false) }>
+                            <ul>{list.iter().map(check_row).collect_view()}</ul>
+                        </div>
+                    </Show>
+                </span>
+            })}
+        </li>
+    }
+}
+
+/// One check, failed ones first as the core orders them; its page opens in a new tab.
+fn check_row(check: &Check) -> impl IntoView + use<> {
+    let (tone, word) = match check.stage {
+        CheckStage::Failed => ("tone-danger", "failed"),
+        CheckStage::Running => ("tone-warning", "running"),
+        CheckStage::Queued => ("tone-neutral", "queued"),
+        CheckStage::Passed => ("tone-success", "passed"),
+        CheckStage::Skipped => ("tone-neutral", "skipped"),
+    };
+    let url = Some(check.url.clone()).filter(|url| url.starts_with("https://"));
+    view! {
+        <li>
+            <span class=format!("tone {tone}")>{word}</span>
+            <a href=url target="_blank" rel="noopener noreferrer">{check.name.clone()}</a>
+            <span class="muted">{check.workflow.clone()}</span>
+        </li>
     }
 }
 
@@ -238,10 +387,10 @@ fn EnvSection(id: String) -> impl IntoView {
                 {move || names.get().into_iter().map(|n| {
                     let (id, remove) = (id.clone(), n.clone());
                     view! { <li><code>{n}</code>
-                        <button class="icon" on:click=move |_| {
+                        <button class="icon" aria-label=format!("Remove environment variable {remove}") on:click=move |_| {
                             let (id, remove) = (id.clone(), remove.clone());
                             run(async move { api::remove_env(&id, remove).await }, move |list| names.set(list));
-                        }>"×"</button></li> }
+                        }><Icon name=IconName::Close /></button></li> }
                 }).collect_view()}
             </ul>
             <div class="row-actions">
@@ -255,5 +404,5 @@ fn EnvSection(id: String) -> impl IntoView {
 }
 
 pub fn open(id: String) {
-    state().view.set(View::Project(id));
+    state().show(View::Project(id));
 }

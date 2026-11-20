@@ -1,8 +1,8 @@
 //! The rows of each category of the settings list.
 
 use super::lines::{
-    agent_row, bytes, described, indented, manual_context_line, mcp_row, mcp_tool_row,
-    memory_size_row, note, right, skill_row, switch_row,
+    agent_row, described, indented, manual_context_line, mcp_row, mcp_tool_row, memory_size_row,
+    note, right, skill_row, switch_row,
 };
 use super::{Row, SettingsWindow};
 use crate::app::{McpRow, SettingCategory};
@@ -13,6 +13,7 @@ use crate::ui::windows::{
 use dusk_protocol::{
     config::{ApprovalPolicy, ContextPolicy, ContextPreset},
     release::Channel,
+    thread::short_size,
 };
 use ratatui::{
     style::Style,
@@ -319,6 +320,16 @@ impl SettingsWindow<'_> {
                 self.view.max_goal_rounds.to_string(),
                 "    turns a goal starts by itself before it pauses",
             ),
+            row(
+                "model timeout, s",
+                self.view.model_timeout_seconds.to_string(),
+                "    silence a model call waits out before it is given up",
+            ),
+            row(
+                "tries per call",
+                self.view.max_attempts.to_string(),
+                "    attempts of one call that wrote nothing, the first included",
+            ),
         ]
     }
 
@@ -421,9 +432,9 @@ impl SettingsWindow<'_> {
             lead: 0,
         };
         let mut rows = vec![heading("application")];
-        match report.process {
+        match report.total() {
             Some(process) => {
-                rows.push(value("memory in use", bytes(process.resident_bytes)));
+                rows.push(value("memory in use", short_size(process.resident_bytes)));
                 rows.push(value(
                     "processor",
                     format!("{:.1}% of a core", process.cpu_percent),
@@ -433,10 +444,13 @@ impl SettingsWindow<'_> {
         }
         let database = report.database_bytes + report.wal_bytes;
         rows.push(heading("records on disk"));
-        rows.push(value("database", bytes(database)));
-        rows.push(value("  of it, write-ahead log", bytes(report.wal_bytes)));
-        rows.push(value("image cards", bytes(report.artifacts_bytes)));
-        rows.push(value("logs", bytes(report.logs_bytes)));
+        rows.push(value("database", short_size(database)));
+        rows.push(value(
+            "  of it, write-ahead log",
+            short_size(report.wal_bytes),
+        ));
+        rows.push(value("image cards", short_size(report.artifacts_bytes)));
+        rows.push(value("logs", short_size(report.logs_bytes)));
         rows.push(value(
             "threads / messages",
             format!("{} / {}", report.threads, report.messages),

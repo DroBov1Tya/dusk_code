@@ -5,20 +5,29 @@ mod blocks;
 mod composer;
 mod controls;
 mod markdown;
+mod panel;
 mod pictures;
+mod pins;
+mod plan;
+mod pull_link;
+mod shown;
+mod skill_change;
+mod spark;
 mod voice;
+mod working;
+pub use composer::Draft;
 pub use pictures::Picture;
 pub mod data;
 pub mod inspector;
+pub mod seen;
 pub mod subagent;
 
 use crate::{
     api,
-    columns::chat_title,
     state::{AppState, Chat as ChatSignal, state},
-    ui::run,
+    ui::{Icon, IconName, run},
 };
-use blocks::Transcript;
+use blocks::{Source, Transcript};
 use composer::Composer;
 use data::ChatData;
 use leptos::prelude::*;
@@ -33,19 +42,11 @@ pub fn chat_of(app: AppState, id: Option<&str>) -> ChatSignal {
 pub fn Chat(id: Option<String>) -> impl IntoView {
     let app = state();
     let chat = chat_of(app, id.as_deref());
-    let title = {
-        let id = id.clone();
-        move || match &id {
-            None => "New chat".to_owned(),
-            Some(id) => chat
-                .with(|c| c.title.clone())
-                .or_else(|| {
-                    app.threads
-                        .with(|threads| threads.iter().find(|t| t.id == *id).map(chat_title))
-                })
-                .unwrap_or_else(|| "Chat".to_owned()),
-        }
-    };
+    let open = id.is_some();
+    let menu_id = id.clone();
+    if let Some(id) = id.clone() {
+        skill_change::load(id, chat);
+    }
     let project_name = move || {
         app.project
             .get()
@@ -54,22 +55,23 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
     };
     view! {
         <div class="chat">
-            <header class="chat-head">
-                <div class="chat-title-line">
-                    <h2>{title.clone()}</h2>
-                    <span class="muted">{move || project_name().unwrap_or_default()}</span>
-                </div>
-                {id.clone().map(|id| view! { <ChatMenu id /> })}
-            </header>
-            <Transcript chat />
-            <approval::Approvals chat />
+            <Show when=move || open || project_name().is_some()>
+                <header class="chat-head">
+                    <span class="chat-project muted">{move || project_name().unwrap_or_default()}</span>
+                    {menu_id.clone().map(|id| view! { <ChatMenu id /> })}
+                </header>
+            </Show>
+            {id.clone().map(|id| view! { <pins::Pins id chat /> })}
+            <Transcript source=Source::of(chat) thread=id.clone() />
+            <approval::Approvals chat id=id.clone() />
             <approval::AskUser chat id=id.clone() />
+            {id.clone().map(|id| view! { <plan::PlanStrip id chat /> })}
             <Composer id chat />
         </div>
     }
 }
 
-/// Rename, close and delete of the chat.
+/// Rename, copy the link of, close and delete the chat.
 #[component]
 fn ChatMenu(id: String) -> impl IntoView {
     let app = state();
@@ -88,14 +90,22 @@ fn ChatMenu(id: String) -> impl IntoView {
             });
         }
     };
+    let link = dusk_protocol::thread::thread_link(&id);
     let close = {
         let id = id.clone();
         move |_| app.close_chat(id.clone())
     };
     view! {
         <div class="chat-menu">
-            <button class="icon" title="Rename this chat" on:click=rename>"Rename"</button>
-            <button class="icon" title="Stop using it here; it stays in the list" on:click=close>"Close"</button>
+            <button class="ghost" title="Rename this chat" on:click=rename>
+                <Icon name=IconName::FileText />"Rename"
+            </button>
+            <button class="ghost" title="Copy a link to paste into another chat" on:click=move |_| blocks::copy(&link)>
+                <Icon name=IconName::Copy />"Copy link"
+            </button>
+            <button class="ghost" title="Stop using it here; it stays in the list" on:click=close>
+                <Icon name=IconName::Close />"Close"
+            </button>
         </div>
     }
 }

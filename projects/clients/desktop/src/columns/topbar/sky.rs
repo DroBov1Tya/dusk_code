@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use gpui_kit::{component::ActiveTheme, *};
 
+use crate::ui::looping::Loop;
 use crate::workspace::Workspace;
 
 /// The time the sky takes to go from dusk to sunset.
@@ -37,10 +38,10 @@ fn late(ws: &Workspace, cx: &App) -> Option<f32> {
         let first = chat
             .agents
             .values()
-            .filter(|agent| agent.working)
-            .map(|agent| agent.started)
+            .filter(|agent| agent.working())
+            .map(|agent| agent.started_at)
             .min()?;
-        first.elapsed().as_secs_f32()
+        dusk_protocol::system::now_ms().saturating_sub(first).max(0) as f32 / 1000.
     };
     // Past sunset it goes on into the night, as long again.
     Some((seconds / DUSK_TO_SUNSET).min(2.))
@@ -86,14 +87,10 @@ pub fn stars(ws: &Workspace, cx: &App) -> Option<Div> {
             star_shape(seed, dark)
                 .left(relative(x))
                 .top(relative(y))
-                .with_animation(
-                    SharedString::from(format!("sky-star-{index}")),
-                    Animation::new(Duration::from_millis(beat)).repeat(),
-                    move |star, delta| {
-                        let shine = 0.3 + 0.5 * (delta * std::f32::consts::TAU).sin().abs();
-                        star.opacity(shine)
-                    },
-                ),
+                .looping(Duration::from_millis(beat), move |star, delta| {
+                    let shine = 0.3 + 0.5 * (delta * std::f32::consts::TAU).sin().abs();
+                    star.opacity(shine)
+                }),
         );
     }
     Some(sky)
@@ -141,10 +138,10 @@ struct Meteor {
 /// sky at once and leaves its trail hanging for a moment. The clock picks the moments and the paths, so nothing has to be
 /// remembered.
 fn meteor() -> impl IntoElement {
-    div().absolute().inset_0().with_animation(
-        "sky-meteor",
-        Animation::new(Duration::from_millis(METEOR_EVERY as u64)).repeat(),
-        |sky, _| {
+    div()
+        .absolute()
+        .inset_0()
+        .looping(Duration::from_millis(METEOR_EVERY as u64), |sky, _| {
             let now = dusk_protocol::system::now_ms();
             let seed = ((now / METEOR_EVERY) as u32).wrapping_mul(2_654_435_761);
             let at = (now % METEOR_EVERY) as f32;
@@ -186,8 +183,7 @@ fn meteor() -> impl IntoElement {
                 .absolute()
                 .inset_0(),
             )
-        },
-    )
+        })
 }
 
 /// A small one: a short white scratch of light, downward and a little aside, gone almost

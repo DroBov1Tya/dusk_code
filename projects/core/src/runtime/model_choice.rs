@@ -212,6 +212,25 @@ impl ModelChoice {
         self.current.read().choice.clone()
     }
 
+    /// The largest request the current model takes under `config`'s policy.
+    pub fn current_input_limit(&self, config: &Config) -> u64 {
+        self.current()
+            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
+                choice.input_limit(config)
+            })
+    }
+
+    /// Refuses a message that alone is past the input limit: it could never be answered.
+    pub fn ensure_fits(&self, text: &str, config: &Config) -> Result<()> {
+        let limit = self.current_input_limit(config);
+        let tokens = crate::state::estimate_tokens(text);
+        ensure!(
+            tokens <= limit,
+            "the message is about {tokens} tokens, past the input limit of {limit}"
+        );
+        Ok(())
+    }
+
     pub fn set(&self, choice: Choice) {
         let mut current = self.current.write();
         current.choice = Some(choice);
@@ -272,7 +291,7 @@ impl ModelChoice {
     pub fn learn(&self, statuses: &[ProviderStatus]) -> Option<Choice> {
         let mut current = self.current.write();
         let choice = current.choice.as_mut()?;
-        if choice.model.context_window.is_some() {
+        if choice.model.context_window.is_some() && choice.model.max_output.is_some() {
             return None;
         }
         let listed = statuses
@@ -281,8 +300,13 @@ impl ModelChoice {
             .filter_map(|status| status.models.as_ref().ok())
             .flatten()
             .find(|model| model.id == choice.model.id)?;
-        listed.context_window?;
-        choice.model = listed.clone();
+        let context_window = choice.model.context_window.or(listed.context_window);
+        let max_output = choice.model.max_output.or(listed.max_output);
+        if context_window == choice.model.context_window && max_output == choice.model.max_output {
+            return None;
+        }
+        choice.model.context_window = context_window;
+        choice.model.max_output = max_output;
         Some(choice.clone())
     }
 }
@@ -325,10 +349,18 @@ pub async fn check_provider(
     };
     let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models());
     let (listed, balance) = tokio::join!(listed, balance);
-    let models = match listed {
-        Ok(Ok(models)) => Ok(models),
-        Ok(Err(error)) => Err(format!("{error:#}")),
-        Err(_) => Err("no answer in time".into()),
+    let (models, failure) = match listed {
+        Ok(Ok(models)) => (Ok(models), None),
+        Ok(Err(error)) => {
+            let failure = error
+                .downcast_ref::<crate::providers::transport::http::CheckFailed>()
+                .map(|failed| failed.0);
+            (Err(format!("{error:#}")), failure)
+        }
+        Err(_) => (
+            Err("no answer in time".into()),
+            Some(dusk_protocol::model::CheckFailure::Unreachable),
+        ),
     };
     ProviderStatus {
         name,
@@ -336,6 +368,7 @@ pub async fn check_provider(
         balance,
         limits: provider.limits(),
         enabled: true,
+        failure,
     }
 }
 
@@ -345,6 +378,32 @@ mod tests {
 
     /// The address answers nobody: a provider that is off must not be asked at all.
     const OFF: &str = "providers:\n  off:\n    base_url: 'https://127.0.0.1:1/v1'\n    api_key: k\n    enabled: false\n";
+
+    #[test]
+    fn a_saved_model_learns_an_output_cap_without_an_input_window() {
+        let config = Config::parse(
+            b"model: fixture/model\nproviders:\n  fixture:\n    base_url: https://127.0.0.1:1/v1\n",
+        )
+        .unwrap();
+        let selected = ModelChoice::new(Choice::configured(&config).unwrap().unwrap());
+        let status = ProviderStatus {
+            name: "fixture".into(),
+            models: Ok(vec![Model {
+                id: "model".into(),
+                context_window: None,
+                max_output: Some(262144),
+            }]),
+            balance: None,
+            limits: None,
+            enabled: true,
+            failure: None,
+        };
+        assert_eq!(
+            selected.learn(&[status]).unwrap().model.max_output,
+            Some(262144)
+        );
+        assert_eq!(selected.current().unwrap().model.context_window, None);
+    }
 
     #[tokio::test]
     async fn a_provider_switched_off_is_listed_but_never_asked_or_chosen() {

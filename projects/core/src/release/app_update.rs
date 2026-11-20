@@ -36,7 +36,7 @@ fn bundle_of(exe: &Path) -> Option<PathBuf> {
 }
 
 /// The name of the image a release of `tag` carries.
-fn image_name(tag: &str) -> String {
+pub(super) fn image_name(tag: &str) -> String {
     format!("Duskcode-{}-macos-arm64.dmg", tag.trim_start_matches('v'))
 }
 
@@ -59,7 +59,7 @@ pub async fn install(
     progress.send_modify(|value| value.stage = InstallStage::Verifying);
     tokio::task::spawn_blocking(move || {
         ensure!(
-            update::sha256_hex(&image) == expected,
+            dusk_protocol::text::sha256_hex(&image) == expected,
             "the download does not match its checksum; nothing was changed"
         );
         progress.send_modify(|value| value.stage = InstallStage::Installing);

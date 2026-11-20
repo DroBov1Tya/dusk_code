@@ -2,11 +2,7 @@
 //! earlier screenshot. No message parser or URL detector calls this. A platform, such as
 //! the Telegram bot, sends each card on as a photo.
 
-use std::{
-    io::Cursor,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    time::Duration,
-};
+use std::{io::Cursor, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits};
@@ -24,7 +20,11 @@ use crate::{
     BoxFuture,
     state::artifacts::{ArtifactStore, Card, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES, THUMBNAIL_EDGE},
 };
-use crate::{init::files::read_regular, tools::tool::printable};
+use crate::{
+    init::files::read_regular,
+    net::{BodyError, public},
+    tools::tool::printable,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_REDIRECTS: usize = 3;
@@ -161,6 +161,10 @@ impl Tool for DisplayImage {
         schema::of::<Arguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, _arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async { bail!("image tools require typed result transport") })
     }
@@ -207,31 +211,20 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
     let mut url = checked_url(raw)?;
     for hop in 0..=MAX_REDIRECTS {
         let host = url.host_str().context("image URL has no host")?;
-        let literal = host
-            .trim_start_matches('[')
-            .trim_end_matches(']')
-            .parse::<IpAddr>();
-        let named = literal.is_err();
-        let addresses = match literal {
-            Ok(ip) => vec![SocketAddr::new(ip, 443)],
-            Err(_) => tokio::net::lookup_host((host, 443))
-                .await
-                .map_err(|_| anyhow::anyhow!("image host lookup failed"))?
-                .take(17)
-                .collect(),
-        };
+        let addresses = public::lookup(host, 443)
+            .await
+            .map_err(|_| anyhow::anyhow!("image host lookup failed"))?;
+        ensure!(!addresses.is_empty(), "image host has no address");
         ensure!(
-            !addresses.is_empty() && addresses.len() <= 16,
-            "image host has no bounded address set"
+            public::may_connect(host, &addresses),
+            "image host is not public internet"
         );
         // A proxy in fake-ip mode answers every name from its own range and resolves
         // the real address itself. Such a name goes through the proxy from the
         // environment when one is set, else to the pinned fake address its TUN catches.
-        let faked = named && addresses.iter().all(|address| fake_ip(address.ip()));
-        ensure!(
-            faked || addresses.iter().all(|address| public_ip(address.ip())),
-            "image host is not public internet"
-        );
+        let faked = addresses
+            .iter()
+            .all(|address| public::is_fake_ip(address.ip()));
         // Each redirect gets a fresh independent client. Resolution is pinned before
         // connect; TLS SNI/certificate verification still uses the original hostname.
         let mut client = reqwest::Client::builder();
@@ -249,7 +242,7 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
             .resolve_to_addrs(host, &addresses)
             .build()
             .map_err(|_| anyhow::anyhow!("cannot initialize image client"))?;
-        let mut response = client
+        let response = client
             .get(url.clone())
             .header(ACCEPT, "image/png, image/jpeg")
             .header(ACCEPT_ENCODING, "identity")
@@ -274,24 +267,12 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
             "image server returned HTTP {}",
             response.status().as_u16()
         );
-        ensure!(
-            response
-                .content_length()
-                .is_none_or(|size| size <= MAX_IMAGE_BYTES as u64),
-            "image exceeds 8 MiB"
-        );
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
+        let bytes = crate::net::read_limited(response, MAX_IMAGE_BYTES)
             .await
-            .map_err(|_| anyhow::anyhow!("image download failed"))?
-        {
-            ensure!(
-                chunk.len() <= MAX_IMAGE_BYTES - bytes.len(),
-                "image exceeds 8 MiB"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
+            .map_err(|error| match error {
+                BodyError::TooLarge => anyhow::anyhow!("image exceeds 8 MiB"),
+                BodyError::Broken => anyhow::anyhow!("image download failed"),
+            })?;
         ensure!(!bytes.is_empty(), "image is empty");
         return Ok(bytes);
     }
@@ -305,38 +286,22 @@ async fn read_file(path: std::path::PathBuf) -> Result<Vec<u8>> {
         .context("cannot read the image file")
 }
 
-/// Conservative allowlist of global address space. Reject special-purpose ranges,
-/// including IPv4-mapped IPv6, transition tunnels, documentation and reserved blocks.
-fn public_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => public_v4(ip),
-        IpAddr::V6(ip) => public_v6(ip),
-    }
-}
-
-/// 198.18.0.0/15, where Clash and Surge put the addresses they answer in fake-ip mode.
-fn fake_ip(ip: IpAddr) -> bool {
-    matches!(ip, IpAddr::V4(ip) if matches!(ip.octets(), [198, 18 | 19, _, _]))
-}
-
-fn public_v4(ip: Ipv4Addr) -> bool {
-    let [a, b, c, _] = ip.octets();
-    let special = matches!(a, 0 | 10 | 127 | 224..=255)
-        || (a == 100 && (64..=127).contains(&b))
-        || (a == 169 && b == 254)
-        || (a == 172 && (16..=31).contains(&b))
-        || (a == 192 && ((b == 0 && matches!(c, 0 | 2)) || (b == 88 && c == 99) || b == 168))
-        || (a == 198 && (matches!(b, 18 | 19) || (b == 51 && c == 100)))
-        || (a == 203 && b == 0 && c == 113);
-    !special
-}
-
-fn public_v6(ip: Ipv6Addr) -> bool {
-    let segments = ip.segments();
-    (segments[0] & 0xe000) == 0x2000
-        && !(segments[0] == 0x2001 && (segments[1] < 0x0200 || segments[1] == 0x0db8))
-        && segments[0] != 0x2002
-        && !(segments[0] == 0x3fff && segments[1] < 0x1000)
+/// A picture another tool got, such as an MCP server's screen, checked like any other
+/// and kept as a card the model sees.
+pub fn picture_card(store: &ArtifactStore, bytes: Vec<u8>, title: &str) -> Result<Card> {
+    let decoded = decode(bytes)?;
+    store.save(
+        Card {
+            title: Some(title.to_owned()),
+            mime_type: decoded.mime_type.into(),
+            width: decoded.width,
+            height: decoded.height,
+            for_model: true,
+            ..Default::default()
+        },
+        &decoded.original,
+        &decoded.thumbnail,
+    )
 }
 
 fn decode(original: Vec<u8>) -> Result<Decoded> {

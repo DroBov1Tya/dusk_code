@@ -2,6 +2,7 @@
 //! hidden, the timetable from any other page. It floats beside the rail, closes a moment
 //! after the pointer leaves both, and a click on the icon opens the place for good.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::time::Duration;
 
 use gpui_kit::{
@@ -24,14 +25,10 @@ pub enum Flyout {
 }
 
 /// The panel, when one is up; drawn over the work, beside the rail.
-pub fn render(
-    ws: &mut Workspace,
-    window: &mut Window,
-    cx: &mut Context<Workspace>,
-) -> Option<Deferred> {
+pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Option<Deferred> {
     let kind = ws.flyout?;
     let body = match kind {
-        Flyout::Chats => crate::columns::sidebar::render(ws, window, cx),
+        Flyout::Chats => crate::columns::sidebar::render(ws, cx),
         Flyout::Schedules => schedules(ws, cx),
     };
     let theme = cx.theme();
@@ -44,10 +41,8 @@ pub fn render(
         .w(px(crate::columns::sidebar::WIDTH))
         .rounded_xl()
         .overflow_hidden()
-        .border_1()
-        .border_color(theme.border)
+        .elevation(Level::Floating, cx)
         .bg(theme.sidebar)
-        .shadow_lg()
         .occlude()
         .on_hover(cx.listener(|ws, inside: &bool, _, cx| ws.hover_flyout(None, *inside, cx)))
         .child(body);

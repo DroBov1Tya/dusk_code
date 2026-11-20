@@ -15,11 +15,15 @@ use footer::status;
 use goal::goal_rows;
 pub use layout::layout;
 use layout::{show_cursor, text_width};
-use poll::poll_rows;
+use poll::{poll_rows, reply_rows};
 use queue::queue_rows;
 
 use super::theme::{ACCENT, HAIRLINE, SELECTED, SURFACE, TEXT_SOFT, bold, fg, thought};
 use crate::app::{App, ChipHit, InputRow};
+
+/// After a suggestion in the empty box: the key that fills it in, and the way to the
+/// mode Tab switches otherwise (Shift+Tab browses the transcript here).
+const SUGGESTION_KEYS: &str = "  Tab fills in \u{00B7} Esc, then Tab: mode";
 use ratatui::{
     Frame,
     layout::Rect,
@@ -49,7 +53,8 @@ pub struct InputView<'a> {
 /// Rows the box needs: the queued messages, the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
-    approval_rows(app)
+    approval_rows(app, width)
+        + reply_rows(app)
         + poll_rows(app, width)
         + goal_rows(app)
         + queue_rows(app)
@@ -72,7 +77,7 @@ impl InputView<'_> {
             height: area.height.saturating_sub(1),
             ..area
         };
-        let approval = approval_rows(self.app).min(area.height);
+        let approval = approval_rows(self.app, area.width).min(area.height);
         self.draw_approval(
             frame,
             Rect {
@@ -83,6 +88,19 @@ impl InputView<'_> {
         let area = Rect {
             y: area.y + approval,
             height: area.height.saturating_sub(approval),
+            ..area
+        };
+        let reply = reply_rows(self.app).min(area.height);
+        self.draw_reply(
+            frame,
+            Rect {
+                height: reply,
+                ..area
+            },
+        );
+        let area = Rect {
+            y: area.y + reply,
+            height: area.height.saturating_sub(reply),
             ..area
         };
         let polled = poll_rows(self.app, area.width).min(area.height);
@@ -165,12 +183,17 @@ impl InputView<'_> {
         if self.app.input.text.is_empty() {
             let hint = if !self.app.provider_available {
                 "provider unavailable; /connect or /model to choose a provider"
+            } else if let Some(ghost) = self.app.suggestion_ghost() {
+                ghost
             } else if self.app.is_busy() {
                 "write to queue it; Alt+Enter sends now, Esc stops"
             } else {
                 "write, or / for commands"
             };
-            let line = Line::from(vec![prompt, Span::styled(hint, thought())]);
+            let mut line = Line::from(vec![prompt, Span::styled(hint, thought())]);
+            if self.app.provider_available && self.app.suggestion_ghost().is_some() {
+                line.push_span(Span::styled(SUGGESTION_KEYS, fg(TEXT_SOFT)));
+            }
             frame.render_widget(Paragraph::new(line), text_area);
             show_cursor(frame, self.app, text_area, (0, 0));
             return;

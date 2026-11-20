@@ -2,6 +2,7 @@
 
 use crate::{
     api,
+    chat::data::now_ms,
     state::state,
     ui::{Section, confirm, run},
 };
@@ -52,11 +53,17 @@ pub fn ModelPage() -> impl IntoView {
                 let removing = name.clone();
                 let switched = name.clone();
                 let enabled = provider.enabled;
+                let named = name.clone();
+                let health = move || app.status.with(|status| {
+                    let found = status.as_ref()?.provider_health.iter().find(|h| h.name == named)?;
+                    Some(found.calls.text(now_ms()))
+                });
                 view! {
                     <div class="provider" style:opacity=if enabled { "1" } else { "0.5" }>
                         <div class="provider-head">
                             <b>{name.clone()}</b>
                             {provider.balance.as_ref().and_then(|b| b.as_ref().ok()).map(|b| view! { <span class="muted">{b.text()}</span> })}
+                            {move || health().map(|text| view! { <span class="muted">{text}</span> })}
                             <span class="grow"></span>
                             <button class="ghost" on:click=move |_| {
                                 let name = switched.clone();

@@ -27,6 +27,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .flex()
             .flex_row()
             .items_center()
+            .flex_wrap()
             .gap_2()
             .child(
                 div()
@@ -56,7 +57,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             }),
     );
     if ws.providers.is_empty() {
-        column = column.child(widgets::muted("Asking the providers...", cx).px_0());
+        column = column.child(if ws.models_loading {
+            crate::ui::loading("Asking the providers...", cx)
+        } else {
+            widgets::muted("No providers connected. Connect one below.", cx).p_0()
+        });
     }
     for provider in &ws.providers {
         column = column.child(provider_card(ws, provider, &current, cx));
@@ -85,9 +90,10 @@ fn provider_card(
     let reconnecting = ws.providers_page.reconnecting.as_deref() == Some(name.as_str());
     let (check_name, again_name, remove_name) = (name.clone(), name.clone(), name.clone());
     let (switch_name, enabled) = (name.clone(), provider.enabled);
+    // The switch stands apart from the buttons: it changes state, they act once.
     let buttons = div()
         .flex()
-        .flex_row()
+        .flex_wrap()
         .items_center()
         .gap_1()
         .child(
@@ -103,7 +109,8 @@ fn provider_card(
                 })
                 .on_click(cx.listener(move |ws, on: &bool, _, cx| {
                     ws.set_provider_enabled(&switch_name, *on, cx)
-                })),
+                }))
+                .mr_3(),
         )
         .child(
             Button::new(SharedString::from(format!("provider-check-{name}")))
@@ -158,6 +165,10 @@ fn provider_card(
                 .px_0()
                 .opacity(0.5)
         });
+    if let Some(health) = ws.status.provider_health.iter().find(|h| h.name == name) {
+        card = card
+            .child(widgets::muted(health.calls.text(dusk_protocol::system::now_ms()), cx).p_0());
+    }
     if let Some(limits) = provider.limits.as_ref().filter(|_| enabled) {
         card = card.child(widgets::muted(format!("Limits: {}", limits.text()), cx).p_0());
     }

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Token usage of the whole request, as the provider reports it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     /// Everything the request sent, the cached part included.
@@ -23,12 +24,14 @@ pub struct Usage {
 }
 
 /// A price in millionths of a US dollar and where it came from.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cost {
     pub micro_usd: u64,
     pub source: CostSource,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CostSource {

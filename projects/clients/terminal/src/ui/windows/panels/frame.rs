@@ -1,5 +1,6 @@
 //! The panel on screen: which one draws, the window it sits in, and the rows they share.
 
+use dusk_protocol::thread::labelled;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -15,12 +16,14 @@ use super::diff;
 use super::help::help;
 use super::jobs::jobs;
 use super::models::models;
+use super::overview::overview;
 use super::paste::draw_paste;
 use super::plugins::plugins;
 use super::schedules::schedules;
 use super::threads::draw_threads;
 use super::unsent::unsent;
 use super::update::draw_update;
+use super::workshop::workshop;
 use crate::app::{App, EFFORTS, Panel, compact_number, paste};
 use crate::ui::windows::{
     agent_window, settings,
@@ -71,11 +74,23 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 if entry.is_some() {
                     "enter keep for this session  esc cancel"
                 } else {
-                    "up/down choose  enter switch on/off  s enter a secret  esc close"
+                    "up/down choose  enter on/off  s secret  w workshop  esc close"
                 },
                 lines,
                 Some(row),
             )
+        }
+        Panel::Workshop(view) => {
+            let (lines, row) = workshop(view, screen.width.saturating_sub(8) as usize);
+            let hints = match (&view.confirm, &view.pack) {
+                (Some(_), _) => "left/right choose  enter do it  esc cancel",
+                (None, Some(_)) => "up/down choose  enter on/off  i install/update  esc back",
+                (None, None) => {
+                    "type to narrow  enter open/install  tab category  ctrl+o order  \
+                     ctrl+u update all  ctrl+r reload  esc back"
+                }
+            };
+            ("workshop", hints, lines, Some(row))
         }
         Panel::Unsent { selected } => {
             let (lines, row) = unsent(app, *selected, screen.width.saturating_sub(8) as usize);
@@ -127,7 +142,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 .iter()
                 .enumerate()
                 .map(|(index, point)| {
-                    let text = paste::labelled(&point.text).replace('\n', " ");
+                    let text = labelled(&point.text, paste::label).replace('\n', " ");
                     selectable(
                         vec![
                             Span::styled(format!(" {:>3}  ", index + 1), dim()),
@@ -199,6 +214,21 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             context(report),
             None,
         ),
+        Panel::Overview(view) => {
+            let running = app.team.as_ref().is_some_and(|team| team.ended().is_none());
+            let hints = match (&view.budget, view.stopping) {
+                (Some(_), _) => "up/down field  type to change  enter save  esc cancel",
+                (None, true) => "stop team? y stops it  any other key keeps it running",
+                (None, false) if running => {
+                    "up/down scroll  tab member  enter open  s stop  b budget  esc close"
+                }
+                (None, false) if app.team.is_some() => {
+                    "up/down scroll  tab member  enter open its chat  esc close"
+                }
+                (None, false) => "up/down scroll  any other key closes",
+            };
+            ("overview", hints, overview(app, view), None)
+        }
         Panel::Diff(view) => {
             let width = screen.width.saturating_sub(8).min(116) as usize;
             let (lines, hints) = match view.open {
@@ -219,7 +249,8 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             )
         }
         Panel::Models(list) => {
-            let (lines, row) = models(list, screen.width.saturating_sub(8).min(72) as usize);
+            let width = screen.width.saturating_sub(8).min(72) as usize;
+            let (lines, row) = models(list, &app.status.provider_health, width);
             (
                 "model",
                 "enter choose  c connect  t on/off  d remove  r check  esc close",
@@ -248,11 +279,13 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let skip = match &app.panel {
         // The context scrolls by its top row rather than following a selection.
         Some(Panel::Context { row, .. }) => (*row).min(lines.len().saturating_sub(inner)),
+        Some(Panel::Overview(view)) => view.row.min(lines.len().saturating_sub(inner)),
         Some(Panel::Diff(view)) if view.open => view.scroll.min(lines.len().saturating_sub(inner)),
         _ => selected.map_or(0, |row| (row + 1).saturating_sub(inner)),
     };
     match &mut app.panel {
         Some(Panel::Context { row, .. }) => *row = skip,
+        Some(Panel::Overview(view)) => view.row = skip,
         Some(Panel::Diff(view)) if view.open => view.scroll = skip,
         _ => {}
     }
@@ -332,21 +365,4 @@ pub fn fit(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
             Line::from(spans).style(style)
         })
         .collect()
-}
-
-pub fn ago(ms: i64) -> String {
-    match age(ms).as_str() {
-        "now" => "just now".into(),
-        age => format!("{age} ago"),
-    }
-}
-
-pub fn age(ms: i64) -> String {
-    let minutes = ms.max(0) / 60_000;
-    match minutes {
-        0 => "now".into(),
-        1..60 => format!("{minutes}m"),
-        60..1440 => format!("{}h", minutes / 60),
-        _ => format!("{}d", minutes / 1440),
-    }
 }

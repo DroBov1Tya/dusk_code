@@ -4,8 +4,11 @@
 mod diff;
 mod edit;
 pub mod env;
+pub mod episodes;
 mod files;
-mod git;
+pub mod forge;
+pub mod git;
+pub mod ledger;
 mod outputs;
 pub mod schedule;
 
@@ -19,7 +22,7 @@ use crate::state::State;
 pub use diff::diff;
 pub use edit::{read as read_file, write as write_file};
 pub use files::list as files;
-pub use git::{changes as git_changes, info as git, summary as git_summary, switch_branch};
+pub use git::{info as git, summary as git_summary, switch_branch};
 pub use outputs::{delete as delete_output, list as outputs, read as read_output};
 
 /// Saves a new project, or changes the one with `id`. The folder is stored resolved, so
@@ -81,12 +84,7 @@ pub async fn find(state: &State, id: &str) -> Result<Project> {
 /// with `..`, or leads out through a symbolic link.
 async fn inside(project: &Project, relative: &str) -> Result<PathBuf> {
     let relative = Path::new(relative);
-    for part in relative.components() {
-        match part {
-            Component::Normal(_) | Component::CurDir => {}
-            _ => bail!("the path must stay inside the project"),
-        }
-    }
+    plain_relative(relative)?;
     let path = tokio::fs::canonicalize(project.dir.join(relative))
         .await
         .context("no such path in the project")?;
@@ -95,6 +93,20 @@ async fn inside(project: &Project, relative: &str) -> Result<PathBuf> {
         "the path must stay inside the project"
     );
     Ok(path)
+}
+
+/// Refused when `relative` is absolute or climbs with `..`: the check of `inside` that
+/// needs no file, for a path that may no longer exist.
+pub fn plain_relative(relative: &Path) -> Result<()> {
+    for part in relative.components() {
+        match part {
+            Component::Normal(_) | Component::CurDir => {}
+            _ => bail!(crate::client::Shown::new(
+                "the path must stay inside the project"
+            )),
+        }
+    }
+    Ok(())
 }
 
 /// `path` resolved, links followed, when it is inside one of `roots`: the one check for
@@ -110,7 +122,9 @@ pub async fn within(path: &Path, roots: &[PathBuf]) -> Result<PathBuf> {
             return Ok(path);
         }
     }
-    bail!("the path must be inside the workspace or a project")
+    bail!(crate::client::Shown::new(
+        "the path must be inside the workspace or a project"
+    ))
 }
 
 #[cfg(test)]

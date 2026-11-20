@@ -27,13 +27,14 @@ use crate::{
     ui::{Type, widgets},
     workspace::Workspace,
 };
-use screen::{Screen, Size as Cells};
+use screen::{Reach, Screen, Size as Cells, Spot};
 
 /// The panel's height at first, and the bounds a drag keeps it in.
 const HEIGHT: f32 = 280.;
 const HEIGHTS: (f32, f32) = (120., 720.);
 const TABS: f32 = 36.;
-const PADDING: f32 = 8.;
+/// Around the grid; the tabs start at the same left edge.
+const PADDING: f32 = crate::ui::size::GAP_M;
 /// The size a shell starts with, before the panel was measured.
 const FIRST: Cells = Cells { cols: 80, rows: 24 };
 /// Past this, a paste is refused rather than cut in the middle.
@@ -64,10 +65,13 @@ pub struct Panel {
     active: usize,
     pub focus: FocusHandle,
     next_key: u64,
-    /// The size the grid was drawn at last, to tell how many cells fit.
-    measured: Rc<Cell<Option<Size<Pixels>>>>,
+    /// Where the grid was drawn last, to tell how many cells fit and which is under the
+    /// pointer.
+    measured: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// The pointer's height and the panel's when a drag of its edge began.
     drag: Option<(Pixels, f32)>,
+    /// The button went down on the grid and is still held: moves extend the selection.
+    selecting: bool,
     /// The queue to the shells; one task empties it, so keys arrive as they were typed.
     sent: Option<mpsc::UnboundedSender<Sent>>,
 }
@@ -83,12 +87,24 @@ impl Panel {
             next_key: 0,
             measured: Rc::new(Cell::new(None)),
             drag: None,
+            selecting: false,
             sent: None,
         }
     }
 
+    /// The edge or a selection is being dragged, so the whole window follows the pointer.
     pub fn dragging(&self) -> bool {
-        self.drag.is_some()
+        self.drag.is_some() || self.selecting
+    }
+
+    /// Selects cells `from..=to` of `row` in the shown shell, as a drag over them would.
+    #[cfg(feature = "screenshot")]
+    pub fn select_cells(&mut self, row: usize, from: usize, to: usize) {
+        if let Some(tab) = self.tabs.get_mut(self.active) {
+            let spot = |col, right| Spot { row, col, right };
+            tab.screen.select(spot(from, false), Reach::Cells);
+            tab.screen.extend_selection(spot(to, true));
+        }
     }
 }
 
@@ -113,7 +129,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .items_center()
         .gap_1()
         .h(px(TABS))
-        .px_2()
+        .px(px(PADDING))
         .overflow_x_scroll();
     for (index, tab) in ws.terminal.tabs.iter().enumerate() {
         let chosen = index == ws.terminal.active;
@@ -225,13 +241,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .track_focus(&ws.terminal.focus)
                     .key_context("Terminal")
                     .cursor_text()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|ws, _, window, cx| {
-                            ws.terminal.focus.focus(window, cx);
-                            cx.notify();
-                        }),
-                    )
+                    .on_mouse_down(MouseButton::Left, cx.listener(Workspace::terminal_press))
                     .on_key_down(cx.listener(Workspace::terminal_key))
                     .on_scroll(cx.listener(Workspace::terminal_wheel))
                     .child(body),
@@ -389,6 +399,7 @@ impl Workspace {
             return;
         };
         tab.screen.follow();
+        tab.screen.clear_selection();
         self.send_terminal(Sent::Input(id, data), cx);
         cx.notify();
     }
@@ -396,6 +407,22 @@ impl Workspace {
     fn terminal_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         let modifiers = keystroke.modifiers;
+        // Copy is the platform's own too; Control-C alone stays the shell's interrupt.
+        let copy = keystroke.key == "c"
+            && (modifiers.platform
+                || (modifiers.control && modifiers.shift && !cfg!(target_os = "macos")));
+        if copy {
+            cx.stop_propagation();
+            let selected = self
+                .terminal
+                .tabs
+                .get(self.terminal.active)
+                .and_then(|tab| tab.screen.selected_text());
+            if let Some(text) = selected {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+            }
+            return;
+        }
         // Paste is the platform's own: Command-V on a Mac, Control-Shift-V elsewhere.
         let paste = keystroke.key == "v"
             && (modifiers.platform
@@ -463,9 +490,49 @@ impl Workspace {
         }
     }
 
+    /// A press on the grid takes the keyboard and starts a selection: one click from the
+    /// cell, two the word, three the line; with Shift it moves the end of the one there is.
+    fn terminal_press(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.terminal.focus.focus(window, cx);
+        let spot = self.terminal_spot(event.position, window, cx);
+        if let (Some(spot), Some(tab)) = (spot, self.terminal.tabs.get_mut(self.terminal.active)) {
+            if event.modifiers.shift {
+                tab.screen.extend_selection(spot);
+            } else {
+                let reach = match event.click_count {
+                    0 | 1 => Reach::Cells,
+                    2 => Reach::Word,
+                    _ => Reach::Line,
+                };
+                tab.screen.select(spot, reach);
+            }
+            self.terminal.selecting = true;
+        }
+        cx.notify();
+    }
+
+    /// The cell under `position`, held to the grid so a drag past its edge keeps going.
+    fn terminal_spot(&self, position: Point<Pixels>, window: &Window, cx: &App) -> Option<Spot> {
+        let area = self.terminal.measured.get()?;
+        let cell = paint::metrics(window, cx).cell;
+        let at = |from: Pixels, cell: Pixels| ((from / cell).max(0.)).floor();
+        let x = position.x - area.origin.x;
+        let col = at(x, cell.width);
+        Some(Spot {
+            row: at(position.y - area.origin.y, cell.height) as usize,
+            col: col as usize,
+            right: x / cell.width - col >= 0.5,
+        })
+    }
+
     /// Gives every shell the size that fits the panel as it was last drawn.
     fn fit_terminal(&mut self, window: &Window, cx: &mut Context<Self>) {
-        let Some(area) = self.terminal.measured.get() else {
+        let Some(area) = self.terminal.measured.get().map(|bounds| bounds.size) else {
             return;
         };
         let cell = paint::metrics(window, cx).cell;
@@ -486,23 +553,40 @@ impl Workspace {
         }
     }
 
-    /// The pointer moved while the panel's edge is held: the panel follows it.
-    pub fn drag_terminal(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+    /// The pointer moved while the panel's edge is held, and the panel follows it; or
+    /// while a selection is, and its end follows.
+    pub fn drag_terminal(
+        &mut self,
+        event: &MouseMoveEvent,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Released outside the window, the button is up without a word: stop here.
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.drop_terminal_edge(cx);
+            return;
+        }
+        if self.terminal.selecting {
+            let spot = self.terminal_spot(event.position, window, cx);
+            if let (Some(spot), Some(tab)) =
+                (spot, self.terminal.tabs.get_mut(self.terminal.active))
+            {
+                tab.screen.extend_selection(spot);
+                cx.notify();
+            }
+            return;
+        }
         let Some((from, height)) = self.terminal.drag else {
             return;
         };
-        // Released outside the window, the button is up without a word: stop here.
-        if event.pressed_button != Some(MouseButton::Left) {
-            self.terminal.drag = None;
-        } else {
-            let moved = (from - event.position.y).as_f32();
-            self.terminal.height = (height + moved).clamp(HEIGHTS.0, HEIGHTS.1);
-        }
+        let moved = (from - event.position.y).as_f32();
+        self.terminal.height = (height + moved).clamp(HEIGHTS.0, HEIGHTS.1);
         cx.notify();
     }
 
     pub fn drop_terminal_edge(&mut self, cx: &mut Context<Self>) {
         self.terminal.drag = None;
+        self.terminal.selecting = false;
         cx.notify();
     }
 }

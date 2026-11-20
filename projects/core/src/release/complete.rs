@@ -11,12 +11,13 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use futures::{StreamExt, TryStreamExt, stream};
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 
 use super::update::{REPOSITORY, client};
+use crate::net::BodyError;
 
 const API: &str = "https://api.github.com/repos";
 const RAW: &str = "https://raw.githubusercontent.com";
@@ -80,10 +81,7 @@ async fn complete_with(
         "GitHub has no tree for {tag} ({})",
         response.status()
     );
-    let tree: Tree = response
-        .json()
-        .await
-        .context("unexpected answer from GitHub")?;
+    let tree: Tree = super::update::read_json(response).await?;
     ensure!(
         !tree.truncated,
         "the repository tree for {tag} is too large to check"
@@ -251,12 +249,13 @@ async fn fetch(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
         .await
         .context("cannot reach GitHub")?;
     ensure!(response.status().is_success(), "cannot download {url}");
-    let bytes = response.bytes().await.context("the download broke off")?;
-    ensure!(
-        bytes.len() <= MAX_FILE_BYTES,
-        "{url} is too large for a resource"
-    );
-    Ok(bytes.to_vec())
+    // Read with a cap while it arrives: the timeout bounds time, not memory.
+    crate::net::read_limited(response, MAX_FILE_BYTES)
+        .await
+        .map_err(|error| match error {
+            BodyError::TooLarge => anyhow!("{url} is too large for a resource"),
+            BodyError::Broken => anyhow!("the download broke off"),
+        })
 }
 
 /// A path from the tree as plain names only, so it cannot leave the resource folder.
@@ -277,11 +276,7 @@ fn git_hash(bytes: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(format!("blob {}\0", bytes.len()).as_bytes());
     hasher.update(bytes);
-    hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    dusk_protocol::text::hex(&hasher.finalize())
 }
 
 #[cfg(test)]

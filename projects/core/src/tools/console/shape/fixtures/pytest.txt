@@ -1,0 +1,44 @@
+exit code: 1
+stdout:
+============================= test session starts ==============================
+platform darwin -- Python 3.12.4, pytest-8.3.2, pluggy-1.5.0
+rootdir: /home/dev/shop
+configfile: pyproject.toml
+plugins: anyio-4.4.0, cov-5.0.0
+collected 214 items
+
+tests/test_cart.py ..........................................................                       [ 27%]
+tests/test_checkout.py .....................F.........s..........                    [ 46%]
+tests/test_inventory.py .......................................................           [ 72%]
+tests/test_pricing.py ..............................E.....x.......................                    [100%]
+
+==================================== ERRORS ====================================
+_______________________ ERROR at setup of test_bulk_price ______________________
+
+    @pytest.fixture
+    def price_table():
+>       return load_table("prices.csv")
+E       FileNotFoundError: [Errno 2] No such file or directory: 'prices.csv'
+
+tests/conftest.py:14: FileNotFoundError
+=================================== FAILURES ===================================
+_____________________________ test_checkout_total ______________________________
+
+    def test_checkout_total():
+        cart = Cart([Item("pen", 2.50, 3)])
+>       assert checkout(cart).total == 7.0
+E       AssertionError: assert 7.5 == 7.0
+E        +  where 7.5 = Receipt(total=7.5, tax=0.0).total
+E        +    where Receipt(total=7.5, tax=0.0) = checkout(<shop.cart.Cart object at 0x104f2a0d0>)
+
+tests/test_checkout.py:22: AssertionError
+=============================== warnings summary ===============================
+tests/test_inventory.py::test_restock
+  /home/dev/shop/shop/inventory.py:41: DeprecationWarning: datetime.datetime.utcnow() is deprecated
+    stamp = datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_checkout.py::test_checkout_total - AssertionError: assert 7.5 == 7.0
+ERROR tests/test_pricing.py::test_bulk_price - FileNotFoundError: [Errno 2] No such file or directory: 'prices.csv'
+====== 1 failed, 210 passed, 1 skipped, 1 xfailed, 1 warning, 1 error in 2.41s ======

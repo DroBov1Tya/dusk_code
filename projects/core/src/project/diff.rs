@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, bail};
 use dusk_protocol::project::{Change, ChangeKind, DiffKind, DiffLine, DiffStat, FileDiff, Hunk};
 
 use super::git::{changes, git, git_differs};
@@ -21,14 +21,13 @@ const MAX_UNTRACKED_FILES: usize = 100;
 
 /// The changes in the project, or in one file of it.
 pub async fn diff(dir: &Path, path: Option<&str>) -> Result<Vec<FileDiff>> {
-    if let Some(path) = path {
-        ensure!(
-            !path.is_empty()
-                && !path.starts_with('-')
-                && Path::new(path).is_relative()
-                && !path.split('/').any(|part| part == ".."),
-            "not a path inside the project"
-        );
+    if let Some(path) = path
+        && (path.is_empty()
+            || path.starts_with('-')
+            || !Path::new(path).is_relative()
+            || path.split('/').any(|part| part == ".."))
+    {
+        bail!(crate::client::Shown::new("not a path inside the project"));
     }
     let listed = changes(dir).await;
     let base = base(dir).await;

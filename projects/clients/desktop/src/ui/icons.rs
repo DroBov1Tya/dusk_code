@@ -19,11 +19,6 @@ pub const TEMPORARY: &str = "icons/dusk/temporary.svg";
 
 const TEMPORARY_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 3.1c-.5 0-1-.1-1.5-.1s-1 .1-1.5.1" /><path d="M19.3 6.8a10.45 10.45 0 0 0-2.1-2.1" /><path d="M20.9 13.5c.1-.5.1-1 .1-1.5s-.1-1-.1-1.5" /><path d="M17.2 19.3a10.45 10.45 0 0 0 2.1-2.1" /><path d="M10.5 20.9c.5.1 1 .1 1.5.1s1-.1 1.5-.1" /><path d="M3.5 17.5 2 22l4.5-1.5" /><path d="M3.1 10.5c0 .5-.1 1-.1 1.5s.1 1 .1 1.5" /><path d="M6.8 4.7a10.45 10.45 0 0 0-2.1 2.1" /></svg>"#;
 
-/// A phone: the iOS Simulator.
-pub const PHONE: &str = "icons/dusk/phone.svg";
-
-const PHONE_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2" /><path d="M12 18h.01" /></svg>"#;
-
 /// Lucide's outline, the kit's own style, around the shapes of an icon.
 macro_rules! lucide {
     ($shapes:literal) => {
@@ -43,19 +38,164 @@ const REFRESH_SVG: &[u8] = lucide!(
     r#"<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" />"#
 );
 
-/// The iOS Simulator's buttons, which the kit does not ship.
+/// Plugins: the one button their parts wait behind, and the pin that keeps a part's icon
+/// in its place.
+pub const PUZZLE: &str = "icons/dusk/puzzle.svg";
+pub const PIN: &str = "icons/dusk/pin.svg";
+
+const PUZZLE_SVG: &[u8] = lucide!(
+    r#"<path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" />"#
+);
+const PIN_SVG: &[u8] = lucide!(
+    r#"<path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />"#
+);
+
+/// Git: a branch and a compare of two, for the branch and for the changes against the
+/// last commit; the GitHub mark stays for GitHub itself. Blocks: what the app can be
+/// extended with (agents, skills, MCP servers, plugins).
+pub const GIT_BRANCH: &str = "icons/dusk/git-branch.svg";
+pub const GIT_COMPARE: &str = "icons/dusk/git-compare.svg";
+/// A new chat from one message of another.
+pub const GIT_FORK: &str = "icons/dusk/git-fork.svg";
+pub const BLOCKS: &str = "icons/dusk/blocks.svg";
+
+const GIT_BRANCH_SVG: &[u8] = lucide!(
+    r#"<path d="M15 6a9 9 0 0 0-9 9V3" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" />"#
+);
+const GIT_FORK_SVG: &[u8] = lucide!(
+    r#"<circle cx="12" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" /><path d="M12 12v3" />"#
+);
+const GIT_COMPARE_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><path d="M11 18H8a2 2 0 0 1-2-2V9" />"#
+);
+/// A pull request as it stands: open, a draft, merged or closed.
+pub const GIT_PULL: &str = "icons/dusk/git-pull-request.svg";
+pub const GIT_PULL_DRAFT: &str = "icons/dusk/git-pull-request-draft.svg";
+pub const GIT_PULL_CLOSED: &str = "icons/dusk/git-pull-request-closed.svg";
+pub const GIT_MERGE: &str = "icons/dusk/git-merge.svg";
+
+/// A check waiting to start, and one skipped.
+pub const CHECK_QUEUED: &str = "icons/dusk/circle-dashed.svg";
+pub const CHECK_SKIPPED: &str = "icons/dusk/circle-minus.svg";
+
+const CHECK_QUEUED_SVG: &[u8] = lucide!(
+    r#"<path d="M10.1 2.182a10 10 0 0 1 3.8 0" /><path d="M13.9 21.818a10 10 0 0 1-3.8 0" /><path d="M17.609 3.721a10 10 0 0 1 2.69 2.7" /><path d="M2.182 13.9a10 10 0 0 1 0-3.8" /><path d="M20.279 17.609a10 10 0 0 1-2.7 2.69" /><path d="M21.818 10.1a10 10 0 0 1 0 3.8" /><path d="M3.721 6.391a10 10 0 0 1 2.7-2.69" /><path d="M6.391 20.279a10 10 0 0 1-2.69-2.7" />"#
+);
+const CHECK_SKIPPED_SVG: &[u8] =
+    lucide!(r#"<circle cx="12" cy="12" r="10" /><path d="M8 12h8" />"#);
+
+const GIT_PULL_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><line x1="6" x2="6" y1="9" y2="21" />"#
+);
+const GIT_PULL_DRAFT_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M18 6V5" /><path d="M18 11v-1" /><line x1="6" x2="6" y1="9" y2="21" />"#
+);
+const GIT_PULL_CLOSED_SVG: &[u8] = lucide!(
+    r#"<circle cx="6" cy="6" r="3" /><path d="M6 9v12" /><path d="m21 3-6 6" /><path d="m21 9-6-6" /><path d="M18 11.5V15" /><circle cx="18" cy="18" r="3" />"#
+);
+const GIT_MERGE_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" />"#
+);
+const BLOCKS_SVG: &[u8] = lucide!(
+    r#"<path d="M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2" /><rect x="14" y="2" width="8" height="8" rx="1" />"#
+);
+
+pub const IMAGE: &str = "icons/dusk/image.svg";
+pub const VIDEO: &str = "icons/dusk/video.svg";
+
+const IMAGE_SVG: &[u8] = lucide!(
+    r#"<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>"#
+);
+const VIDEO_SVG: &[u8] =
+    lucide!(r#"<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>"#);
+
+/// The marks of the Workshop's tiers, the same shapes as the browser's: a filled shield
+/// with its check cut out for Official, a badge with a check for Verified, people for
+/// Community and a folder for Local. The browser draws them from `assets/icons.svg`.
+pub const TIER_OFFICIAL: &str = "icons/dusk/tier-official.svg";
+pub const TIER_VERIFIED: &str = "icons/dusk/tier-verified.svg";
+pub const TIER_COMMUNITY: &str = "icons/dusk/tier-community.svg";
+pub const TIER_LOCAL: &str = "icons/dusk/tier-local.svg";
+
+const TIER_OFFICIAL_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z M10.6 15.4 7.5 12.3l1.4-1.4 1.7 1.7 4.5-4.5 1.4 1.4z" /></svg>"#;
+const TIER_VERIFIED_SVG: &[u8] = lucide!(
+    r#"<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" /><path d="m9 12 2 2 4-4" />"#
+);
+const TIER_COMMUNITY_SVG: &[u8] = lucide!(
+    r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />"#
+);
+const TIER_LOCAL_SVG: &[u8] = lucide!(
+    r#"<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />"#
+);
+
+/// Lucide's shapes drawn thin, for a glyph shown large: 2 px at 40 px.
+macro_rules! lucide_thin {
+    ($shapes:literal) => {
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">"#,
+            $shapes,
+            "</svg>"
+        )
+        .as_bytes()
+    };
+}
+
+/// The kinds of a Workshop listing in the place of a missing cover: the puzzle for a
+/// plugin, layers for a pack, an open book for a skill, a robot for an agent, a plug for a
+/// connector; and the
+/// cloud struck out for a cover that could not be fetched while offline.
+pub const KIND_PLUGIN: &str = "icons/dusk/kind-plugin.svg";
+pub const KIND_PACK: &str = "icons/dusk/kind-pack.svg";
+pub const KIND_SKILL: &str = "icons/dusk/kind-skill.svg";
+pub const KIND_AGENT: &str = "icons/dusk/kind-agent.svg";
+pub const KIND_CONNECTOR: &str = "icons/dusk/kind-connector.svg";
+pub const CLOUD_OFF: &str = "icons/dusk/cloud-off.svg";
+
+const KIND_PLUGIN_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" />"#
+);
+const KIND_PACK_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" /><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" /><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" />"#
+);
+const KIND_SKILL_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M12 5v16" /><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z" />"#
+);
+const KIND_AGENT_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />"#
+);
+const KIND_CONNECTOR_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M12 22v-5" /><path d="M9 8V2" /><path d="M15 8V2" /><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />"#
+);
+const CLOUD_OFF_SVG: &[u8] = lucide!(
+    r#"<path d="M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057" /><path d="M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78" /><path d="m2 2 20 20" />"#
+);
+
+/// A funnel: the Workshop's filters, the same shape as the browser's.
+pub const FILTER: &str = "icons/dusk/filter.svg";
+
+const FILTER_SVG: &[u8] = lucide!(
+    r#"<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />"#
+);
+
+/// Six dots: the handle a module is dragged by. The kit's catalog has it, but not its
+/// default bundle that the app serves.
+pub const GRIP: &str = "icons/dusk/grip-vertical.svg";
+
+const GRIP_SVG: &[u8] = lucide!(
+    r#"<circle cx="9" cy="12" r="1" /><circle cx="9" cy="5" r="1" /><circle cx="9" cy="19" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="5" r="1" /><circle cx="15" cy="19" r="1" />"#
+);
+
 pub const HOME: &str = "icons/dusk/home.svg";
 pub const LOCK: &str = "icons/dusk/lock.svg";
 pub const POWER: &str = "icons/dusk/power.svg";
 
 const HOME_SVG: &[u8] = lucide!(
-    r#"<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" /><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />"#
+    r#"<path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21v-7h6v7"/>"#
 );
 const LOCK_SVG: &[u8] = lucide!(
-    r#"<rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />"#
+    r#"<rect x="4" y="11" width="16" height="11" rx="2"/><path d="M8 11V6a4 4 0 1 1 8 0v5"/>"#
 );
-const POWER_SVG: &[u8] =
-    lucide!(r#"<path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.77.04" />"#);
+const POWER_SVG: &[u8] = lucide!(r#"<path d="M12 2v10M6 5a9 9 0 1 0 12 0"/>"#);
 
 /// The kit's icons, with ours answered first.
 pub struct Assets;
@@ -66,11 +206,36 @@ impl AssetSource for Assets {
             MOON => return Ok(Some(Cow::Borrowed(MOON_SVG))),
             MOON_FILL => return Ok(Some(Cow::Borrowed(MOON_FILL_SVG))),
             TEMPORARY => return Ok(Some(Cow::Borrowed(TEMPORARY_SVG))),
-            PHONE => return Ok(Some(Cow::Borrowed(PHONE_SVG))),
-            HOME => return Ok(Some(Cow::Borrowed(HOME_SVG))),
             REFRESH => return Ok(Some(Cow::Borrowed(REFRESH_SVG))),
+            IMAGE => return Ok(Some(Cow::Borrowed(IMAGE_SVG))),
+            VIDEO => return Ok(Some(Cow::Borrowed(VIDEO_SVG))),
+            HOME => return Ok(Some(Cow::Borrowed(HOME_SVG))),
             LOCK => return Ok(Some(Cow::Borrowed(LOCK_SVG))),
             POWER => return Ok(Some(Cow::Borrowed(POWER_SVG))),
+            PUZZLE => return Ok(Some(Cow::Borrowed(PUZZLE_SVG))),
+            GIT_BRANCH => return Ok(Some(Cow::Borrowed(GIT_BRANCH_SVG))),
+            GIT_FORK => return Ok(Some(Cow::Borrowed(GIT_FORK_SVG))),
+            GIT_COMPARE => return Ok(Some(Cow::Borrowed(GIT_COMPARE_SVG))),
+            GIT_PULL => return Ok(Some(Cow::Borrowed(GIT_PULL_SVG))),
+            CHECK_QUEUED => return Ok(Some(Cow::Borrowed(CHECK_QUEUED_SVG))),
+            CHECK_SKIPPED => return Ok(Some(Cow::Borrowed(CHECK_SKIPPED_SVG))),
+            GIT_PULL_DRAFT => return Ok(Some(Cow::Borrowed(GIT_PULL_DRAFT_SVG))),
+            GIT_PULL_CLOSED => return Ok(Some(Cow::Borrowed(GIT_PULL_CLOSED_SVG))),
+            GIT_MERGE => return Ok(Some(Cow::Borrowed(GIT_MERGE_SVG))),
+            BLOCKS => return Ok(Some(Cow::Borrowed(BLOCKS_SVG))),
+            PIN => return Ok(Some(Cow::Borrowed(PIN_SVG))),
+            TIER_OFFICIAL => return Ok(Some(Cow::Borrowed(TIER_OFFICIAL_SVG))),
+            TIER_VERIFIED => return Ok(Some(Cow::Borrowed(TIER_VERIFIED_SVG))),
+            TIER_COMMUNITY => return Ok(Some(Cow::Borrowed(TIER_COMMUNITY_SVG))),
+            TIER_LOCAL => return Ok(Some(Cow::Borrowed(TIER_LOCAL_SVG))),
+            FILTER => return Ok(Some(Cow::Borrowed(FILTER_SVG))),
+            GRIP => return Ok(Some(Cow::Borrowed(GRIP_SVG))),
+            KIND_PLUGIN => return Ok(Some(Cow::Borrowed(KIND_PLUGIN_SVG))),
+            KIND_PACK => return Ok(Some(Cow::Borrowed(KIND_PACK_SVG))),
+            KIND_SKILL => return Ok(Some(Cow::Borrowed(KIND_SKILL_SVG))),
+            KIND_AGENT => return Ok(Some(Cow::Borrowed(KIND_AGENT_SVG))),
+            KIND_CONNECTOR => return Ok(Some(Cow::Borrowed(KIND_CONNECTOR_SVG))),
+            CLOUD_OFF => return Ok(Some(Cow::Borrowed(CLOUD_OFF_SVG))),
             _ => {}
         }
         gpui_kit::assets::Assets.load(path)

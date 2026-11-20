@@ -1,8 +1,10 @@
 //! Small pieces every column draws with.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName},
+    component::{ActiveTheme, Icon},
     prelude::FluentBuilder,
     *,
 };
@@ -34,6 +36,7 @@ pub fn row(id: impl Into<ElementId>, active: bool, cx: &App) -> Stateful<Div> {
         .cursor_pointer()
         .when(active, |row| row.bg(selected))
         .hover(move |row| row.bg(hover))
+        .press(selected, cx)
         .focusable_row(cx)
 }
 
@@ -54,26 +57,25 @@ pub fn menu_item(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
+        .press(hover.opacity(0.7), cx)
         .focusable_row(cx)
 }
 
-pub fn icon(name: IconName, color: Hsla) -> Icon {
-    Icon::new(name)
+pub fn icon(name: impl Into<Icon>, color: Hsla) -> Icon {
+    name.into()
         .size(px(crate::ui::size::ICON))
         .text_color(color)
 }
 
-/// "1 file", "2 files": a count with its noun in the plural unless it is one.
-pub fn count(n: usize, noun: &str) -> String {
-    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
-}
+/// "1 file", "2 files", as every client says it.
+pub use dusk_protocol::thread::plural as count;
 
 /// A short label in a tinted pill, such as a chat's source.
 pub fn badge(text: impl Into<SharedString>, color: Hsla) -> Div {
     div()
         .px_1p5()
         .rounded_sm()
-        .text_xs()
+        .meta()
         .text_color(color)
         .bg(color.opacity(0.14))
         .child(text.into())
@@ -146,14 +148,8 @@ where
     )
 }
 
-/// `12.3k` for a token count.
-pub fn short(tokens: u64) -> String {
-    match tokens {
-        0..1_000 => tokens.to_string(),
-        1_000..1_000_000 => format!("{:.1}k", tokens as f64 / 1e3),
-        _ => format!("{:.1}M", tokens as f64 / 1e6),
-    }
-}
+/// `12.3k` for a token count, as every client says it.
+pub use dusk_protocol::thread::short_count as short;
 
 pub fn capitalize(text: &str) -> String {
     let mut chars = text.chars();
@@ -165,16 +161,13 @@ pub fn capitalize(text: &str) -> String {
 
 /// A card: the one surface the page is built of.
 pub fn card(cx: &App) -> Div {
-    let theme = cx.theme();
     div()
         .flex()
         .flex_col()
         .gap_3()
         .p_4()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.muted)
+        .elevation(Level::Raised, cx)
 }
 
 /// A field's label above its box.
@@ -193,7 +186,7 @@ pub fn labeled(label: &'static str, hint: &'static str, cx: &App) -> Div {
 
 /// A small button that copies `text`; it comes up while the pointer is over `group`.
 /// Every kind of message has one, the folded ones under their heading too.
-pub fn copy(id: impl Into<ElementId>, group: &SharedString, text: &str) -> Div {
+pub fn copy(id: SharedString, group: &SharedString, text: &str, cx: &App) -> Div {
     use gpui_kit::component::{
         Sizable,
         button::{Button, ButtonVariants},
@@ -204,14 +197,28 @@ pub fn copy(id: impl Into<ElementId>, group: &SharedString, text: &str) -> Div {
         .opacity(0.)
         .group_hover(group.clone(), |button| button.opacity(1.))
         .child(
-            Button::new(id)
+            Button::new(id.clone())
                 .ghost()
                 .xsmall()
-                .icon(IconName::Copy)
+                .icon(crate::ui::clipboard::icon(&id, cx))
                 .tooltip("Copy")
                 .on_click(move |_, _, cx| {
                     cx.stop_propagation();
-                    cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                    crate::ui::clipboard::copy(&id, text.clone(), cx);
                 }),
         )
+}
+
+/// The text colour of a tone the protocol names, such as a task's status.
+pub fn tone(tone: dusk_protocol::thread::Tone, cx: &App) -> Hsla {
+    use dusk_protocol::thread::Tone;
+    let theme = cx.theme();
+    match tone {
+        Tone::Neutral => theme.muted_foreground,
+        Tone::Info => theme.info,
+        Tone::Success => theme.success,
+        Tone::Warning => theme.warning,
+        Tone::Danger => theme.danger,
+        Tone::Accent => theme.primary,
+    }
 }

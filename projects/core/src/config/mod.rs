@@ -2,14 +2,17 @@
 //! and which tools and skills are on.
 //! `LiveConfig` keeps the current copy in memory and writes changes back.
 
+mod contracts;
 mod file;
 pub mod live;
 mod mcp;
 mod plugins;
 mod providers;
 mod sections;
+mod workshop;
 
-pub use dusk_protocol::config::{ContextPolicy, UNKNOWN_WINDOW, VersionControl};
+pub use contracts::Contracts;
+pub use dusk_protocol::config::{Arbiter, ContextPolicy, UNKNOWN_WINDOW, VersionControl};
 pub use dusk_protocol::model::Effort;
 pub use file::Config;
 pub use mcp::{
@@ -18,5 +21,9 @@ pub use mcp::{
 pub use plugins::{Plugged, PluginConfig};
 pub use providers::{ApiKey, BalanceApi, Price, ProviderConfig, ProviderKind};
 pub use sections::{
-    Appearance, ApprovalPolicy, Limits, Logging, Memory, ThreadConfig, Traces, WorkHistory,
+    Appearance, ApprovalPolicy, CoreSection, DEFAULT_MODEL_TIMEOUT_SECONDS, Limits, Logging,
+    MAX_ATTEMPTS, MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
+    MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, Memory, Team, ThreadConfig, Traces,
+    WorkHistory,
 };
+pub use workshop::{Mirror, Workshop, is_word};

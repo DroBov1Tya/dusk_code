@@ -2,7 +2,9 @@
 
 use super::player::sound_path;
 use crate::pages::chat::transcript::Clip;
+use crate::ui::elevation::{Elevation, Level};
 use crate::{ui::Type, workspace::Workspace};
+use dusk_protocol::thread::clock_words;
 use gpui_kit::{
     component::{
         ActiveTheme, IconName,
@@ -24,20 +26,6 @@ pub(super) fn kind_label(mime: &str) -> &'static str {
     }
 }
 
-/// `0:06`, or `1:02:03` past an hour.
-pub(super) fn clock(time: Duration) -> String {
-    let seconds = time.as_secs();
-    match seconds {
-        0..3600 => format!("{}:{:02}", seconds / 60, seconds % 60),
-        _ => format!(
-            "{}:{:02}:{:02}",
-            seconds / 3600,
-            seconds / 60 % 60,
-            seconds % 60
-        ),
-    }
-}
-
 /// How far into a bar `x` lies, from 0 to 1.
 pub(super) fn fraction(x: Pixels, bar: Bounds<Pixels>) -> f32 {
     if bar.size.width <= px(0.) {
@@ -48,11 +36,10 @@ pub(super) fn fraction(x: Pixels, bar: Bounds<Pixels>) -> f32 {
 
 pub fn card(ws: &Workspace, key: &str, clip: &Clip, cx: &mut Context<Workspace>) -> AnyElement {
     let theme = cx.theme();
-    let (muted, accent, border, surface, raised, foreground) = (
+    let (muted, accent, border, raised, foreground) = (
         theme.muted_foreground,
         theme.primary,
         theme.border,
-        theme.muted,
         theme.accent,
         theme.foreground,
     );
@@ -65,6 +52,7 @@ pub fn card(ws: &Workspace, key: &str, clip: &Clip, cx: &mut Context<Workspace>)
         .map_or(0., |length| {
             (position.as_secs_f32() / length.as_secs_f32()).clamp(0., 1.)
         });
+    let clock = |time: Duration| clock_words(time.as_millis().try_into().unwrap_or(i64::MAX));
     let times = match length {
         Some(length) => format!("{} / {}", clock(position), clock(length)),
         None => clock(position),
@@ -203,9 +191,7 @@ pub fn card(ws: &Workspace, key: &str, clip: &Clip, cx: &mut Context<Workspace>)
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
+        .elevation(Level::Raised, cx)
         .child(head)
         .child(div().h(px(1.)).bg(border))
         .child(

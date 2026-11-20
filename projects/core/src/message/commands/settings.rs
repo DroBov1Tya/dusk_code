@@ -23,6 +23,8 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
     Ok(Settings {
         max_agents_at_work: config.limits().max_agents_at_work,
         max_goal_rounds: config.limits().max_goal_rounds,
+        model_timeout_seconds: config.limits().model_timeout_seconds,
+        max_attempts: config.limits().max_attempts,
         idle_screen_minutes: config.appearance().idle_screen_minutes,
         mode: config.mode().to_owned(),
         modes: runtime.mode_infos(),
@@ -31,6 +33,9 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         update_channel: config.update_channel(),
         approvals: config.approvals(),
         version_control: config.version_control().clone(),
+        arbiter: config.arbiter().clone(),
+        // Only shown; a missing resource must not take the whole settings page with it.
+        arbiter_default_prompt: crate::runtime::arbiter::default_prompt().unwrap_or_default(),
         notifications: config.notifications(),
         sound_notifications: config.sound_notifications(),
         sandbox: runtime.platform().sandbox,

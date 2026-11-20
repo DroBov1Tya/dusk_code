@@ -1,6 +1,7 @@
 //! The helper side of the cursor: dusk's own arrow in a click-through window over the
-//! target display. Core Animation glides the arrow to each point and pulses a ring
-//! at a completed independent click. After ten seconds of silence the overlay hides.
+//! target display. Core Animation glides the arrow to each point, eased out and longer
+//! the farther it goes, and a ring ripples out where it lands on a completed press.
+//! After a few seconds of silence the overlay fades.
 
 use std::{
     io::BufRead,
@@ -22,8 +23,9 @@ use objc2_core_foundation::{CGFloat, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{CGColor, CGMutablePath};
 use objc2_foundation::{NSDate, NSNumber, NSRunLoop, NSString, NSValue};
 use objc2_quartz_core::{
-    CABasicAnimation, CALayer, CAMediaTiming, CAMediaTimingFunction, CAShapeLayer, CATransaction,
-    kCAMediaTimingFunctionEaseInEaseOut, kCAMediaTimingFunctionEaseOut,
+    CABasicAnimation, CACurrentMediaTime, CALayer, CAMediaTiming, CAMediaTimingFunction,
+    CAShapeLayer, CATransaction, kCAMediaTimingFunctionEaseInEaseOut,
+    kCAMediaTimingFunctionEaseOut,
 };
 
 /// The square the arrow is drawn in, wide enough for its glow and its swing.
@@ -50,17 +52,21 @@ const SWING_SECONDS: f64 = 0.9;
 /// How often the loop looks for a line, and for the idle timeout it also guards.
 const TICK_SECONDS: f64 = 1.0 / 30.0;
 /// Silence this long hides the arrow; the next line brings it back.
-const IDLE_SECONDS: f64 = 10.0;
+const IDLE_SECONDS: f64 = 3.0;
 /// The fades out and in.
 const FADE_OUT_SECONDS: f64 = 0.30;
 const FADE_IN_SECONDS: f64 = 0.15;
-/// How long the ring around a successful press fades at the click point.
-const PULSE_SECONDS: f64 = 1.2;
-/// A glide's duration in milliseconds: a little per point, clamped both ways.
-const TRAVEL_BASE_MS: CGFloat = 40.0;
-const TRAVEL_MS_PER_POINT: CGFloat = 0.11;
-const TRAVEL_MIN_MS: CGFloat = 80.0;
-const TRAVEL_MAX_MS: CGFloat = 250.0;
+/// How long the ring of a successful press ripples out at the press point, and how far
+/// it grows from and to.
+const PULSE_SECONDS: f64 = 0.6;
+const PULSE_FROM_SCALE: f64 = 0.4;
+const PULSE_TO_SCALE: f64 = 1.6;
+/// A glide's duration in milliseconds: a little per point, clamped both ways, so a
+/// short hop still reads as motion and a long one never keeps the user waiting.
+const TRAVEL_BASE_MS: CGFloat = 250.0;
+const TRAVEL_MS_PER_POINT: CGFloat = 0.1;
+const TRAVEL_MIN_MS: CGFloat = 250.0;
+const TRAVEL_MAX_MS: CGFloat = 400.0;
 
 /// How long a glide of `distance` points takes.
 fn travel_ms(distance: CGFloat) -> CGFloat {
@@ -179,22 +185,19 @@ pub fn run() {
                         ring.setContentsScale(scale);
                         frame = Some(display);
                     }
+                    let mut arrives = 0.0;
                     if let Some(from) = at.filter(|_| shown && !display_changed) {
                         let distance = (to.0 - from.0).hypot(to.1 - from.1);
-                        glide(&arrow, from, to, travel_ms(distance));
+                        let ms = travel_ms(distance);
+                        glide(&arrow, from, to, ms);
+                        arrives = ms / 1000.0;
                     } else {
                         arrow.removeAnimationForKey(&NSString::from_str("position"));
                         arrow.setPosition(CGPoint::new(to.0, to.1));
                     }
                     if clicked {
                         ring.setPosition(CGPoint::new(to.0, to.1));
-                        animate(
-                            &ring,
-                            "opacity",
-                            &NSNumber::numberWithDouble(1.0),
-                            &NSNumber::numberWithDouble(0.0),
-                            PULSE_SECONDS,
-                        );
+                        ripple(&ring, arrives);
                     } else {
                         ring.removeAnimationForKey(&NSString::from_str("opacity"));
                     }
@@ -414,6 +417,25 @@ fn glide(arrow: &CAShapeLayer, from: Point, to: Point, ms: CGFloat) {
     }
 }
 
+/// Ripples the ring out once the arrow has arrived, `delay` seconds from now. The
+/// ring's own opacity stays 0, so it shows only while the ripple runs.
+fn ripple(ring: &CALayer, delay: f64) {
+    let begin = CACurrentMediaTime() + delay;
+    for (key_path, from, to) in [
+        ("opacity", 1.0, 0.0),
+        ("transform.scale", PULSE_FROM_SCALE, PULSE_TO_SCALE),
+    ] {
+        let animation = eased(
+            key_path,
+            &NSNumber::numberWithDouble(from),
+            &NSNumber::numberWithDouble(to),
+            PULSE_SECONDS,
+        );
+        animation.setBeginTime(begin);
+        ring.addAnimation_forKey(&animation, Some(&NSString::from_str(key_path)));
+    }
+}
+
 /// Fades the square, the arrow in it, to `to`.
 fn fade(square: &CALayer, to: f32, seconds: f64) {
     let from = NSNumber::numberWithDouble(f64::from(square.opacity()));
@@ -425,6 +447,17 @@ fn fade(square: &CALayer, to: f32, seconds: f64) {
 /// Starts one ease-out animation on the layer; the key paths take objects, so the
 /// caller boxes the values.
 fn animate(layer: &CALayer, key_path: &str, from: &AnyObject, to: &AnyObject, seconds: f64) {
+    let animation = eased(key_path, from, to, seconds);
+    layer.addAnimation_forKey(&animation, Some(&NSString::from_str(key_path)));
+}
+
+/// One ease-out animation of `key_path`, not yet added to a layer.
+fn eased(
+    key_path: &str,
+    from: &AnyObject,
+    to: &AnyObject,
+    seconds: f64,
+) -> Retained<CABasicAnimation> {
     let animation = CABasicAnimation::animationWithKeyPath(Some(&NSString::from_str(key_path)));
     // SAFETY: the values fit the key path the caller named.
     unsafe {
@@ -435,7 +468,7 @@ fn animate(layer: &CALayer, key_path: &str, from: &AnyObject, to: &AnyObject, se
     // SAFETY: a named function from Core Animation's own list.
     let ease = CAMediaTimingFunction::functionWithName(unsafe { kCAMediaTimingFunctionEaseOut });
     animation.setTimingFunction(Some(&ease));
-    layer.addAnimation_forKey(&animation, Some(&NSString::from_str(key_path)));
+    animation
 }
 
 #[cfg(test)]
@@ -583,8 +616,8 @@ mod tests {
 
     #[test]
     fn the_travel_time_clamps_both_ways() {
-        assert_eq!(travel_ms(0.0), 80.0, "the floor");
-        assert!((travel_ms(1000.0) - 150.0).abs() < 1e-6, "the middle");
-        assert_eq!(travel_ms(3000.0), 250.0, "the ceiling");
+        assert_eq!(travel_ms(0.0), 250.0, "the floor");
+        assert!((travel_ms(1000.0) - 350.0).abs() < 1e-6, "the middle");
+        assert_eq!(travel_ms(3000.0), 400.0, "the ceiling");
     }
 }

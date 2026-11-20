@@ -2,7 +2,7 @@
 
 use dusk_protocol::client::{Command, parse};
 
-use super::{Action, Activity, App, Connection, Panel, Tone, schedule::ScheduleAction};
+use super::{Action, Activity, App, Connection, Panel, TabMove, Tone, schedule::ScheduleAction};
 
 impl App {
     /// Takes the typed text for sending; commands show as notices, messages as the user's.
@@ -24,10 +24,26 @@ impl App {
                 return Action::None;
             }
             "/plan" => return Action::OpenPlan,
+            "/overview" => return Action::Overview,
             "/schedules" => return Action::Schedule(ScheduleAction::Open),
             "/files" => return Action::ChangedFiles,
+            "/link" => {
+                return match &self.thread_id {
+                    Some(id) => Action::Copy(dusk_protocol::thread::thread_link(id)),
+                    None => {
+                        self.flash = Some("No chat yet: send a message first".into());
+                        Action::None
+                    }
+                };
+            }
             "/diff" => return Action::Diff,
             "/me" => return Action::OpenMe,
+            "/pins" => return Action::Pin(super::PinAsk::List),
+            "/pin" => return Action::Pin(super::PinAsk::Last),
+            "/plugins store" => {
+                self.panel = Some(Panel::Workshop(Box::default()));
+                return Action::LoadStore;
+            }
             "/plugins" => {
                 self.panel = Some(Panel::Plugins {
                     selected: 0,
@@ -37,6 +53,27 @@ impl App {
             }
             _ => {}
         }
+        // A name after it, as a Workshop card in the chat says: the Workshop opens narrowed
+        // to it, where Enter asks before anything is installed.
+        if let Some(name) = trimmed.strip_prefix("/plugins store ") {
+            let filter = name.trim().to_owned();
+            let view = super::Workshop {
+                filter,
+                ..super::Workshop::default()
+            };
+            self.panel = Some(Panel::Workshop(Box::new(view)));
+            return Action::LoadStore;
+        }
+        if trimmed == "/tab" || trimmed.starts_with("/tab ") {
+            return match TabMove::parse(&trimmed["/tab".len()..]) {
+                Some(step) => Action::Tab(step),
+                None => {
+                    self.flash =
+                        Some("Use /tab, /tab 2, /tab next, /tab prev or /tab close".into());
+                    Action::None
+                }
+            };
+        }
         if let Some(name) = trimmed.strip_prefix("/snippet ") {
             return Action::OpenSnippet(name.trim().trim_start_matches('@').to_owned());
         }
@@ -45,6 +82,15 @@ impl App {
                 Ok((repeat, prompt)) => Action::Schedule(ScheduleAction::Add { repeat, prompt }),
                 Err(error) => {
                     self.flash = Some(error);
+                    Action::None
+                }
+            };
+        }
+        if let Some(number) = trimmed.strip_prefix("/unpin ") {
+            return match number.trim().parse::<usize>() {
+                Ok(number) if number > 0 => Action::Pin(super::PinAsk::Unpin(number)),
+                _ => {
+                    self.flash = Some("Use /unpin N, N as /pins numbers them".into());
                     Action::None
                 }
             };
@@ -73,11 +119,7 @@ impl App {
         // A message written instead of answering the question declines it.
         let text = match self.poll.take() {
             // The questions behind it go unasked: the message is what the user wants now.
-            Some(poll) if command.is_none() => {
-                self.polls_waiting.clear();
-                self.poll_answers.push(poll.question.declined(&text));
-                std::mem::take(&mut self.poll_answers).join("\n\n")
-            }
+            Some(_) if command.is_none() => self.questions.decline(&text).unwrap_or(text),
             poll => {
                 self.poll = poll;
                 text
@@ -85,6 +127,10 @@ impl App {
         };
         if let Some(Ok(Command::Fork { .. })) = &command {
             self.activity = Activity::Forking;
+        }
+        if command.is_none() {
+            // What the user says makes the suggestion stale.
+            self.suggestion.clear();
         }
         if command.is_some() {
             self.scroll = 0;
@@ -130,5 +176,28 @@ impl App {
         } else {
             Activity::Idle
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::{Action, Panel, test_app};
+
+    /// What a Workshop card in the chat tells the user to type opens the Workshop
+    /// narrowed to the name; installing still waits for Enter and its box.
+    #[test]
+    fn plugins_store_with_a_name_opens_the_workshop_narrowed_to_it() {
+        let mut app = test_app();
+        app.input.set("/plugins store  motion-kit ".into());
+        assert!(matches!(app.submit(false), Action::LoadStore));
+        let Some(Panel::Workshop(view)) = &app.panel else {
+            panic!("the Workshop is open");
+        };
+        assert_eq!(view.filter, "motion-kit");
+        assert!(view.confirm.is_none());
+
+        app.input.set("/plugins store".into());
+        assert!(matches!(app.submit(false), Action::LoadStore));
+        assert!(matches!(&app.panel, Some(Panel::Workshop(view)) if view.filter.is_empty()));
     }
 }

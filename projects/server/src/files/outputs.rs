@@ -3,8 +3,8 @@
 //! saved project; and only pictures leave, so a text file is never served as data.
 
 use super::cards::sniff;
-use dusk_core::client::Hub;
-use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
+use dusk_core::client::{Hub, Scope};
+use dusk_protocol::client::Hello;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -30,11 +30,8 @@ pub async fn read_picture(hub: &Arc<Hub>, path: &str) -> Option<(Vec<u8>, &'stat
 async fn allowed(hub: &Arc<Hub>, path: &Path) -> bool {
     let status = hub.status();
     let mut roots: Vec<PathBuf> = vec![status.workspace_dir, status.artifacts_dir];
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: "web".to_owned(),
-    };
-    if let Ok(client) = hub.attach(hello)
+    let hello = Hello::new("web");
+    if let Ok(client) = hub.attach(hello, Scope::web())
         && let Ok(projects) = client.projects().list().await
     {
         roots.extend(projects.into_iter().map(|project| project.dir));

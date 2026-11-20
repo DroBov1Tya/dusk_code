@@ -26,6 +26,8 @@ pub enum Panel {
         /// The masked form for a secret setting, while one is being typed.
         entry: Option<SecretEntry>,
     },
+    /// The plugin store, opened from the plugins panel.
+    Workshop(Box<super::Workshop>),
     Unsent {
         selected: usize,
     },
@@ -52,6 +54,8 @@ pub enum Panel {
         report: ContextReport,
         row: usize,
     },
+    /// How the thread's work stands, as text; read again while open.
+    Overview(Box<OverviewView>),
     Jobs(JobsView),
     /// The chat's folder's changes: the files, or one of them open.
     Diff(DiffView),
@@ -67,6 +71,42 @@ pub enum Panel {
         selected: usize,
         removing: bool,
     },
+}
+
+/// The core's Overview and context report for the /overview panel; the plan and team
+/// are the app's, which the rail shows too.
+pub struct OverviewView {
+    pub overview: dusk_protocol::thread::Overview,
+    pub context: ContextReport,
+    /// The line kept in view while scrolling.
+    pub row: usize,
+    /// `s` asked "Stop team? y/n": `y` stops it, any other key answers no.
+    pub stopping: bool,
+    /// The running team's budget being changed.
+    pub budget: Option<BudgetEdit>,
+    /// The member row chosen with tab, which enter opens.
+    pub member: Option<usize>,
+}
+
+impl OverviewView {
+    pub fn new(overview: dusk_protocol::thread::Overview, context: ContextReport) -> Self {
+        Self {
+            overview,
+            context,
+            row: 0,
+            stopping: false,
+            budget: None,
+            member: None,
+        }
+    }
+}
+
+/// A team's budget as four fields of text, one chosen to type into.
+pub struct BudgetEdit {
+    pub fields: [String; 4],
+    pub selected: usize,
+    /// Why the last save was refused.
+    pub error: Option<String>,
 }
 
 pub struct DiffView {
@@ -193,6 +233,7 @@ impl Preview {
 pub struct PluginRow {
     pub name: String,
     pub version: String,
+    pub duskcode_version: Option<String>,
     pub description: String,
     pub enabled: bool,
     /// What it brings, such as `mcp` or `platform`.

@@ -1,7 +1,11 @@
 //! A subagent's own chat in a window over the page, with its steps folded as in a chat.
 
-use super::blocks::Transcript;
-use crate::{api, state::state, ui::run};
+use super::blocks::{Source, Transcript};
+use crate::{
+    api,
+    state::state,
+    ui::{Icon, IconName, run},
+};
 use dusk_protocol::thread::AgentState;
 use leptos::prelude::*;
 
@@ -11,17 +15,7 @@ pub fn SubagentWindow() -> impl IntoView {
     move || {
         let (parent, thread_id) = app.subagent.get()?;
         let parent_chat = app.chat(&parent)?;
-        let sub = Memo::new({
-            let thread_id = thread_id.clone();
-            move |_| {
-                parent_chat.with(|c| c.agent_chats.get(&thread_id).cloned().unwrap_or_default())
-            }
-        });
-        // The sub-chat as a signal of its own, so the transcript reads it like any chat.
-        let view_chat = RwSignal::new(sub.get_untracked());
-        Effect::new(move |_| view_chat.set(sub.get()));
-        let info = parent_chat
-            .with_untracked(|c| c.agents.iter().find(|a| a.thread_id == thread_id).cloned());
+        let info = parent_chat.with_untracked(|c| c.agent(&thread_id).cloned());
         let name = info.as_ref().map(|a| a.name.clone()).unwrap_or_default();
         let task = info.as_ref().map(|a| a.task.clone()).unwrap_or_default();
         let id_for_state = thread_id.clone();
@@ -36,16 +30,18 @@ pub fn SubagentWindow() -> impl IntoView {
                         </div>
                         <div class="grow"></div>
                         <span class="chip">{move || {
-                            parent_chat.with(|c| c.agents.iter().find(|a| a.thread_id == id_for_state).map(|a| state_text(&a.state)))
+                            parent_chat.with(|c| c.agent(&id_for_state).map(|a| state_text(&a.state)))
                                 .unwrap_or_default()
                         }}</span>
                         <button class="ghost danger" on:click=move |_| {
                             let id = stop_id.clone();
                             run(async move { api::stop_agent(&id).await }, |()| ());
-                        }>"Stop"</button>
-                        <button class="icon" on:click=move |_| app.subagent.set(None)>"×"</button>
+                        }><Icon name=IconName::Square />"Stop"</button>
+                        <button id="subagent-close" class="icon" aria-label="Close subagent chat" on:click=move |_| app.subagent.set(None)>
+                            <Icon name=IconName::Close />
+                        </button>
                     </header>
-                    <Transcript chat=view_chat />
+                    <Transcript source=Source::subagent(parent_chat, thread_id.clone()) thread=None read_only=true />
                 </div>
             </div>
         })

@@ -1,5 +1,5 @@
-//! The menu over the model bar: the current provider's models with a check on the one
-//! in use, then Effort and More models, each opening its submenu to the side.
+//! The menu over the model bar: the model in use, then Effort and More models, each
+//! opening its submenu to the side, where every other model is chosen.
 //! The submenus live apart (`efforts`, `more`), and so do the keys that work while it is
 //! open (`keys`).
 
@@ -27,7 +27,7 @@ use crate::{
     workspace::{Picker, Workspace},
 };
 
-/// How many models of the current provider the menu lists before More models.
+/// How many models of the current provider More models gives a digit key.
 pub const FIRST: usize = 6;
 const WIDTH: f32 = 344.;
 pub const ROW: f32 = 36.;
@@ -66,32 +66,17 @@ pub fn render(
         .iter()
         .find(|p| p.name == provider)
         .or(ws.providers.first());
-    let current_in_list = mine.is_some_and(|p| {
-        p.models.as_ref().is_ok_and(|models| {
-            models
-                .iter()
-                .take(FIRST)
-                .any(|model| current == format!("{}/{}", p.name, model.id))
-        })
-    });
     main = main.child(models_heading(mine.map(|p| p.name.as_str()), cx));
-    if !current.is_empty() && !current_in_list {
-        main = main.child(current_model(&current, cx));
-    }
+    // Only the model in use is shown here; the others are chosen under More models.
     match mine.map(|p| (p, &p.models)) {
         None => main = main.child(widgets::muted(catalog_status(ws), cx)),
-        Some((_, Ok(models))) if models.is_empty() => {
-            main = main.child(widgets::muted("This provider lists no models", cx));
-        }
         Some((p, Err(error))) => {
             main = main.child(widgets::muted(format!("{}: {error}", p.name), cx))
         }
-        Some((p, Ok(models))) => {
-            for (index, model) in models.iter().take(FIRST).enumerate() {
-                let name = format!("{}/{}", p.name, model.id);
-                main = main.child(model_row(&name, &model.id, &current, Some(index + 1), cx));
-            }
+        Some(_) if current.is_empty() => {
+            main = main.child(widgets::muted("No model chosen yet", cx));
         }
+        Some(_) => main = main.child(current_model(&current, cx)),
     }
     main = main
         .child(separator(cx))
@@ -186,11 +171,14 @@ pub fn render(
         anchored()
             .anchor(Anchor::BottomRight)
             .snap_to_window_with_margin(Edges::all(px(8.)))
-            .child(popup.on_mouse_down_out(cx.listener(|ws, _, _, cx| {
-                ws.picker = None;
-                ws.picker_closed = Some(std::time::Instant::now());
-                cx.notify();
-            }))),
+            .child(crate::ui::widgets::appear(
+                "model-menu-open",
+                popup.on_mouse_down_out(cx.listener(|ws, _, _, cx| {
+                    ws.picker = None;
+                    ws.picker_closed = Some(std::time::Instant::now());
+                    cx.notify();
+                })),
+            )),
     )
 }
 
@@ -366,6 +354,13 @@ impl Workspace {
         } else {
             submenu
         });
+        // More models opens on the provider in use, whose first models have digit keys.
+        if self.picker == Some(Picker::MoreModels)
+            && let Some(provider) = self.status.model.as_deref()
+            && let Some((provider, _)) = provider.split_once('/')
+        {
+            self.models_open.insert(provider.to_owned());
+        }
         cx.notify();
     }
 }

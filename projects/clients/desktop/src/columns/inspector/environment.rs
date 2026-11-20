@@ -1,8 +1,11 @@
 //! Where the shown chat works: the project and its folder, the branch, the model, the
 //! mode and the approval policy. A click on the folder opens what to do with it.
 
+use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use gpui_kit::{
-    component::{ActiveTheme, IconName},
+    component::{ActiveTheme, Icon, IconName},
     *,
 };
 
@@ -22,7 +25,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .as_ref()
         .and_then(|git| git.branch.clone())
         .unwrap_or_else(|| "no repository".to_owned());
-    let line = |icon: IconName, text: String| {
+    let line = |icon: Icon, text: String| {
         div()
             .flex()
             .flex_row()
@@ -30,16 +33,17 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .gap_2()
             .px_4()
             .py_1()
-            .text_sm()
+            .small()
             .text_color(secondary)
             .child(widgets::icon(icon, muted))
             .child(div().flex_1().min_w_0().truncate().child(text))
     };
     let web = ws.git.as_ref().and_then(|git| git.web.clone());
-    let folder = line(IconName::HardDrive, short_path(&dir))
+    let folder = line(IconName::HardDrive.into(), short_path(&dir))
         .id("environment-path")
         .cursor_pointer()
         .hover(|row| row.bg(theme.accent))
+        .press(theme.accent, cx)
         .on_click(cx.listener(|ws, _, _, cx| {
             ws.path_menu = !ws.path_menu;
             cx.notify();
@@ -48,23 +52,26 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     div()
         .flex()
         .flex_col()
-        .child(line(IconName::Folder, name))
+        .child(line(IconName::Folder.into(), name))
         .child(
             div()
                 .relative()
                 .child(folder)
                 .children(menu.map(crate::ui::widgets::on_top)),
         )
-        .child(line(IconName::Github, branch))
         .child(line(
-            IconName::Cpu,
+            Icon::default().path(crate::ui::icons::GIT_BRANCH),
+            branch,
+        ))
+        .child(line(
+            IconName::Cpu.into(),
             ws.status
                 .model
                 .clone()
                 .unwrap_or_else(|| "no model".to_owned()),
         ))
         .child(line(
-            IconName::Bot,
+            IconName::Bot.into(),
             format!(
                 "{} mode · {} approvals",
                 ws.status.mode,
@@ -77,7 +84,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let muted = theme.muted_foreground;
-    let item = |id: &'static str, icon: IconName, label: &'static str, cx: &App| {
+    let item = |id: &'static str, icon: Icon, label: &'static str, cx: &App| {
         widgets::menu_item(id, cx)
             .child(widgets::icon(icon, muted))
             .child(label)
@@ -93,13 +100,10 @@ fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> 
         .flex()
         .flex_col()
         .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .occlude()
         .child(
-            item("path-reveal", IconName::Folder, reveal_label(), cx).on_click(cx.listener(
+            item("path-reveal", IconName::Folder.into(), reveal_label(), cx).on_click(cx.listener(
                 move |ws, _, _, cx| {
                     ws.path_menu = false;
                     cx.reveal_path(&reveal);
@@ -108,7 +112,7 @@ fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> 
         );
     if let Some(web) = web {
         menu = menu.child(
-            item("path-repo", IconName::Github, "Open repo", cx).on_click(cx.listener(
+            item("path-repo", IconName::Github.into(), "Open repo", cx).on_click(cx.listener(
                 move |ws, _, _, cx| {
                     ws.path_menu = false;
                     cx.open_url(&web);
@@ -119,7 +123,7 @@ fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> 
     menu.child(
         item(
             "path-terminal",
-            IconName::SquareTerminal,
+            IconName::SquareTerminal.into(),
             "Open in terminal",
             cx,
         )
@@ -131,7 +135,7 @@ fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> 
         })),
     )
     .child(
-        item("path-copy", IconName::Copy, "Copy path", cx).on_click(cx.listener(
+        item("path-copy", IconName::Copy.into(), "Copy path", cx).on_click(cx.listener(
             move |ws, _, _, cx| {
                 ws.path_menu = false;
                 cx.write_to_clipboard(ClipboardItem::new_string(copy.display().to_string()));

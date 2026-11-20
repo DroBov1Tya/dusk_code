@@ -17,6 +17,7 @@ pub enum Action {
     Cancel,
     /// The answer to a tool's request for approval.
     Approve {
+        thread_id: String,
         id: u64,
         decision: Decision,
     },
@@ -28,6 +29,22 @@ pub enum Action {
         key: String,
         value: String,
     },
+    /// Reads the store and the skill packs into the Workshop.
+    LoadStore,
+    /// Installs or updates a plugin from the store at the version the user saw, with the
+    /// hash of the files shown for an Unverified one.
+    InstallPlugin(Box<dusk_protocol::plugin::Listing>, Option<String>),
+    /// Reads what installing an Unverified listing would write, for its question.
+    ReviewListing {
+        source: String,
+        name: String,
+    },
+    /// Removes a plugin the store installed.
+    RemovePlugin(String),
+    /// Updates what asks for nothing more, and says what was done and left.
+    UpdateAll,
+    /// Switches a skill pack or a skill of one from the Workshop.
+    PackSwitch(dusk_protocol::client::Switch, bool),
     Connect {
         kind: ProviderKind,
         /// `None` takes the next free `provider-N`.
@@ -37,10 +54,18 @@ pub enum Action {
     },
     SetAgentLimit(usize),
     SetGoalRounds(u32),
+    SetModelTimeout(u32),
+    SetMaxAttempts(u32),
     SetIdleMinutes(u32),
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
     OpenPlan,
+    /// Read the Overview and open its panel.
+    Overview,
+    /// Stop the chat's running team, after the second `s`.
+    StopTeam,
+    /// Give the chat's running team this budget.
+    SetTeamBudget(dusk_protocol::thread::TeamBudget),
     /// `/files`: what this chat's commands changed in the project.
     ChangedFiles,
     /// `/diff`: the folder's changes line by line.
@@ -57,6 +82,8 @@ pub enum Action {
     Disconnect(String),
     /// The plan as the editor saved it; empty text removes it.
     SavePlan(String),
+    /// `/pins`, `/pin` and `/unpin N`: the chat's pinned messages.
+    Pin(PinAsk),
     /// `/access`: this chat's own approval mode, or the one it has now when none is named.
     Access(Option<String>),
     SetMemoryChars(usize),
@@ -72,6 +99,8 @@ pub enum Action {
     StopJob(String),
     /// Send the agent's running command, by its tool call, to the background.
     Background(String),
+    /// Open, close or switch a tab.
+    Tab(super::TabMove),
     SetContextPolicy(ContextPolicy),
     /// Turn an agent, a tool, a skill or an MCP server on or off.
     Switch {
@@ -135,10 +164,27 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ),
         (
             "/plugins",
-            "the plugins found, to switch on or off; they live in rules/plugins/",
+            "the plugins found, to switch on or off; /plugins store [name] installs more",
+        ),
+        (
+            "/tab",
+            "a new tab; /tab 2 shows tab 2, /tab next, /tab prev, /tab close",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
+        (
+            "/overview",
+            "how the chat's work stands: plan, tokens, changes, activity, log",
+        ),
+        ("/pins", "this chat's pinned messages, numbered"),
+        (
+            "/pin",
+            "pin the agent's last answer; /unpin N takes pin N away",
+        ),
         ("/files", "the files this chat's commands changed"),
+        (
+            "/link",
+            "copy this chat's link, for a message in another chat",
+        ),
         ("/diff", "review the changes in this chat's folder"),
         (
             "/disconnect",
@@ -151,8 +197,19 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ("/snippet", "write a snippet for @name: /snippet name"),
         (
             "/access",
-            "this chat's access: ask, sandbox, arbiter, full or default",
+            "this chat's access: ask, sandbox, auto, full or default",
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())
+}
+
+/// What a pin command asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinAsk {
+    /// Lists the pins, numbered.
+    List,
+    /// Pins the agent's last answer.
+    Last,
+    /// Unpins the pin of this number, from 1.
+    Unpin(usize),
 }

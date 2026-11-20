@@ -2,7 +2,7 @@
 
 use crate::{
     state::state,
-    ui::{Section, theme::THEMES},
+    ui::{Icon, IconName, Section, theme::THEMES},
 };
 use leptos::prelude::*;
 
@@ -16,7 +16,11 @@ pub fn Appearance() -> impl IntoView {
             <div class="themes">
                 {THEMES.iter().map(|name| view! {
                     <button class="theme-card" class:active=move || app.theme.get() == *name
-                        on:click=move |_| app.theme.set((*name).to_owned())>{*name}</button>
+                        aria-pressed=move || if app.theme.get() == *name { "true" } else { "false" }
+                        on:click=move |_| app.theme.set((*name).to_owned())>
+                        {*name}
+                        <Show when=move || app.theme.get() == *name><Icon name=IconName::Check /></Show>
+                    </button>
                 }).collect_view()}
             </div>
         </Section>

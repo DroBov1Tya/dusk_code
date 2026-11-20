@@ -3,7 +3,8 @@
 
 use crate::chat::subagent::state_text;
 use crate::state::state;
-use dusk_protocol::thread::AgentState;
+use dusk_protocol::thread::Subagent as Agent;
+use dusk_protocol::{agent::Doing, thread::AgentState};
 use leptos::prelude::*;
 
 #[component]
@@ -12,29 +13,49 @@ pub fn AgentsTab(id: String) -> impl IntoView {
     let thread = id.clone();
     let agents = Signal::derive(move || {
         app.chat(&thread)
-            .map(|c| c.with(|c| c.agents.clone()))
+            .map(|c| {
+                c.with(|c| {
+                    // In the order they started.
+                    let mut agents: Vec<Agent> = c.agents.values().cloned().collect();
+                    agents.sort_by_key(|agent| agent.started_at);
+                    agents
+                })
+            })
             .unwrap_or_default()
     });
     view! {
         <div class="agents">
             <Show when=move || !agents.get().is_empty() fallback=|| view! { <p class="muted">"No subagents in this chat."</p> }>
-                {let id = id.clone(); move || agents.get().into_iter().map(|agent| {
-                    let (parent, thread_id) = (id.clone(), agent.thread_id.clone());
-                    let working = agent.state.working();
-                    view! {
-                        <button class="agent" on:click=move |_| app.subagent.set(Some((parent.clone(), thread_id.clone())))>
-                            <FoxBadge working />
-                            <div class="agent-text">
-                                <div class="agent-name">{agent.name.clone()}<span class="muted">{format!(" · {}", agent.role)}</span></div>
-                                <div class="muted">{agent.task.clone()}</div>
-                                <div class=agent_class(&agent.state)>{state_text(&agent.state)}</div>
-                            </div>
-                        </button>
-                    }
-                }).collect_view()}
+                // Keyed by what a row shows, so a row is drawn again only when it changes and
+                // a finished sun does not replay its hop at every event of another agent.
+                {let id = id.clone(); view! {
+                    <For each=move || agents.get() key=row_key children=move |agent| {
+                        let (parent, thread_id) = (id.clone(), agent.thread_id.clone());
+                        view! {
+                            <button class="agent" on:click=move |_| app.subagent.set(Some((parent.clone(), thread_id.clone())))>
+                                <Sundown state=agent.state.clone() seed=agent.thread_id.clone() />
+                                <div class="agent-text">
+                                    <div class="agent-name">{agent.name.clone()}<span class="muted">{format!(" · {}", agent.role)}</span></div>
+                                    <div class="muted">{agent.task.clone()}</div>
+                                    <div class=agent_class(&agent.state)>{state_text(&agent.state)}</div>
+                                </div>
+                            </button>
+                        }
+                    } />
+                }}
             </Show>
         </div>
     }
+}
+
+fn row_key(agent: &Agent) -> (String, String, String, String, String) {
+    (
+        agent.thread_id.clone(),
+        agent.name.clone(),
+        agent.role.clone(),
+        agent.task.clone(),
+        format!("{:?}", agent.state),
+    )
 }
 
 pub fn agent_class(state: &AgentState) -> &'static str {
@@ -45,15 +66,30 @@ pub fn agent_class(state: &AgentState) -> &'static str {
     }
 }
 
-/// The fox on a subagent's tile; its eyes open while the agent works.
+/// Sundown, Desktop's mascot (`columns/inspector/mascot.rs`) drawn with CSS: a sun half set
+/// on its horizon that moves as the agent's activity does, hops when done and sets when it
+/// failed. `seed` shifts its loops so suns side by side do not blink in step.
 #[component]
-pub fn FoxBadge(working: bool) -> impl IntoView {
+fn Sundown(state: AgentState, seed: String) -> impl IntoView {
+    let doing = match &state {
+        AgentState::Thinking => "thinking",
+        AgentState::Writing => "writing",
+        AgentState::Tool(name) => Doing::of_tool(name).label(),
+        AgentState::Done => "done",
+        AgentState::Failed => "failed",
+    };
+    let hash = seed.bytes().fold(0u32, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(byte.into())
+    });
+    let delay = format!("--d: -{}ms", hash % 4300);
     view! {
-        <svg class="fox" class:awake=working viewBox="0 0 32 32" aria-hidden="true">
-            <path d="M3 4l8 5h10l8-5-2 13-9 11h-4L5 17z" class="fox-face" />
-            <path d="M12 28l4-7 4 7z" class="fox-nose" />
-            <circle cx="11.5" cy="16" r="1.6" class="fox-eye" />
-            <circle cx="20.5" cy="16" r="1.6" class="fox-eye" />
-        </svg>
+        <span class="sun" data-doing=doing style=delay aria-hidden="true">
+            <span class="sun-sky"><span class="sun-rise"><span class="sun-disc"><span class="sun-eyes">
+                <i class="sun-eye"></i><i class="sun-eye"></i>
+            </span></span></span></span>
+            <span class="sun-line"></span>
+            <span class="sun-glint"></span>
+            <span class="sun-glint"></span>
+        </span>
     }
 }

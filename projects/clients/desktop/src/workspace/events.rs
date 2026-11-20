@@ -4,7 +4,7 @@ use dusk_protocol::client::{Event, Status};
 use gpui_kit::*;
 use tokio::sync::{mpsc, watch};
 
-use super::Workspace;
+use super::{Workspace, seen};
 
 impl Workspace {
     pub fn pump_events(
@@ -34,6 +34,7 @@ impl Workspace {
                     // A sign-in that just ended brought a provider: show it.
                     let signed = this.status.chatgpt != next.chatgpt;
                     this.status = next;
+                    this.prune_plugin_parts(cx);
                     if signed {
                         this.load_settings(cx);
                     }
@@ -56,12 +57,21 @@ impl Workspace {
                 {
                     self.rates.insert(thread_id.clone(), *tokens_per_sec);
                 }
+                if let dusk_protocol::thread::ThreadEvent::Unread(unread) = &*event {
+                    seen::heard(self, &thread_id, *unread);
+                }
                 let titled = matches!(
                     *event,
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }
                 );
+                self.suggestions
+                    .entry(thread_id.clone())
+                    .or_default()
+                    .hear(&event);
                 self.notify_event(&thread_id, &event, cx);
                 self.watch_plan(&thread_id, &event, cx);
+                self.overview_heard(&thread_id, &event, cx);
+                self.plan_heard(&thread_id, &event, cx);
                 if matches!(*event, dusk_protocol::thread::ThreadEvent::Tokens { .. }) {
                     self.context_counted(&thread_id, cx);
                 }
@@ -83,11 +93,19 @@ impl Workspace {
                     self.load_jobs(cx);
                     self.load_sources(cx);
                 }
+                let tool_done = matches!(
+                    *event,
+                    dusk_protocol::thread::ThreadEvent::ToolFinished { .. }
+                );
                 let mut finished = false;
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     let was_working = chat.working;
                     chat.apply(*event);
                     finished = was_working && !chat.working;
+                }
+                // A card of the Workshop shows what is installed now, read once it comes.
+                if tool_done && self.shown.as_deref() == Some(thread_id.as_str()) {
+                    self.ensure_suggested(cx);
                 }
                 if finished {
                     self.rates.remove(&thread_id);
@@ -104,9 +122,24 @@ impl Workspace {
             }
             Event::Terminal { id, data } => self.terminal_output(&id, &data, cx),
             Event::TerminalClosed { id, code } => self.terminal_closed(&id, code, cx),
+            Event::PluginView { plugin, part, root } => self.plugin_view(plugin, part, root, cx),
+            Event::PluginFrame {
+                plugin,
+                part,
+                widget,
+                jpeg,
+            } => self.plugin_frame(plugin, part, widget, jpeg, cx),
+            Event::PluginNotice { plugin, text } => self.plugin_notice(&plugin, &text, cx),
+            // The app shows the stop when the core's side of the connection ends.
+            Event::CoreStopping { .. } => {}
+            Event::GitChanged { project_id } => self.git_changed(&project_id, cx),
+            Event::RepositoryStatus { project_id, status } => {
+                self.repository_changed(&project_id, *status, cx)
+            }
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.working = false;
+                    chat.live = Default::default();
                 }
             }
         }

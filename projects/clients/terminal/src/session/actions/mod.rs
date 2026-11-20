@@ -4,6 +4,7 @@
 //! - `thread`: the thread on screen, its turns, agents and access mode;
 //! - `work`: what a thread works on: plan, changes, sources, jobs;
 //! - `settings`: providers, plugins and the values of the settings panel;
+//! - `store`: the Workshop's list of the plugin store, installs and removals;
 //! - `files`: the files the app edits in place: @me, snippets, skills, agents, MCP servers;
 //! - `panels`: commands answered in a panel, and the update window;
 //! - `browser`: pages opened in the system's browser.
@@ -12,6 +13,7 @@ mod browser;
 mod files;
 mod panels;
 mod settings;
+mod store;
 mod thread;
 mod work;
 
@@ -55,8 +57,20 @@ pub async fn apply(
         Action::SetPluginSecret { plugin, key, value } => {
             settings::set_plugin_secret(client, app, plugin, key, value).await
         }
+        Action::LoadStore => store::load(client, app, terminal).await?,
+        Action::InstallPlugin(listing, sha256) => {
+            store::install(client, app, terminal, &listing, sha256.as_deref()).await?
+        }
+        Action::ReviewListing { source, name } => store::review(client, app, &source, &name).await,
+        Action::RemovePlugin(name) => store::remove(client, app, terminal, name).await?,
+        Action::UpdateAll => store::update_all(client, app, terminal).await?,
+        Action::PackSwitch(switch, on) => store::switch(client, app, switch, on).await,
         Action::Send(text) => send(client, app, open, text, false).await,
-        Action::Approve { id, decision } => thread::approve(client, app, id, decision).await,
+        Action::Approve {
+            thread_id,
+            id,
+            decision,
+        } => thread::approve(client, app, &thread_id, id, decision).await,
         Action::SendNow(text) => send(client, app, open, text, true).await,
         Action::Connect {
             kind,
@@ -76,13 +90,19 @@ pub async fn apply(
         Action::OpenSnippet(name) => files::open_snippet(client, app, name).await,
         Action::SaveSnippet(name, text) => files::save_snippet(client, app, name, text).await,
         Action::OpenPlan => work::open_plan(client, app).await,
+        Action::StopTeam => work::stop_team(client, app).await,
+        Action::SetTeamBudget(budget) => work::set_team_budget(client, app, budget).await,
+        Action::Overview => work::overview(client, app).await,
         Action::Diff => work::diff(client, app).await,
         Action::ChangedFiles => work::changed_files(client, app).await,
         Action::SavePlan(text) => work::save_plan(client, app, text).await,
         Action::Access(name) => thread::access(client, app, name).await,
+        Action::Pin(ask) => thread::pin(client, app, ask).await,
         Action::SetBranchPrefix(prefix) => settings::set_branch_prefix(client, app, prefix).await,
         Action::SetIdleMinutes(minutes) => settings::set_idle_minutes(client, app, minutes).await,
         Action::SetGoalRounds(rounds) => settings::set_goal_rounds(client, app, rounds).await,
+        Action::SetModelTimeout(seconds) => settings::set_model_timeout(client, app, seconds).await,
+        Action::SetMaxAttempts(attempts) => settings::set_max_attempts(client, app, attempts).await,
         Action::SetMemoryChars(chars) => settings::set_memory_chars(client, app, chars).await,
         Action::SetWorkHistoryChars(chars) => {
             settings::set_work_history_chars(client, app, chars).await
@@ -113,6 +133,8 @@ pub async fn apply(
         Action::RemoveSource(id) => work::remove_source(client, app, open, id).await,
         Action::Command(Command::Jobs { .. }) => work::jobs(client, app, open).await,
         Action::Background(call_id) => work::background(client, app, call_id).await,
+        // The loop hands tab moves to `tabs::take` before this.
+        Action::Tab(_) => {}
         Action::StopJob(job_id) => work::stop_job(client, app, job_id).await,
         Action::Command(Command::Resume { .. }) => thread::resume(client, app, open).await,
         Action::Command(Command::Context { .. }) => thread::context(client, app, open).await,
@@ -133,7 +155,7 @@ pub async fn apply(
 fn copy(app: &mut App, text: String) {
     let lines = text.lines().count().max(1);
     app.flash = Some(if crate::host::clipboard::copy(&text) {
-        format!("copied {lines} line{}", if lines == 1 { "" } else { "s" })
+        format!("copied {}", dusk_protocol::thread::plural(lines, "line"))
     } else {
         "cannot copy: no clipboard tool".into()
     });

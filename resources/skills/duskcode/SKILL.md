@@ -43,7 +43,7 @@ An expert with its own thread. The text after the front matter is its system pro
 description: Its expertise, one line; the chat reads it to decide whom to ask. Required.
 tools: [read_file, run_command, load_skill]   # optional; every tool when left out
 links: [tester]   # optional; agents it may ask
-skills: [systematic-debugging]   # optional; skills its prompt points it to
+skills: [token-thrift]            # optional; skills its prompt points it to
 entry: false      # optional; then only agents that link to it can ask it
 ---
 You are ... How you work: ...

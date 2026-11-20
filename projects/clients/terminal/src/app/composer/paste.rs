@@ -25,18 +25,7 @@ pub fn chip_index(c: char) -> Option<usize> {
         .then(|| (code - FIRST_CHIP) as usize)
 }
 
-/// The message with each paste as its label, for previews.
-pub fn labelled(message: &str) -> String {
-    split(message)
-        .into_iter()
-        .map(|part| match part {
-            Part::Text(text) => text.to_owned(),
-            Part::Pasted(text) => format!("[{}]", label(text)),
-            Part::Source(name) => format!("[{name}]"),
-        })
-        .collect()
-}
-
+/// How a preview names a paste, for `dusk_protocol::thread::labelled`.
 pub fn label(text: &str) -> String {
     let lines = text.lines().count();
     let chars = compact_number(text.chars().count() as u64);

@@ -2,6 +2,7 @@
 //! strip above the text, and the menu that adds them.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -151,10 +152,7 @@ pub fn attach_menu(has_chat: bool, cx: &mut Context<Workspace>) -> Stateful<Div>
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .child(
             crate::ui::widgets::row("attach-files", false, cx)
                 .child(crate::ui::widgets::icon(
@@ -228,13 +226,14 @@ impl Workspace {
             multiple: true,
             prompt: Some("Attach".into()),
         });
+        let thread_id = self.shown.clone();
+        let generation = self.drafts.generation();
         cx.spawn(async move |ws, cx| {
             let Ok(Ok(Some(paths))) = picked.await else {
                 return;
             };
             let _ = ws.update(cx, |ws, cx| {
-                ws.attachments.extend(paths);
-                cx.notify();
+                ws.edit_draft_at(thread_id, generation, super::Change::Attach(paths), cx);
             });
         })
         .detach();

@@ -7,20 +7,19 @@ members = [
     "projects/clients/terminal",
     "projects/clients/desktop",
     "projects/clients/browser",
-    "projects/plugins/telegram",
     "projects/evals",
 ]
 default-members = ["projects/clients/terminal"]
 
 [workspace.package]
-version = "0.74.0"
+version = "0.77.0"
 edition = "2024"
 publish = false
 license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 serde-saphyr = "2"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
@@ -32,16 +31,16 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "env-filter"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "macros", "migrate"] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 # The system keychain; exact, since it holds the keys of every provider.
 keyring = "=4.2.0"
 # The sounds a chat plays, and the microphone it dictates from.
 rodio = { version = "=0.23.0", default-features = false, features = ["playback", "recording", "flac", "mp3", "mp4", "vorbis", "wav"] }
 # The pseudo-terminal of the user's own shell; exact, since it starts processes.
 portable-pty = "=0.9.0"
-nix = { version = "0.31", default-features = false, features = ["signal"] }
+nix = { version = "0.31", default-features = false, features = ["poll", "signal", "socket", "uio"] }
 ratatui = "0.30.2"
-base64 = "0.22.1"
+base64 = "0.23.1"
 ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 futures = "0.3"
@@ -53,6 +52,8 @@ schemars = "1.2"
 jsonschema = { version = "0.60", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 sha2 = "0.11"
+# Already in the tree under hkdf; signs the handshake of the open API.
+hmac = "0.13"
 async-trait = "0.1"
 teloxide = { version = "0.17", default-features = false, features = ["macros", "rustls", "throttle"] }
 opentelemetry = { version = "0.33", default-features = false, features = ["trace"] }
@@ -70,7 +71,6 @@ rust-embed = "8"
 dusk_server = { path = "projects/server" }
 dusk_core = { path = "projects/core" }
 dusk_protocol = { path = "projects/protocol" }
-dusk_telegram = { path = "projects/plugins/telegram" }
 
 # Dependencies carry no debug info in dev builds: it was most of target/ and nobody steps
 # into them. Our own crates keep line tables, enough for backtraces.

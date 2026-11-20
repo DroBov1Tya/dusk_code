@@ -23,6 +23,7 @@ mod config;
 mod init;
 mod mcp;
 mod message;
+mod net;
 mod platform;
 mod plugins;
 mod project;

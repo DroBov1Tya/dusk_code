@@ -6,6 +6,7 @@ use crate::ui::thread::{
     theme::{ACCENT, HAIRLINE, NEGATIVE, RAISED, fg, thought},
     wrap,
 };
+use dusk_protocol::thread::labelled;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -32,7 +33,10 @@ impl InputView<'_> {
         let mut lines = Vec::new();
         for (index, text) in self.app.queued.iter().enumerate().skip(skip) {
             let row = area.y + lines.len() as u16;
-            let label = format!("   \u{29D7} {}", paste::labelled(text).replace('\n', " "));
+            let label = format!(
+                "   \u{29D7} {}",
+                labelled(text, paste::label).replace('\n', " ")
+            );
             let room = (area.width as usize).saturating_sub(buttons);
             let label = wrap::clip(&label, room);
             let gap = room.saturating_sub(label.width());

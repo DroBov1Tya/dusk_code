@@ -1,0 +1,63 @@
+# osv-scanner: the same exceptions as deny.toml. osv-scanner also reports RustSec
+# "unmaintained" notices of transitive crates, which deny.toml leaves out; they are listed
+# here with a date, so each is looked at again instead of being forgotten.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0459"
+ignoreUntil = 2027-02-17
+reason = "libsqlite3-sys: fix needs a sqlx release; databases are written only by duskcode (see deny.toml)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0462"
+ignoreUntil = 2026-12-17
+reason = "rmcp: fix is cargo update -p rmcp >= 3.9.0, landing as its own change (see deny.toml)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-17
+reason = "chrono unmaintained: direct dependency, replacement tracked separately (see deny.toml)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0141"
+ignoreUntil = 2027-02-17
+reason = "bincode unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0384"
+ignoreUntil = 2027-02-17
+reason = "instant unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0436"
+ignoreUntil = 2027-02-17
+reason = "paste unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0134"
+ignoreUntil = 2027-02-17
+reason = "rustls-pemfile unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0206"
+ignoreUntil = 2027-02-17
+reason = "rustybuzz unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0192"
+ignoreUntil = 2027-02-17
+reason = "ttf-parser unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+ignoreUntil = 2027-02-17
+reason = "zbus_names unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+ignoreUntil = 2027-02-17
+reason = "zvariant unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+ignoreUntil = 2027-02-17
+reason = "zvariant_derive unmaintained: transitive, waits for its parent crate (deny.toml: unmaintained = workspace)"

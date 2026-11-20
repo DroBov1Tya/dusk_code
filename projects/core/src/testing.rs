@@ -33,6 +33,15 @@ pub async fn temp_state(name: &str) -> State {
     State::open(temp_dir(name).join("state.db")).await.unwrap()
 }
 
+/// The steps SQLite plans for `sql`, an `EXPLAIN QUERY PLAN` with its parameters unbound,
+/// one per line.
+pub async fn query_plan(state: &State, sql: &'static str) -> String {
+    use sqlx::Row;
+    let rows = sqlx::query(sql).fetch_all(&state.pool).await.unwrap();
+    let steps: Vec<String> = rows.iter().map(|row| row.get("detail")).collect();
+    steps.join("\n")
+}
+
 /// A config with one provider in a private directory, as `Config::load_from` requires.
 pub fn temp_live_config(name: &str) -> LiveConfig {
     temp_live_config_with(name, "")
@@ -64,6 +73,15 @@ pub fn tool_context(scope: &ToolScope) -> ToolContext {
         approvals: None,
         state: None,
         thread_id: String::new(),
+    }
+}
+
+/// The same with more settings appended as YAML, for a tool that reads one.
+pub fn tool_context_with(scope: &ToolScope, settings: &str) -> ToolContext {
+    let config = Config::parse(format!("{TEST_CONFIG}{settings}").as_bytes()).unwrap();
+    ToolContext {
+        config: Arc::new(config),
+        ..tool_context(scope)
     }
 }
 

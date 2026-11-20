@@ -1,0 +1,29 @@
+exit code: 101
+stderr:
+    Checking serde_core v1.0.229
+    Checking anyhow v1.0.104
+    Checking thiserror v2.0.21
+    Checking serde v1.0.229
+    Checking fixcrate v0.1.0 (/home/dev/fixcrate)
+warning: unused variable: `unused`
+ --> src/lib.rs:1:41
+  |
+1 | pub fn add(a: i32, b: i32) -> i32 { let unused = 3; a + b }
+  |                                         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_unused`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fixcrate` (lib) generated 1 warning (run `cargo clippy --fix --lib -p fixcrate -- ` to apply 1 suggestion)
+warning: `fixcrate` (lib test) generated 1 warning (1 duplicate)
+error[E0308]: mismatched types
+ --> src/main.rs:1:42
+  |
+1 | fn main() { let unused = 3; let n: u32 = "x"; println!("{n}"); }
+  |                                    ---   ^^^ expected `u32`, found `&str`
+  |                                    |
+  |                                    expected due to this
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `fixcrate` (bin "other") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `fixcrate` (bin "other" test) due to 1 previous error

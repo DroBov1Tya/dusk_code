@@ -3,6 +3,7 @@
 use crate::runtime::Runtime;
 use crate::{
     catalog::graph::{NodeText, SKILL_FILE, read_node_text, save_node_text},
+    catalog::packs::{self, SkillPack},
     catalog::skills::{self, SkillInfo},
 };
 use anyhow::Result;
@@ -15,11 +16,41 @@ impl Runtime {
         Ok(())
     }
 
-    pub fn skills(&self) -> Vec<SkillInfo> {
-        skills::list(
+    /// Switches a skill pack: off hides all its skills, each keeping its own switch.
+    pub fn set_pack_enabled(&self, pack: &str, enabled: bool) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_pack_enabled(pack, enabled))?;
+        Ok(())
+    }
+
+    pub fn skill_packs(&self) -> Vec<SkillPack> {
+        packs::list(
             &self.launcher.paths.skills_dir(),
             &self.launcher.config.current(),
         )
+    }
+
+    /// Every skill; one the Workshop installed is marked as from there, not the user's, and
+    /// one from an Unverified source by that source's name.
+    pub fn skills(&self) -> Vec<SkillInfo> {
+        let mut skills = skills::list(
+            &self.launcher.paths.skills_dir(),
+            &self.launcher.config.current(),
+        );
+        let installed = crate::plugins::store::installed_skills(&self.launcher.paths);
+        let origins = crate::plugins::store::origin::Origins::load(&self.launcher.paths);
+        for skill in &mut skills {
+            // Marked whatever its front matter claims: nobody vouches for its source.
+            if let Some((_, source)) = origins.unverified("skills", &skill.name) {
+                skill.kind = skills::SkillKind::Other;
+                skill.source = Some(format!("{source}, unverified"));
+            } else if skill.kind == skills::SkillKind::Own && installed.contains(&skill.name) {
+                skill.kind = skills::SkillKind::Other;
+                skill.source = Some("Workshop".to_owned());
+            }
+        }
+        skills
     }
 
     /// A skill's file as it is on disk; reading it again throws edits away.

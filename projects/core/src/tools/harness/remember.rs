@@ -4,7 +4,9 @@
 //! `~/Documents/duskcode`: on this machine only, never in the repository. The memory is shown in the tool's
 //! description, so every request carries it while it is on in the settings; switched
 //! off, the tool is gone and the memory with it. Each call writes the whole memory
-//! again, which keeps it a short summary rather than a log.
+//! again, which keeps it a short summary rather than a log. With `limits.stable_prefix`
+//! a thread keeps showing the memory it started with until its next compaction; the
+//! model sees a rewrite as its own call.
 
 use std::{
     fs,
@@ -105,8 +107,7 @@ pub(crate) fn project_folder(cwd: &Path) -> String {
         .take(NAME_CHARS)
         .collect();
     let hash = Sha256::digest(cwd.as_os_str().as_encoded_bytes());
-    let hash: String = hash[..6].iter().map(|byte| format!("{byte:02x}")).collect();
-    format!("{name}-{hash}")
+    format!("{name}-{}", dusk_protocol::text::hex(&hash[..6]))
 }
 
 /// The memory as it is on disk, cut to `max_chars`; a missing file is an empty memory.
@@ -169,6 +170,10 @@ impl Tool for Remember {
 
     fn parameters(&self) -> Value {
         schema::of::<RememberArguments>()
+    }
+
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {

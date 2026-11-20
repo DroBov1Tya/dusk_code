@@ -17,6 +17,7 @@
 /docs/gui-todo.md
 /docs/frontier-gap.md
 /docs/weak-models.md
+/docs/roadmap.md
 
 # Secrets and local settings: never commit keys, tokens or a user's config
 .env
@@ -65,3 +66,10 @@ Thumbs.db
 .cursor/
 .aider*
 /projects/clients/browser/dist/
+
+# Playwright MCP scratch
+.playwright-mcp/
+
+# Local planning and agent workspaces
+/docs/superpowers/
+/.superpowers/

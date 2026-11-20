@@ -1,6 +1,6 @@
 //! The MCP servers docked at the bottom of the rail.
 
-use dusk_protocol::config::McpState;
+use dusk_protocol::{config::McpState, thread::plural};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -66,10 +66,7 @@ impl Sidebar<'_> {
             let (mark, color, state) = match &server.state {
                 McpState::Off => (OFF, TEXT_SOFT, "off".to_owned()),
                 McpState::Starting => (OFF, ACCENT, "starting".to_owned()),
-                McpState::Ready(tools) => {
-                    let plural = if tools.len() == 1 { "" } else { "s" };
-                    (ON, POSITIVE, format!("{} tool{plural}", tools.len()))
-                }
+                McpState::Ready(tools) => (ON, POSITIVE, plural(tools.len(), "tool")),
                 McpState::Failed(_) => (FAILED, NEGATIVE, "failed".to_owned()),
             };
             let room = width.saturating_sub(state.len() + 3);

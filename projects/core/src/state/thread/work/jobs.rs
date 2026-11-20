@@ -161,7 +161,7 @@ impl State {
                     AND json_extract(c.value, '$.check.kind') = 'command'
                     AND json_extract(c.value, '$.check.command') = background_jobs.command)")
                 .bind(&owner).bind(job_id).execute(&mut *transaction).await?;
-            let content = format!("[background job {job_id} finished: {status}]\n{output}");
+            let content = dusk_protocol::thread::job_message(job_id, status, output);
             sqlx::query(
                 "INSERT INTO pending_messages (thread_id, request_uid, content, created_at, from_job_id)
                  VALUES (?, ?, ?, ?, ?)",
@@ -261,32 +261,5 @@ impl State {
             .into_iter()
             .find(|job| job.job_id == job_id)
             .with_context(|| format!("no background job {job_id} in this thread"))
-    }
-
-    pub async fn admit_job(
-        &self,
-        thread_id: &str,
-        job_id: &str,
-        content: &str,
-    ) -> Result<super::Message> {
-        use super::messages::{NewMessage, decode_message, insert_message};
-        let mut transaction = self.pool.begin().await.context("begin job admission")?;
-        if let Some(row) = sqlx::query("SELECT * FROM messages WHERE from_job_id = ?")
-            .bind(job_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-        {
-            let message = decode_message(row)?;
-            ensure!(
-                message.thread_id == thread_id && message.content == content,
-                "job completion belongs to a different message"
-            );
-            return Ok(message);
-        }
-        let new = NewMessage::job(job_id, content);
-        let message =
-            insert_message(&mut transaction, thread_id, &new, None, timestamp_ms()?).await?;
-        transaction.commit().await.context("commit job admission")?;
-        Ok(message)
     }
 }

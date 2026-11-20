@@ -22,6 +22,16 @@ impl Server {
                 return Ok(Response::Number(saved.into()));
             }
             SettingsRequest::MaxGoalRounds(rounds) => runtime.set_max_goal_rounds(rounds)?,
+            SettingsRequest::ModelTimeout(seconds) => {
+                runtime.set_model_timeout(seconds)?;
+                let saved = runtime.config().current().limits().model_timeout_seconds;
+                return Ok(Response::Number(saved.into()));
+            }
+            SettingsRequest::MaxAttempts(attempts) => {
+                runtime.set_max_attempts(attempts)?;
+                let saved = runtime.config().current().limits().max_attempts;
+                return Ok(Response::Number(saved.into()));
+            }
             SettingsRequest::MemoryChars(chars) => runtime.set_memory_chars(chars)?,
             SettingsRequest::WorkHistoryChars(chars) => {
                 runtime.set_work_history_chars(chars)?;
@@ -30,6 +40,7 @@ impl Server {
             }
             SettingsRequest::Switch { switch, on } => self.switch(switch, on)?,
             SettingsRequest::BranchPrefix(prefix) => runtime.set_branch_prefix(&prefix)?,
+            SettingsRequest::Arbiter(arbiter) => runtime.set_arbiter(arbiter)?,
             SettingsRequest::NextMode => return Ok(Response::Text(runtime.next_mode()?)),
             SettingsRequest::Mode(name) => runtime.set_mode(&name)?,
             SettingsRequest::Connect {
@@ -66,6 +77,15 @@ impl Server {
             SettingsRequest::PluginEnabled { name, enabled } => {
                 runtime.set_plugin_enabled(&name, enabled)?;
             }
+            SettingsRequest::SetContractPlugin {
+                contract,
+                host,
+                plugin,
+            } => {
+                runtime.set_contract_plugin(&contract, &host, &plugin)?;
+                // Read again under the new routing, not at the next period.
+                self.pulls.all_due();
+            }
             SettingsRequest::PluginSecret { plugin, key, value } => {
                 runtime.set_plugin_secret(&plugin, &key, &value.0)?;
             }
@@ -79,6 +99,7 @@ impl Server {
             Switch::Agent(name) => runtime.set_agent_enabled(&name, on),
             Switch::Tool(name) => runtime.set_tool_enabled(&name, on),
             Switch::Skill(name) => runtime.set_skill_enabled(&name, on),
+            Switch::SkillPack(name) => runtime.set_pack_enabled(&name, on),
             Switch::Mcp(name) => runtime.set_mcp_enabled(&name, on),
             Switch::Memory => runtime.set_memory_enabled(on),
             Switch::WorkHistory => runtime.set_work_history_enabled(on),

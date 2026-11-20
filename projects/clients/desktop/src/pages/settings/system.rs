@@ -3,6 +3,7 @@
 use dusk_protocol::{
     client::{Answer, Command},
     release::InstallStage,
+    thread::short_size,
 };
 use gpui_kit::{
     component::{
@@ -27,20 +28,35 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
         let Some(report) = &ws.system else {
             return body.child(widgets::muted("Measuring...", cx).px_0());
         };
-        let mb = |bytes: u64| format!("{:.1} MB", bytes as f64 / 1_048_576.);
         let mut tiles = div().flex().flex_row().flex_wrap().gap_3();
-        if let Some(process) = &report.process {
+        if let (Some(own), Some(total)) = (report.process, report.total()) {
+            // Each tile names the window's own share and what the programs it started add.
+            let parts = |own: String, children: Option<String>| match (&report.children, children) {
+                (Some(started), Some(theirs)) => format!(
+                    "Window and core {own}, {} {theirs}",
+                    widgets::count(started.count as usize, "program")
+                ),
+                _ => "Window and core, nothing else running".to_owned(),
+            };
+            let cpu = |percent: f32| format!("{percent:.1}%");
+            let theirs = report.children.map(|children| children.usage);
             tiles = tiles
                 .child(controls::stat(
                     "Memory",
-                    mb(process.resident_bytes),
-                    "This window and its core",
+                    short_size(total.resident_bytes),
+                    &parts(
+                        short_size(own.resident_bytes),
+                        theirs.map(|usage| short_size(usage.resident_bytes)),
+                    ),
                     cx,
                 ))
                 .child(controls::stat(
                     "CPU",
-                    format!("{:.1}%", process.cpu_percent),
-                    "Of one core",
+                    cpu(total.cpu_percent),
+                    &parts(
+                        cpu(own.cpu_percent),
+                        theirs.map(|usage| cpu(usage.cpu_percent)),
+                    ),
                     cx,
                 ));
         }
@@ -53,11 +69,11 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
         let disk = list(
             [
                 line("Database", "Chats and their records", cx)
-                    .child(figure(mb(report.database_bytes + report.wal_bytes))),
+                    .child(figure(short_size(report.database_bytes + report.wal_bytes))),
                 line("Pictures", "Kept for image cards", cx)
-                    .child(figure(mb(report.artifacts_bytes))),
+                    .child(figure(short_size(report.artifacts_bytes))),
                 line("Logs", "Written on this machine only", cx)
-                    .child(figure(mb(report.logs_bytes))),
+                    .child(figure(short_size(report.logs_bytes))),
             ],
             cx,
         );
@@ -68,7 +84,7 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(widgets::caption("On disk", cx).px_1().pt_0())
+                    .child(widgets::caption("On disk", cx).px_0().pt_0())
                     .child(disk),
             )
             .child(
@@ -221,8 +237,9 @@ impl Workspace {
                 },
             ),
             SettingsPage::AboutMe => self.load_about_me(cx),
-            SettingsPage::Model => self.load_models(cx),
+            SettingsPage::Ai => self.load_ai_tab(cx),
             SettingsPage::Secrets => self.load_secrets(cx),
+            SettingsPage::Workshop => self.load_repositories(cx),
             _ => {}
         }
     }

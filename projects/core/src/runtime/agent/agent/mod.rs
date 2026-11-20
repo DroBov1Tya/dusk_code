@@ -3,12 +3,22 @@
 //! until the model answers without calling a tool.
 
 mod calls;
+mod episodes;
+mod mode;
 mod pictures;
 mod report;
+mod resume;
+mod retry;
+mod shaped;
 mod step;
+mod stubs;
 #[cfg(test)]
 mod tests;
 mod turn;
+mod wait;
+
+pub use resume::{Decision, Recovered};
+pub(crate) use turn::Admit;
 
 use super::Stop;
 use crate::plugins::Hooks;
@@ -17,12 +27,12 @@ use crate::state::artifacts::ArtifactStore;
 use crate::{
     config::live::LiveConfig,
     config::{Config, Effort},
-    providers::{ChatMessage, ModelOutput, ToolSpec},
-    state::{State, TurnAnswer, TurnOutcome},
+    providers::{ChatMessage, ModelOutput, ProviderError, ToolSpec},
+    state::{State, TurnAnswer, TurnFailure, TurnOutcome},
     tools::{ToolRegistry, ToolScope},
 };
 use parking_lot::Mutex;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::mpsc;
 
 /// The rhythm of a turn: think once, then act. The first step plans and a step after
@@ -45,14 +55,6 @@ impl Pace {
         }
     }
 }
-
-/// A model call that fails before writing anything is tried this many times in all.
-const MAX_ATTEMPTS: u32 = 6;
-
-/// Doubles before each further attempt, up to `MAX_RETRY_DELAY`.
-const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
-
-const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
 
 pub struct Agent {
     pub state: Arc<State>,
@@ -84,6 +86,13 @@ pub struct Agent {
     pub events: mpsc::UnboundedSender<ThreadEvent>,
     /// What plugins run when something happens here.
     pub hooks: Arc<Hooks>,
+    /// How each provider's calls go, shared by every thread.
+    pub health: Arc<crate::providers::Health>,
+    /// Notices the skills a writing call changed.
+    pub skill_watch: Arc<crate::catalog::history::Watch>,
+    /// Where those changes are kept: the main state, also for a temporary chat, because
+    /// a skill's history belongs to the skill and not to the thread.
+    pub skill_state: Arc<crate::state::State>,
 }
 
 /// How one step ended.
@@ -91,6 +100,12 @@ enum StepEnd {
     Answered(TurnOutcome),
     CalledTools,
     Stopped(Stop, TurnOutcome),
+    /// The provider cannot serve the step now and nothing of it was written: the turn
+    /// waits and takes the step again, or fails as the failure says.
+    Wait(ProviderError, TurnFailure),
+    /// The context does not fit the model: the turn compacts it and takes the step
+    /// again, or fails as the failure says.
+    TooLarge(TurnFailure),
 }
 
 /// What a stopped step keeps: the text written so far, if any.
@@ -141,16 +156,4 @@ fn missing_tools(messages: &[ChatMessage], tools: &[ToolSpec]) -> Option<String>
          have, or ask an agent that has them.",
         missing.join(", ")
     ))
-}
-
-/// Exponential backoff with up to a quarter of jitter, so agents that failed together do
-/// not all come back at the same moment.
-fn retry_delay(attempt: u32) -> Duration {
-    let base = FIRST_RETRY_DELAY
-        .saturating_mul(2u32.saturating_pow(attempt - 1))
-        .min(MAX_RETRY_DELAY);
-    let noise = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |now| now.subsec_nanos());
-    base + base.mul_f64(f64::from(noise % 1000) / 4000.0)
 }

@@ -14,6 +14,14 @@ use std::sync::Arc;
 /// A provider's name is this long at most; it shows in `provider/model`.
 const MAX_PROVIDER_NAME: usize = 40;
 
+impl Runtime {
+    /// How the calls to each configured provider went since the core started.
+    pub fn provider_health(&self) -> Vec<dusk_protocol::model::ProviderHealth> {
+        let providers = self.launcher.config.current().all_providers();
+        self.launcher.health.of(|name| providers.contains_key(name))
+    }
+}
+
 /// A key or token as it is kept: trimmed, since a pasted one often carries a newline or a
 /// space, and refused when it is not plain text of a sane size.
 pub(super) fn checked_key(key: String) -> Result<String> {

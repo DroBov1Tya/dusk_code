@@ -1,0 +1,13 @@
+exit code: 0
+stderr:
+Enumerating objects: 23, done.
+Counting objects:   4% (1/23)Counting objects: 100% (23/23), done.
+Delta compression using up to 10 threads
+Compressing objects: 100% (12/12), done.
+Writing objects: 100% (13/13), 4.12 KiB | 4.12 MiB/s, done.
+Total 13 (delta 9), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (9/9), completed with 8 local objects.
+remote: warning: See https://gh.io/lfs for more information.
+remote: error: GH001: Large files detected. You may want to try Git Large File Storage.
+To github.com:dev/shop.git
+   3c9247c..8a1f2e0  main -> main

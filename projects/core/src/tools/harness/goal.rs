@@ -62,6 +62,11 @@ impl Tool for GoalTool {
     fn parameters(&self) -> Value {
         schema::of::<Arguments>()
     }
+    /// Only showing the goal; proposing or requesting verification changes it.
+    fn repeatable(&self, arguments: &Value) -> bool {
+        arguments.get("action").and_then(Value::as_str) == Some("show")
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let args: Arguments = parse_arguments(arguments)?;

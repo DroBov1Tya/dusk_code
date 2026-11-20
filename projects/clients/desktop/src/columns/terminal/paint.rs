@@ -34,63 +34,26 @@ pub fn metrics(window: &Window, cx: &App) -> Metrics {
     }
 }
 
-/// The colors a program may name. The sixteen are the theme's own, so a prompt and a
-/// diff look at home; the rest of the 256 are the standard cube and greys.
+/// The colors a program may name. The sixteen are the theme's (`ui::theme::terminal`);
+/// the rest of the 256 are the standard cube and greys.
 #[derive(Clone)]
 pub struct Palette {
     pub foreground: Hsla,
     pub background: Hsla,
     pub cursor: Hsla,
+    pub selection: Hsla,
     named: [Hsla; 16],
 }
 
 impl Palette {
     pub fn of(cx: &App) -> Self {
         let theme = cx.theme();
-        let hex = |value: u32| -> Hsla { rgb(value).into() };
-        let named = if theme.is_dark() {
-            [
-                hex(0x262839),
-                theme.danger,
-                theme.success,
-                theme.warning,
-                hex(0x8fa8f8),
-                theme.primary,
-                hex(0x7cc7e8),
-                hex(0xaeadc4),
-                hex(0x83829c),
-                hex(0xff9bb0),
-                hex(0x93e6c8),
-                hex(0xf6d78e),
-                hex(0xa9bcff),
-                hex(0xcbbcff),
-                hex(0x9fdcf4),
-                theme.foreground,
-            ]
-        } else {
-            [
-                hex(0x171717),
-                hex(0xc0392b),
-                hex(0x1e8e4a),
-                hex(0xa06a00),
-                hex(0x2563c9),
-                hex(0x8b3fc7),
-                hex(0x0e7c86),
-                hex(0x737373),
-                hex(0x525252),
-                hex(0xdc2626),
-                hex(0x16a34a),
-                hex(0xb7791f),
-                hex(0x3b82f6),
-                hex(0xa855f7),
-                hex(0x0891b2),
-                hex(0x404040),
-            ]
-        };
+        let (named, selection) = crate::ui::theme::terminal(cx);
         Self {
             foreground: theme.foreground,
             background: theme.background,
             cursor: theme.primary,
+            selection,
             named,
         }
     }
@@ -117,17 +80,18 @@ impl Palette {
     }
 }
 
-/// The screen as an element that fills its place. It leaves the size it was given in
-/// `measured`, from which the panel works out how many cells fit.
+/// The screen as an element that fills its place. It leaves where it was drawn in
+/// `measured`, from which the panel works out how many cells fit and which one the
+/// pointer is on.
 pub fn grid(
     picture: Picture,
     metrics: Metrics,
     palette: Palette,
     focused: bool,
-    measured: Rc<Cell<Option<Size<Pixels>>>>,
+    measured: Rc<Cell<Option<Bounds<Pixels>>>>,
 ) -> impl IntoElement {
     canvas(
-        move |bounds, _, _| measured.set(Some(bounds.size)),
+        move |bounds, _, _| measured.set(Some(bounds)),
         move |bounds, _, window, cx| {
             let cell = metrics.cell;
             let place = |row: usize, col: usize| {
@@ -137,15 +101,30 @@ pub fn grid(
                 )
             };
             for (row, runs) in picture.rows.iter().enumerate() {
+                for run in runs.iter().filter(|run| run.style.bg != Ink::Background) {
+                    let area = size(cell.width * run.cells as f32, cell.height);
+                    window.paint_quad(fill(
+                        Bounds::new(place(row, run.col), area),
+                        palette.color(run.style.bg),
+                    ));
+                }
+            }
+            // The selection lies over the backgrounds and under the letters.
+            for (row, selected) in picture.selected.iter().enumerate() {
+                if let Some((first, last)) = *selected {
+                    let area = size(
+                        cell.width * (last + 1).saturating_sub(first) as f32,
+                        cell.height,
+                    );
+                    window.paint_quad(fill(
+                        Bounds::new(place(row, first), area),
+                        palette.selection,
+                    ));
+                }
+            }
+            for (row, runs) in picture.rows.iter().enumerate() {
                 for run in runs {
                     let origin = place(row, run.col);
-                    if run.style.bg != Ink::Background {
-                        let area = size(cell.width * run.cells as f32, cell.height);
-                        window.paint_quad(fill(
-                            Bounds::new(origin, area),
-                            palette.color(run.style.bg),
-                        ));
-                    }
                     if run.text.trim().is_empty() {
                         continue;
                     }

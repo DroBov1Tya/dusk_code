@@ -1,5 +1,6 @@
 //! The project's files as a tree that opens a folder at a time, colored by git.
 
+use crate::ui::Type;
 use gpui_kit::{
     component::{ActiveTheme, IconName},
     *,
@@ -59,7 +60,7 @@ fn folder(ws: &Workspace, path: &str, depth: usize, column: &mut Div, cx: &mut C
         .children(
             entry
                 .change
-                .map(|kind| div().text_xs().text_color(color).child(change_letter(kind))),
+                .map(|kind| div().meta().text_color(color).child(change_letter(kind))),
         )
         .on_click(cx.listener(move |ws, _, _, cx| {
             if is_dir {

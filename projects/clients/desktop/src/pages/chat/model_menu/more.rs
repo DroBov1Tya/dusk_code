@@ -10,8 +10,9 @@ use gpui_kit::{
     *,
 };
 
-use super::{ROW, back_row, catalog_status, model_row};
+use super::{FIRST, ROW, back_row, catalog_status, model_row};
 use crate::pages::chat::model_bar::{picker_hint, picker_panel};
+use crate::ui::looping::Loop;
 use crate::{
     ui::{Type, icons::REFRESH, widgets},
     workspace::Workspace,
@@ -40,7 +41,12 @@ pub fn all_models(
         let name = provider.name.clone();
         let open = ws.models_open.contains(&provider.name);
         let toggled = provider.name.clone();
-        let count = provider.models.as_ref().map_or(0, Vec::len);
+        let pending = ws.models_pending.contains(&provider.name);
+        let count = match (&provider.models, pending) {
+            (_, true) => String::from("..."),
+            (Ok(models), _) => models.len().to_string(),
+            (Err(_), _) => String::from("!"),
+        };
         // The provider's name is the landmark of the list: larger and brighter than its
         // models, and it folds them, so two providers' models are never read as one.
         scroll = scroll.child(
@@ -77,7 +83,7 @@ pub fn all_models(
                     .and_then(|balance| balance.as_ref().ok())
                     .map(|balance| div().small().text_color(hint).child(balance.text())),
             )
-            .child(div().small().text_color(hint).child(count.to_string()))
+            .child(div().small().text_color(hint).child(count))
             .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx))
             .on_click(cx.listener(move |ws, _, _, cx| {
                 if !ws.models_open.remove(&toggled) {
@@ -89,14 +95,21 @@ pub fn all_models(
         if !open {
             continue;
         }
+        // Its own section says it is still being asked; the others are already usable.
+        if ws.models_pending.contains(&provider.name) {
+            scroll = scroll.child(widgets::muted("Loading the models...", cx));
+            continue;
+        }
         match &provider.models {
             Ok(models) if models.is_empty() => {
                 scroll = scroll.child(widgets::muted("No listed models", cx));
             }
             Ok(models) => {
-                for model in models {
+                let keyed = current.split('/').next() == Some(provider.name.as_str());
+                for (index, model) in models.iter().enumerate() {
                     let name = format!("{}/{}", provider.name, model.id);
-                    scroll = scroll.child(model_row(&name, &model.id, current, None, cx).pl_6());
+                    let key = (keyed && index < FIRST).then_some(index + 1);
+                    scroll = scroll.child(model_row(&name, &model.id, current, key, cx).pl_6());
                 }
             }
             Err(error) => scroll = scroll.child(widgets::muted(error.clone(), cx)),
@@ -126,11 +139,9 @@ fn refresh_row(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 Icon::default()
                     .path(REFRESH)
                     .text_color(hint)
-                    .with_animation(
-                        "models-refreshing",
-                        Animation::new(std::time::Duration::from_millis(900)).repeat(),
-                        |icon, delta| icon.rotate(percentage(delta)),
-                    ),
+                    .looping(std::time::Duration::from_millis(900), |icon, delta| {
+                        icon.rotate(percentage(delta))
+                    }),
             )
             .into_any_element(),
         false => Button::new("models-refresh")

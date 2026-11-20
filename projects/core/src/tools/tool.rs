@@ -7,8 +7,11 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
+#[cfg(target_os = "macos")]
+use super::approvals::WindowAccess;
 use super::{
-    approvals::{Approvals, Request, WindowAccess},
+    Shaped,
+    approvals::{Approvals, Request},
     scope::{Place, ToolScope},
 };
 use crate::{
@@ -68,51 +71,41 @@ impl ToolContext {
             };
             let policy = self.approvals_policy().await;
             approvals
-                .ask(request, self.progress.clone(), policy)
+                .ask(&self.thread_id, request, self.progress.clone(), policy)
                 .await?;
         }
         Ok(resolved)
     }
 
-    /// The screen needs the user's yes once a session, the keyboard every time, unless
-    /// full access gives it.
-    pub async fn approve_screen(&self, action: &str, keyboard: bool) -> Result<()> {
+    /// Screen actions, asked as one request: see [`Approvals::ask_all`]. The screen needs
+    /// the user's yes once a session, the keyboard every time, unless full access gives
+    /// it. A screen grant never permits the system pointer or a window, and without an
+    /// approval service only the explicitly selected full-access policy allows those.
+    pub async fn approve_computer(&self, requests: Vec<Request>) -> Result<()> {
         let Some(approvals) = &self.approvals else {
-            return Ok(());
-        };
-        let action = action.to_owned();
-        let request = match keyboard {
-            true => Request::Keyboard { action },
-            false => Request::Screen { action },
-        };
-        let policy = self.approvals_policy().await;
-        approvals.ask(request, self.progress.clone(), policy).await
-    }
-
-    /// A screen grant never permits physical pointer takeover. Without an approval
-    /// service only the explicitly selected full-access policy allows it.
-    pub async fn approve_system_pointer(&self, action: &str) -> Result<()> {
-        let Some(approvals) = &self.approvals else {
+            let guarded = requests.iter().any(|request| {
+                matches!(
+                    request,
+                    Request::SystemPointer { .. } | Request::Window { .. }
+                )
+            });
             anyhow::ensure!(
-                self.approvals_policy().await == ApprovalPolicy::FullAccess,
-                "system pointer control needs a separate approval service or explicit full access"
+                !guarded || self.approvals_policy().await == ApprovalPolicy::FullAccess,
+                "system pointer control and window use need an approval service or explicit \
+                 full access"
             );
             return Ok(());
         };
         let policy = self.approvals_policy().await;
         approvals
-            .ask(
-                Request::SystemPointer {
-                    action: action.to_owned(),
-                },
-                self.progress.clone(),
-                policy,
-            )
+            .ask_all(&self.thread_id, requests, self.progress.clone(), policy)
             .await
     }
 
     /// Capture and activation are separate approvals on one retained window.
-    /// Ending confinement does not inherit either session grant.
+    /// Ending confinement does not inherit either session grant. Only `window_session`
+    /// asks this way, and only macOS has it.
+    #[cfg(target_os = "macos")]
     pub async fn approve_window(&self, grant: Option<WindowAccess>, action: &str) -> Result<()> {
         let Some(approvals) = &self.approvals else {
             anyhow::ensure!(
@@ -124,6 +117,7 @@ impl ToolContext {
         let policy = self.approvals_policy().await;
         approvals
             .ask(
+                &self.thread_id,
                 Request::Window {
                     grant,
                     action: action.to_owned(),
@@ -143,7 +137,45 @@ impl ToolContext {
             command: command.to_owned(),
         };
         let policy = self.approvals_policy().await;
-        approvals.ask(request, self.progress.clone(), policy).await
+        approvals
+            .ask(&self.thread_id, request, self.progress.clone(), policy)
+            .await
+    }
+}
+
+/// The sources of chats nobody who may change the settings is there to answer: the
+/// timetable's runs, a headless `duskcode run` (`cli`) and the evals' tasks.
+pub(crate) const UNATTENDED: [&str; 3] = ["schedule", "cli", "evals"];
+
+impl ToolContext {
+    /// Asks the owner for a change of the settings, in every mode (`Approvals::ask_owner`).
+    /// Refused at once where the owner cannot answer: no approvals here, a chat the
+    /// timetable or a headless run started, or one an API token started, whose client
+    /// may not answer it; the call would otherwise wait for good.
+    pub async fn ask_owner(&self, request: Request) -> Result<()> {
+        let nobody = "needs the owner's yes, and nobody who may give it can answer in this \
+                      chat; ask the user to do it in the app";
+        let approvals = self
+            .approvals
+            .as_ref()
+            .with_context(|| format!("{} {nobody}", request.what()))?;
+        let state = self
+            .state
+            .as_ref()
+            .with_context(|| format!("{} {nobody}", request.what()))?;
+        let chat = state.root_thread(&self.thread_id).await?;
+        let thread = state
+            .load_thread(&chat)
+            .await?
+            .with_context(|| format!("no chat {chat}"))?;
+        anyhow::ensure!(
+            thread.owner.is_none() && !UNATTENDED.contains(&thread.source.as_str()),
+            "{} {nobody}",
+            request.what()
+        );
+        approvals
+            .ask_owner(&self.thread_id, request, self.progress.clone())
+            .await
     }
 }
 
@@ -191,9 +223,43 @@ pub trait Tool: Send + Sync {
     /// JSON Schema of the arguments object.
     fn parameters(&self) -> Value;
 
+    /// The schema the model is shown. It differs from `parameters`, which a call is
+    /// checked against, only for a tool whose arguments depend on a setting.
+    fn offered_parameters(&self, _context: &ToolContext) -> Value {
+        self.parameters()
+    }
+
     /// A tool with nothing to offer right now is not shown to the model.
     fn available(&self, _context: &ToolContext) -> bool {
         true
+    }
+
+    /// The tools this call runs inside it, each with its own arguments, so switches and
+    /// plugin hooks judge every one as if it were called alone. An error rejects the call.
+    fn calls_within(&self, _arguments: &Value) -> Result<Vec<(String, Value)>> {
+        Ok(Vec::new())
+    }
+
+    /// Running the call again after its result was lost changes nothing the first run
+    /// did not: it only reads, or sets the same state again.
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        false
+    }
+
+    /// The call changes nothing anywhere (no file, no state, no process, nothing shown to
+    /// the user) and does not depend on another call of the same step, so it may run
+    /// together with the read-only calls next to it. Stricter than `repeatable`: a memory
+    /// rewrite is repeatable but not read-only. A read-only call must be repeatable, since
+    /// a restart runs the open calls of such a group again.
+    fn read_only(&self, _arguments: &Value) -> bool {
+        false
+    }
+
+    /// The result as the model is to be sent it when that is shorter than what is
+    /// stored (`limits.shape_output`); `None` sends it whole. Decided from the call and
+    /// its result alone, so the same call always gives the same text.
+    fn shape(&self, _arguments: &Value, _result: &super::registry::ToolResult) -> Option<Shaped> {
+        None
     }
 
     /// An error is shown to the model as the result, so it can correct itself.

@@ -63,13 +63,8 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                 McpState::Failed(error) => (format!("Failed: {error}"), danger),
             };
             let mut page = page
-                .child(div().text_sm().text_color(color).child(state))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(server.target.clone()),
-                );
+                .child(div().small().text_color(color).child(state))
+                .child(div().meta().text_color(muted).child(server.target.clone()));
             if server.tools.is_empty() {
                 page = page
                     .child(widgets::muted("Its tools show once the server is ready.", cx).px_0());
@@ -112,6 +107,7 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
             .child(links::markdown(
                 "tool-description",
                 tool.description.clone(),
+                links::Links::Web,
             ))
         }
         Detail::Plugin(name) => {
@@ -119,7 +115,7 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                 return page.child(widgets::muted("This plugin is gone.", cx));
             };
             let mut page = page
-                .child(div().text_xs().text_color(muted).child(format!(
+                .child(div().meta().text_color(muted).child(format!(
                     "Version {} · brings {}",
                     plugin.version,
                     plugin.parts.join(", ")
@@ -127,9 +123,18 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                 .child(links::markdown(
                     "plugin-description",
                     plugin.description.clone(),
+                    links::Links::Web,
                 ));
+            if let Some(version) = &plugin.duskcode_version {
+                page = page.child(
+                    div()
+                        .meta()
+                        .text_color(muted)
+                        .child(format!("Written for Dusk Code {version}")),
+                );
+            }
             if !plugin.missing_settings.is_empty() {
-                page = page.child(div().text_sm().text_color(warning).child(format!(
+                page = page.child(div().small().text_color(warning).child(format!(
                     "Needs settings: {}",
                     plugin.missing_settings.join(", ")
                 )));
@@ -141,7 +146,7 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                         .flex()
                         .flex_col()
                         .gap_1()
-                        .child(div().text_sm().child(key.clone()))
+                        .child(div().small().child(key.clone()))
                         .child(
                             div()
                                 .flex()
@@ -166,8 +171,20 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                         ),
                 );
             }
+            for host in &plugin.choose {
+                let (name, chosen) = (plugin.name.clone(), host.clone());
+                page = page.child(
+                    gpui_kit::component::button::Button::new(SharedString::from(format!(
+                        "use-for-{host}"
+                    )))
+                    .label(format!("Use for {host}"))
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.use_for_host(&name, &chosen, cx);
+                    })),
+                );
+            }
             if !ws.secret_inputs.is_empty() {
-                page = page.child(div().text_xs().text_color(muted).child(
+                page = page.child(div().meta().text_color(muted).child(
                     "Kept in memory on this machine until duskcode stops; never written to the config. Enter it again after a restart.",
                 ));
             }
@@ -194,12 +211,11 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                             .child(div().flex_1().min_w_0().child(value.clone())),
                     );
                 }
-                page.child(
-                    div()
-                        .pt_2()
-                        .small()
-                        .child(links::markdown("node-text", body(&file.text))),
-                )
+                page.child(div().pt_2().small().child(links::markdown(
+                    "node-text",
+                    body(&file.text),
+                    links::Links::Web,
+                )))
             }
         },
     }
@@ -207,8 +223,7 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
 
 /// The file without its front matter, which the rows above already show.
 fn body(text: &str) -> String {
-    text.strip_prefix("---")
-        .and_then(|rest| rest.split_once("\n---"))
+    dusk_protocol::catalog::split_front_matter(text)
         .map_or(text, |(_, body)| body)
         .trim_start()
         .to_owned()
@@ -234,10 +249,10 @@ fn row(name: &str, description: &str, control: impl IntoElement, cx: &App) -> Di
                 .flex_col()
                 .flex_1()
                 .min_w_0()
-                .child(div().font_family("Menlo").text_sm().child(name.to_owned()))
+                .child(div().font_family("Menlo").small().child(name.to_owned()))
                 .child(
                     div()
-                        .text_xs()
+                        .meta()
                         .text_color(theme.muted_foreground)
                         .line_clamp(3)
                         .child(description.to_owned()),

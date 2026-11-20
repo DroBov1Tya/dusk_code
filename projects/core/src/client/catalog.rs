@@ -4,7 +4,7 @@ use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::config::{Profile, Snippet};
 use dusk_protocol::{
-    catalog::NodeText,
+    catalog::{NodeText, SkillChange, SkillDiff, SkillPack},
     client::{CatalogRequest, Request, Response},
     config::McpInfo,
 };
@@ -21,6 +21,29 @@ impl Catalog<'_> {
     pub async fn save_skill(&self, name: &str, text: &str) -> Result<NodeText> {
         let (name, text) = (name.to_owned(), text.to_owned());
         self.node(CatalogRequest::SaveSkill { name, text }).await
+    }
+
+    /// The skill packs with their skills; a pack is switched with `Switch::SkillPack`.
+    pub async fn skill_packs(&self) -> Result<Vec<SkillPack>> {
+        match self.call(CatalogRequest::SkillPacks).await? {
+            Response::SkillPacks(packs) => Ok(packs),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    pub async fn skill_diff(&self, id: i64) -> Result<SkillDiff> {
+        match self.call(CatalogRequest::SkillDiff { id }).await? {
+            Response::SkillDiff(diff) => Ok(diff),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Undoes one change; answers with it as it stands after.
+    pub async fn undo_skill_change(&self, id: i64) -> Result<SkillChange> {
+        match self.call(CatalogRequest::UndoSkillChange { id }).await? {
+            Response::SkillChanges(mut changes) if changes.len() == 1 => Ok(changes.remove(0)),
+            other => Err(unexpected(other)),
+        }
     }
 
     pub async fn agent(&self, name: &str) -> Result<NodeText> {

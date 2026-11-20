@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::ToolCall;
 use crate::tools::Card;
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
     pub message_id: String,
@@ -32,6 +33,7 @@ pub struct Message {
     pub created_at: i64,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageRole {
     System,
@@ -66,7 +68,7 @@ mod undo;
 mod unsent;
 
 pub use compaction::Compaction;
-pub use pasted::{Part, has_pasted, plain, source_tag, split, wrap};
+pub use pasted::{Part, has_pasted, labelled, plain, sound_tag, source_tag, split, wrap};
 pub use source::Source;
 pub use undo::UndoPoint;
 pub use unsent::LocalUnsent;

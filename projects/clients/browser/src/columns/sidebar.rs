@@ -2,10 +2,9 @@
 
 use crate::{
     api,
-    link::Conn,
-    pages::{connectors::Tab, project::ProjectDialog, settings::Page},
+    pages::{customize::Tab, project::ProjectDialog, settings::Page},
     state::{AppState, View, state},
-    ui::{confirm, run},
+    ui::{Icon, IconName, confirm, run},
 };
 use dusk_protocol::{project::Project, thread::Thread};
 use leptos::prelude::*;
@@ -53,45 +52,46 @@ pub fn Sidebar() -> impl IntoView {
     };
     view! {
         <aside class="sidebar">
-            <div class="brand">
-                <span>"duskcode"</span>
-                <span class=move || format!("dot {}", match app.conn.get() {
-                    Conn::Online => "on",
-                    Conn::Connecting => "wait",
-                    Conn::Lost => "off",
-                }) title="connection"></span>
+            <button class="new-chat" on:click=move |_| app.new_chat(app.project.get_untracked())>
+                <Icon name=IconName::Plus />"New chat"
+            </button>
+            <button class="temporary-chat" title="Kept in memory only; gone when duskcode stops" on:click=move |_| app.new_temporary_chat()>
+                <Icon name=IconName::Temporary />"Temporary chat"
+            </button>
+            <div class="search-field">
+                <Icon name=IconName::Search />
+                <input
+                    class="search"
+                    aria-label="Search chats"
+                    placeholder="Search chats"
+                    prop:value=move || search.get()
+                    on:input=move |ev| search.set(event_target_value(&ev))
+                />
             </div>
-            <button class="primary wide" on:click=move |_| app.new_chat(app.project.get_untracked())>
-                "New chat"
-            </button>
-            <button class="wide" title="Kept in memory only; gone when duskcode stops"
-                on:click=move |_| app.new_temporary_chat()>
-                "Temporary chat"
-            </button>
-            <input
-                class="search"
-                placeholder="Search chats"
-                prop:value=move || search.get()
-                on:input=move |ev| search.set(event_target_value(&ev))
-            />
             <div class="scroll">
                 <div class="group-head">
                     <span>"Projects"</span>
-                    <button class="icon" title="Add a project" on:click=move |_| editing.set(Some(None))>"+"</button>
+                    <button class="icon" title="Add a project" aria-label="Add a project" on:click=move |_| editing.set(Some(None))>
+                        <Icon name=IconName::Plus />
+                    </button>
                 </div>
+                <Show when=move || app.projects.with(|p| p.is_empty())><p class="sidebar-empty">"Add a project to keep its chats together."</p></Show>
                 <For each=move || app.projects.get() key=|p| p.id.clone() let:project>
                     {project_group(app, project, listed, editing)}
                 </For>
                 <div class="group-head"><span>"Chats"</span></div>
-                <For each=loose key=|t| t.id.clone() let:thread>
+                <Show when=move || listed.with(|t| t.is_empty())><p class="sidebar-empty">{move || if search.get().is_empty() { "Your chats will appear here." } else { "No matching chats." }}</p></Show>
+                <For each=loose key=|t| (t.id.clone(), chat_title(t), t.unread) let:thread>
                     <ChatRow thread />
                 </For>
             </div>
-            <nav class="nav">
-                <NavButton label="Connectors" target=View::Connectors(Tab::Agents) />
-                <NavButton label="Scheduled tasks" target=View::Schedules />
-                <NavButton label="Artifacts" target=View::Artifacts />
-                <NavButton label="Settings" target=View::Settings(Page::Appearance) />
+            <nav class="nav" aria-label="Workspace and account">
+                <div class="sidebar-destinations">
+                    <NavButton label="Scheduled tasks" target=View::Schedules />
+                    <NavButton label="Customize" target=View::Customize(Tab::Agents) />
+                    <NavButton label="Artifacts" target=View::Artifacts />
+                    <NavButton label="Settings" target=View::Settings(Page::Appearance) />
+                </div>
                 <button class="nav-item" on:click=move |_| leptos::task::spawn_local(async {
                     crate::auth::sign_out().await;
                     if let Some(window) = web_sys::window() {
@@ -99,7 +99,7 @@ pub fn Sidebar() -> impl IntoView {
                     }
                 })>"Sign out"</button>
                 {move || app.status.with(|s| s.as_ref().and_then(|s| s.available_update.clone())).map(|tag| view! {
-                    <button class="update" on:click=move |_| app.view.set(View::Settings(Page::Updates))>
+                    <button class="update" on:click=move |_| app.show(View::Settings(Page::Updates))>
                         {format!("Update {tag}")}
                     </button>
                 })}
@@ -136,12 +136,16 @@ fn project_group(
                     on:click=move |_| { app.project.set(Some(id.clone())); crate::pages::project::open(id.clone()); }>
                     {project.name.clone()}
                 </button>
-                <button class="icon" title="New chat here"
-                    on:click=move |_| app.new_chat(Some(new_id.clone()))>"+"</button>
-                <button class="icon" title="Edit"
-                    on:click=move |_| editing.set(Some(Some(edit_project.clone())))>"…"</button>
+                <button class="icon" title="New chat here" aria-label="New chat here"
+                    on:click=move |_| app.new_chat(Some(new_id.clone()))>
+                    <Icon name=IconName::Plus />
+                </button>
+                <button class="icon" title="Edit project" aria-label="Edit project"
+                    on:click=move |_| editing.set(Some(Some(edit_project.clone())))>
+                    <Icon name=IconName::Ellipsis />
+                </button>
             </div>
-            <For each=chats key=|t| t.id.clone() let:thread>
+            <For each=chats key=|t| (t.id.clone(), chat_title(t), t.unread) let:thread>
                 <ChatRow thread />
             </For>
         </div>
@@ -156,31 +160,43 @@ fn ChatRow(thread: Thread) -> impl IntoView {
         let id = id.clone();
         move || app.view.get() == View::Chat(Some(id.clone()))
     };
+    let current = active.clone();
     let working = {
         let id = id.clone();
-        move || app.chat(&id).is_some_and(|chat| chat.with(|c| c.working))
+        move || {
+            app.chat(&id)
+                .is_some_and(|chat| chat.with(|c| c.working || c.agents_working))
+        }
     };
     let title = chat_title(&thread);
     let open_id = id.clone();
+    let unread = thread.unread;
+    let lit = {
+        let working = working.clone();
+        move || unread && !working()
+    };
     view! {
-        <div class="chat-row" class:active=active>
-            <button class="chat-title" on:click=move |_| app.open_chat(open_id.clone())>
+        <div class="chat-row" class:active=active class:unread=unread>
+            <button class="chat-title" aria-current=move || current().then_some("page")
+                on:click=move |_| app.open_chat(open_id.clone())>
                 {title}
             </button>
             <Show when=working><span class="spinner" title="working"></span></Show>
-            <button class="icon hover" title="Delete chat" on:click=move |_| {
+            <Show when=lit><span class="unread-dot" title="unread"></span></Show>
+            <button class="icon hover" title="Delete chat" aria-label="Delete chat" on:click=move |_| {
                 let id = id.clone();
                 if confirm("Delete this chat for good?") {
                     let doomed = id.clone();
                     run(async move { api::delete_thread(&doomed).await }, move |()| {
                         app.chats.update(|chats| { chats.remove(&id); });
+                        app.drop_draft(&id);
                         app.refresh();
                         if app.view.get_untracked() == View::Chat(Some(id.clone())) {
-                            app.view.set(View::Chat(None));
+                            app.show(View::Chat(None));
                         }
                     });
                 }
-            }>"×"</button>
+            }><Icon name=IconName::Delete /></button>
         </div>
     }
 }
@@ -193,7 +209,8 @@ fn NavButton(label: &'static str, target: View) -> impl IntoView {
         move || std::mem::discriminant(&app.view.get()) == std::mem::discriminant(&target)
     };
     view! {
-        <button class="nav-item" class:active=same on:click=move |_| app.view.set(target.clone())>
+        <button class="nav-item" class:active=same.clone() aria-current=move || same().then_some("page")
+            on:click=move |_| app.show(target.clone())>
             {label}
         </button>
     }

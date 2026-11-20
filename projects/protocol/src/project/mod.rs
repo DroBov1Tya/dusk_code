@@ -15,6 +15,7 @@ pub const MAX_ENV_NAME_CHARS: usize = 64;
 
 pub const MAX_ENV_VALUE_BYTES: usize = 8 * 1024;
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Project {
     pub id: String,
@@ -28,7 +29,9 @@ pub struct Project {
 
 mod diff;
 mod files;
+mod forge;
 mod git;
+mod ledger;
 mod path;
 mod schedule;
 
@@ -37,7 +40,12 @@ pub use files::{
     FileEntry, FileStamp, FileText, MAX_EDIT_BYTES, MAX_PREVIEW_BYTES, OutputFile, OutputKind,
     OutputPreview,
 };
-pub use git::{Change, ChangeKind, GitInfo, GitSummary, Worktree};
+pub use forge::{
+    Check, CheckStage, CheckState, Checks, Forge, ForgeOffer, ForgeSignIn, ForgeStatus, PullState,
+    PullStatus, PullSummary, RepositoryStatus, pull_number,
+};
+pub use git::{Change, ChangeKind, GitInfo, GitOutcome, GitSummary, Worktree};
+pub use ledger::{EditKind, FileChange, MAX_FILE_CHANGES};
 pub use path::{PathCompletion, PathEntry};
 pub use schedule::{
     Clock, DAY_NAMES, EVERY_DAY, MAX_INTERVAL_MINUTES, MAX_PROMPT_CHARS, MAX_SCHEDULES,

@@ -36,6 +36,14 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_DESCRIPTION_CHARS: usize = 1024;
 /// More than the model is shown of a result; the registry cuts it further.
 const MAX_RESULT_BYTES: usize = 1024 * 1024;
+/// Pictures kept from one result; a server sends one screen, not an album.
+const MAX_IMAGES: usize = 4;
+
+/// What a call gave: its text, and the pictures in it as bytes, still to be checked.
+pub struct CallOutput {
+    pub text: String,
+    pub images: Vec<Vec<u8>>,
+}
 
 pub struct McpClient {
     service: RunningService<RoleClient, ()>,
@@ -47,6 +55,12 @@ pub struct RemoteTool {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    /// The server says the tool only reads or is idempotent. The hint comes from the
+    /// server and is not trusted for anything beyond repeating that server's own call.
+    pub repeatable: bool,
+    /// The server says the tool changes nothing. Only `readOnlyHint` says so; an
+    /// idempotent call may still change state.
+    pub read_only: bool,
 }
 
 /// HTTPS, or plain HTTP to this machine by its address, without credentials in the URL.
@@ -93,17 +107,7 @@ impl McpClient {
             .await
             .context("the server did not list its tools in time")?
             .map_err(|error| anyhow!("cannot list the tools: {error}"))?;
-        Ok(tools
-            .into_iter()
-            .map(|tool| RemoteTool {
-                name: tool.name.into_owned(),
-                description: tool
-                    .description
-                    .map(|text| text.chars().take(MAX_DESCRIPTION_CHARS).collect())
-                    .unwrap_or_default(),
-                input_schema: Value::Object((*tool.input_schema).clone()),
-            })
-            .collect())
+        Ok(tools.into_iter().map(remote_tool).collect())
     }
 
     /// The connection ended: a local server exited, or a remote one closed it.
@@ -118,21 +122,42 @@ impl McpClient {
             .and_then(|info| info.instructions.clone())
     }
 
-    /// The text of the result; a result the server marks as an error is an error.
+    /// The text and pictures of the result; a result the server marks as an error is an
+    /// error.
     #[tracing::instrument(name = "mcp_call", skip_all, fields(tool = name))]
-    pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<String> {
+    /// `project` is the chat's folder, told to the server in `_meta` so a tool can keep
+    /// to it, such as a simulator installing only apps built there.
+    pub async fn call_tool(
+        &self,
+        name: &str,
+        arguments: Value,
+        project: Option<&std::path::Path>,
+    ) -> Result<CallOutput> {
         let Value::Object(arguments) = arguments else {
             bail!("arguments must be a JSON object");
         };
-        let params = CallToolRequestParams::new(name.to_owned()).with_arguments(arguments);
+        let mut params = CallToolRequestParams::new(name.to_owned()).with_arguments(arguments);
+        if let Some(project) = project.and_then(|project| project.to_str()) {
+            let mut meta = serde_json::Map::new();
+            meta.insert(PROJECT_META.into(), Value::String(project.to_owned()));
+            params.meta = Some(meta.into());
+        }
         let result = tokio::time::timeout(CALL_TIMEOUT, self.service.call_tool(params))
             .await
             .map_err(|_| anyhow!("the server did not answer in {}s", CALL_TIMEOUT.as_secs()))?
             .map_err(|error| anyhow!("the call failed: {error}"))?;
         let mut text = String::new();
+        let mut images = Vec::new();
         for part in &result.content {
             if text.len() >= MAX_RESULT_BYTES {
                 break;
+            }
+            if let ContentBlock::Image(image) = part
+                && images.len() < MAX_IMAGES
+                && let Some(bytes) = image_bytes(&image.data)
+            {
+                images.push(bytes);
+                continue;
             }
             if !text.is_empty() {
                 text.push('\n');
@@ -147,13 +172,27 @@ impl McpClient {
         if result.is_error == Some(true) {
             bail!("{text}");
         }
-        Ok(text)
+        Ok(CallOutput { text, images })
     }
 }
 
+/// The `_meta` key of the chat's project folder in a tool call.
+pub const PROJECT_META: &str = "dev.duskcode/project";
+
 async fn start_child(config: &StdioServerConfig) -> Result<RunningService<RoleClient, ()>> {
-    let mut command = Command::new(&config.command);
-    command.args(&config.args).envs(&config.env);
+    let mut command = match &config.isolation {
+        Some(isolation) => {
+            let mut line = vec![config.command.clone()];
+            line.extend(config.args.iter().cloned());
+            isolation.command(&line)?
+        }
+        None => {
+            let mut command = Command::new(&config.command);
+            command.args(&config.args);
+            command
+        }
+    };
+    command.envs(&config.env);
     let (transport, _) = TokioChildProcess::builder(command)
         .stderr(Stdio::null())
         .spawn()
@@ -205,6 +244,16 @@ async fn serve<C: StreamableHttpClient + Send + Sync + 'static>(
         })
 }
 
+/// The bytes of a base64 picture, when it is small enough to be a picture at all; what
+/// they are is checked by whoever shows them.
+fn image_bytes(data: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    if data.len() > crate::state::artifacts::MAX_IMAGE_BYTES * 4 / 3 + 4 {
+        return None;
+    }
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
+}
+
 /// Text parts as they are; other parts are named, since the model reads only text.
 fn content_text(part: &ContentBlock) -> String {
     match part {
@@ -224,6 +273,22 @@ fn content_text(part: &ContentBlock) -> String {
     }
 }
 
+fn remote_tool(tool: rmcp::model::Tool) -> RemoteTool {
+    let hint = |pick: fn(&rmcp::model::ToolAnnotations) -> Option<bool>| {
+        tool.annotations.as_ref().and_then(pick) == Some(true)
+    };
+    RemoteTool {
+        repeatable: hint(|a| a.read_only_hint) || hint(|a| a.idempotent_hint),
+        read_only: hint(|a| a.read_only_hint),
+        name: tool.name.into_owned(),
+        description: tool
+            .description
+            .map(|text| text.chars().take(MAX_DESCRIPTION_CHARS).collect())
+            .unwrap_or_default(),
+        input_schema: Value::Object((*tool.input_schema).clone()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -240,5 +305,37 @@ mod tests {
         .unwrap();
         assert_eq!(content_text(&text), "two files");
         assert_eq!(content_text(&image), "[image content]");
+    }
+
+    /// Whether a server's tool, with these annotations, may be repeated.
+    fn repeatable(annotations: Option<Value>) -> bool {
+        let mut tool = json!({"name": "t", "inputSchema": {"type": "object"}});
+        if let Some(annotations) = annotations {
+            tool["annotations"] = annotations;
+        }
+        remote_tool(serde_json::from_value(tool).unwrap()).repeatable
+    }
+
+    #[test]
+    fn only_a_read_only_hint_makes_a_tool_read_only() {
+        let read_only = |annotations: Value| {
+            let tool =
+                json!({"name": "t", "inputSchema": {"type": "object"}, "annotations": annotations});
+            remote_tool(serde_json::from_value(tool).unwrap()).read_only
+        };
+        assert!(read_only(json!({"readOnlyHint": true})));
+        assert!(!read_only(json!({"idempotentHint": true})));
+        assert!(!read_only(json!({"readOnlyHint": false})));
+    }
+
+    #[test]
+    fn a_server_hint_makes_its_tool_repeatable() {
+        assert!(repeatable(Some(json!({"readOnlyHint": true}))));
+        assert!(repeatable(Some(json!({"idempotentHint": true}))));
+        assert!(!repeatable(None));
+        assert!(!repeatable(Some(json!({}))));
+        assert!(!repeatable(Some(
+            json!({"readOnlyHint": false, "idempotentHint": false})
+        )));
     }
 }

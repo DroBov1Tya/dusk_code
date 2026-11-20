@@ -35,6 +35,15 @@ pub async fn fork(summary: String, cwd: String) -> Res<String> {
     ask!(thread(ThreadRequest::Fork { summary, cwd }), Response::Opened { thread_id } => thread_id)
 }
 
+/// A new chat holding `thread_id`'s history up to and including `message_id`.
+pub async fn fork_at(thread_id: &str, message_id: &str, cwd: String) -> Res<String> {
+    let (thread_id, message_id, cwd) = (thread_id.to_owned(), message_id.to_owned(), cwd.into());
+    ask!(
+        thread(ThreadRequest::ForkAt { thread_id, message_id, cwd }),
+        Response::Opened { thread_id } => thread_id
+    )
+}
+
 pub async fn messages(thread_id: &str) -> Res<Vec<Message>> {
     let thread_id = thread_id.to_owned();
     ask!(thread(ThreadRequest::Messages { thread_id }), Response::Messages(m) => m)
@@ -91,8 +100,8 @@ pub async fn delete_thread(thread_id: &str) -> Res<()> {
     .await
 }
 
-pub async fn approve(id: u64, decision: Decision) -> Res<bool> {
-    ask!(thread(ThreadRequest::Approve { id, decision }), Response::Waiting(w) => w)
+pub async fn approve(thread_id: String, id: u64, decision: Decision) -> Res<bool> {
+    ask!(thread(ThreadRequest::Approve { thread_id, id, decision }), Response::Waiting(w) => w)
 }
 
 pub async fn set_approvals(thread_id: &str, policy: Option<ApprovalPolicy>) -> Res<()> {
@@ -106,4 +115,37 @@ pub async fn set_approvals(thread_id: &str, policy: Option<ApprovalPolicy>) -> R
 pub async fn get_approvals(thread_id: &str) -> Res<Option<ApprovalPolicy>> {
     let thread_id = thread_id.to_owned();
     ask!(thread(ThreadRequest::GetApprovals { thread_id }), Response::Approvals(a) => a)
+}
+
+/// What the thread's agents changed in skills, oldest first.
+pub async fn skill_changes(thread_id: &str) -> Res<Vec<dusk_protocol::catalog::SkillChange>> {
+    let thread_id = thread_id.to_owned();
+    ask!(thread(ThreadRequest::SkillChanges { thread_id }), Response::SkillChanges(c) => c)
+}
+
+/// The thread's pins, oldest message first.
+pub async fn pins(thread_id: &str) -> Res<Vec<dusk_protocol::thread::Pin>> {
+    let thread_id = thread_id.to_owned();
+    ask!(thread(ThreadRequest::Pins { thread_id }), Response::Pins(p) => p)
+}
+
+/// Pins or unpins one message; answers with the thread's pins.
+pub async fn set_pinned(
+    thread_id: &str,
+    message_id: &str,
+    pinned: bool,
+) -> Res<Vec<dusk_protocol::thread::Pin>> {
+    let (thread_id, message_id) = (thread_id.to_owned(), message_id.to_owned());
+    ask!(
+        thread(ThreadRequest::Pin { thread_id, message_id, pinned }),
+        Response::Pins(p) => p
+    )
+}
+
+/// The chat is shown to the user: it is read.
+pub async fn seen(thread_id: &str) -> Res<()> {
+    done(thread(ThreadRequest::Seen {
+        thread_id: thread_id.to_owned(),
+    }))
+    .await
 }

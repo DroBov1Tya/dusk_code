@@ -2,7 +2,7 @@
 
 use crate::{
     api,
-    ui::{confirm, run, size, when},
+    ui::{Icon, IconName, confirm, run, size, when},
 };
 use dusk_protocol::project::{OutputFile, OutputKind};
 use leptos::prelude::*;
@@ -34,13 +34,13 @@ pub fn Artifacts() -> impl IntoView {
                                     <button class="ghost" on:click=move |_| {
                                         let path = open_path.clone();
                                         run(api::read_output(path.clone()), move |body| shown.set(Some((path, body))));
-                                    }>"View"</button>
+                                    }><Icon name=IconName::Eye />"View"</button>
                                 })}
                                 <button class="ghost danger" on:click=move |_| {
                                     if confirm("Delete this file from the workspace?") {
                                         run(api::delete_output(delete_path.clone()), move |()| load());
                                     }
-                                }>"Delete"</button>
+                                }><Icon name=IconName::Delete />"Delete"</button>
                             </div>
                         </div>
                     }
@@ -50,7 +50,10 @@ pub fn Artifacts() -> impl IntoView {
                 <div class="overlay" on:click=move |_| shown.set(None)>
                     <div class="window" on:click=|ev| ev.stop_propagation()>
                         <header class="window-head"><h3>{path}</h3><span class="grow"></span>
-                            <button class="icon" on:click=move |_| shown.set(None)>"×"</button></header>
+                            <button class="icon" aria-label="Close preview" on:click=move |_| shown.set(None)>
+                                <Icon name=IconName::Close />
+                            </button>
+                        </header>
                         <pre class="viewer">{body}</pre>
                     </div>
                 </div>

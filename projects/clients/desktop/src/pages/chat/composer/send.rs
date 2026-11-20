@@ -8,10 +8,18 @@ impl Workspace {
     /// Sends the composer's text to the shown chat, or to a new chat of the selected
     /// project when none is shown.
     pub fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shown.is_none() && self.drafts.starting() {
+            return;
+        }
         let mut text = self.composer.read(cx).value().trim().to_owned();
         if self.run_command(&text, window, cx) {
             return;
         }
+        let draft = super::Draft {
+            text: self.composer.read(cx).value().to_string(),
+            attachments: self.attachments.clone(),
+            pastes: self.pastes.clone(),
+        };
         for pasted in std::mem::take(&mut self.pastes) {
             if !text.is_empty() {
                 text.push('\n');
@@ -34,6 +42,7 @@ impl Workspace {
             return;
         }
         let shown = self.shown.clone();
+        self.drop_suggestion(shown.as_deref());
         // A pending question takes the text as the user's own answer.
         let asked = shown
             .as_ref()
@@ -68,30 +77,74 @@ impl Workspace {
         self.composer
             .update(cx, |composer, cx| composer.set_value("", window, cx));
         let temporary = std::mem::take(&mut self.temporary_next);
+        let origin = shown.clone();
+        let generation = self.drafts.generation();
+        let navigation = self.history.navigation();
+        if origin.is_none() {
+            self.drafts.begin();
+        }
+        // A chat already on the page catches its turn's events as they come.
+        if let Some(thread_id) = shown {
+            self.deliver(thread_id, text, origin, generation, draft, cx);
+            return;
+        }
         self.core.call(
             cx,
             move |client| async move {
                 let threads = client.threads();
-                let (thread_id, new) = match (shown, dir) {
-                    (Some(thread_id), _) => (thread_id, false),
-                    (None, Some(dir)) if temporary => (threads.start_temporary(dir).await?, true),
-                    (None, Some(dir)) => (threads.start(dir).await?, true),
-                    (None, None) => anyhow::bail!("no project"),
-                };
-                threads.send(&thread_id, text, false).await?;
-                anyhow::Ok((thread_id, new))
-            },
-            |ws, result, cx| match result {
-                Ok((thread_id, new)) => {
-                    if new {
-                        ws.chats.insert(thread_id.clone(), Transcript::default());
-                        ws.show(thread_id, cx);
-                        ws.reload_threads(cx);
-                    }
-                    // What was attached is now among the chat's sources.
-                    ws.load_sources(cx);
+                match dir {
+                    Some(dir) if temporary => threads.start_temporary(dir).await,
+                    Some(dir) => threads.start(dir).await,
+                    None => anyhow::bail!("no project"),
                 }
-                Err(error) => ws.fail(error, cx),
+            },
+            move |ws, result, cx| {
+                ws.drafts.finish(generation);
+                match result {
+                    Ok(thread_id) => {
+                        // The chat is on the page before the message is queued, so the
+                        // turn it starts is seen from its first event.
+                        let current = ws.drafts.started(&thread_id, generation);
+                        ws.chats.insert(thread_id.clone(), Transcript::default());
+                        if current
+                            && ws.history.navigation() == navigation
+                            && ws.shown.is_none()
+                            && ws.center == crate::workspace::Center::Chat
+                        {
+                            ws.show(thread_id.clone(), cx);
+                        }
+                        ws.reload_threads(cx);
+                        ws.deliver(thread_id, text, None, generation, draft, cx);
+                    }
+                    Err(error) => {
+                        ws.edit_draft_at(None, generation, super::Change::Restore(draft), cx);
+                        ws.fail(error, cx);
+                    }
+                }
+            },
+        );
+    }
+
+    /// Gives the text to a thread that is already on the page; a failed send puts the
+    /// draft back where it was written.
+    fn deliver(
+        &mut self,
+        thread_id: String,
+        text: String,
+        origin: Option<String>,
+        generation: u64,
+        draft: super::Draft,
+        cx: &mut Context<Self>,
+    ) {
+        self.core.call(
+            cx,
+            move |client| async move { client.threads().send(&thread_id, text, false).await },
+            move |ws, result, cx| match result {
+                Ok(()) => ws.load_sources(cx),
+                Err(error) => {
+                    ws.edit_draft_at(origin, generation, super::Change::Restore(draft), cx);
+                    ws.fail(error, cx);
+                }
             },
         );
     }
@@ -104,7 +157,7 @@ impl Workspace {
             let agents = chat
                 .agents
                 .iter()
-                .filter(|(_, agent)| agent.working)
+                .filter(|(_, agent)| agent.working())
                 .map(|(id, _)| id.clone())
                 .collect();
             (chat.working, agents)
@@ -128,7 +181,7 @@ impl Workspace {
                     if let Some(chat) = ws.chats.get_mut(&chat_id) {
                         for id in &stopped {
                             if let Some(agent) = chat.agents.get_mut(id) {
-                                agent.stop();
+                                agent.stop(dusk_protocol::system::now_ms());
                             }
                         }
                     }

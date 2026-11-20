@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 40] = [
+pub const KEYS: [(&str, &str); 44] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -24,7 +24,10 @@ pub const KEYS: [(&str, &str); 40] = [
     ("Enter / Space", "fold or unfold the selected one"),
     ("Left click", "fold or unfold thinking, tools and summaries"),
     ("Drag", "select text and copy it; Esc clears"),
-    ("Hover", "copy a message, edit one you sent"),
+    (
+        "Hover",
+        "copy a message, edit one you sent, send a running command to the background",
+    ),
     ("Ctrl+R", "fold or unfold all thinking"),
     ("Ctrl+B", "send the running command to the background"),
     ("PgUp / PgDn", "scroll the transcript; wheel works too"),
@@ -54,6 +57,10 @@ pub const KEYS: [(&str, &str); 40] = [
     ),
     ("/plan", "read and edit this chat's pinned plan"),
     ("/files", "the files this chat's commands changed"),
+    (
+        "/link",
+        "copy this chat's link, for a message in another chat",
+    ),
     ("/diff", "review the changes in this chat's folder"),
     (
         "/disconnect",
@@ -66,9 +73,21 @@ pub const KEYS: [(&str, &str); 40] = [
     ("/snippet", "write a snippet for @name: /snippet name"),
     (
         "/access",
-        "this chat's access: ask, sandbox, arbiter, full, default",
+        "this chat's access: ask, sandbox, auto, full, default",
     ),
     ("Ctrl+N", "new thread"),
+    (
+        "Alt+T / Alt+W",
+        "a new tab; close this tab, its thread goes on",
+    ),
+    (
+        "Alt+Left/Right",
+        "the previous or next tab; Alt+1..9 one by number, a click too",
+    ),
+    (
+        "/tab",
+        "tabs: /tab, /tab 2, /tab next, /tab prev, /tab close",
+    ),
     ("Ctrl+O", "settings categories"),
     (
         "F3, card click",

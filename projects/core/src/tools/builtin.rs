@@ -4,8 +4,8 @@ use std::path::Path;
 
 use super::{
     console::RunCommand,
-    files::{ReadFile, SearchFiles},
-    harness::LoadSkill,
+    files::{Changes, ProjectMap, ReadFile, SearchFiles},
+    harness::{LoadSkill, RecallTool},
     tool::Tool,
 };
 
@@ -14,6 +14,9 @@ pub fn all(skills: &Path) -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(ReadFile),
         Box::new(SearchFiles),
+        Box::new(Changes),
+        Box::new(ProjectMap),
+        Box::new(RecallTool),
         Box::new(RunCommand::default()),
         Box::new(LoadSkill::new(skills.to_owned())),
     ]

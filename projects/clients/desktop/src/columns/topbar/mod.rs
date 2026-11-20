@@ -7,7 +7,7 @@ mod sky;
 
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Icon, IconName, Selectable,
+        ActiveTheme, Disableable, Icon, IconName,
         button::{Button, ButtonVariants},
         tooltip::Tooltip,
     },
@@ -17,9 +17,10 @@ use gpui_kit::{
 
 use crate::{
     modal::Modal,
+    platform::icon,
     ui::layout::Part,
     ui::{Type, widgets},
-    workspace::{Center, Workspace},
+    workspace::{Center, Right, Workspace},
 };
 
 pub const HEIGHT: f32 = crate::ui::size::BAR;
@@ -93,9 +94,14 @@ fn tool_of(
     cx: &mut Context<Workspace>,
 ) -> Option<AnyElement> {
     Some(match part {
-        Part::Review if chat => tool("top-review", IconName::Github, "Review the changes")
-            .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx)))
-            .into_any_element(),
+        // Shown under the same condition as the Changes module of the right panel.
+        Part::Review if chat && ws.has_content(Right::Git) => tool(
+            "top-review",
+            Icon::default().path(crate::ui::icons::GIT_COMPARE),
+            "Review the changes",
+        )
+        .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx)))
+        .into_any_element(),
         Part::Search => tool("top-search", IconName::Search, "Search the chats")
             .on_click(cx.listener(|ws, _, _, cx| {
                 ws.modal = Some(Modal::Search);
@@ -112,18 +118,7 @@ fn tool_of(
                 }))
                 .into_any_element()
         }
-        Part::Simulator if cfg!(target_os = "macos") => tool(
-            "top-simulator",
-            Icon::default().path(crate::ui::icons::PHONE),
-            if ws.simulator.open {
-                "Close the iOS Simulator"
-            } else {
-                "Open the iOS Simulator"
-            },
-        )
-        .when(ws.simulator.open, |button| button.selected(true))
-        .on_click(cx.listener(|ws, _, _, cx| ws.toggle_simulator(cx)))
-        .into_any_element(),
+        Part::Plugins => crate::plugins::place::header(ws, cx)?,
         Part::SidePanel if ws.side_panel_allowed() => tool(
             "top-panel",
             if ws.right_hidden {
@@ -205,9 +200,7 @@ fn nav(ws: &Workspace, width: Pixels, border: Hsla, cx: &mut Context<Workspace>)
         })
 }
 
-/// The mark and the name: a sun half under the horizon with the evening star over it,
-/// then "Dusk" from violet to a sunset orange, one hue per letter, and "code" quiet
-/// beside it.
+/// The app mark and "Dusk" in sunset colors, with "code" quiet beside it.
 fn wordmark(cx: &App) -> Div {
     const DUSK: [(f32, f32, f32); 4] = [
         (268., 0.72, 0.68),
@@ -220,7 +213,7 @@ fn wordmark(cx: &App) -> Div {
         .flex_row()
         .items_center()
         .gap_2()
-        .child(emblem());
+        .child(img(icon::mark()).size(px(22.)).flex_none());
     let mut name = div()
         .flex()
         .flex_row()
@@ -244,69 +237,19 @@ fn wordmark(cx: &App) -> Div {
     word
 }
 
-/// The setting sun: the upper half of a disc in the wordmark's own colors over a thin
-/// horizon, and a star up to its right.
-fn emblem() -> Div {
-    const DISC: f32 = 14.;
-    let violet = hsla(268. / 360., 0.72, 0.68, 1.);
-    let orange = hsla(24. / 360., 0.92, 0.62, 1.);
-    let rose = hsla(338. / 360., 0.76, 0.66, 1.);
-    div()
-        .relative()
-        .flex_none()
-        .w(px(20.))
-        .h(px(16.))
-        // Only the half above the horizon shows.
-        .child(
-            div()
-                .absolute()
-                .left(px(3.))
-                .top(px(4.))
-                .w(px(DISC))
-                .h(px(DISC / 2.))
-                .overflow_hidden()
-                .child(div().size(px(DISC)).rounded_full().bg(linear_gradient(
-                    180.,
-                    linear_color_stop(orange, 0.),
-                    linear_color_stop(rose, 0.55),
-                ))),
-        )
-        .child(
-            div()
-                .absolute()
-                .left_0()
-                .top(px(12.))
-                .w(px(20.))
-                .h(px(1.5))
-                .rounded_full()
-                .bg(linear_gradient(
-                    90.,
-                    linear_color_stop(violet, 0.),
-                    linear_color_stop(orange, 1.),
-                )),
-        )
-        .child(
-            div()
-                .absolute()
-                .left(px(17.))
-                .top(px(1.))
-                .size(px(2.))
-                .rounded_full()
-                .bg(hsla(0.12, 0.6, 0.92, 1.)),
-        )
-}
-
 /// Where you are: the page, or the chat under a folder icon that names its project on
 /// hover.
 fn title(ws: &Workspace, muted: Hsla) -> Stateful<Div> {
     let page = match ws.center {
         Center::Chat => None,
         Center::Artifacts => Some("Artifacts"),
-        Center::Connectors => Some("Connectors"),
+        Center::Customize => Some("Customize"),
         Center::Settings => Some("Settings"),
         Center::Schedules => Some("Scheduled tasks"),
         Center::Review => Some("Changes"),
         Center::File => Some("File"),
+        Center::Overview => Some("Overview"),
+        Center::Team => Some("Team"),
     };
     let base = div()
         .id("top-title")

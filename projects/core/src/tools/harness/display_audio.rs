@@ -101,6 +101,10 @@ impl Tool for DisplayAudio {
         schema::of::<Arguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, _arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async { anyhow::bail!("audio tools require typed result transport") })
     }
@@ -129,6 +133,11 @@ pub fn save_sound(store: &ArtifactStore, bytes: &[u8], title: Option<String>) ->
         },
         bytes,
     )
+}
+
+/// Whether the first bytes are those of a sound this takes.
+pub fn is_sound(bytes: &[u8]) -> bool {
+    sniff(bytes).is_some()
 }
 
 /// What the first bytes say a file is, or `None` when they are no sound this takes.

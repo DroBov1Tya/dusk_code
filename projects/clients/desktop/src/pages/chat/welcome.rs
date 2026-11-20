@@ -56,17 +56,21 @@ fn line(now: chrono::DateTime<chrono::Local>) -> &'static str {
     lines[turn.rem_euclid(lines.len() as i64) as usize]
 }
 
-pub(super) fn render(ws: &Workspace, cx: &App) -> Div {
-    let theme = cx.theme();
+pub(super) fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let hint = if ws.temporary_next {
         "A temporary chat: kept in memory only, gone when the app closes.".to_owned()
     } else if ws.projects.is_empty() {
-        "Add a project on the left to start.".to_owned()
+        "A project is a folder the agents work in. Add one to start.".to_owned()
     } else if let Some(project) = ws.selected_project() {
         format!("Write a message to start a chat in {}.", project.name)
     } else {
         "Write a message to start a chat, or pick one on the left.".to_owned()
     };
+    let add_project = (ws.projects.is_empty() && !ws.temporary_next).then(|| {
+        crate::ui::action("welcome-add-project", "Add a project")
+            .on_click(cx.listener(|ws, _, window, cx| ws.open_form(None, window, cx)))
+    });
+    let theme = cx.theme();
     let face = FACES
         .iter()
         .find(|face| ws.fonts.iter().any(|family| family == *face));
@@ -91,4 +95,6 @@ pub(super) fn render(ws: &Workspace, cx: &App) -> Div {
         .px_8()
         .child(greeting)
         .child(div().small().text_color(theme.muted_foreground).child(hint))
+        // With no project yet there is one thing to do, and it is offered here.
+        .children(add_project)
 }

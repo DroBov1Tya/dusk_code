@@ -19,11 +19,14 @@ impl Runtime {
     /// Every mode with the first sentence of its prompt, for a client to describe it.
     pub fn mode_infos(&self) -> Vec<dusk_protocol::config::ModeInfo> {
         let dir = self.launcher.paths.modes_dir();
-        self.modes()
+        let modes = Modes::new(&dir);
+        modes
+            .list()
             .into_iter()
             .map(|name| {
-                let prompt =
-                    std::fs::read_to_string(dir.join(format!("{name}.md"))).unwrap_or_default();
+                // The prompt the thread uses, so a built-in mode without a file shows
+                // its template's summary.
+                let prompt = modes.prompt(&name).ok().flatten().unwrap_or_default();
                 let flat = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
                 let end = flat.find(". ").map_or(flat.len(), |at| at + 1);
                 let summary = flat[..end].chars().take(200).collect();
@@ -124,6 +127,13 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_arbiter(&self, arbiter: crate::config::Arbiter) -> Result<()> {
+        let arbiter = arbiter.normalized();
+        arbiter.validate().map_err(anyhow::Error::msg)?;
+        self.config().update(|config| config.set_arbiter(arbiter))?;
+        Ok(())
+    }
+
     pub fn set_sound_notifications(&self, on: bool) -> Result<()> {
         self.config()
             .update(|config| config.set_sound_notifications(on))?;
@@ -141,6 +151,22 @@ impl Runtime {
         self.launcher
             .config
             .update(|config| config.set_max_goal_rounds(rounds))?;
+        Ok(())
+    }
+
+    /// Seconds a model call may stay silent before it is given up on.
+    pub fn set_model_timeout(&self, seconds: u32) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_model_timeout_seconds(seconds))?;
+        Ok(())
+    }
+
+    /// Tries of one model call that wrote nothing, the first included.
+    pub fn set_max_attempts(&self, attempts: u32) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_max_attempts(attempts))?;
         Ok(())
     }
 

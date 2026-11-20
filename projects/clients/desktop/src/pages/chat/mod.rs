@@ -1,15 +1,18 @@
-//! The middle column: the shown chat's transcript, the cards that wait for the user,
-//! the composer and the bar under it.
+//! The middle column: the shown chat's transcript with its pins' drawer on top, the cards
+//! that wait for the user, the composer and the bar under it.
 
 mod access_menu;
+pub mod activity;
 mod approval;
 pub mod audio;
 pub mod code;
 mod commands;
 pub mod composer;
 pub mod dictation;
+pub mod dock;
 mod fireflies;
 pub mod links;
+mod marks;
 mod media;
 pub mod messages;
 pub mod mode_menu;
@@ -17,12 +20,14 @@ mod model_bar;
 mod model_menu;
 mod navigator;
 mod parts;
+pub mod pins;
+pub mod pull_link;
 pub mod queue;
 mod ring;
 pub mod timing;
 pub mod transcript;
 mod welcome;
-mod working;
+pub mod working;
 
 use gpui_kit::{
     component::{ActiveTheme, IconName, button::Button},
@@ -31,16 +36,14 @@ use gpui_kit::{
 
 use crate::{ui::Type, workspace::Workspace};
 
-/// The mark of work under way, for a window that shows a chat of its own.
-pub fn working_mark(id: SharedString, accent: Hsla, light: Hsla) -> impl IntoElement {
-    working::render(id, accent, light)
-}
-
-pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
-    if let Some(text) = ws.fill_composer.take() {
-        ws.composer
-            .update(cx, |composer, cx| composer.set_value(text, window, cx));
-    }
+pub fn render(
+    ws: &mut Workspace,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
+    composer::show_draft(ws, window, cx);
+    composer::show_suggestion(ws, window, cx);
+    code::show(ws.shown.as_ref(), cx);
     let theme = cx.theme();
     let danger = theme.danger;
     let notice = ws.notice.clone().map(|text| {
@@ -55,6 +58,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .text_color(danger)
             .bg(danger.opacity(0.1))
             .cursor_pointer()
+            .hover(move |note| note.bg(danger.opacity(0.18)))
+            .active(move |note| note.bg(danger.opacity(0.25)))
             .child(text)
             .on_click(cx.listener(|ws, _, _, cx| {
                 ws.notice = None;
@@ -67,6 +72,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         welcome::render(ws, cx).into_any_element()
     };
     div()
+        .id("chat-page")
         .size_full()
         .flex()
         .flex_col()
@@ -78,6 +84,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         }))
         .children(notice)
         .children(crate::pages::schedules::report::render(ws, cx))
+        .children(pins::handle(ws, cx))
         .child(
             div()
                 .relative()
@@ -85,9 +92,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .min_h_0()
                 .child(body)
                 .children(fireflies::render(ws, cx))
-                .children(to_bottom(ws, cx)),
+                .children(to_bottom(ws, cx))
+                .children(pins::drawer(ws, cx)),
         )
-        .child(approval::render(ws, cx))
+        .children(dock::plan_strip(ws, cx))
+        .child(composer::dock_lane(approval::render(ws, window, cx)))
         .child(composer::render(ws, window, cx))
         .child(div().h(px(12.)))
 }

@@ -29,6 +29,8 @@ const STALLED: Duration = Duration::from_secs(2);
 
 /// What the window knows of a dictation in progress.
 pub struct Dictation {
+    thread_id: Option<String>,
+    generation: u64,
     stop: Arc<AtomicBool>,
     heard: Arc<Mutex<Heard>>,
     /// Pieces cut and not yet sent.
@@ -60,10 +62,18 @@ impl Workspace {
             return;
         }
         // The microphone is opened only when a server is there to take what it hears.
+        let thread_id = self.shown.clone();
+        let generation = self.drafts.generation();
         self.when_voice_ready(
-            crate::pages::connectors::voice::Speech::Recognition,
+            crate::pages::settings::ai::voice::Speech::Recognition,
             cx,
-            Box::new(|ws, cx| ws.start_dictation(cx)),
+            Box::new(move |ws, cx| {
+                if ws.shown == thread_id
+                    && (thread_id.is_some() || ws.drafts.generation() == generation)
+                {
+                    ws.start_dictation(cx);
+                }
+            }),
         );
     }
 
@@ -82,6 +92,8 @@ impl Workspace {
             return;
         }
         self.dictation = Some(Dictation {
+            thread_id: self.shown.clone(),
+            generation: self.drafts.generation(),
             stop,
             heard,
             queue: VecDeque::new(),
@@ -113,6 +125,11 @@ impl Workspace {
         let Some(dictation) = self.dictation.as_mut() else {
             return false;
         };
+        if dictation.thread_id != self.shown
+            || (dictation.thread_id.is_none() && dictation.generation != self.drafts.generation())
+        {
+            dictation.stop.store(true, Ordering::Relaxed);
+        }
         let stopping = dictation.stop.load(Ordering::Relaxed);
         let (piece, ended, mut error) = {
             let mut heard = dictation.heard.lock();
@@ -164,21 +181,31 @@ impl Workspace {
             return;
         };
         dictation.busy = true;
+        let thread_id = dictation.thread_id.clone();
+        let generation = dictation.generation;
+        let session = Arc::clone(&dictation.stop);
         self.core.call(
             cx,
             move |client| async move { client.transcribe(piece).await },
-            |ws, result, cx| {
+            move |ws, result, cx| {
+                let same_session = ws
+                    .dictation
+                    .as_ref()
+                    .is_some_and(|dictation| Arc::ptr_eq(&dictation.stop, &session));
+                if !same_session {
+                    return;
+                }
                 if let Some(dictation) = ws.dictation.as_mut() {
                     dictation.busy = false;
                 }
                 match result {
                     Ok(text) if !text.is_empty() => {
-                        let said = ws.composer.read(cx).value().to_string();
-                        let joined = match said.trim_end() {
-                            "" => text,
-                            before => format!("{before} {text}"),
-                        };
-                        ws.fill_composer = Some(joined);
+                        ws.edit_draft_at(
+                            thread_id.clone(),
+                            generation,
+                            crate::pages::chat::composer::Change::Append(text),
+                            cx,
+                        );
                     }
                     Ok(_) => {}
                     // A server that fails once is likely to fail again: the dictation ends.

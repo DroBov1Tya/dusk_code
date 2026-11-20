@@ -10,6 +10,8 @@ use alacritty_terminal::{
     Term,
     event::{Event, EventListener},
     grid::{Dimensions, Scroll},
+    index::{Column, Line, Point, Side},
+    selection::{Selection, SelectionType},
     term::{Config, Osc52, TermMode, cell::Flags},
     vte::ansi::{Color, CursorShape, NamedColor, Processor},
 };
@@ -73,6 +75,24 @@ pub struct Picture {
     pub rows: Vec<Vec<Run>>,
     /// Row and column of the cursor, when it is in sight.
     pub cursor: Option<(usize, usize)>,
+    /// The first and last selected column of each row, for the rows the selection covers.
+    pub selected: Vec<Option<(usize, usize)>>,
+}
+
+/// A cell in sight under the pointer, and whether the pointer is on its right half.
+#[derive(Clone, Copy)]
+pub struct Spot {
+    pub row: usize,
+    pub col: usize,
+    pub right: bool,
+}
+
+/// What a press takes as it starts: the cells dragged over, the word, or the whole line.
+#[derive(Clone, Copy)]
+pub enum Reach {
+    Cells,
+    Word,
+    Line,
 }
 
 #[derive(Default)]
@@ -168,6 +188,44 @@ impl Screen {
         self.term.mode().contains(TermMode::ALT_SCREEN)
     }
 
+    /// Starts a selection at `spot`; one of cells selects nothing until the pointer moves.
+    pub fn select(&mut self, spot: Spot, reach: Reach) {
+        let kind = match reach {
+            Reach::Cells => SelectionType::Simple,
+            Reach::Word => SelectionType::Semantic,
+            Reach::Line => SelectionType::Lines,
+        };
+        let (point, side) = self.point(spot);
+        self.term.selection = Some(Selection::new(kind, point, side));
+    }
+
+    /// Moves the selection's far end to `spot`; nothing without a selection.
+    pub fn extend_selection(&mut self, spot: Spot) {
+        let (point, side) = self.point(spot);
+        if let Some(selection) = self.term.selection.as_mut() {
+            selection.update(point, side);
+        }
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.term.selection = None;
+    }
+
+    pub fn selected_text(&self) -> Option<String> {
+        self.term
+            .selection_to_string()
+            .filter(|text| !text.is_empty())
+    }
+
+    /// The grid's point for a cell in sight: the view may be scrolled up into the history.
+    fn point(&self, spot: Spot) -> (Point, Side) {
+        let offset = self.term.grid().display_offset() as i32;
+        let row = spot.row.min(usize::from(self.size.rows).saturating_sub(1));
+        let col = spot.col.min(usize::from(self.size.cols).saturating_sub(1));
+        let side = if spot.right { Side::Right } else { Side::Left };
+        (Point::new(Line(row as i32 - offset), Column(col)), side)
+    }
+
     pub fn picture(&self) -> Picture {
         let content = self.term.renderable_content();
         let offset = content.display_offset as i32;
@@ -227,7 +285,31 @@ impl Screen {
                 (row < usize::from(self.size.rows)).then_some((row, content.cursor.point.column.0))
             })
             .flatten();
-        Picture { rows, cursor }
+        let last_col = usize::from(self.size.cols).saturating_sub(1);
+        let selected = (0..i32::from(self.size.rows))
+            .map(|row| {
+                let range = content.selection?;
+                let line = Line(row - offset);
+                (range.start.line <= line && line <= range.end.line).then(|| {
+                    let first = if line == range.start.line {
+                        range.start.column.0
+                    } else {
+                        0
+                    };
+                    let last = if line == range.end.line {
+                        range.end.column.0
+                    } else {
+                        last_col
+                    };
+                    (first, last)
+                })
+            })
+            .collect();
+        Picture {
+            rows,
+            cursor,
+            selected,
+        }
     }
 }
 
@@ -296,6 +378,26 @@ mod tests {
         // Garbage and a cut-off sequence do not panic.
         screen.feed(&[0xff, 0x1b, b'[', 0x9b, 0x00, 0x1b]);
         screen.feed(b"\x1b[999;999H\x1b[2J");
+    }
+
+    #[test]
+    fn a_drag_selects_its_cells_and_a_double_click_the_word() {
+        let mut screen = Screen::new(Size { cols: 20, rows: 4 });
+        screen.feed(b"echo hello world");
+        let spot = |col, right| Spot { row: 0, col, right };
+        screen.select(spot(5, false), Reach::Cells);
+        assert_eq!(
+            screen.selected_text(),
+            None,
+            "a click alone selects nothing"
+        );
+        screen.extend_selection(spot(9, true));
+        assert_eq!(screen.selected_text().as_deref(), Some("hello"));
+        assert_eq!(screen.picture().selected[0], Some((5, 9)));
+        screen.select(spot(12, false), Reach::Word);
+        assert_eq!(screen.selected_text().as_deref(), Some("world"));
+        screen.clear_selection();
+        assert!(screen.picture().selected.iter().all(Option::is_none));
     }
 
     #[test]

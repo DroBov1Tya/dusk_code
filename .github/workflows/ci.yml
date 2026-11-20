@@ -1,0 +1,206 @@
+# The gate for main, beta and stable. A pull request must pass `ci-ok` on an
+# up-to-date branch (a user-owned repository has no merge queue; merge_group is kept for
+# when it moves to an organization), and a push runs the checks again on the merged result.
+name: ci
+
+on:
+  pull_request:
+    branches: [main, beta, stable]
+  merge_group:
+  push:
+    branches: [main, beta, stable]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to a pull request makes the older run useless; runs on main and in the
+  # queue are never cancelled.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TOOLCHAIN: "1.99.1" # the desktop client needs a newer Rust than 1.95; see CONTRIBUTING.md
+
+jobs:
+  fmt:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --component rustfmt
+          rustup default "$TOOLCHAIN"
+      - run: cargo fmt --all -- --check
+
+  changes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Changelog fragments
+        run: python3 scripts/changelog.py check
+
+  # clippy and test share one matrix: each target is built once per job, and the two
+  # runners are the ones releases are built on.
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          # Releases ship Linux arm64 too; GitHub gives public repositories arm runners.
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+    name: check (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --component clippy
+          rustup default "$TOOLCHAIN"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ci-${{ matrix.target }}
+          # Only main writes the cache; pull requests and the queue read it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Libraries of the window
+        if: runner.os == 'Linux'
+        # The desktop crate links the system's window libraries. A mirror that does not
+        # answer fails a run; try again a few times.
+        run: |
+          for attempt in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y -o Acquire::Retries=5 --no-install-recommends \
+              clang cmake pkg-config curl imagemagick \
+              libasound2-dev libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+              libx11-xcb-dev libxcb1-dev libvulkan-dev libssl-dev libzstd-dev && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      # The published schema is current and only grew.
+      - name: API schema
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          cargo test -p dusk_protocol --features schema --example schema --locked
+          cargo run -p dusk_protocol --features schema --example schema --locked -- --check
+          # Regenerating the file in a branch must not hide a break: compare with main's
+          # copy too, when main has one.
+          git fetch --no-tags --depth=1 origin main || true
+          if git show origin/main:docs/api/schema.json > base.json 2>/dev/null; then
+            cargo run -p dusk_protocol --features schema --example schema --locked -- --base base.json
+          fi
+
+  # The web client is built for wasm exactly as releases build it, so a change that breaks
+  # it fails here and not on a release tag.
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ci-web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: scripts/build-web.sh
+
+  # Supply chain. The scanners are release binaries checked against a SHA-256 written here,
+  # not actions: an upstream release that changes under the same tag fails the check.
+
+  # Advisories, licenses, banned crates and sources, as deny.toml sets them.
+  deny:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - name: cargo-deny
+        env:
+          VERSION: "0.20.2"
+          SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+        run: |
+          name="cargo-deny-$VERSION-x86_64-unknown-linux-musl"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/deny.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/$VERSION/$name.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/deny.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/deny.tar.gz" -C "$RUNNER_TEMP" --strip-components=1 "$name/cargo-deny"
+      - name: Scan
+        run: |
+          "$RUNNER_TEMP/cargo-deny" --locked check
+
+  # Known vulnerabilities in every lockfile of the repository, from osv.dev; the exceptions
+  # are in osv-scanner.toml.
+  osv:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: osv-scanner
+        env:
+          VERSION: v2.7.0
+          SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/$VERSION/osv-scanner_linux_amd64"
+          echo "$SHA256  $RUNNER_TEMP/osv-scanner" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+      - name: Scan
+        run: |
+          "$RUNNER_TEMP/osv-scanner" scan source --recursive .
+
+  # Secrets in any commit reachable from the checked-out one, not only the latest diff: a key
+  # removed in a later commit of the same pull request is still published. Known false
+  # positives are in .gitleaksignore.
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: gitleaks
+        env:
+          VERSION: "8.30.1"
+          SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v$VERSION/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact --exit-code 1 .
+
+  # One name for branch protection and the merge queue to require.
+  ci-ok:
+    if: always()
+    needs: [fmt, changes, check, web, deny, osv, secrets]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: All jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            [[ "$result" == success ]] || { echo "a job ended as: $result" >&2; exit 1; }
+          done

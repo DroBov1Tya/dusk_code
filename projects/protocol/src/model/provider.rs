@@ -3,7 +3,10 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::model::ProviderErrorKind;
+
 /// A configured provider as a check found it: its models, or why it did not answer.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderStatus {
     pub name: String,
@@ -17,6 +20,22 @@ pub struct ProviderStatus {
     /// Off: the provider is kept with its key but not asked, so `models` is empty.
     #[serde(default = "yes")]
     pub enabled: bool,
+    /// Why `models` failed, when the core can tell; the text there says it in full.
+    #[serde(default)]
+    pub failure: Option<CheckFailure>,
+}
+
+/// What kind of failure a provider check met, so a client can say it plainly.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckFailure {
+    /// No connection, or no answer in time.
+    Unreachable,
+    /// HTTP 401 or 403: the key was refused.
+    Refused,
+    /// An answer, but not a model list of the OpenAI API.
+    NotCompatible,
 }
 
 impl ProviderStatus {
@@ -28,6 +47,7 @@ impl ProviderStatus {
             balance: None,
             limits: None,
             enabled: false,
+            failure: None,
         }
     }
 }
@@ -36,7 +56,48 @@ fn yes() -> bool {
     true
 }
 
+/// How a configured provider's calls went, as the turns that used it since the core
+/// started found. Every field holds until the provider turns healthy or failing or fails
+/// for another reason, so the status is not sent again on every call.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderHealth {
+    pub name: String,
+    pub calls: CallHealth,
+}
+
+/// Whether a provider's calls are answered. Times are Unix milliseconds.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CallHealth {
+    /// Its newest call was answered, and every one since `since`.
+    Answering { since: i64 },
+    /// Its calls fail with `kind`, the first of them at `since`; `last_answered` is when
+    /// one was answered before, if any was since the core started.
+    Failing {
+        kind: ProviderErrorKind,
+        since: i64,
+        last_answered: Option<i64>,
+    },
+}
+
+impl CallHealth {
+    /// "answering", or how it fails and for how long: "Provider unreachable, since 3m 0s
+    /// ago". `now` is in the unit of `since`.
+    pub fn text(&self, now: i64) -> String {
+        match self {
+            Self::Answering { .. } => "answering".to_owned(),
+            Self::Failing { kind, since, .. } => format!(
+                "{}, since {} ago",
+                kind.label(),
+                crate::thread::duration_words(now.saturating_sub(*since))
+            ),
+        }
+    }
+}
+
 /// Money left on a provider account, as the provider wrote it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// A decimal number; none when the key has no spending limit.
@@ -55,13 +116,46 @@ impl Balance {
 }
 
 /// The rate limits of a provider account, as its last answer reported them.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RateLimits {
     pub requests: Option<RateLimit>,
     pub tokens: Option<RateLimit>,
+    /// A subscription's usage windows, such as ChatGPT's five hours and week, by the
+    /// share used; empty for a provider that counts requests and tokens.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plan: Vec<PlanWindow>,
+}
+
+/// One usage window of a subscription: how long it is and how much of it is used.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanWindow {
+    /// How long the window is, in minutes; none when the provider did not say.
+    pub minutes: Option<u64>,
+    /// From 0 to 100.
+    pub used_percent: u8,
+    /// Seconds until it is empty again, counted when the status was made.
+    pub resets_in: Option<u64>,
+}
+
+impl PlanWindow {
+    /// The window's name from its length, as the clients title it: "5-hour limit",
+    /// "Weekly"; the provider gives no other.
+    pub fn name(&self) -> String {
+        match self.minutes {
+            Some(0) | None => "Plan limit".into(),
+            Some(300) => "5-hour limit".into(),
+            Some(10_080) => "Weekly".into(),
+            Some(m) if m.is_multiple_of(1440) => format!("{}-day limit", m / 1440),
+            Some(m) if m.is_multiple_of(60) => format!("{}-hour limit", m / 60),
+            Some(m) => format!("{m}-minute limit"),
+        }
+    }
 }
 
 /// One limit: how much the account may use in the provider's period, and what is left.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RateLimit {
     pub limit: u64,
@@ -72,6 +166,23 @@ pub struct RateLimit {
 }
 
 impl RateLimits {
+    /// The largest share used of any limit, from 0 to 1; none when no limit has a size.
+    pub fn used(&self) -> Option<f32> {
+        let counted = [&self.requests, &self.tokens]
+            .into_iter()
+            .flatten()
+            .filter(|window| window.limit > 0)
+            .map(|window| 1. - window.remaining as f32 / window.limit as f32);
+        let plan = self
+            .plan
+            .iter()
+            .map(|window| f32::from(window.used_percent) / 100.);
+        counted
+            .chain(plan)
+            .map(|share| share.clamp(0., 1.))
+            .reduce(f32::max)
+    }
+
     /// As every client says it: "4 812 of 5 000 requests, 780k of 800k tokens, resets in 12s".
     pub fn text(&self) -> String {
         let windows = [(&self.requests, "requests"), (&self.tokens, "tokens")];
@@ -89,11 +200,32 @@ impl RateLimits {
             .filter_map(|(window, _)| window.as_ref()?.resets_in)
             .max();
         if let Some(seconds) = resets_in {
-            let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
-            let wait = crate::thread::duration_words(ms);
+            let wait = crate::thread::duration_words_secs(seconds);
             parts.push(format!("resets in {wait}"));
         }
+        for window in &self.plan {
+            let size = window.minutes.map_or_else(
+                || "plan".to_owned(),
+                |minutes| format!("{} plan", span(minutes)),
+            );
+            let mut part = format!("{}% of the {size} limit used", window.used_percent);
+            if let Some(seconds) = window.resets_in {
+                let wait = crate::thread::duration_words_secs(seconds);
+                part.push_str(&format!(" (resets in {wait})"));
+            }
+            parts.push(part);
+        }
         parts.join(", ")
+    }
+}
+
+/// A window's length as a plan names it: `5h`, `7d`, `90m`.
+fn span(minutes: u64) -> String {
+    match minutes {
+        0..60 => format!("{minutes}m"),
+        _ if minutes.is_multiple_of(1440) => format!("{}d", minutes / 1440),
+        _ if minutes.is_multiple_of(60) => format!("{}h", minutes / 60),
+        _ => format!("{}h {}m", minutes / 60, minutes % 60),
     }
 }
 
@@ -114,6 +246,7 @@ fn count(number: u64) -> String {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: String,
@@ -128,6 +261,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn health_reads_as_answering_or_how_it_fails() {
+        let answering = CallHealth::Answering { since: 0 };
+        assert_eq!(answering.text(500_000), "answering");
+        let failing = CallHealth::Failing {
+            kind: ProviderErrorKind::Overloaded,
+            since: 1_000,
+            last_answered: None,
+        };
+        assert_eq!(
+            failing.text(181_000),
+            "Provider overloaded, since 3m 0s ago"
+        );
+    }
+
+    #[test]
     fn limits_read_as_one_line() {
         let window = |limit, remaining, resets_in| {
             Some(RateLimit {
@@ -139,6 +287,7 @@ mod tests {
         let both = RateLimits {
             requests: window(5_000, 4_812, Some(1)),
             tokens: window(800_000, 780_000, Some(12)),
+            plan: Vec::new(),
         };
         assert_eq!(
             both.text(),
@@ -147,8 +296,61 @@ mod tests {
         let tokens = RateLimits {
             requests: None,
             tokens: window(u64::MAX, 1_540_000, None),
+            plan: Vec::new(),
         };
         assert_eq!(tokens.text(), "1.5M of 18446744073709.5M tokens");
+        let plan = RateLimits {
+            requests: None,
+            tokens: None,
+            plan: vec![
+                PlanWindow {
+                    minutes: Some(300),
+                    used_percent: 5,
+                    resets_in: Some(7_800),
+                },
+                PlanWindow {
+                    minutes: Some(10_080),
+                    used_percent: 40,
+                    resets_in: None,
+                },
+            ],
+        };
+        assert_eq!(
+            plan.text(),
+            "5% of the 5h plan limit used (resets in 2h 10m), 40% of the 7d plan limit used"
+        );
+        assert_eq!(plan.used(), Some(0.4));
+        let names: Vec<String> = [
+            Some(300),
+            Some(10_080),
+            Some(2_880),
+            Some(120),
+            Some(90),
+            None,
+            Some(0),
+        ]
+        .into_iter()
+        .map(|minutes| {
+            PlanWindow {
+                minutes,
+                used_percent: 0,
+                resets_in: None,
+            }
+            .name()
+        })
+        .collect();
+        assert_eq!(
+            names,
+            [
+                "5-hour limit",
+                "Weekly",
+                "2-day limit",
+                "2-hour limit",
+                "90-minute limit",
+                "Plan limit",
+                "Plan limit"
+            ]
+        );
         // A status saved by an older core has no limits.
         let old: ProviderStatus =
             serde_json::from_str(r#"{"name":"a","models":{"Ok":[]}}"#).unwrap();

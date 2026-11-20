@@ -8,22 +8,36 @@ mod switches;
 #[cfg(test)]
 mod tests;
 
-use super::sections::{is_zero, yes};
-use super::{
-    Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, McpServerConfig, Memory,
-    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory,
+use super::sections::{
+    MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS,
+    MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE, MAX_TEAM_GATE_SECONDS, MAX_TEAM_MAX_GATE_RUNS,
+    MAX_TEAM_MAX_MINUTES, MAX_TEAM_MAX_STEPS, MAX_TEAM_MAX_TOKENS, MIN_COMPACT_TAIL_TOKENS,
+    MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS,
+    MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS, MIN_TEAM_MAX_MINUTES,
+    MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, is_zero, yes,
 };
-use crate::release::update::Channel;
+use super::{
+    Appearance, ApprovalPolicy, Arbiter, ContextPolicy, CoreSection, Effort, Limits, Logging,
+    MAX_ATTEMPTS, MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
+    MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, McpServerConfig, Memory, Plugged,
+    PluginConfig, ProviderConfig, Team, ThreadConfig, VersionControl, WorkHistory, Workshop,
+};
+use crate::{
+    init::files::{open_no_follow, read_bounded},
+    release::update::Channel,
+};
 use anyhow::{Context, Result, anyhow, ensure};
 use dusk_protocol::config::VoiceSettings;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fmt,
-    fs::{self, File},
-    io::Read,
+    fs::{self, OpenOptions},
     path::Path,
 };
+
+/// The largest config file read; a settings file is a few kilobytes.
+const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
 /// MCP server names are this long at most.
 const MAX_MCP_NAME: usize = 24;
@@ -57,6 +71,9 @@ pub struct Config {
     /// Version control settings; clients show this section as "Version control".
     #[serde(default, skip_serializing_if = "VersionControl::is_default")]
     version_control: VersionControl,
+    /// How auto mode's arbiter judges.
+    #[serde(default, skip_serializing_if = "Arbiter::is_default")]
+    arbiter: Arbiter,
     #[serde(default, skip_serializing_if = "Appearance::is_default")]
     appearance: Appearance,
     /// Tools switched on or off by name; a tool not listed is on.
@@ -65,6 +82,10 @@ pub struct Config {
     /// Skills switched on or off by name; a skill not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     skills: BTreeMap<String, bool>,
+    /// Skill packs switched on or off by name; a pack not listed is on. Off hides every
+    /// skill in it, whatever the skill's own switch.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    skill_packs: BTreeMap<String, bool>,
     /// Agents switched on or off by name; an agent not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     agents: BTreeMap<String, bool>,
@@ -114,6 +135,22 @@ pub struct Config {
     /// Plugins by name: whether each is on, and its settings.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     plugins: BTreeMap<String, PluginConfig>,
+    /// Mirrors of the store the user added.
+    #[serde(default, skip_serializing_if = "Workshop::is_default")]
+    workshop: Workshop,
+    /// The model a team's members answer on, and one per role.
+    #[serde(default, skip_serializing_if = "Team::is_default")]
+    team: Team,
+    /// Whether apps share one core.
+    #[serde(default, skip_serializing_if = "CoreSection::is_default")]
+    core: CoreSection,
+    /// Whether a plugin that provides a contract is asked, such as for a forge's pull
+    /// requests. Off, `provides` is shown and no contract program starts.
+    #[serde(default, skip_serializing_if = "super::sections::is_false")]
+    plugin_contracts: bool,
+    /// The plugin the user chose for a host of a contract.
+    #[serde(default, skip_serializing_if = "super::Contracts::is_default")]
+    contracts: super::Contracts,
     /// What the plugins that are on add; never saved.
     #[serde(skip)]
     plugged: Plugged,
@@ -129,6 +166,7 @@ impl fmt::Debug for Config {
             .field("limits", &self.limits)
             .field("tools", &self.tools)
             .field("skills", &self.skills)
+            .field("skill_packs", &self.skill_packs)
             .field("agents", &self.agents)
             .field("model", &self.model)
             .field("mcp", &self.mcp.keys().collect::<Vec<_>>())
@@ -166,17 +204,17 @@ fn read_private_file(path: &Path) -> Result<Vec<u8>> {
         "config must be a regular file, not a symlink"
     );
     ensure_private(&metadata)?;
-    let file = File::open(path).map_err(|_| anyhow!("cannot open config file"))?;
+    // Not following a link swapped in since the check, nor blocking on a FIFO.
+    let file = open_no_follow(OpenOptions::new().read(true), path)
+        .map_err(|_| anyhow!("cannot open config file"))?;
     let metadata = file
         .metadata()
         .map_err(|_| anyhow!("cannot inspect open config file"))?;
     ensure!(metadata.is_file(), "config must be a regular file");
     ensure_private(&metadata)?;
-    let mut bytes = Vec::new();
-    (&file)
-        .read_to_end(&mut bytes)
-        .map_err(|_| anyhow!("cannot read config file"))?;
-    Ok(bytes)
+    read_bounded(file, MAX_CONFIG_BYTES).map_err(|_| {
+        anyhow!("cannot read config file: not a regular file of at most {MAX_CONFIG_BYTES} bytes")
+    })
 }
 
 fn ensure_private(metadata: &fs::Metadata) -> Result<()> {
@@ -193,20 +231,50 @@ fn ensure_private(metadata: &fs::Metadata) -> Result<()> {
     Ok(())
 }
 
+/// What the parser refused and where. YAML errors can quote input values, including
+/// secrets: only known field names, expected types and the position are taken from them.
+fn what_is_wrong(error: &serde_saphyr::Error) -> String {
+    use serde_saphyr::Error;
+    let reason = match error.without_snippet() {
+        Error::SerdeUnknownField { field, .. } if field == "tool" => {
+            "unknown field `tool`".to_owned()
+        }
+        Error::SerdeUnknownField { .. } => "unknown field".to_owned(),
+        Error::SerdeMissingField { field, .. } => format!("missing field `{field}`"),
+        Error::SerdeInvalidType { expected, .. } | Error::SerdeInvalidValue { expected, .. } => {
+            format!("expected {expected}")
+        }
+        Error::SerdeUnknownVariant { expected, .. } => {
+            format!("expected one of: {}", expected.join(", "))
+        }
+        Error::DuplicateMappingKey { .. } => "a key is written twice".to_owned(),
+        _ => "the text is not valid YAML here".to_owned(),
+    };
+    match error.location() {
+        Some(at) => format!("{reason} at line {}, column {}", at.line(), at.column()),
+        None => reason,
+    }
+}
+
 impl Config {
     /// Reads a private local file: neither the file nor its directory may be a symlink or
     /// readable by group or others.
     pub fn load_from(path: impl AsRef<Path>) -> Result<Self> {
-        let bytes = read_private_file(path.as_ref())?;
-        Self::parse(&bytes)
+        let path = path.as_ref();
+        let bytes = read_private_file(path)?;
+        Self::parse(&bytes).map_err(|error| anyhow!("{error:#} in {}", path.display()))
     }
 
     pub fn parse(bytes: &[u8]) -> Result<Self> {
-        // YAML errors can quote input values, including secrets. Drop their source.
-        let config: Self =
-            serde_saphyr::from_slice(bytes).map_err(|_| anyhow!("invalid configuration YAML"))?;
+        let config: Self = serde_saphyr::from_slice(bytes)
+            .map_err(|error| anyhow!("invalid configuration YAML: {}", what_is_wrong(&error)))?;
         config.validate()?;
         Ok(config)
+    }
+
+    /// Whether the first app serves the core to the apps started after it.
+    pub fn shared_core(&self) -> bool {
+        self.core.shared
     }
 
     pub fn to_yaml(&self) -> Result<String> {
@@ -215,6 +283,8 @@ impl Config {
     }
 
     pub(super) fn validate(&self) -> Result<()> {
+        self.workshop.validate()?;
+        self.arbiter.validate().map_err(|error| anyhow!(error))?;
         for endpoint in [&self.voice.stt, &self.voice.tts].into_iter().flatten() {
             crate::voice::check_endpoint(endpoint)?;
         }
@@ -243,6 +313,82 @@ impl Config {
             self.limits.max_goal_rounds > 0,
             "max_goal_rounds must be above zero"
         );
+        ensure!(
+            (MIN_MODEL_TIMEOUT_SECONDS..=MAX_MODEL_TIMEOUT_SECONDS)
+                .contains(&self.limits.model_timeout_seconds),
+            "limits.model_timeout_seconds must be between {MIN_MODEL_TIMEOUT_SECONDS} and \
+             {MAX_MODEL_TIMEOUT_SECONDS}"
+        );
+        ensure!(
+            (MIN_ATTEMPTS..=MAX_ATTEMPTS).contains(&self.limits.max_attempts),
+            "limits.max_attempts must be between {MIN_ATTEMPTS} and {MAX_ATTEMPTS}"
+        );
+        let limits = &self.limits;
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.failure_note_at
+                && limits.failure_note_at < limits.failure_replan_at
+                && limits.failure_replan_at < limits.failure_stop_at
+                && limits.failure_stop_at <= MAX_FAILURE_RUNG,
+            "limits.failure_note_at, failure_replan_at and failure_stop_at must rise in this \
+             order, from {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            (MIN_RETRY_UNREACHABLE_SECONDS..=MAX_RETRY_UNREACHABLE_SECONDS)
+                .contains(&self.limits.retry_unreachable_seconds),
+            "limits.retry_unreachable_seconds must be between {MIN_RETRY_UNREACHABLE_SECONDS} \
+             and {MAX_RETRY_UNREACHABLE_SECONDS}"
+        );
+        ensure!(
+            (MIN_RESUME_WITHIN_SECONDS..=MAX_RESUME_WITHIN_SECONDS)
+                .contains(&self.limits.resume_within_seconds),
+            "limits.resume_within_seconds must be between {MIN_RESUME_WITHIN_SECONDS} and \
+             {MAX_RESUME_WITHIN_SECONDS}"
+        );
+        ensure!(
+            (MIN_STUB_KEEP_STEPS..=MAX_STUB_KEEP_STEPS).contains(&self.limits.stub_keep_steps),
+            "limits.stub_keep_steps must be between {MIN_STUB_KEEP_STEPS} and \
+             {MAX_STUB_KEEP_STEPS}"
+        );
+        ensure!(
+            (MIN_STUB_MIN_TOKENS..=MAX_STUB_MIN_TOKENS).contains(&self.limits.stub_min_tokens),
+            "limits.stub_min_tokens must be between {MIN_STUB_MIN_TOKENS} and \
+             {MAX_STUB_MIN_TOKENS}"
+        );
+        ensure!(
+            (MIN_COMPACT_TAIL_TOKENS..=MAX_COMPACT_TAIL_TOKENS)
+                .contains(&self.limits.compact_tail_tokens),
+            "limits.compact_tail_tokens must be between {MIN_COMPACT_TAIL_TOKENS} and \
+             {MAX_COMPACT_TAIL_TOKENS}"
+        );
+        ensure!(
+            (MIN_TEAM_AT_ONCE..=MAX_TEAM_AT_ONCE).contains(&limits.team_at_once),
+            "limits.team_at_once must be between {MIN_TEAM_AT_ONCE} and {MAX_TEAM_AT_ONCE}"
+        );
+        ensure!(
+            (MIN_TEAM_MAX_STEPS..=MAX_TEAM_MAX_STEPS).contains(&limits.team_max_steps),
+            "limits.team_max_steps must be between {MIN_TEAM_MAX_STEPS} and {MAX_TEAM_MAX_STEPS}"
+        );
+        ensure!(
+            (MIN_TEAM_MAX_TOKENS..=MAX_TEAM_MAX_TOKENS).contains(&limits.team_max_tokens),
+            "limits.team_max_tokens must be between {MIN_TEAM_MAX_TOKENS} and \
+             {MAX_TEAM_MAX_TOKENS}"
+        );
+        ensure!(
+            (MIN_TEAM_MAX_MINUTES..=MAX_TEAM_MAX_MINUTES).contains(&limits.team_max_minutes),
+            "limits.team_max_minutes must be between {MIN_TEAM_MAX_MINUTES} and \
+             {MAX_TEAM_MAX_MINUTES}"
+        );
+        ensure!(
+            (MIN_TEAM_GATE_SECONDS..=MAX_TEAM_GATE_SECONDS).contains(&limits.team_gate_seconds),
+            "limits.team_gate_seconds must be between {MIN_TEAM_GATE_SECONDS} and \
+             {MAX_TEAM_GATE_SECONDS}"
+        );
+        ensure!(
+            (MIN_TEAM_MAX_GATE_RUNS..=MAX_TEAM_MAX_GATE_RUNS).contains(&limits.team_max_gate_runs),
+            "limits.team_max_gate_runs must be between {MIN_TEAM_MAX_GATE_RUNS} and \
+             {MAX_TEAM_MAX_GATE_RUNS}"
+        );
+        self.team.validate()?;
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,
             "appearance.idle_screen_minutes must be at most {}",

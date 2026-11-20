@@ -4,27 +4,31 @@
 //!
 //! The desktop is macOS or Linux. On macOS, `window_session` pins captures and
 //! semantic clicks to one app window. A macOS click presses the control and leaves the
-//! user's pointer alone; only system mode, with a yes of its own, moves the pointer. A
+//! user's pointer alone; only `physical_input`, off until the user switches it on and
+//! asked for each time, moves the real pointer. A
 //! screenshot can be of one window, and a cursor of dusk's own marks where the agent
 //! last acted. On Linux every click moves the pointer, through the X11 or Wayland tools
 //! the desktop has.
 //!
-//! The tools are the flat files here (`click`, `press_keys`, `screenshot`, `scroll`,
-//! `type_text`, `window_session`) over `screen`, the screen as the model sees it, and
-//! `offer`, how they are offered. `backend` is the desktop they drive; `overlay` is
+//! The tools are the flat files here (`click`, `press_keys`, `screenshot`, `physical_input`,
+//! `type_text`, `window_session`, and `batch`, several of them in one call) over
+//! `screen`, the screen as the model sees it, `step`, one checked action and what it
+//! asks, and `offer`, how they are offered. `backend` is the desktop they drive; `overlay` is
 //! dusk's own cursor on macOS.
 
 #[macro_use]
 mod offer;
 
 mod backend;
+mod batch;
 mod click;
 #[cfg(target_os = "macos")]
 mod overlay;
+mod physical_input;
 mod press_keys;
 mod screen;
 mod screenshot;
-mod scroll;
+mod step;
 mod type_text;
 #[cfg(target_os = "macos")]
 mod window_session;
@@ -32,13 +36,14 @@ mod window_session;
 use anyhow::{Context, Result};
 use backend::Desktop;
 
+pub use batch::ComputerActions;
 pub use click::Click;
 #[cfg(target_os = "macos")]
 pub use overlay::run_overlay_if_asked;
+pub use physical_input::PhysicalInput;
 pub use press_keys::PressKeys;
 pub use screen::Screen;
 pub use screenshot::Screenshot;
-pub use scroll::Scroll;
 pub use type_text::TypeText;
 #[cfg(target_os = "macos")]
 pub use window_session::WindowSession;

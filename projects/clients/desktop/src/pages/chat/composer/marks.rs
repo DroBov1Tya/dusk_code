@@ -1,5 +1,6 @@
 //! The marks beside the box: the microphone and the chat's subagents.
 
+use crate::ui::press::Press;
 use crate::ui::{Type, widgets::Focusable};
 use gpui_kit::{
     component::{
@@ -10,6 +11,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::ui::looping::Loop;
 use crate::workspace::Workspace;
 
 /// The marks beside the box, the history on the left and the subagents and the context on
@@ -33,22 +35,18 @@ pub fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let mut holder = div().relative().flex().items_center().justify_center();
     if on {
         // Two rings half a beat apart; each grows from the button's edge and thins out.
-        for (name, shift) in [("dictate-ring-a", 0.), ("dictate-ring-b", 0.5)] {
+        for shift in [0., 0.5] {
             holder = holder.child(
                 div()
                     .absolute()
                     .rounded_full()
                     .border_1()
                     .border_color(danger)
-                    .with_animation(
-                        name,
-                        Animation::new(std::time::Duration::from_millis(1600)).repeat(),
-                        move |ring, at| {
-                            let at = (at + shift).fract();
-                            let grown = 32. + 22. * at;
-                            ring.size(px(grown)).opacity(0.55 * (1. - at) * (1. - at))
-                        },
-                    ),
+                    .looping(std::time::Duration::from_millis(1600), move |ring, at| {
+                        let at = (at + shift).fract();
+                        let grown = 32. + 22. * at;
+                        ring.size(px(grown)).opacity(0.55 * (1. - at) * (1. - at))
+                    }),
             );
         }
     }
@@ -61,13 +59,13 @@ pub fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 pub fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat().filter(|chat| !chat.agents.is_empty())?;
     let thread_id = ws.shown.clone()?;
-    let working = chat.agents.values().filter(|agent| agent.working).count();
+    let working = chat.agents.values().filter(|agent| agent.working()).count();
     let lead = chat
         .agents
         .iter()
-        .filter(|(_, agent)| agent.working)
-        .min_by_key(|(_, agent)| agent.started)
-        .or_else(|| chat.agents.iter().max_by_key(|(_, agent)| agent.started))?;
+        .filter(|(_, agent)| agent.working())
+        .min_by_key(|(_, agent)| agent.started_at)
+        .or_else(|| chat.agents.iter().max_by_key(|(_, agent)| agent.started_at))?;
     let theme = cx.theme();
     let (signal, muted, border, surface) = (
         theme.warning,
@@ -102,6 +100,7 @@ pub fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div>
         .bg(surface)
         .cursor_pointer()
         .hover(move |button| button.bg(hover).border_color(muted.opacity(0.6)))
+        .press(hover, cx)
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(label.clone()).build(window, cx)
         })
@@ -115,7 +114,7 @@ pub fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div>
             ws.modal = Some(crate::modal::Modal::Agents {
                 thread_id: thread_id.clone(),
             });
-            ws.agents_modal_focus.focus(window, cx);
+            ws.modal_focus.focus(window, cx);
             cx.notify();
         }));
     // The count sits on the circle's upper right, half outside it.

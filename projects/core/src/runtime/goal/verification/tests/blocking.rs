@@ -120,20 +120,44 @@ async fn review_timeout_persists_a_gap_and_never_a_pass() {
     assert!(reviewed.verification_note.unwrap().contains("timed out"));
 }
 
+async fn attempts(state: &State) -> i64 {
+    sqlx::query_scalar("SELECT verification_attempts FROM goals WHERE thread_id = 'thread'")
+        .fetch_one(&state.pool)
+        .await
+        .unwrap()
+}
+
+/// A review a restart cut off runs again: it only reads evidence, and its attempt was
+/// counted when it began.
+#[tokio::test]
+async fn an_interrupted_review_runs_again_with_its_attempt_counted() {
+    let (state, goal) = approved("goal-review-again", command()).await;
+    let id = proof(&state).await;
+    request(&state, &goal, &id).await;
+    sqlx::query(
+        "UPDATE goals SET verification = 'checking', verification_attempts = 1
+         WHERE thread_id = 'thread'",
+    )
+    .execute(&state.pool)
+    .await
+    .unwrap();
+    state.recover_goal_verification("thread").await.unwrap();
+    let recovered = state.goal("thread").await.unwrap().unwrap();
+    assert_eq!(recovered.verification, "pending");
+    assert_eq!(recovered.verification_note, None);
+    assert_eq!(attempts(&state).await, 1);
+    // A pending review is what the runner's goal round verifies.
+    let reviewed = verify(&state, "thread").await.unwrap().unwrap();
+    assert_ne!(reviewed.verification, "pending");
+    assert_eq!(attempts(&state).await, 2);
+}
+
+/// Past the last attempt, an interrupted review ends as gaps and no further one is taken:
+/// neither yields a pass.
 #[tokio::test]
 async fn interrupted_verification_recovery_and_attempt_limit_never_yield_pass() {
     let (state, goal) = approved("goal-recovery", command()).await;
     let id = proof(&state).await;
-    request(&state, &goal, &id).await;
-    sqlx::query("UPDATE goals SET verification = 'checking' WHERE thread_id = 'thread'")
-        .execute(&state.pool)
-        .await
-        .unwrap();
-    state.recover_goal_verification("thread").await.unwrap();
-    let recovered = state.goal("thread").await.unwrap().unwrap();
-    assert_eq!(recovered.verification, "gaps");
-    assert_eq!(recovered.status, GoalStatus::Active);
-    assert!(verify(&state, "thread").await.unwrap().is_none());
     for _ in 0..3 {
         request(&state, &goal, "tool:missing").await;
         assert_eq!(
@@ -145,6 +169,17 @@ async fn interrupted_verification_recovery_and_attempt_limit_never_yield_pass() 
             "gaps"
         );
     }
+    sqlx::query("UPDATE goals SET verification = 'checking' WHERE thread_id = 'thread'")
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    state.recover_goal_verification("thread").await.unwrap();
+    let recovered = state.goal("thread").await.unwrap().unwrap();
+    assert_eq!(recovered.verification, "gaps");
+    assert!(recovered.verification_note.unwrap().contains("interrupted"));
+    assert_eq!(recovered.status, GoalStatus::Active);
+    assert_eq!(attempts(&state).await, 3);
+    assert!(verify(&state, "thread").await.unwrap().is_none());
     let turn = turn(&state).await;
     state
         .record_tool_calls(

@@ -6,12 +6,17 @@ mod agents;
 mod arbiter;
 mod chat_menu;
 pub mod detail;
+mod picture;
 mod project;
 mod search;
 mod sphere;
+mod task_card;
+mod team;
 mod viewer;
 mod whats_new;
 
+use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use std::path::PathBuf;
 
 use gpui_kit::{
@@ -27,6 +32,8 @@ use gpui_kit::{
 use crate::workspace::Workspace;
 
 pub use chat_menu::{FADE, render as chat_menu};
+
+use crate::pages::customize::plugins::workshop::detail as listing;
 pub use viewer::ViewerContent;
 
 pub enum Modal {
@@ -76,13 +83,16 @@ pub enum Modal {
     WhatsNew {
         from: Option<String>,
     },
-    /// A picture large over the window; a click outside closes it.
+    /// A picture over the whole window, to zoom and move; a click beside it closes it.
     Picture {
-        path: PathBuf,
+        image: ImageSource,
+        /// Its pixel size, when its bytes were at hand.
+        size: Option<(u32, u32)>,
+        view: picture::PictureView,
     },
     /// A speech button was pressed with no server connected for it.
     VoiceMissing {
-        speech: crate::pages::connectors::voice::Speech,
+        speech: crate::pages::settings::ai::voice::Speech,
     },
     /// Making or changing a scheduled task.
     Schedule(crate::pages::schedules::editor::Editor),
@@ -90,6 +100,27 @@ pub enum Modal {
     Uninstall(crate::pages::settings::uninstall::Uninstall),
     /// Forgetting every connected provider, after a yes.
     RemoveProviders,
+    /// A push or a discard of the review page, after a yes.
+    Git(crate::pages::review::GitConfirm),
+    /// Installing or removing a plugin of the store, after a yes.
+    Workshop(crate::pages::customize::plugins::Confirm),
+    /// A listing of the Workshop as a store page, by its source and name.
+    Listing {
+        source: String,
+        name: String,
+    },
+    /// A plugin's part that opens as a window.
+    Plugin(crate::plugins::Key),
+    /// A task of the shown chat's plan, opened from its row.
+    TaskCard {
+        task_id: String,
+    },
+    /// Stopping the shown chat's team; asks first.
+    StopTeam {
+        thread_id: String,
+    },
+    /// The budget of the shown chat's running team, being changed.
+    TeamBudget(team::BudgetForm),
     /// Going back to a message of the chat erases it and all after it; asks first.
     Rollback {
         thread_id: String,
@@ -143,16 +174,17 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
-        Modal::Picture { path } => (
-            "Picture".to_owned(),
-            1100.,
-            div().p_3().child(
-                img(path.clone())
-                    .w_full()
-                    .max_h(px(760.))
-                    .object_fit(ObjectFit::Contain),
-            ),
+        Modal::TaskCard { task_id } => (
+            task_card::title(ws, task_id).unwrap_or_else(|| "Task".to_owned()),
+            560.,
+            task_card::render(ws, task_id, cx),
         ),
+        Modal::StopTeam { .. } => ("Stop team".to_owned(), 480., team::stop(cx)),
+        Modal::TeamBudget(form) => ("Team budget".to_owned(), 520., team::budget(form, cx)),
+        // It has the whole window, not a panel with a title.
+        Modal::Picture { image, size, view } => {
+            return Some(picture::render(ws, image, *size, view, window, cx));
+        }
         Modal::Uninstall(state) => (
             "Remove duskcode".to_owned(),
             520.,
@@ -178,11 +210,47 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             480.,
             crate::pages::settings::providers::confirm_remove_all(cx),
         ),
+        Modal::Git(confirm) => {
+            let confirm = confirm.clone();
+            (
+                "Git".to_owned(),
+                480.,
+                crate::pages::review::git_confirm(&confirm, cx),
+            )
+        }
         Modal::VoiceMissing { speech } => (
             "Voice".to_owned(),
             480.,
-            crate::pages::connectors::voice::missing(*speech, cx),
+            crate::pages::settings::ai::voice::missing(*speech, cx),
         ),
+        Modal::Workshop(confirm) => {
+            let confirm = confirm.clone();
+            (
+                confirm.title(),
+                480.,
+                crate::pages::customize::plugins::confirm(
+                    &confirm,
+                    ws.workshop.review.as_ref(),
+                    &ws.confirm_focus,
+                    cx,
+                ),
+            )
+        }
+        Modal::Listing { source, name } => {
+            let (source, name) = (source.clone(), name.clone());
+            let width = (window.viewport_size().width.as_f32() - 32.).clamp(320., listing::WIDTH);
+            (
+                name.clone(),
+                width,
+                listing::render(
+                    ws,
+                    &source,
+                    &name,
+                    (width, window.viewport_size().height.as_f32()),
+                    cx,
+                ),
+            )
+        }
         Modal::Rollback { .. } => ("Go back".to_owned(), 480., rollback(cx)),
         Modal::Arbiter { thread_id } => {
             let thread_id = thread_id.clone();
@@ -221,6 +289,18 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             480.,
             chat_menu::delete_file(path, cx),
         ),
+        Modal::Plugin(key) => {
+            let key = key.clone();
+            let room = crate::plugins::Room {
+                width: 640. - 40.,
+                height: f32::INFINITY,
+            };
+            (
+                crate::plugins::title(ws, &key),
+                640.,
+                div().p_5().child(crate::plugins::view(ws, &key, room, cx)),
+            )
+        }
         Modal::Detail(item) => {
             let item = item.clone();
             (item.title().to_owned(), 720., detail::render(ws, &item, cx))
@@ -245,24 +325,32 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         });
     let agent_focus = matches!(
         ws.modal,
-        Some(Modal::Agents { .. } | Modal::AgentChat { .. })
+        Some(Modal::Agents { .. } | Modal::AgentChat { .. } | Modal::Listing { .. })
     )
-    .then(|| ws.agents_modal_focus.clone());
+    .then(|| ws.modal_focus.clone());
+    // A listing's gallery steps with Left and Right.
+    let gallery = matches!(ws.modal, Some(Modal::Listing { .. }));
     let theme = cx.theme();
     let panel = div()
         .id("modal-panel")
         // The window itself takes the keys, not its close button: a focused button
         // is drawn as if the pointer were on it.
         .when_some(agent_focus, |panel, focus| panel.track_focus(&focus))
+        .when(gallery, |panel| {
+            panel.on_key_down(cx.listener(|ws, event: &KeyDownEvent, _, cx| {
+                match event.keystroke.key.as_str() {
+                    "left" => ws.gallery_step(-1, cx),
+                    "right" => ws.gallery_step(1, cx),
+                    _ => {}
+                }
+            }))
+        })
         .w(px(width))
         .max_h(relative(0.86))
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         // Clicks inside stay inside.
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(
@@ -334,6 +422,10 @@ impl Workspace {
     }
 
     pub fn close_modal(&mut self, cx: &mut Context<Self>) {
+        // A plugin's window that closes tells its plugin.
+        if let Some(Modal::Plugin(key)) = self.modal.take() {
+            self.close_plugin_part(key, cx);
+        }
         self.modal = None;
         cx.notify();
     }
@@ -348,7 +440,7 @@ fn rollback(cx: &mut Context<Workspace>) -> Div {
         .gap_3()
         .p_5()
         .child("Go back to this message?")
-        .child(div().text_sm().text_color(muted).child(
+        .child(div().small().text_color(muted).child(
             "The message and everything after it are erased from the chat for good. \
              Files the agents wrote stay. The message returns to the box.",
         ))

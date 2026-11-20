@@ -1,9 +1,13 @@
 //! Markdown as the chat draws it: links open in the system browser and pictures load,
 //! both only over http(s), so a message cannot reach a local file or another scheme.
 //! One scheme of our own: a path in code, such as `src/main.rs:42`, becomes a link that
-//! opens the file in the viewer. The core reads it, and only inside a project.
+//! opens the file in the viewer. The core reads it, and only inside a project. Text of a
+//! third party, such as a pack's, is drawn with `Links::Web` and never gets that scheme.
 
-use gpui_kit::{component::text::TextView, *};
+use gpui_kit::{
+    component::text::{TextView, TextViewState},
+    *,
+};
 
 use crate::workspace::Workspace;
 
@@ -15,12 +19,56 @@ const EXTENSIONS: &[&str] = &[
     "xml", "rb", "php", "lua", "gradle", "proto",
 ];
 
-pub fn markdown(id: impl Into<ElementId>, text: String) -> TextView {
-    TextView::markdown(id, linkify(&text))
-        .selectable(true)
+/// Which links a text may carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Links {
+    /// http(s), and paths in code opening in the viewer: for the user's and the model's
+    /// own text.
+    Paths,
+    /// http(s) only: for text a third party wrote, such as a pack's or a plugin's, where
+    /// a click must not open a path it chose.
+    Web,
+}
+
+pub fn markdown(id: impl Into<ElementId>, text: String, links: Links) -> TextView {
+    match links {
+        Links::Paths => view(TextView::markdown(id, linkify(&text, false)), links)
+            .markdown_extensions(super::pull_link::extensions(false)),
+        Links::Web => view(TextView::markdown(id, unschemed(&text)), links),
+    }
+}
+
+/// The model's own answer: as `markdown`, and its `{{tone: label}}` drawn as labels.
+pub fn answer(id: impl Into<ElementId>, text: String) -> TextView {
+    view(TextView::markdown(id, linkify(&text, true)), Links::Paths)
+        .markdown_extensions(super::pull_link::extensions(true))
+}
+
+/// A view of a state kept apart, set up as `markdown` or, `marked`, as `answer`.
+pub fn kept(state: &Entity<TextViewState>, marked: bool) -> TextView {
+    view(TextView::new(state), Links::Paths)
+        .markdown_extensions(super::pull_link::extensions(marked))
+}
+
+/// A list's marker. The library draws it as a glyph in one cell, bullets and numbers
+/// alike, and lets only that cell's text be styled: numbers take tabular figures, so
+/// they stand in one column. A larger or drawn dot would need the library's own change
+/// or a renderer of lists of our own; a larger font here would swell the numbers too.
+fn marker() -> StyleRefinement {
+    let mut style = StyleRefinement::default();
+    style.text.font_features = Some(super::working::tabular());
+    style
+}
+
+fn view(view: TextView, links: Links) -> TextView {
+    view.selectable(true)
+        .list_style(marker())
         .code_block_actions(super::code::actions)
-        .on_link_click(|url, _, window, cx| {
-            if let Some(path) = url.strip_prefix(FILE_SCHEME) {
+        .on_link_click(move |url, _, window, cx| {
+            if let Some(path) = url
+                .strip_prefix(FILE_SCHEME)
+                .filter(|_| links == Links::Paths)
+            {
                 if let Some(workspace) = window.root::<Workspace>().flatten() {
                     let path = path.to_owned();
                     workspace.update(cx, |ws, cx| ws.open_path(&path, cx));
@@ -45,11 +93,18 @@ fn is_web(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
 }
 
-/// Turns each path in a single-backtick span into a link of ours. Fenced code is left
-/// alone, and the scheme is cut from anything the model wrote itself, so only a span
-/// that reads as a relative path can carry it.
-fn linkify(text: &str) -> String {
-    let text = text.replace(FILE_SCHEME, "dusk-file-");
+/// Turns each path in a single-backtick span into a link of ours and, when `marked`, each
+/// label in the prose around them into one too. Fenced code is left alone, and our schemes
+/// are cut from anything the model wrote itself, so only what we made can carry them.
+pub fn linkify(text: &str, marked: bool) -> String {
+    let text = unschemed(text);
+    let prose = |out: &mut String, text: &str| {
+        if marked {
+            super::marks::encode(out, text);
+        } else {
+            out.push_str(text);
+        }
+    };
     let mut out = String::with_capacity(text.len());
     let mut fenced = false;
     for line in text.split_inclusive('\n') {
@@ -65,7 +120,7 @@ fn linkify(text: &str) -> String {
             let after = &rest[start + 1..];
             let Some(end) = after.find('`') else { break };
             let span = &after[..end];
-            out.push_str(&rest[..start]);
+            prose(&mut out, &rest[..start]);
             if is_path(span) {
                 out.push_str(&format!("[`{span}`]({FILE_SCHEME}{span})"));
             } else {
@@ -73,9 +128,15 @@ fn linkify(text: &str) -> String {
             }
             rest = &after[end + 1..];
         }
-        out.push_str(rest);
+        prose(&mut out, rest);
     }
     out
+}
+
+/// `text` with our schemes cut, so only what we made can carry them.
+fn unschemed(text: &str) -> String {
+    text.replace(FILE_SCHEME, "dusk-file-")
+        .replace(super::marks::SCHEME, "dusk-mark-")
 }
 
 /// A relative path, with an optional `:line`, in the characters of file names.
@@ -110,10 +171,18 @@ mod tests {
 
     // `use super::*` brings in the toolkit's own `test` macro; this is the standard one.
     #[::core::prelude::v1::test]
+    fn a_third_partys_text_carries_no_link_of_ours() {
+        let text = "run `src/main.rs` or [x](dusk-file:/etc/passwd) and [y](dusk-mark:ok)";
+        let out = unschemed(text);
+        assert!(!out.contains("dusk-file:") && !out.contains(super::super::marks::SCHEME));
+        assert!(out.contains("`src/main.rs`"), "paths stay plain code");
+    }
+
+    #[::core::prelude::v1::test]
     fn only_a_relative_path_in_code_becomes_a_link() {
         let text = "see `src/main.rs:42`, `README.md` and `self.field`, not `/etc/passwd`, \
                     `../x.rs`, `1.2.3` or [x](dusk-file:/etc/passwd)\n```\n`a/b.rs`\n```\n";
-        let out = linkify(text);
+        let out = linkify(text, false);
         assert!(out.contains("[`src/main.rs:42`](dusk-file:src/main.rs:42)"));
         assert!(out.contains("[`README.md`](dusk-file:README.md)"));
         assert!(out.contains("`self.field`") && !out.contains("](dusk-file:self.field)"));

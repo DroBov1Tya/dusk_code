@@ -2,7 +2,8 @@
 
 use super::Config;
 use crate::config::{
-    Appearance, ApprovalPolicy, Limits, Logging, Memory, ThreadConfig, VersionControl, WorkHistory,
+    Appearance, ApprovalPolicy, Arbiter, Limits, Logging, Memory, Team, ThreadConfig,
+    VersionControl, WorkHistory,
 };
 use crate::release::update::Channel;
 use dusk_protocol::config::VoiceSettings;
@@ -10,6 +11,10 @@ use dusk_protocol::config::VoiceSettings;
 impl Config {
     pub fn thread(&self) -> &ThreadConfig {
         &self.thread
+    }
+
+    pub fn team(&self) -> &Team {
+        &self.team
     }
 
     pub fn limits(&self) -> Limits {
@@ -39,6 +44,14 @@ impl Config {
 
     pub fn set_branch_prefix(&mut self, prefix: &str) {
         self.version_control.branch_prefix = prefix.trim().to_owned();
+    }
+
+    pub fn arbiter(&self) -> &Arbiter {
+        &self.arbiter
+    }
+
+    pub fn set_arbiter(&mut self, arbiter: Arbiter) {
+        self.arbiter = arbiter;
     }
 
     pub fn appearance(&self) -> Appearance {
@@ -111,5 +124,13 @@ impl Config {
 
     pub fn set_max_goal_rounds(&mut self, rounds: u32) {
         self.limits.max_goal_rounds = rounds;
+    }
+
+    pub fn set_model_timeout_seconds(&mut self, seconds: u32) {
+        self.limits.model_timeout_seconds = seconds;
+    }
+
+    pub fn set_max_attempts(&mut self, attempts: u32) {
+        self.limits.max_attempts = attempts;
     }
 }

@@ -3,17 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>duskcode: an open-source coding agent in Rust</title>
-<meta name="description" content="One core, three clients: a desktop window, a terminal client and a web client. Any model, local by default, MIT.">
-<meta property="og:title" content="duskcode">
-<meta property="og:description" content="An open-source coding agent in Rust: one core, three clients, any model, local by default.">
-<meta property="og:image" content="img/desktop.png">
-<link rel="icon" href="img/icon.png">
+<title>duskcode — one coding agent, three clients</title>
+<meta name="description" content="An open-source coding agent in Rust. Open the same local chats in the desktop app, terminal, or browser. Choose your model provider.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://drobov1tya.github.io/dusk_code/">
+<meta property="og:title" content="duskcode — one coding agent, three clients">
+<meta property="og:description" content="An open-source coding agent in Rust. Open the same local chats in the desktop app, terminal, or browser. Choose your model provider.">
+<meta property="og:image" content="https://drobov1tya.github.io/dusk_code/img/desktop.png">
+<meta property="og:image:width" content="1800">
+<meta property="og:image:height" content="1125">
+<meta property="og:image:alt" content="The duskcode desktop app showing a project chat and its task list.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="img/mark.png">
+<link rel="apple-touch-icon" href="img/mark.png">
 <style>
 :root {
   --bg: #0e0f18; --panel: #13141f; --card: #1b1c2a; --raised: #262839;
   --text: #efedf7; --soft: #aeadc4; --muted: #8f8ea8; --line: rgba(239,237,247,.09);
-  --accent: #b4a0f8; --amber: #ecc46e; --green: #74d4b3;
+  --accent: #b4a0f8;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }
@@ -28,48 +35,45 @@ a:hover { text-decoration: underline; }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
 
-/* The sky: violet going to the last light at the horizon, and a few stars. */
+/* The violet sky carries the same dusk motif as the app. */
 .sky {
   position: relative; overflow: hidden;
   background:
-    radial-gradient(120% 70% at 50% 108%, rgba(236,160,90,.30), rgba(180,110,170,.14) 38%, transparent 70%),
+    radial-gradient(120% 70% at 50% 108%, rgba(130,90,230,.16), transparent 70%),
     linear-gradient(#0b0b16, #14132a 60%, #1a1630);
   border-bottom: 1px solid var(--line);
 }
 .stars { position: absolute; inset: 0; pointer-events: none; }
 .stars i {
   position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #dcd6ff;
-  opacity: .5; animation: twinkle 4s ease-in-out infinite;
+  opacity: .4;
 }
-@keyframes twinkle { 50% { opacity: .12; } }
-@media (prefers-reduced-motion: reduce) { .stars i { animation: none; } html { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 nav { display: flex; align-items: center; gap: 22px; padding: 18px 0; position: relative; }
-nav .brand { font-weight: 650; font-size: 18px; color: var(--text); margin-right: auto; display: flex; align-items: center; gap: 10px; }
-nav .brand img { width: 26px; height: 26px; border-radius: 7px; }
-nav .brand b { color: var(--accent); font-weight: 650; }
+nav .brand { font-weight: 650; font-size: 18px; color: var(--text); margin-right: auto; display: flex; align-items: center; gap: 8px; }
+nav .brand img { width: 34px; height: 34px; }
 nav a.link { color: var(--soft); font-size: 15px; }
 @media (max-width: 560px) { nav a.hide { display: none; } }
 
-.hero { position: relative; padding: 56px 0 0; text-align: center; }
-h1 { font-size: clamp(34px, 6vw, 58px); line-height: 1.08; letter-spacing: -.02em; margin: 0 0 18px; font-weight: 680; }
-h1 span { color: var(--amber); }
-.lead { color: var(--soft); font-size: clamp(17px, 2.2vw, 20px); max-width: 640px; margin: 0 auto 30px; }
+.hero { position: relative; padding: clamp(30px, 4vw, 56px) 0 0; text-align: center; }
+h1 { font-size: clamp(34px, 5.1vw, 60px); line-height: 1.08; letter-spacing: -.025em; margin: 0 auto 16px; font-weight: 680; text-wrap: balance; }
+.lead { color: var(--soft); font-size: clamp(17px, 2.2vw, 20px); max-width: 600px; margin: 0 auto 24px; }
 .install {
-  display: flex; align-items: center; gap: 10px; max-width: 760px; margin: 0 auto 14px;
-  background: rgba(14,15,24,.72); border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 12px 18px;
+  display: flex; align-items: center; gap: 12px; max-width: 800px; margin: 0 auto 12px;
+  background: rgba(14,15,24,.72); border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 12px 16px;
 }
-.install code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 14px var(--mono); color: var(--text); text-align: left; scrollbar-width: none; }
-.install code::-webkit-scrollbar { display: none; }
+.install code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 14px/1.5 var(--mono); color: var(--text); text-align: left; }
 button.copy {
-  flex: none; font: 600 14px inherit; color: #13121d; background: var(--accent); border: 0;
-  border-radius: 8px; padding: 9px 16px; cursor: pointer; min-width: 76px;
+  flex: none; font: inherit; font-size: 14px; font-weight: 600; color: #13121d; background: var(--accent); border: 0;
+  border-radius: 8px; padding: 8px 14px; cursor: pointer; min-width: 76px; min-height: 44px;
 }
 button.copy:hover { filter: brightness(1.08); }
-.under { color: var(--muted); font-size: 14px; margin: 0 0 40px; }
-.shot { display: block; width: 100%; height: auto; border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: 0; box-shadow: 0 -20px 80px rgba(120,90,220,.18); }
+.copy-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.under { color: var(--muted); font-size: 14px; margin: 0 0 clamp(24px, 3vw, 36px); }
+.shot { display: block; width: 100%; height: auto; border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: 0; }
 
-section { padding: 72px 0; border-bottom: 1px solid var(--line); }
+section { padding: clamp(42px, 7vw, 72px) 0; border-bottom: 1px solid var(--line); }
 h2 { font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -.015em; margin: 0 0 10px; font-weight: 650; }
 .sub { color: var(--soft); max-width: 640px; margin: 0 0 36px; }
 .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
@@ -77,13 +81,13 @@ h2 { font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -.015em; margin: 0 0 1
 .card img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top left; border-bottom: 1px solid var(--line); }
 .card div { padding: 18px 20px 20px; }
 .card h3 { margin: 0 0 6px; font-size: 18px; font-weight: 620; }
-.card h3 code { font: 13px var(--mono); color: var(--amber); margin-left: 6px; }
-.card p { margin: 0; color: var(--soft); font-size: 15.5px; }
+.card h3 code { font: 13px var(--mono); color: var(--accent); margin-left: 6px; }
+.card p { margin: 0; color: var(--soft); font-size: 16px; }
 
 .points { display: grid; gap: 28px 36px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .points h3 { margin: 0 0 6px; font-size: 17px; font-weight: 620; }
 .points h3::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 10px; vertical-align: 2px; }
-.points p { margin: 0; color: var(--soft); font-size: 15.5px; }
+.points p { margin: 0; color: var(--soft); font-size: 16px; }
 
 ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; max-width: 760px; }
 ol.steps li { counter-increment: step; position: relative; padding: 16px 20px 16px 62px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; color: var(--soft); font-size: 15.5px; }
@@ -106,21 +110,22 @@ footer span { margin-right: auto; }
   <div class="stars" aria-hidden="true"></div>
   <div class="wrap">
     <nav>
-      <a class="brand" href="./"><img src="img/icon.png" alt=""><span><b>Dusk</b>code</span></a>
+      <a class="brand" href="./"><img src="img/mark.png" alt="" width="34" height="34">duskcode</a>
       <a class="link hide" href="#clients">Clients</a>
       <a class="link hide" href="#connect">Models</a>
       <a class="link hide" href="#support">Support</a>
+      <a class="link" href="https://drobov1tya.github.io/duskcode-workshop/">Plugins</a>
       <a class="link" href="https://github.com/DroBov1Tya/dusk_code">GitHub</a>
     </nav>
     <div class="hero">
-      <h1>A coding agent that stays<br><span>on your machine</span></h1>
-      <p class="lead">Open source, written in Rust. One core and three clients: a desktop window, a terminal client and a web client. Any model you can reach, your files and chats kept local.</p>
+      <h1>One coding agent, three clients</h1>
+      <p class="lead">Open the same chats from the desktop app, terminal, or browser. Built in Rust, open source, with chat history stored locally.</p>
       <div class="install">
         <code id="cmd">curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh</code>
-        <button class="copy" data-copy="cmd">Copy</button>
+        <button class="copy" data-copy="cmd" aria-label="Copy install command">Copy</button>
       </div>
       <p class="under">macOS arm64 and Linux x86_64 / arm64 · MIT · <a href="https://github.com/DroBov1Tya/dusk_code/releases">Releases</a></p>
-      <img class="shot" src="img/desktop.png" alt="The desktop window of duskcode: a chat with its steps, the context, the tool runs and the todo list" width="1800" height="1125">
+      <img class="shot" src="img/desktop.png" alt="The duskcode desktop app showing a project chat and its task list" width="1800" height="1125">
     </div>
   </div>
 </header>
@@ -141,7 +146,7 @@ footer span { margin-right: auto; }
       </article>
       <article class="card">
         <img src="img/web.png" alt="The web client: a chat with the task list beside it" loading="lazy">
-        <div><h3>Web <code>--web</code></h3><p>The same chats in a browser, served by the core. Bound to this machine unless you open it to your network.</p></div>
+        <div><h3>Browser <code>duskcode --web</code></h3><p>The same chats in a browser, served by the core. Bound to this machine unless you open it to your network.</p></div>
       </article>
     </div>
   </div>
@@ -179,12 +184,12 @@ footer span { margin-right: auto; }
 <section>
   <div class="wrap">
     <h2>Local by default</h2>
-    <p class="sub">No account, no telemetry, no project servers.</p>
+    <p class="sub">No duskcode account or hosted chat storage. Tracing is off by default. Model requests go to the provider you configure.</p>
     <div class="points">
-      <div><h3>Secrets in the keychain</h3><p>Never in the config file, the logs, the chat history or a backup, never shown and never sent to a model.</p></div>
-      <div><h3>Nothing phones home</h3><p>The program talks to the providers and servers you set up, and to GitHub to look for a release. That request carries no chat data.</p></div>
+      <div><h3>Secrets in the keychain</h3><p>Secrets are kept in the system keychain. Without it, provider API keys stay in a private local config file.</p></div>
+      <div><h3>Network connections</h3><p>Duskcode connects to the providers and servers you set up, checks GitHub for updates, and fetches the signed catalog when you open the Workshop.</p></div>
       <div><h3>Inside your projects</h3><p>Files and git only in saved projects; paths are canonicalized, and <code style="font:13px var(--mono)">..</code> or a symlink that leads out is refused.</p></div>
-      <div><h3>Read it yourself</h3><p>MIT, with the lockfile committed: build from source and you run what a release runs.</p></div>
+      <div><h3>Read it yourself</h3><p>The MIT-licensed source and dependency lockfile are public.</p></div>
     </div>
   </div>
 </section>
@@ -210,6 +215,7 @@ footer span { margin-right: auto; }
   </footer>
 </div>
 
+<div id="copy-status" class="copy-status" role="status"></div>
 <script>
 // A few stars, the same every visit.
 (function () {
@@ -219,18 +225,33 @@ footer span { margin-right: auto; }
     var star = document.createElement('i'), big = next() > 0.86;
     star.style.left = (next() * 100) + '%';
     star.style.top = (next() * 58) + '%';
-    star.style.animationDelay = (-next() * 4) + 's';
     if (big) { star.style.width = star.style.height = '3px'; star.style.opacity = '.8'; }
     sky.appendChild(star);
   }
 })();
 document.querySelectorAll('button.copy').forEach(function (button) {
-  button.addEventListener('click', function () {
-    var text = document.getElementById(button.dataset.copy).textContent;
-    navigator.clipboard.writeText(text).then(function () {
+  var reset;
+  button.addEventListener('click', async function () {
+    var source = document.getElementById(button.dataset.copy);
+    var status = document.getElementById('copy-status');
+    clearTimeout(reset);
+    try {
+      await navigator.clipboard.writeText(source.textContent);
       button.textContent = 'Copied';
-      setTimeout(function () { button.textContent = 'Copy'; }, 1600);
-    });
+      status.textContent = 'Copied to clipboard.';
+    } catch {
+      var range = document.createRange();
+      range.selectNodeContents(source);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.textContent = 'Selected';
+      status.textContent = 'Text selected. Copy it manually.';
+    }
+    reset = setTimeout(function () {
+      button.textContent = 'Copy';
+      status.textContent = '';
+    }, 1600);
   });
 });
 </script>

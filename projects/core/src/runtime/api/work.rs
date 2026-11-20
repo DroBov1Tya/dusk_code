@@ -4,7 +4,7 @@ use crate::runtime::Runtime;
 use crate::runtime::jobs::JobInfo;
 use crate::{
     catalog::mentions::Mentions,
-    message::sources::ThreadSources,
+    message::sources::{HostFiles, ThreadSources},
     runtime::thread::start::{self},
     state::{Source, UndoPoint},
     tools::Decision,
@@ -48,9 +48,15 @@ impl Runtime {
         crate::tools::console::run_for_user(command, &context).await
     }
 
-    /// `message` with its long pastes, and what its `@` mentions bring, moved to the
-    /// thread's sources.
-    pub async fn keep_pastes(&self, thread_id: &str, message: &str) -> Result<String> {
+    /// `message` with its long pastes moved to the thread's sources and, when `files`
+    /// are taken, the pictures and sounds it names by path and what its `@` mentions
+    /// bring.
+    pub async fn keep_pastes(
+        &self,
+        thread_id: &str,
+        message: &str,
+        files: HostFiles,
+    ) -> Result<String> {
         let launcher = self.of(thread_id).await;
         let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         let sources = ThreadSources {
@@ -58,7 +64,11 @@ impl Runtime {
             workspace: &workspace,
             thread_id,
         };
-        let kept = sources.keep_pastes(message).await?;
+        if files == HostFiles::Left {
+            return sources.keep_pasted_blocks(message).await;
+        }
+        let sounds = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());
+        let kept = sources.keep_pastes(message, &sounds).await?;
         sources.keep_mentions(&kept, &self.mentions()).await
     }
 
@@ -97,6 +107,42 @@ impl Runtime {
         .add_picture(name, bytes)
         .await?;
         Ok(dusk_protocol::thread::source_tag(&source.name))
+    }
+
+    /// The bytes of the thread's picture source `name`, for a client to draw.
+    pub async fn source_picture(&self, thread_id: &str, name: &str) -> Result<Vec<u8>> {
+        let launcher = self.of(thread_id).await;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        ThreadSources {
+            state: &launcher.state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .picture(name)
+        .await
+    }
+
+    /// A part of the card `card_id`, only when a message of the thread or of an agent
+    /// thread below it carries that card. The id is checked before any file is read, and
+    /// the path comes from the artifact folder, never from the caller.
+    pub async fn card(
+        &self,
+        thread_id: &str,
+        card_id: &str,
+        part: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        if !crate::state::artifacts::is_card_id(card_id) {
+            return Ok(None);
+        }
+        let launcher = self.of(thread_id).await;
+        if !launcher.state.carries_card(thread_id, card_id).await? {
+            return Ok(None);
+        }
+        let store = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());
+        // A file read blocks; keep it off the loop's thread.
+        let (card_id, part) = (card_id.to_owned(), part.to_owned());
+        let bytes = tokio::task::spawn_blocking(move || store.read_part(&card_id, &part).ok());
+        Ok(bytes.await?)
     }
 
     pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
@@ -150,7 +196,7 @@ impl Runtime {
             .state
             .load_thread(thread_id)
             .await?
-            .context("no such thread")?;
+            .ok_or_else(|| crate::client::Shown::new("no such thread"))?;
         let dir = thread.project.context("the thread has no folder")?;
         crate::project::diff(std::path::Path::new(&dir), path).await
     }
@@ -162,6 +208,32 @@ impl Runtime {
     ) -> Result<Vec<dusk_protocol::project::Change>> {
         let launcher = self.of(thread_id).await;
         launcher.state.thread_files(thread_id).await
+    }
+
+    /// The thread's change ledger, newest first, capped.
+    pub async fn file_changes(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<dusk_protocol::project::FileChange>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.thread_changes(thread_id).await
+    }
+
+    /// How the thread's work stands: activity, changes and the newest log lines.
+    pub async fn overview(&self, thread_id: &str) -> Result<dusk_protocol::thread::Overview> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.overview(thread_id).await
+    }
+
+    /// A page of the thread's event log older than `before`, newest first.
+    pub async fn events(
+        &self,
+        thread_id: &str,
+        before: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<dusk_protocol::thread::LogEntry>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.events(thread_id, before, limit).await
     }
 
     /// The background jobs of a thread, oldest first.
@@ -187,9 +259,42 @@ impl Runtime {
         launcher.state.undo_points(thread_id).await
     }
 
+    /// The approvals of stored chats, for the tests that ask one.
+    #[cfg(test)]
+    pub(crate) fn approvals(&self) -> std::sync::Arc<crate::tools::Approvals> {
+        std::sync::Arc::clone(&self.launcher.approvals)
+    }
+
     /// False when the request is no longer waiting, such as after its turn was stopped.
-    pub fn answer_approval(&self, id: u64, decision: Decision) -> bool {
-        self.launcher.approvals.answer(id, decision)
-            || self.temporary.approvals.answer(id, decision)
+    ///
+    /// Whether only the owner may answer request `id`: a change of the settings a tool
+    /// proposed.
+    pub fn approval_owner_only(&self, id: u64) -> bool {
+        [&self.launcher, &self.temporary]
+            .iter()
+            .any(|launcher| launcher.approvals.owner_only(id))
+    }
+
+    /// Only the chat it was asked in, or the chat above the agent thread that asked,
+    /// may answer: a request asked elsewhere counts as unknown.
+    pub async fn answer_approval(&self, thread_id: &str, id: u64, decision: Decision) -> bool {
+        for launcher in [&self.launcher, &self.temporary] {
+            let Some(asked) = launcher.approvals.thread_of(id) else {
+                continue;
+            };
+            let state = &launcher.state;
+            let (asked_chat, named_chat) = match (
+                state.root_thread(&asked).await,
+                state.root_thread(thread_id).await,
+            ) {
+                (Ok(asked_chat), Ok(named_chat)) => (asked_chat, named_chat),
+                (Err(error), _) | (_, Err(error)) => {
+                    tracing::warn!("approval {id} not answered: {error:#}");
+                    return false;
+                }
+            };
+            return asked_chat == named_chat && launcher.approvals.answer(id, decision);
+        }
+        false
     }
 }

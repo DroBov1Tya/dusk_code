@@ -1,7 +1,9 @@
 //! Projects: named folders. Their chats are found by folder, so none is stored here.
-//! `env` keeps a project's variables, `schedules` its scheduled tasks.
+//! `env` keeps a project's variables, `schedules` its scheduled tasks, `episodes` what
+//! ended a problem in it.
 
 mod env;
+mod episodes;
 mod schedules;
 
 use std::path::PathBuf;
@@ -12,6 +14,7 @@ use sqlx::{Row, sqlite::SqliteRow};
 use super::{State, timestamp_ms};
 
 pub use dusk_protocol::project::Project;
+pub use episodes::{Episode, EpisodeKind, NewEpisode, Recall};
 
 impl State {
     pub async fn list_projects(&self) -> Result<Vec<Project>> {
@@ -52,6 +55,10 @@ impl State {
         Ok(())
     }
 
+    /// Changes a project; false when there is none with `id`. A new folder starts with
+    /// no episodes: they describe the old folder, and an episode written from one
+    /// repository must not be recalled in another. The foreign key would carry them over
+    /// (`ON UPDATE CASCADE`), so they are deleted first, in the same transaction.
     pub async fn update_project(
         &self,
         id: &str,
@@ -59,16 +66,36 @@ impl State {
         description: &str,
         dir: &str,
     ) -> Result<bool> {
-        let done =
-            sqlx::query("UPDATE projects SET name = ?, description = ?, dir = ? WHERE id = ?")
-                .bind(name)
-                .bind(description)
-                .bind(dir)
-                .bind(id)
-                .execute(&self.pool)
+        let mut transaction = self.pool.begin().await.context("begin the project save")?;
+        let old: Option<String> = sqlx::query_scalar("SELECT dir FROM projects WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .context("read the project")?;
+        let Some(old) = old else {
+            return Ok(false);
+        };
+        let moved = old != dir;
+        if moved {
+            sqlx::query("DELETE FROM episodes WHERE project = ?")
+                .bind(&old)
+                .execute(&mut *transaction)
                 .await
-                .context("save the project; is its folder another project's?")?;
-        Ok(done.rows_affected() > 0)
+                .context("forget what the old folder held")?;
+        }
+        sqlx::query("UPDATE projects SET name = ?, description = ?, dir = ? WHERE id = ?")
+            .bind(name)
+            .bind(description)
+            .bind(dir)
+            .bind(id)
+            .execute(&mut *transaction)
+            .await
+            .context("save the project; is its folder another project's?")?;
+        transaction.commit().await.context("save the project")?;
+        if moved {
+            self.load_episode_counts().await?;
+        }
+        Ok(true)
     }
 
     pub async fn remove_project(&self, id: &str) -> Result<()> {
@@ -77,7 +104,8 @@ impl State {
             .execute(&self.pool)
             .await
             .context("remove the project")?;
-        Ok(())
+        // Its episodes went with it.
+        self.load_episode_counts().await
     }
 }
 
@@ -93,7 +121,10 @@ fn project_from_row(row: SqliteRow) -> sqlx::Result<Project> {
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::temp_state;
+    use crate::{
+        state::{EpisodeKind, NewEpisode, State},
+        testing::temp_state,
+    };
 
     #[tokio::test]
     async fn a_folder_is_one_project() {
@@ -106,5 +137,85 @@ mod tests {
         assert_eq!(projects[0].name, "A2");
         state.remove_project("a").await.unwrap();
         assert!(state.load_project("a").await.unwrap().is_none());
+    }
+
+    async fn count(state: &State, sql: &'static str, project: &str) -> i64 {
+        sqlx::query_scalar(sql)
+            .bind(project)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap()
+    }
+
+    /// Episodes describe a folder: a project moved to another folder keeps none, under
+    /// the old name or the new one.
+    #[tokio::test]
+    async fn a_project_moved_to_another_folder_forgets_the_old_one() {
+        let (a, b) = ("/work/repo-a", "/work/repo-b");
+        let state = temp_state("project-moved").await;
+        state.create_project("p", "P", "", a).await.unwrap();
+        state
+            .record_episode(&NewEpisode {
+                project: a.into(),
+                thread_id: None,
+                turn_id: None,
+                kind: EpisodeKind::Fixed,
+                signature: format!("{:064x}", 1),
+                tool: "run_command".into(),
+                model: "m".into(),
+                problem: "error: the linker of repo-a".into(),
+                failed: String::new(),
+                worked: "cargo build".into(),
+                lesson: String::new(),
+            })
+            .await
+            .unwrap();
+        state.note_episode(a);
+        assert!(state.has_episodes(a));
+
+        // Only the name changes: what the folder held stays.
+        assert!(state.update_project("p", "P2", "", a).await.unwrap());
+        assert!(state.has_episodes(a));
+
+        assert!(state.update_project("p", "P2", "", b).await.unwrap());
+        for project in [a, b] {
+            let episodes = "SELECT COUNT(*) FROM episodes WHERE project = ?";
+            assert_eq!(count(&state, episodes, project).await, 0, "{project}");
+            assert!(!state.has_episodes(project), "{project}");
+        }
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episodes_search")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0);
+        assert!(!state.update_project("missing", "M", "", b).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_removed_project_or_episode_is_not_counted() {
+        let state = temp_state("project-removed").await;
+        state.create_project("p", "P", "", "/work/p").await.unwrap();
+        let episode = NewEpisode {
+            project: "/work/p".into(),
+            thread_id: None,
+            turn_id: None,
+            kind: EpisodeKind::Fixed,
+            signature: format!("{:064x}", 1),
+            tool: "run_command".into(),
+            model: "m".into(),
+            problem: "error".into(),
+            failed: String::new(),
+            worked: "cargo build".into(),
+            lesson: String::new(),
+        };
+        let id = state.record_episode(&episode).await.unwrap();
+        state.note_episode("/work/p");
+        assert!(state.remove_episode("/work/p", id).await.unwrap());
+        assert!(!state.has_episodes("/work/p"));
+
+        state.record_episode(&episode).await.unwrap();
+        state.note_episode("/work/p");
+        state.remove_project("p").await.unwrap();
+        assert!(!state.has_episodes("/work/p"));
     }
 }

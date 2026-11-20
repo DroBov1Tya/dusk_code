@@ -2,8 +2,7 @@
 
 //!
 //! Each kind of tool has a folder: `files`, `console`, `agents` and `harness`, the tools
-//! about the thread itself. MCP tools come from servers; `mcp` wraps them. On macOS,
-//! `simulator` is the iOS Simulator.
+//! about the thread itself. MCP tools come from servers; `mcp` wraps them.
 
 mod agents;
 mod approvals;
@@ -17,8 +16,6 @@ pub mod mcp;
 mod registry;
 mod schema;
 mod scope;
-#[cfg(target_os = "macos")]
-mod simulator;
 mod tool;
 
 pub use agents::{AgentState, AskAgent, MessageParent};
@@ -28,16 +25,19 @@ pub use computer::WindowSession;
 #[cfg(target_os = "macos")]
 pub use computer::run_overlay_if_asked;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-pub use computer::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
-pub use console::{Jobs, RunCommand};
+pub use computer::{
+    Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
+};
+pub use console::{Jobs, RunCommand, Shaped};
 pub use harness::{
-    AskUser, DisplayAudio, DisplayImage, GoalTool, NameSession, PlanEdit, Question, ReadHistory,
-    Remember, Tasks, save_sound,
+    AddWorkshopSource, AskUser, DisplayAudio, DisplayImage, GatesYes, GoalTool, PlanEdit, Question,
+    ReadHistory, Remember, SearchWorkshop, Show, Started, SuggestFromWorkshop, SuggestNext, Tasks,
+    TeamRunner, is_sound, save_sound,
 };
 pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_plan};
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::{Place, ToolScope};
-#[cfg(target_os = "macos")]
-pub use simulator::IosSimulator;
+#[cfg(test)]
+pub(crate) use tool::UNATTENDED;
 pub use tool::{Progress, Tool, ToolContext, ToolKind};

@@ -13,14 +13,14 @@ use std::{
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, MouseEventKind};
 use dusk_core::{app::ArtifactStore, client::Client};
-use dusk_protocol::client::Event as CoreEvent;
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
 
 use super::{
     actions::{Flow, apply, set_update_note},
-    answers::{jobs_wanted, refresh_jobs, refresh_system, system_open},
-    thread::{OpenThread, close, send},
+    answers::{jobs_wanted, refresh_jobs, refresh_overview, refresh_system, system_open},
+    tabs::{self, Held},
+    thread::{OpenThread, close, send, show_skill_changes},
 };
 use crate::{
     app::{Action, App, PRESS, Panel, SettingCategory, Tone},
@@ -37,6 +37,8 @@ pub const MEMORY_LOG_PERIOD: Duration = Duration::from_secs(10 * 60);
 pub const SYSTEM_PERIOD: Duration = Duration::from_secs(2);
 /// How often the jobs are read again while one runs or their window is open.
 pub const JOBS_PERIOD: Duration = Duration::from_secs(1);
+/// The plan, the team and the open Overview are read at most this often.
+pub const OVERVIEW_PERIOD: Duration = Duration::from_secs(1);
 pub const MAX_EVENTS_PER_FRAME: usize = 512;
 
 pub struct InstallingUpdate {
@@ -54,6 +56,8 @@ pub async fn run(
     app.transcript
         .set_artifact_store(ArtifactStore::new(status.artifacts_dir.clone()));
     let mut open = None;
+    let mut held = Held::new();
+    let mut seen = super::seen::Seen::default();
     if let Some(thread_id) = thread {
         open = Some(OpenThread::resume(client, &mut app, &thread_id).await?);
     }
@@ -145,6 +149,7 @@ pub async fn run(
                 .map(|plugin| crate::app::PluginRow {
                     name: plugin.name,
                     version: plugin.version,
+                    duskcode_version: plugin.duskcode_version,
                     description: plugin.description,
                     enabled: plugin.enabled,
                     parts: plugin.parts,
@@ -172,7 +177,8 @@ pub async fn run(
                 Ok(history) => {
                     let (title, goal) = (app.title.take(), app.goal.take());
                     let (tasks, tokens) = (std::mem::take(&mut app.tasks), app.tokens);
-                    app.open(Some(thread_id), title, &history);
+                    app.open(Some(thread_id.clone()), title, &history);
+                    show_skill_changes(client, &mut app, &thread_id).await;
                     (app.goal, app.tasks, app.tokens) = (goal, tasks, tokens);
                     app.input.set(text);
                     app.flash = Some("went back; the message is in the box".into());
@@ -202,15 +208,19 @@ pub async fn run(
         {
             send(client, &mut app, &mut open, text, false).await;
         }
-        terminal_status.update(app.is_busy() || app.agents_at_work());
+        tabs::tend(client, &mut app, &mut held).await;
+        seen.mark(client, app.thread_id.as_deref()).await;
+        let working = app.is_busy() || app.agents_at_work() || app.tabs_working();
+        terminal_status.update(working);
         // Work is activity too: the idle screen waits for both to stop.
-        if app.is_busy() || app.agents_at_work() || update.is_some() {
+        if working || update.is_some() {
             idle_since = Instant::now();
         }
         app.refresh_paths();
         app.update_available = app.status.available_update.clone();
         refresh_system(client, &mut app).await;
         refresh_jobs(client, &mut app).await;
+        refresh_overview(client, &mut app).await;
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
         if title != shown_title {
@@ -275,7 +285,8 @@ pub async fn run(
                     let Some(next) = event else {
                         break;
                     };
-                    show(&mut app, &mut open, next);
+                    seen.hear(&next);
+                    tabs::route(&mut app, &mut open, &mut held, next);
                     event = client.events.try_recv().ok();
                 }
                 Action::None
@@ -284,7 +295,8 @@ pub async fn run(
             Ok(()) = client.status.changed() => Action::None,
             // While the core looks for a model, the clock redraws what it finds.
             _ = system_clock.tick(), if system_open(&app) => Action::None,
-            _ = jobs_clock.tick(), if jobs_wanted(&app) => Action::None,
+            // The jobs' clock also wakes an Overview that waits for its second.
+            _ = jobs_clock.tick(), if jobs_wanted(&app) || app.overview_stale => Action::None,
             _ = memory_clock.tick() => {
                 if let Ok(Some(usage)) = tokio::task::spawn_blocking(dusk_core::app::process_usage).await {
                     tracing::info!(
@@ -301,6 +313,7 @@ pub async fn run(
             }
             _ = clock.tick(), if app.is_busy()
                 || app.agents_at_work()
+                || app.tabs_working()
                 || app.task_timers_run()
                 || app.status.discovering_model
                 || update.is_some()
@@ -309,6 +322,7 @@ pub async fn run(
                 Action::None
             }
         };
+        let action = tabs::take(client, &mut app, &mut open, &mut held, action).await;
         match apply(
             client,
             &mut app,
@@ -323,26 +337,8 @@ pub async fn run(
             Flow::Quit => break,
         }
     }
-    close(client, open.take()).await;
+    tabs::close_all(client, open.take(), &mut held).await;
     Ok(())
-}
-
-/// Shows an event of the open thread; those of a thread closed meanwhile are dropped.
-fn show(app: &mut App, open: &mut Option<OpenThread>, event: CoreEvent) {
-    let Some(thread) = open else {
-        return;
-    };
-    match event {
-        CoreEvent::Thread { thread_id, event } if thread_id == thread.thread_id => {
-            thread.apply(app, *event);
-        }
-        CoreEvent::Ended { thread_id } if thread_id == thread.thread_id => {
-            thread.ended = true;
-            app.error("the thread stopped; the next message opens it again");
-            app.stop_work();
-        }
-        _ => {}
-    }
 }
 
 /// A key, a click, a scroll or a paste counts as the user being back; a moving pointer

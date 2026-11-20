@@ -16,7 +16,10 @@ use crate::ui::thread::{
     },
     wrap,
 };
-use dusk_protocol::{model::ToolCall, tools::ToolResult};
+use dusk_protocol::{
+    thread::{JobResult, Tool, ToolState},
+    tools::Answered,
+};
 use ratatui::{
     style::Style,
     text::{Line, Span},
@@ -64,6 +67,12 @@ pub(super) fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
                 Span::styled(format!("{TOOL} "), fg(TEXT_MUTED)),
                 Span::styled(name.to_owned(), fg(TEXT_SOFT)),
             ])),
+            // The terminal does not play sound; it names the file that was sent.
+            Part::Sound { path, .. } => lines.push(Line::from(vec![
+                bar(),
+                Span::styled("\u{266A} ", fg(TEXT_MUTED)),
+                Span::styled(path.to_owned(), fg(TEXT_SOFT)),
+            ])),
             Part::Pasted(pasted) => {
                 lines.push(Line::from(vec![
                     bar(),
@@ -82,7 +91,66 @@ pub(super) fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
         }
     }
     lines.push(Line::from(bar()));
-    // The card reaches the right edge: the bar, the text and the air after it.
+    card(lines, width)
+}
+
+/// The agent's questions as the user answered them: one bordered block, a row for each
+/// question with its answer dimmed under it, the rows parted by a dim rule.
+pub(super) fn answered(answers: &[Answered], width: usize) -> Vec<Line<'static>> {
+    let outer = (width + 3).max(8);
+    let inner = outer - 4;
+    let edge = || fg(TEXT_MUTED);
+    let rule = |left: &str, right: &str| {
+        let line = format!("{left}{}{right}", "\u{2500}".repeat(outer - 2));
+        Line::from(Span::styled(line, edge()))
+    };
+    let text = |text: &str, style: Style| -> Vec<Line<'static>> {
+        text.lines()
+            .flat_map(|line| wrap::words(vec![Span::styled(line.to_owned(), style)], inner, 0))
+            .map(|spans| {
+                let pad = inner.saturating_sub(Line::from(spans.clone()).width());
+                let mut line = vec![Span::styled("\u{2502} ", edge())];
+                line.extend(spans);
+                line.push(Span::raw(" ".repeat(pad)));
+                line.push(Span::styled(" \u{2502}", edge()));
+                Line::from(line)
+            })
+            .collect()
+    };
+    let mut lines = vec![rule("\u{256D}", "\u{256E}")];
+    for (index, answer) in answers.iter().enumerate() {
+        if index > 0 {
+            lines.push(rule("\u{251C}", "\u{2524}"));
+        }
+        lines.extend(text(&answer.question, fg(TEXT)));
+        for line in answer.lines() {
+            lines.extend(text(&line, dim()));
+        }
+    }
+    lines.push(rule("\u{2570}", "\u{256F}"));
+    lines
+}
+
+/// A finished background job in one line; opened, the start of what it printed.
+pub(super) fn job(result: &JobResult, open: bool, width: usize) -> Vec<Line<'static>> {
+    let (mark, color) = match result.failed() {
+        true => (FAILED, NEGATIVE),
+        false => (DONE, POSITIVE),
+    };
+    let header = Line::from(vec![
+        Span::styled(format!("   {} ", fold_mark(open)), fg(TEXT_MUTED)),
+        Span::styled(result.title(), fg(TEXT_SOFT)),
+        Span::styled(format!("  {mark}"), fg(color)),
+    ]);
+    folded(header, open, || {
+        let body = verbatim(result.output.trim_end(), width.saturating_sub(2), dim());
+        indent(body, &format!("   {GUTTER} "))
+    })
+}
+
+/// Lines on the soft card of a sent message, which reaches the right edge: the bar, the
+/// text and the air after it.
+fn card(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
     let full = width + 3;
     lines
         .into_iter()
@@ -103,24 +171,25 @@ pub(super) fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
 }
 
 pub(super) fn tool(
-    call: &ToolCall,
-    result: Option<&ToolResult>,
+    tool: &Tool,
     open: bool,
     width: usize,
     live: Option<&App>,
 ) -> Vec<Line<'static>> {
+    // The arguments as they were sent, when they were short enough to be kept whole.
+    let arguments = serde_json::from_str::<serde_json::Value>(&tool.arguments).ok();
     // The mark says what kind of work the step is; its colour, how the step stands.
-    let glyph = step_glyph(&call.name);
-    let (mark, status) = match result {
-        None => (
+    let glyph = step_glyph(&tool.name);
+    let (mark, status) = match tool.state {
+        ToolState::Running => (
             Span::styled(format!("   {glyph} "), fg(ACCENT)),
             Span::styled(live.map_or("", spinner), fg(ACCENT)),
         ),
-        Some(result) if result.is_error => (
+        ToolState::Failed => (
             Span::styled(format!("   {glyph} "), fg(NEGATIVE)),
             Span::styled(FAILED, fg(NEGATIVE)),
         ),
-        Some(_) => (
+        ToolState::Done => (
             Span::styled(format!("   {glyph} "), fg(TEXT_MUTED)),
             Span::styled(DONE, fg(POSITIVE)),
         ),
@@ -128,20 +197,20 @@ pub(super) fn tool(
     // Said as a person would, the tool's own name once the step is open; work handed to
     // another agent carries the accent.
     let said = if open {
-        call.name.clone()
+        tool.name.clone()
     } else {
-        dusk_protocol::tools::phrase(&call.name, &call.id).to_owned()
+        dusk_protocol::tools::phrase(&tool.name, &tool.call_id).to_owned()
     };
-    let lead = if dusk_protocol::tools::is_agent_tool(&call.name) {
+    let lead = if dusk_protocol::tools::is_agent_tool(&tool.name) {
         ACCENT
     } else {
         TEXT
     };
     let name = Span::styled(said, fg(lead));
     // A command says what it does in a few words; the command itself is in the body.
-    let about = call
-        .arguments
-        .get("description")
+    let about = arguments
+        .as_ref()
+        .and_then(|arguments| arguments.get("description"))
         .and_then(|text| text.as_str())
         .map(|text| {
             // Whatever is left after the mark, the name and the status, so the status
@@ -161,17 +230,15 @@ pub(super) fn tool(
     ]);
     folded(header, open, || {
         let gutter = format!("   {GUTTER} ");
-        let mut body = indent(
-            verbatim(&pretty(&call.arguments), width - 2, dim()),
-            &gutter,
-        );
-        if let Some(result) = result {
-            let style = if result.is_error {
+        let shown = arguments.as_ref().map_or(tool.arguments.clone(), pretty);
+        let mut body = indent(verbatim(&shown, width - 2, dim()), &gutter);
+        if tool.state != ToolState::Running {
+            let style = if tool.state == ToolState::Failed {
                 fg(NEGATIVE)
             } else {
                 Style::new()
             };
-            let all: Vec<&str> = result.content.lines().collect();
+            let all: Vec<&str> = tool.output.lines().collect();
             let shown = all
                 .iter()
                 .take(MAX_RESULT_LINES)
@@ -180,7 +247,7 @@ pub(super) fn tool(
                 .join("\n");
             body.push(Line::from(vec![
                 Span::styled(format!("   {GUTTER}"), dim()),
-                Span::styled(format!(" {} returned", call.name), thought()),
+                Span::styled(format!(" {} returned", tool.name), thought()),
             ]));
             body.extend(indent(verbatim(&shown, width - 2, style), &gutter));
             if all.len() > MAX_RESULT_LINES {

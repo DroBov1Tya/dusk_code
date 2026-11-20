@@ -26,10 +26,47 @@ serves it over a core of its own, and debug builds read `clients/browser/dist` f
 ## One core, several clients
 
 `dusk_core::client::Hub` owns the runtime. Each `Hub::attach` gives a `Client` that receives
-the events of every open thread; a thread's output has one reader inside the core, which hands
-each event to every attached client. A thread stays open while any client keeps it open
-(`Resume` joins an open thread instead of restarting it; `Close` and going away leave it).
-The status is one `watch` every client reads. The web server attaches one client per browser.
+the events of every open thread its scope covers; a thread's output has one reader inside the
+core, which hands each event to those clients. A thread stays open while any client keeps it
+open (`Resume` joins an open thread instead of restarting it; `Close` and going away leave it).
+The status is one `watch` every client with the settings in its scope reads. The web server
+attaches one client per browser.
+
+## Client scope
+
+Every client is attached with a `Scope` (`core/src/client/scope`). The code that attaches it
+chooses the scope; nothing a client sends can change it, and it holds until the client is
+dropped. Deny by default, in one place:
+
+- Each request belongs to one area (`Area`: thread reading, thread writing, settings, files,
+  terminal and so on; `classify` names every request, so a new one does not compile until it
+  has an area). `serve::admit` checks the area before any handler runs.
+- `Scope::full()` takes everything: the terminal, the desktop app, the evals runner.
+  `Scope::web()` is a list of areas: every thread, and all but the areas named under
+  "Security model".
+- `Scope::threads(ids, areas)` is bound to those chats and the agent threads below them, so a
+  shared chat shows what its subagents do. It takes only requests about its threads, whatever
+  its areas: no settings, files, projects, plugins, MCP, terminal, new chats or shutdown, and
+  no answer to an approval (an approval does not name its thread yet). Another thread is
+  refused as "no such thread", the same as one that does not exist; lists hold its chats only
+  and search looks only in them; it gets the events of its chats only, and a blank status
+  that never changes. Nothing attaches a client this way yet.
+- Thread writing includes the commands sent as a message, which act on that chat alone:
+  `/compact`, `/fork`, `/goal` and `/undo <n>`. The scope limits what the client asks the core;
+  it never limits the agent's own tools in the chat.
+- What answers with more than one chat is not a thread request: the context report (skills,
+  MCP tools, usage of every thread) is in the Command area and a chat's diff, which is its
+  whole project's, in the Project area, so a bound scope gets neither. A bound scope resumes
+  a chat in the folder stored for it, never in one it names.
+- Naming a file of this machine is the Command area: `/sources add`, and a path, `~/`,
+  `file://`, `@me` or `@snippet` in a sent message. Without the area the message is kept as
+  the words it is.
+- Still open before a remote client bound to chats may exist: a handler's error text can hold
+  paths; refusals are not rate-limited; `Approve { id }` names no thread; the name a client
+  gives in `Hello.client` goes to the audit log as it is; the HTTP routes `/api/card` and
+  `/api/output` are for the web scope only and check no scope.
+- A refusal is one fixed sentence to the client and one warning in the log with the client's
+  name and the area, never the request's contents.
 
 ## Security model
 
@@ -51,9 +88,13 @@ The status is one `watch` every client reads. The web server attaches one client
   loader, `wasm-unsafe-eval`, `frame-ancestors 'none'`), `nosniff`, `no-referrer`, no store.
 - A frame over 32 MiB or one that is not a request closes the stream; 32 requests at once per
   browser, 16 browsers.
-- The bridge refuses `Shutdown`: stopping the core is for the process that started the server.
-  Nothing else is held back: a signed-in browser can do what the desktop app can, including
-  running commands, adding MCP servers and saving projects (parity, not a boundary).
+- A browser is attached with `Scope::web()`, and the core refuses what is outside it; the
+  bridge itself holds back only a frame over 1 MiB that is not a recording or a picture.
+  Refused: `Shutdown` (stopping the core is for the process that started the server), a
+  terminal, plugin parts, installing, updating or removing from the Workshop, switching a
+  plugin on, writing a file, and reading or editing the config text of a saved MCP server.
+  Everything else a signed-in browser can do as the desktop app can, including running
+  commands, adding MCP servers and saving projects (parity there, not a boundary).
 - Provider keys, plugin secrets and project variables never reach the page: the page only sends
   new values (password inputs) and shows whether one is set. Known gap: the text of an MCP
   server's config, opened for editing, includes its `env` and `headers` values.
@@ -71,11 +112,11 @@ Done = works in the browser and was checked against a real core. Computer use is
 - [x] Chat: streaming, markdown, reasoning fold, tool steps folded, images and sounds
 - [x] Queue, send now, stop, slash commands with suggestions, queued messages shown
 - [x] Approvals (once / for the chat / deny), questions, per-chat access, mode, context meter
-- [x] Subagents: tile with fox badge, window with the agent's own folded transcript, stop
+- [x] Subagents: tile with the Sundown mascot, window with the agent's own folded transcript, stop
 - [x] Inspector: plan (edit), tasks, agents, changed files with diff, jobs with output, context
 - [x] Projects: add, edit, remove, git (branches, changes, review), files, environment names
 - [x] Artifacts gallery with picture previews, text viewer, delete
-- [x] Connectors: agents (edit), skills (edit), MCP (add, edit, restart, sign in), plugins
+- [x] Customize: agents (edit), skills (edit), connectors (MCP: add, edit, restart, sign in), plugins
       with secrets, tools, voice (models install, cancel, remove; other servers)
 - [x] Settings: appearance (5 themes), model and providers, chat, safety, secrets, about me,
       notifications, version control, memory and context, advanced, updates, usage

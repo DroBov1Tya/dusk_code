@@ -3,17 +3,23 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::catalog::NodeText;
-use crate::client::Answer;
+use crate::catalog::{NodeText, SkillChange, SkillDiff, SkillPack};
+use crate::client::{Answer, AttachedClient};
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
-    Change, FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project, Schedule,
+    Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile,
+    Project, PullStatus, PullSummary, RepositoryStatus, Schedule,
 };
 use crate::system::SystemReport;
-use crate::thread::{Found, JobInfo, LocalUnsent, Message, Task, Thread};
+use crate::thread::{
+    Found, JobInfo, LocalUnsent, LogEntry, Message, Overview, Pin, PlanPage, Task, Team, Thread,
+};
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
+    /// The clients attached to the core.
+    Clients(Vec<AttachedClient>),
     Opened {
         thread_id: String,
     },
@@ -27,11 +33,24 @@ pub enum Response {
     /// Messages of any chat that contain the searched text.
     Found(Vec<Found>),
     Tasks(Vec<Task>),
+    /// A page of a root thread's plan.
+    PlanPage(PlanPage),
+    /// The team running a root thread's plan, or none before one ran.
+    Team(Option<Team>),
+    /// How a thread's work stands.
+    Overview(Overview),
+    /// A page of a thread's event log, newest first.
+    Events(Vec<LogEntry>),
+    /// A thread's pins, oldest message first.
+    Pins(Vec<Pin>),
     LocalUnsent(Vec<LocalUnsent>),
     Jobs(Vec<JobInfo>),
     Node(NodeText),
     Mcp(Vec<McpInfo>),
     Snippets(Vec<Snippet>),
+    SkillPacks(Vec<SkillPack>),
+    SkillChanges(Vec<SkillChange>),
+    SkillDiff(SkillDiff),
     /// Names, sorted: a project's environment variables.
     Names(Vec<String>),
     /// The pinned plan, or none before one was written.
@@ -42,6 +61,8 @@ pub enum Response {
     VoiceModels(crate::config::VoiceModels),
     /// What a check of a provider found.
     Provider(crate::model::ProviderStatus),
+    /// A PNG or JPEG of a thread's sources.
+    Picture(Vec<u8>),
     /// A sound or picture card the core made.
     Card(crate::tools::Card),
     /// A thread's own approval mode, or none when it uses the default in settings.
@@ -50,18 +71,42 @@ pub enum Response {
     Schedules(Vec<Schedule>),
     Project(Project),
     Git(GitInfo),
+    /// What a change of a repository left.
+    GitDone(GitOutcome),
+    RepositoryStatus(Box<RepositoryStatus>),
+    /// `None` when the repository has no such pull request or the forge cannot be asked.
+    PullStatus(Option<Box<PullStatus>>),
+    PullSummaries(Vec<PullSummary>),
     Diff(Vec<FileDiff>),
     Files(Vec<FileEntry>),
     Changes(Vec<Change>),
+    /// A thread's change ledger, newest first.
+    FileChanges(Vec<FileChange>),
     Outputs(Vec<OutputFile>),
     /// A file read for the editor.
     File(FileText),
     /// What a file is on disk after a write.
     Stamp(FileStamp),
     System(SystemReport),
-    Simulator(crate::system::Simulator),
-    SimScreen(crate::system::SimScreen),
     Answer(Box<Answer>),
+    Store(crate::plugin::StoreList),
+    StoreUpdates(crate::plugin::UpdateReport),
+    /// The files of a store listing.
+    StoreContents(crate::plugin::Contents),
+    /// The answer to `StoreRequest::Review`.
+    StoreReview(crate::plugin::Review),
+    /// One text file of a store listing.
+    StoreFile(crate::plugin::FilePreview),
+    /// What a repository's list holds, read without saving it.
+    StoreProbe(crate::plugin::Probe),
+    /// The repositories the user added, with their state.
+    StoreSources(Vec<crate::plugin::SourceRow>),
+    /// A store picture (a cover or a screenshot), checked against its list: its bytes in
+    /// base64, and their type.
+    Media {
+        base64: String,
+        mime: String,
+    },
     /// The request failed; the text says why in full.
     Error(String),
 }

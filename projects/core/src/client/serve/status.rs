@@ -12,8 +12,12 @@ use tokio::sync::{oneshot, watch};
 
 pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -> Status {
     let config = runtime.config().current();
+    let model = runtime.model();
+    let provider = model
+        .as_ref()
+        .and_then(|choice| config.providers().get(&choice.provider_name));
     Status {
-        model: runtime.model().map(|choice| choice.name()),
+        model: model.as_ref().map(|choice| choice.name()),
         discovering_model: runtime.discovering_model(),
         input_limit: runtime.input_limit(),
         context_policy: runtime.context_policy(),
@@ -32,19 +36,56 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
         install,
         updated_builtin: runtime.updated_builtin().to_vec(),
         chatgpt: runtime.chatgpt(),
-        limits: runtime.model().and_then(|choice| {
-            let settings = config.providers().get(&choice.provider_name)?;
-            crate::providers::Account::of(settings).limits()
-        }),
+        plugin_parts: runtime.plugin_parts(),
+        limits: provider.and_then(|settings| crate::providers::Account::of(settings).limits()),
+        provider_health: runtime.provider_health(),
+        chatgpt_model: provider
+            .is_some_and(|settings| settings.kind == crate::config::ProviderKind::ChatGpt),
         artifacts_dir: runtime.paths().artifacts_dir(),
         workspace_dir: runtime.paths().workspace_root().to_path_buf(),
+    }
+}
+
+/// What a client whose scope does not reach the settings gets in place of the status:
+/// nothing of this machine, and it never changes.
+pub fn blank_status() -> Status {
+    Status {
+        model: None,
+        discovering_model: false,
+        input_limit: 0,
+        context_policy: None,
+        effort: None,
+        mode: String::new(),
+        approvals: dusk_protocol::config::ApprovalPolicy::Ask,
+        max_goal_rounds: 0,
+        idle_screen_minutes: 0,
+        notifications: false,
+        sound_notifications: false,
+        mcp: Vec::new(),
+        mcp_starting: false,
+        plugins: Vec::new(),
+        available_update: None,
+        install: None,
+        updated_builtin: Vec::new(),
+        chatgpt: dusk_protocol::client::ChatGpt::SignedOut,
+        chatgpt_model: false,
+        plugin_parts: Arc::default(),
+        limits: None,
+        provider_health: Vec::new(),
+        artifacts_dir: PathBuf::new(),
+        workspace_dir: PathBuf::new(),
     }
 }
 
 impl Server {
     /// Installs a release in the background; the reply comes once it is done, and the
     /// status shows how far it got meanwhile.
-    pub(super) fn install_update(&self, tag: String, reply: oneshot::Sender<Response>) {
+    pub(super) fn install_update(
+        &self,
+        tag: String,
+        view: super::ErrorView,
+        reply: oneshot::Sender<Response>,
+    ) {
         let runtime = Arc::clone(&self.runtime);
         let status = Arc::clone(&self.status);
         status.send_modify(|status| status.install = Some(InstallProgress::default()));
@@ -67,7 +108,7 @@ impl Server {
             status.send_modify(|status| status.install = result.is_ok().then_some(now));
             let response = match result {
                 Ok(path) => Response::Path(path),
-                Err(error) => Response::Error(format!("{error:#}")),
+                Err(error) => Response::Error(view.text(&error)),
             };
             let _ = reply.send(response);
         });

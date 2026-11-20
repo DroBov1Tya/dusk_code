@@ -90,9 +90,15 @@ pub fn prepare(task: &Task, into: &Path) -> Result<()> {
         into.parent().is_some_and(Path::is_dir),
         "the run's temporary folder is gone"
     );
+    // Resolved, so a task may share another's fixture through a link.
+    let fixture = task
+        .folder
+        .join("fixture")
+        .canonicalize()
+        .with_context(|| format!("task {} has no fixture", task.name))?;
     let status = Command::new("cp")
         .args(["-R"])
-        .arg(task.folder.join("fixture"))
+        .arg(fixture)
         .arg(into)
         .status()
         .context("cannot copy the fixture")?;
@@ -152,4 +158,19 @@ pub fn selfcheck(tasks: &[Task]) -> Result<()> {
     }
     println!("all {} checks tell work from no work", tasks.len());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The team tasks have parts, each with its own check, that a bad fixture or solution
+    /// would let pass or fail together; the whole check runs for each, as `--selfcheck`.
+    #[test]
+    fn the_team_tasks_tell_work_from_no_work() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("tasks");
+        let tasks = crate::task::load(&folder, &["team-".to_owned()]).unwrap();
+        assert_eq!(tasks.len(), 4);
+        selfcheck(&tasks).unwrap();
+    }
 }

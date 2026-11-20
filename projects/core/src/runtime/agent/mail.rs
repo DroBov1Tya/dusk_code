@@ -6,6 +6,7 @@ use std::{
     future::Future,
     path::{Path, PathBuf},
     pin::Pin,
+    sync::Arc,
 };
 
 use anyhow::{Context, Result, ensure};
@@ -15,12 +16,15 @@ use super::Input;
 use crate::{
     BoxFuture,
     catalog::agents::GENERAL_AGENT,
-    runtime::{Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner},
-    state::{Thread, TurnStatus, estimate_tokens},
+    runtime::{
+        Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, model_choice::ModelChoice,
+        team,
+    },
+    state::{Thread, TurnStatus},
 };
 
 /// Messages from agents a chat takes between two of the user's.
-const MAX_AGENT_MESSAGES: u64 = 30;
+pub(crate) const MAX_AGENT_MESSAGES: u64 = 30;
 
 impl Launcher {
     /// Stores a message from one agent's thread to another and wakes its reader: a running
@@ -37,18 +41,36 @@ impl Launcher {
         cwd: &'a Path,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            let config = self.config.current();
-            let limit = self
-                .model
-                .current()
-                .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
-                    choice.input_limit(&config)
-                });
-            let tokens = estimate_tokens(content);
-            ensure!(
-                tokens <= limit,
-                "the message is about {tokens} tokens, past the input limit of {limit}"
-            );
+            self.deliver_as(to, from, None, content, cwd).await?;
+            Ok(())
+        })
+    }
+
+    /// The same under the sender's own `uid`, for a sender that cannot know whether it
+    /// delivered before a stop: delivered twice, the message is stored once. Answers
+    /// whether it was stored now. A message stored earlier that still waits has its
+    /// reader woken again, since it may have found no free slot the first time.
+    pub fn deliver_once<'a>(
+        &'a self,
+        to: &'a str,
+        from: &'a str,
+        uid: &'a str,
+        content: &'a str,
+        cwd: &'a Path,
+    ) -> BoxFuture<'a, bool> {
+        self.deliver_as(to, from, Some(uid), content, cwd)
+    }
+
+    fn deliver_as<'a>(
+        &'a self,
+        to: &'a str,
+        from: &'a str,
+        uid: Option<&'a str>,
+        content: &'a str,
+        cwd: &'a Path,
+    ) -> BoxFuture<'a, bool> {
+        Box::pin(async move {
+            self.model.ensure_fits(content, &self.config.current())?;
             let thread = self
                 .state
                 .load_thread(to)
@@ -56,11 +78,21 @@ impl Launcher {
                 .with_context(|| format!("thread {to} does not exist"))?;
             let chat_is_full = thread.parent_thread_id.is_none()
                 && self.state.agent_messages_since_client(to).await? >= MAX_AGENT_MESSAGES;
-            self.state.add_pending_from(to, content, Some(from)).await?;
-            if chat_is_full {
-                return Ok(());
+            let stored = match uid {
+                Some(uid) => {
+                    let from = Some(from);
+                    self.state.add_pending_once(to, uid, content, from).await?
+                }
+                None => {
+                    self.state.add_pending_from(to, content, Some(from)).await?;
+                    true
+                }
+            };
+            if chat_is_full || !(stored || self.state.has_pending(to).await?) {
+                return Ok(stored);
             }
-            self.wake(&thread, cwd).await
+            self.wake(&thread, cwd).await?;
+            Ok(stored)
         })
     }
 
@@ -123,6 +155,10 @@ impl Launcher {
             let (runner, input, output) = self.agent_runner(thread, cwd).await?;
             live.insert(thread.id.clone(), runner.mailbox(&input));
             self.mailboxes.begin_agent_report(&thread.id).await;
+            // The chat shows it is at work while its agents are, whatever its own turn does.
+            if let Some(chat) = live.get(&root) {
+                chat.emit(ThreadEvent::AgentsWorking(true));
+            }
             drop(live);
             let launcher = self.clone();
             let folder = cwd.to_owned();
@@ -146,7 +182,9 @@ impl Launcher {
         })
     }
 
-    /// Wakes every agent thread that has stored messages and no runner.
+    /// Wakes every agent thread that has stored messages and no runner, and every agent a
+    /// stopped process left at work under a chat that is open again: it may have found
+    /// no free slot when its chat woke it.
     fn wake_waiting<'a>(&'a self, cwd: &'a Path) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             let waiting = match self.state.threads_with_pending().await {
@@ -162,7 +200,30 @@ impl Launcher {
                     warn!("cannot start agent thread {thread_id}: {error:#}");
                 }
             }
+            if let Err(error) = self.wake_unfinished(None, cwd).await {
+                warn!("cannot start agents left at work: {error:#}");
+            }
         })
+    }
+
+    /// Wakes the agents a stopped process left at work: below `root`, or below any open
+    /// chat. Each settles its own turn under its own lock as it starts.
+    pub async fn wake_unfinished(&self, root: Option<&str>, cwd: &Path) -> Result<()> {
+        for thread_id in self.state.unfinished_agents().await? {
+            let chat = self.state.root_thread(&thread_id).await?;
+            let open = match root {
+                Some(root) => chat == root,
+                None => self.mailboxes.get(&chat).await.is_some(),
+            };
+            let thread = match self.state.load_thread(&thread_id).await? {
+                Some(thread) if open => thread,
+                _ => continue,
+            };
+            if let Err(error) = self.wake(&thread, cwd).await {
+                warn!("cannot start agent thread {thread_id}: {error:#}");
+            }
+        }
+        Ok(())
     }
 
     async fn agent_runner(
@@ -177,6 +238,14 @@ impl Launcher {
             crate::runtime::thread::start::workspace(&self.state, &self.paths, &thread.id).await?;
         let mut setup = self.setup(&thread.id, cwd, &workspace, identity.as_ref(), depth)?;
         setup.ends_when_idle = true;
+        // A member of a team has what the core fixed for it, not what its role lists.
+        if team::is_member(thread) {
+            team::limit_tools(&mut setup.tools, &self.config.current(), name);
+            // A role may answer on a model of its own; without one it is the chat's.
+            if let Some(choice) = team::member_model(self, thread).await? {
+                setup.model = Arc::new(ModelChoice::new(choice));
+            }
+        }
         Ok(ThreadRunner::new(setup))
     }
 
@@ -191,8 +260,30 @@ impl Launcher {
         root: String,
         cwd: PathBuf,
     ) {
-        while let Some(event) = output.next_event().await {
+        // A runner's first act is to settle what a restart left: a turn it stops then was
+        // never announced as at work. Only that stop wakes the asker, which may be an
+        // agent no longer at work; a stop the user made must not start work again.
+        let mut announced = false;
+        // A member's task is the team's: its lease is moved on while this runner lives,
+        // and what its turns do to the task is the team's to decide, not a report.
+        let mut beat = team::is_member(&thread).then(team::Beat::new);
+        loop {
+            let event = match &mut beat {
+                Some(beat) => beat.next_event(&self, &thread, &mut output).await,
+                None => output.next_event().await,
+            };
+            let Some(event) = event else { break };
+            announced |= matches!(
+                event,
+                ThreadEvent::TurnStarted(_)
+                    | ThreadEvent::TurnRunning(_)
+                    | ThreadEvent::TurnWaiting(_)
+            );
             let report = match &event {
+                _ if beat.is_some() => {
+                    team::member_event(&self, &thread, &event, announced).await;
+                    None
+                }
                 ThreadEvent::TurnFinished(turn) => match turn.status {
                     TurnStatus::Completed => {
                         let answer = self
@@ -210,10 +301,15 @@ impl Launcher {
                             None => "(no answer yet)".into(),
                         };
                         let stopped = format!("was stopped before it finished; so far:\n{answer}");
-                        if let Err(error) = self.tell_stopped(&parent, &thread.id, &stopped).await {
-                            warn!("cannot report agent thread {}: {error:#}", thread.id);
+                        if !announced {
+                            Some(stopped)
+                        } else {
+                            let told = self.tell_stopped(&parent, &thread.id, &stopped).await;
+                            if let Err(error) = told {
+                                warn!("cannot report agent thread {}: {error:#}", thread.id);
+                            }
+                            None
                         }
-                        None
                     }
                     TurnStatus::Running => None,
                 },
@@ -238,6 +334,11 @@ impl Launcher {
         let live = self.mailboxes.lock().await;
         self.mailboxes.end_agent_report(&thread.id).await;
         if let Some(mailbox) = live.get(&root) {
+            match self.mailboxes.agents_at_work(&self.state, &root).await {
+                Ok(true) => {}
+                Ok(false) => mailbox.emit(ThreadEvent::AgentsWorking(false)),
+                Err(error) => warn!("cannot tell whether agents of {root} work: {error:#}"),
+            }
             mailbox.send(Input::DependencyFinished);
         }
     }
@@ -269,18 +370,17 @@ impl Launcher {
         Ok(())
     }
 
-    async fn answer(&self, thread_id: &str, message_id: Option<&str>) -> String {
+    pub(crate) async fn answer(&self, thread_id: &str, message_id: Option<&str>) -> String {
         let Some(message_id) = message_id else {
             return "(no answer)".into();
         };
-        let messages = self
-            .state
-            .list_messages(thread_id)
-            .await
-            .unwrap_or_default();
-        messages
-            .into_iter()
-            .find(|message| message.message_id == message_id)
-            .map_or_else(|| "(no answer)".into(), |message| message.content)
+        match self.state.message_content(thread_id, message_id).await {
+            Ok(Some(content)) => content,
+            Ok(None) => "(no answer)".into(),
+            Err(error) => {
+                warn!("cannot read the answer of {thread_id}: {error:#}");
+                "(no answer)".into()
+            }
+        }
     }
 }

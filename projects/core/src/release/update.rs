@@ -1,5 +1,6 @@
 //! Updating the binary from the GitHub releases. The stable channel follows the full
-//! releases, the round versions; the dev channel follows every tag, pre-releases too.
+//! releases, tagged on the `stable` branch; the dev channel follows every tag, the
+//! beta and nightly pre-releases tagged on `beta` and `main` too.
 //! An update downloads the archive built for this target, checks it against the
 //! SHA-256 digest GitHub keeps for every release asset, and moves the new binary over the running one, which goes on
 //! until it is started again. Prompts and skills that ship with dusk are brought up to
@@ -13,9 +14,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use dusk_protocol::text::sha256_hex;
 use reqwest::Client;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
 use crate::{config::Config, init::paths::Paths};
@@ -29,13 +30,30 @@ const TARGET: &str = env!("DUSK_TARGET");
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Far above the size of a release archive, so a wrong file is not read without end.
 const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
+/// Far above GitHub's largest answer read (a comparison lists its files' changes, a
+/// repository tree is at most 7 MB),
+/// so a wrong answer is not read without end either.
+const MAX_ANSWER_BYTES: usize = 16 * 1024 * 1024;
+/// GitHub's error answers are a short JSON message.
+const MAX_ERROR_BYTES: usize = 64 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(120);
 
 /// The newest version on `channel`, and how far the running one is behind it.
 pub async fn check_update(channel: Channel) -> Result<UpdateInfo> {
     let client = client()?;
-    let release = newest(&client, channel).await?;
     let current = format!("v{VERSION}");
+    // No release carries a build for this program: nothing to offer, and not an error.
+    let Some(release) = newest(&client, channel).await? else {
+        return Ok(UpdateInfo {
+            newer: false,
+            ready: false,
+            latest: current.clone(),
+            current,
+            channel,
+            prerelease: false,
+            commits_behind: None,
+        });
+    };
     let newer = version(&release.tag_name) > version(&current);
     let compare = format!("compare/{current}...{}", release.tag_name);
     // A build of an untagged commit has nothing to compare from.
@@ -84,6 +102,10 @@ impl Release {
         self.digest_of(&format!("duskcode-{TARGET}.tar.gz"))
     }
 
+    fn has_asset(&self, name: &str) -> bool {
+        self.assets.iter().any(|asset| asset.name == name)
+    }
+
     /// The SHA-256 of the asset called `name`, in lowercase hex.
     pub(super) fn digest_of(&self, name: &str) -> Option<String> {
         let asset = self.assets.iter().find(|asset| asset.name == name)?;
@@ -106,7 +128,7 @@ pub(super) fn releases_url(channel: Channel) -> String {
     format!("{API}/{REPOSITORY}/{path}")
 }
 
-async fn newest(client: &Client, channel: Channel) -> Result<Release> {
+async fn newest(client: &Client, channel: Channel) -> Result<Option<Release>> {
     let response = client
         .get(releases_url(channel))
         .header("Accept", "application/vnd.github+json")
@@ -123,21 +145,33 @@ async fn newest(client: &Client, channel: Channel) -> Result<Release> {
     newest_from(response, channel).await
 }
 
-/// The newest release in a successful answer to `releases_url`.
-pub(super) async fn newest_from(response: reqwest::Response, channel: Channel) -> Result<Release> {
+/// The newest release in a successful answer to `releases_url` that carries this program's
+/// build, or `None`. A full release carries every build; a nightly may carry only some, so
+/// the dev channel looks back through the page (20 releases) instead of stopping at the first.
+pub(super) async fn newest_from(
+    response: reqwest::Response,
+    channel: Channel,
+) -> Result<Option<Release>> {
     Ok(match channel {
-        Channel::Stable => response
-            .json::<Release>()
-            .await
-            .context("unexpected answer from GitHub")?,
-        Channel::Dev => response
-            .json::<Vec<Release>>()
-            .await
-            .context("unexpected answer from GitHub")?
-            .into_iter()
-            .find(|release| !release.draft)
-            .context("there are no releases yet")?,
+        Channel::Stable => Some(read_json::<Release>(response).await?),
+        Channel::Dev => newest_with_build(read_json::<Vec<Release>>(response).await?, build_name),
     })
+}
+
+/// The first published release that has the asset `asset_of(tag)` names.
+fn newest_with_build(releases: Vec<Release>, asset_of: impl Fn(&str) -> String) -> Option<Release> {
+    releases
+        .into_iter()
+        .find(|release| !release.draft && release.has_asset(&asset_of(&release.tag_name)))
+}
+
+/// The file of release `tag` that updates the running program: the disk image for the
+/// desktop app, the archive for the terminal client.
+fn build_name(tag: &str) -> String {
+    match super::app_update::running_bundle() {
+        Some(_) => super::app_update::image_name(tag),
+        None => format!("duskcode-{TARGET}.tar.gz"),
+    }
 }
 
 /// `duskcode --update`: installs the newest version on the channel in config.yml, if it
@@ -204,7 +238,7 @@ pub async fn install_with_progress(
     })?;
     let name = format!("duskcode-{TARGET}");
     let base = format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}.tar.gz");
-    let archive = download(&client, &base, &progress).await.with_context(|| {
+    let archive = fetch(&client, &base, &progress).await.with_context(|| {
         format!(
             "cannot download the {tag} build for {TARGET}; right after a release is \
              tagged its builds take a few minutes on GitHub, so try again later"
@@ -216,7 +250,7 @@ pub async fn install_with_progress(
     // Once started, this block finishes replacement and cleanup even if the caller exits.
     tokio::task::spawn_blocking(move || {
         ensure!(
-            hex(&Sha256::digest(&archive)) == expected,
+            sha256_hex(&archive) == expected,
             "the download does not match its checksum; nothing was changed"
         );
         progress.send_modify(|value| value.stage = InstallStage::Installing);
@@ -311,19 +345,6 @@ pub(super) fn asset_url(tag: &str, name: &str) -> String {
     format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}")
 }
 
-/// Downloads `url`, reporting how far it got.
-pub(super) async fn fetch(
-    client: &Client,
-    url: &str,
-    progress: &watch::Sender<InstallProgress>,
-) -> Result<Vec<u8>> {
-    download(client, url, progress).await
-}
-
-pub(super) fn sha256_hex(bytes: &[u8]) -> String {
-    hex(&Sha256::digest(bytes))
-}
-
 async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -> Result<T> {
     let url = format!("{API}/{REPOSITORY}/{path}");
     let response = client
@@ -335,18 +356,26 @@ async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -
     if !response.status().is_success() {
         return Err(refused(response).await);
     }
-    response
-        .json()
-        .await
-        .context("unexpected answer from GitHub")
+    read_json(response).await
 }
 
-async fn download(
+/// A successful answer of GitHub's API, read up to `MAX_ANSWER_BYTES`.
+pub(super) async fn read_json<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> Result<T> {
+    let bytes = crate::net::read_limited(response, MAX_ANSWER_BYTES)
+        .await
+        .map_err(|error| error.about("GitHub's answer"))?;
+    serde_json::from_slice(&bytes).context("unexpected answer from GitHub")
+}
+
+/// Downloads `url`, reporting how far it got.
+pub(super) async fn fetch(
     client: &Client,
     url: &str,
     progress: &watch::Sender<InstallProgress>,
 ) -> Result<Vec<u8>> {
-    let mut response = client
+    let response = client
         .get(url)
         .send()
         .await
@@ -359,16 +388,11 @@ async fn download(
         downloaded: 0,
         total: response.content_length().filter(|total| *total > 0),
     });
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.context("the download broke off")? {
-        bytes.extend_from_slice(&chunk);
-        ensure!(
-            bytes.len() <= MAX_ARCHIVE_BYTES,
-            "the download is too large"
-        );
-        progress.send_modify(|value| value.downloaded = bytes.len() as u64);
-    }
-    Ok(bytes)
+    crate::net::read_limited_reporting(response, MAX_ARCHIVE_BYTES, |read| {
+        progress.send_modify(|value| value.downloaded = read as u64);
+    })
+    .await
+    .map_err(|error| error.about("the download"))
 }
 
 /// Why GitHub said no, in words: a missing release, a used-up rate limit with the time
@@ -385,10 +409,10 @@ pub(super) async fn refused(response: reqwest::Response) -> anyhow::Error {
     };
     let limited = header("x-ratelimit-remaining") == Some(0);
     let reset = header("x-ratelimit-reset");
-    let message = response
-        .json::<serde_json::Value>()
+    let message = crate::net::read_limited(response, MAX_ERROR_BYTES)
         .await
         .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|body| body.get("message")?.as_str().map(str::to_owned))
         .map(|message| message.chars().take(MAX_MESSAGE).collect::<String>());
     let code = status.as_u16();
@@ -432,10 +456,6 @@ pub(super) fn version(tag: &str) -> Option<(u64, u64, u64)> {
     parts.next().is_none().then_some(version)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,6 +466,52 @@ mod tests {
         assert_eq!(version("v1.2"), None);
         assert_eq!(version("1.2.3"), None);
         assert_eq!(version("v1.2.3.4"), None);
-        assert_eq!(hex(&[0, 255, 16]), "00ff10");
+    }
+
+    /// An answer that says it is past the cap is refused before its body is read.
+    #[tokio::test]
+    async fn an_answer_past_the_cap_is_refused_unread() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 1024];
+            let _ = socket.read(&mut request).await;
+            let length = MAX_ANSWER_BYTES + 1;
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\n\r\n");
+            let _ = socket.write_all(head.as_bytes()).await;
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let response = client.get(&url).send().await.unwrap();
+        let error = read_json::<Release>(response).await.err().unwrap();
+        assert_eq!(error.to_string(), "GitHub's answer is too large");
+    }
+
+    fn release(tag: &str, assets: &[&str]) -> Release {
+        let assets: Vec<_> = assets
+            .iter()
+            .map(|name| serde_json::json!({"name": name}))
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "tag_name": tag, "prerelease": true, "draft": false, "assets": assets
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn dev_channel_skips_releases_without_the_build() {
+        let asset_of = |_: &str| "duskcode.tar.gz".to_owned();
+        let listed = || {
+            vec![
+                release("v0.77.0", &["other.dmg"]),
+                release("v0.76.0", &["duskcode.tar.gz"]),
+                release("v0.75.0", &["duskcode.tar.gz"]),
+            ]
+        };
+        let picked = newest_with_build(listed(), asset_of).unwrap();
+        assert_eq!(picked.tag_name, "v0.76.0");
+        assert!(newest_with_build(vec![release("v0.77.0", &[])], asset_of).is_none());
     }
 }

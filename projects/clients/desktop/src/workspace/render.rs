@@ -7,7 +7,7 @@ use super::{Center, Workspace};
 use crate::{
     columns::{inspector, rail, sidebar, topbar},
     modal,
-    pages::{artifacts, chat, connectors, review, schedules, settings},
+    pages::{artifacts, chat, customize, review, schedules, settings, welcome},
 };
 
 impl Workspace {
@@ -17,7 +17,7 @@ impl Workspace {
     }
 
     fn side_panel_shown(&self) -> bool {
-        self.side_panel_allowed() && !self.right_hidden && !self.quiet
+        self.side_panel_allowed() && !self.right_hidden && !self.quiet && !welcome::shown(self)
     }
 
     /// The middle column's width once the side columns have settled.
@@ -39,21 +39,29 @@ impl Workspace {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.record_place();
+        crate::plugins::settle(self, window, cx);
+        welcome::settle(self, window, cx);
+        super::seen::settle(self, window, cx);
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
         let (frame, theme_border) = (rail::color(cx), theme.border);
         let center = match self.center {
+            Center::Chat if welcome::shown(self) => welcome::render(self, cx).into_any_element(),
             Center::Chat => chat::render(self, window, cx).into_any_element(),
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
-            Center::Connectors => connectors::render(self, window, cx).into_any_element(),
+            Center::Customize => customize::render(self, window, cx).into_any_element(),
             Center::Settings => settings::render(self, window, cx).into_any_element(),
-            Center::Review => review::render(self, cx).into_any_element(),
+            Center::Review => review::render(self, window, cx).into_any_element(),
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
+            Center::Overview => inspector::overview::page(self, cx).into_any_element(),
+            Center::Team => crate::pages::team::render(self, cx).into_any_element(),
         };
         let terminal = crate::columns::terminal::render(self, window, cx);
-        let simulator = crate::columns::simulator::render(self, window, cx);
-        let dragging = self.terminal.dragging();
+        let right_dock = crate::plugins::right_dock(self, window, cx);
+        let bottom_dock = crate::plugins::bottom_dock(self, window, cx);
+        let plugins_menu = crate::plugins::menu(self, cx);
+        let dragging = self.terminal.dragging() || self.plugins.bottom_drag.is_some();
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
         let artifact_menu = artifacts::menu(self, window, cx);
@@ -90,7 +98,7 @@ impl Render for Workspace {
                 .h_full()
                 .flex_none()
                 .overflow_hidden()
-                .child(sidebar::render(self, window, cx))
+                .child(sidebar::render(self, cx))
         });
         let inspector = (right > px(0.5)).then(|| {
             div()
@@ -146,27 +154,38 @@ impl Render for Workspace {
                                     .h_full()
                                     .flex()
                                     .flex_col()
-                                    .child(div().flex_1().min_h_0().child(center))
-                                    .children(terminal),
+                                    .child(crate::ui::motion::switch(
+                                        ("center", self.center as usize),
+                                        div().flex_1().min_h_0().child(center),
+                                    ))
+                                    .children(terminal)
+                                    .children(bottom_dock),
                             )
                             .children(inspector)
-                            .children(simulator),
+                            .children(right_dock),
                     ),
             )
-            .children(crate::columns::flyout::render(self, window, cx))
+            .children(crate::columns::flyout::render(self, cx))
             .children(modal)
             .children(chat_menu)
             .children(artifact_menu)
             .children(audio_menu)
+            .children(plugins_menu)
+            .children(super::toast::render(self, cx))
             .children(crate::columns::fog::render(self, window, cx))
-            // While the terminal's edge is held, the whole window follows the pointer.
+            // While the terminal's or the bottom dock's edge is held, the whole window
+            // follows the pointer.
             .when(dragging, |root| {
-                root.on_mouse_move(
-                    cx.listener(|ws, event: &MouseMoveEvent, _, cx| ws.drag_terminal(event, cx)),
-                )
+                root.on_mouse_move(cx.listener(|ws, event: &MouseMoveEvent, window, cx| {
+                    ws.drag_terminal(event, window, cx);
+                    ws.drag_plugin_dock(event, window, cx);
+                }))
                 .on_mouse_up(
                     MouseButton::Left,
-                    cx.listener(|ws, _, _, cx| ws.drop_terminal_edge(cx)),
+                    cx.listener(|ws, _, _, cx| {
+                        ws.plugins.bottom_drag = None;
+                        ws.drop_terminal_edge(cx);
+                    }),
                 )
             })
             .capture_any_mouse_down(cx.listener(|ws, _, _, cx| ws.attended(cx)))
@@ -182,8 +201,11 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_side_panel))
             .on_action(cx.listener(Self::on_toggle_terminal))
             .on_action(cx.listener(Self::on_save_file))
-            .on_action(cx.listener(Self::copy_code))
+            .on_action(cx.listener(Self::on_toggle_panel))
+            .on_action(cx.listener(Self::on_toggle_plan))
+            .on_action(cx.listener(Self::on_next_pin))
             .on_action(cx.listener(Self::run_code))
+            .on_action(cx.listener(Self::stop_code))
             .capture_key_down(cx.listener(Self::menu_keys))
     }
 }

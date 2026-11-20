@@ -1,7 +1,7 @@
 //! Small file helpers: bounded reads, private creation, syncing and the staging directory.
 
 use std::{
-    fs::{self, DirBuilder, File, Metadata, OpenOptions},
+    fs::{self, File, Metadata, OpenOptions},
     io::{ErrorKind, Read, Write},
     path::{Path, PathBuf},
 };
@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::BUFFER_BYTES;
+use crate::init::files::{new_private_dir, open_no_follow};
 
 pub fn sync_directory(directory: &Path) -> Result<()> {
     #[cfg(unix)]
@@ -28,21 +29,10 @@ pub fn sync_directory(directory: &Path) -> Result<()> {
     Ok(())
 }
 
+/// A restore journal file of at most `maximum` bytes, read as `open_regular_input` opens it.
 pub fn read_bounded(path: &Path, maximum: u64) -> Result<Vec<u8>> {
-    let mut file = open_regular_input(path)?;
-    ensure!(
-        file.metadata()?.len() <= maximum,
-        "restore journal file is too large"
-    );
-    let mut bytes = Vec::new();
-    Read::by_ref(&mut file)
-        .take(maximum + 1)
-        .read_to_end(&mut bytes)?;
-    ensure!(
-        bytes.len() as u64 <= maximum,
-        "restore journal file is too large"
-    );
-    Ok(bytes)
+    crate::init::files::read_bounded(open_regular_input(path)?, maximum)
+        .context("read a restore journal file")
 }
 
 pub fn open_regular_input(path: &Path) -> Result<File> {
@@ -52,45 +42,12 @@ pub fn open_regular_input(path: &Path) -> Result<File> {
         before.is_file(),
         "archive or journal input must be a regular file, not a symlink or special file"
     );
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // A FIFO substituted after the metadata check cannot block open, and a final
-        // symlink substituted in that window cannot redirect it to a different target.
-        options.custom_flags(nix::libc::O_NONBLOCK | nix::libc::O_NOFOLLOW);
-    }
-    let file = options
-        .open(path)
+    // A FIFO substituted after the metadata check cannot block open, and a final symlink
+    // substituted in that window cannot redirect it to a different target.
+    let file = open_no_follow(OpenOptions::new().read(true), path)
         .context("open regular archive or journal input")?;
     ensure_same_file(&before, &file.metadata()?)?;
     Ok(file)
-}
-
-pub fn private_dir(path: &Path) -> Result<()> {
-    let mut builder = DirBuilder::new();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(path)
-        .with_context(|| format!("create private directory {}", path.display()))
-}
-
-pub fn private_file(path: &Path) -> Result<File> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options
-        .open(path)
-        .with_context(|| format!("create private file {}", path.display()))
 }
 
 pub fn executable(metadata: &Metadata) -> bool {
@@ -155,11 +112,7 @@ pub fn copy_hash(input: &mut impl Read, output: &mut impl Write) -> Result<(u64,
             .checked_add(bytes as u64)
             .context("file size overflow")?;
     }
-    let hash = hash
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let hash = dusk_protocol::text::hex(&hash.finalize());
     Ok((copied, hash))
 }
 
@@ -172,7 +125,7 @@ pub struct Temporary {
 impl Temporary {
     pub fn new(parent: &Path, purpose: &str) -> Result<Self> {
         let path = parent.join(format!(".duskcode-{purpose}-{}", Uuid::now_v7()));
-        private_dir(&path)?;
+        new_private_dir(&path)?;
         Ok(Self {
             path,
             keep: false,

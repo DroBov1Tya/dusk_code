@@ -2,6 +2,7 @@
 //! running one. The core says what a command is and does the work; a command that only
 //! shows something opens the window's own place for it.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::client::{Answer, COMMANDS, Command, parse};
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -44,10 +45,7 @@ pub(super) fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg();
+        .elevation(Level::Floating, cx);
     for (index, (name, help)) in matches.into_iter().enumerate() {
         menu = menu.child(
             crate::ui::widgets::row(("command", index), index == 0, cx)
@@ -131,10 +129,7 @@ impl Workspace {
             Command::Model { name: None } => self.open_picker(Picker::Model, cx),
             Command::Effort { level: Some(level) } => self.choose_effort(&level, cx),
             Command::Effort { level: None } => self.open_picker(Picker::Effort, cx),
-            Command::Settings => {
-                self.center = Center::Settings;
-                self.load_settings(cx);
-            }
+            Command::Settings => self.open_settings(cx),
             Command::Update { .. } => {
                 self.center = Center::Settings;
                 self.settings_page = SettingsPage::Updates;
@@ -143,7 +138,7 @@ impl Workspace {
             }
             Command::Context { .. } => {
                 self.right_hidden = false;
-                self.folded.remove(&Right::Statistics);
+                self.folded.remove(&Right::Overview);
                 self.load_context(cx);
             }
             Command::Migrate { .. } => self.core.call(

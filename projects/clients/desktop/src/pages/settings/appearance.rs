@@ -1,5 +1,6 @@
 //! How the window looks: the theme, and the fonts with their sizes.
 
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{ActiveTheme, Colorize, IconName, Sizable, button::Button, input::Input},
     prelude::FluentBuilder,
@@ -42,6 +43,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .bg(cx.theme().background)
                 .cursor_pointer()
                 .hover(move |tile| tile.bg(hover))
+                .press(hover, cx)
                 .child(
                     div()
                         .h(px(52.))

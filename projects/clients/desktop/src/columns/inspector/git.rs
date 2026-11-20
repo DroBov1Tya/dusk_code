@@ -1,16 +1,22 @@
 //! The project's repository: its branch, the changes, the branches to switch to and
 //! the worktrees. The core refuses a switch while changes would be lost.
 
+use crate::ui::Type;
+use crate::ui::press::Press;
 use dusk_protocol::project::ChangeKind;
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, Icon, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     *,
 };
 
-use crate::{ui::widgets, workspace::Workspace};
+use super::pulls;
+use crate::{
+    ui::{icons, widgets},
+    workspace::Workspace,
+};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(git) = &ws.git else {
@@ -37,14 +43,25 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .gap_2()
             .px_3()
             .pt_3()
-            .child(widgets::icon(IconName::Github, theme.primary))
+            .child(widgets::icon(
+                Icon::default().path(icons::GIT_BRANCH),
+                theme.primary,
+            ))
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(branch.clone()),
             )
-            .child(div().text_xs().text_color(muted).child(sync))
+            .child(div().meta().text_color(muted).child(sync))
             .child(div().flex_1())
+            .child(
+                Button::new("git-open-review")
+                    .ghost()
+                    .small()
+                    .icon(Icon::default().path(icons::GIT_COMPARE))
+                    .tooltip("Commit, branch, pull and push")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
+            )
             .child(
                 Button::new("git-refresh")
                     .ghost()
@@ -55,6 +72,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             ),
     );
     let stat = git.stat;
+    let repository = ws
+        .repository
+        .as_ref()
+        .map(|status| status.repository.clone())
+        .filter(|name| !name.is_empty());
     column = if git.changes.is_empty() {
         column.child(widgets::muted(
             "Clean: nothing differs from the last commit.",
@@ -75,36 +97,40 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .rounded_md()
                 .cursor_pointer()
                 .hover(|row| row.bg(cx.theme().list_hover))
-                .child(div().text_sm().child(format!(
-                    "{} file{}",
-                    stat.files.max(git.changes.len() as u64),
-                    if stat.files == 1 { "" } else { "s" }
-                )))
+                .press(cx.theme().list_hover, cx)
+                .children(repository.map(|name| div().small().truncate().child(name)))
                 .child(
                     div()
-                        .text_sm()
+                        .small()
                         .text_color(ok)
-                        .child(format!("+{}", stat.added)),
+                        .child(format!("+{}", pulls::grouped(stat.added))),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .small()
                         .text_color(bad)
-                        .child(format!("\u{2212}{}", stat.removed)),
+                        .child(format!("\u{2212}{}", pulls::grouped(stat.removed))),
                 )
                 .child(div().flex_1())
-                .child(div().text_xs().text_color(muted).child("Review"))
+                .child(div().meta().text_color(muted).child(widgets::count(
+                    stat.files.max(git.changes.len() as u64) as usize,
+                    "file",
+                )))
                 .child(widgets::icon(IconName::ChevronRight, muted))
                 .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
         )
     };
+    column = column.child(pulls::rows(ws, cx));
     column = column.child(widgets::heading("Branches", cx));
     for (index, name) in git.branches.iter().enumerate() {
         let current = *name == branch;
         let target = name.clone();
         column = column.child(
             widgets::row(("branch", index), current, cx)
-                .child(widgets::icon(IconName::Github, muted))
+                .child(widgets::icon(
+                    Icon::default().path(icons::GIT_BRANCH),
+                    muted,
+                ))
                 .child(div().truncate().child(name.clone()))
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     if !current {
@@ -120,7 +146,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 div()
                     .px_3()
                     .py_0p5()
-                    .text_xs()
+                    .meta()
                     .flex()
                     .flex_col()
                     .child(tree.branch.clone().unwrap_or_else(|| "detached".to_owned()))
@@ -161,6 +187,7 @@ impl Workspace {
         let Some(id) = self.project.clone() else {
             return;
         };
+        self.load_repository(cx);
         self.core.call(
             cx,
             move |client| async move { client.projects().git(&id).await },

@@ -2,12 +2,17 @@
 
 mod call;
 mod effort;
+mod error;
 mod provider;
 mod stream;
 mod usage;
 
 pub use call::ToolCall;
 pub use effort::Effort;
-pub use provider::{Balance, Model, ProviderStatus, RateLimit, RateLimits};
+pub use error::{ProviderErrorKind, ProviderFailure, ProviderWaitKind};
+pub use provider::{
+    Balance, CallHealth, CheckFailure, Model, PlanWindow, ProviderHealth, ProviderStatus,
+    RateLimit, RateLimits,
+};
 pub use stream::{FinishReason, ModelEvent};
 pub use usage::{Cost, CostSource, Usage};
