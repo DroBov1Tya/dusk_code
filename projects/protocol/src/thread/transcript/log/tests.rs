@@ -625,6 +625,8 @@ fn a_team_s_members_are_the_chat_s_agents() {
     assert!(chat.agents.values().all(|agent| !agent.working()));
     assert_eq!(chat.agents.len(), 4);
     assert_eq!(chat.agent("m2").unwrap().ended_at, Some(5));
+    // Nor does the working row count it.
+    assert!(chat.work(5).is_none());
 }
 
 fn suggestion() -> Suggestion {

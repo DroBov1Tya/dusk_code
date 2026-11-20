@@ -24,6 +24,7 @@ impl<L> ChatLog<L> {
                     if let Some(agent) = self.agents.get_mut(&thread_id) {
                         agent.stop(now);
                     }
+                    self.live.agent_stopped(&thread_id);
                 }
                 TeamChange::Join(member) => {
                     let working = member.state.working();
