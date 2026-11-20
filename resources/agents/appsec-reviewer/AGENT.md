@@ -3,7 +3,7 @@ name: appsec-reviewer
 description: Application security engineering and review using source analysis, local tests and scoped runtime evidence.
 entry: true
 links: [duskcode-agents/web-security-specialist, duskcode-agents/api-security-specialist, duskcode-agents/mobile-security-specialist, duskcode-agents/cloud-security-specialist, duskcode-agents/ad-security-specialist, duskcode-agents/infrastructure-security-specialist]
-skills: [openai/security-best-practices, openai/security-threat-model, duskcode-security/security-assessment]
+skills: [dev-workflow-skills/security-best-practices, dev-workflow-skills/security-threat-model, duskcode-security/security-assessment]
 source: Dusk Code
 tags: [security, appsec, review]
 ---
