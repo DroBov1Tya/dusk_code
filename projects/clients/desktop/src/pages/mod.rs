@@ -1,5 +1,5 @@
 //! The pages of the middle column: the chat, the files the agents made, Customize, the
-//! settings, the review of changes, a file open in full, and the welcome of a clean install. The workspace chooses which one shows.
+//! settings, the review of changes, a file open in full, the team of a chat's plan, and the welcome of a clean install. The workspace chooses which one shows.
 
 pub mod artifacts;
 pub mod chat;
@@ -8,4 +8,5 @@ pub mod file;
 pub mod review;
 pub mod schedules;
 pub mod settings;
+pub mod team;
 pub mod welcome;

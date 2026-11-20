@@ -8,7 +8,7 @@ use crate::thread::{
 /// What a member does now. The working ones follow the member's own events; the rest
 /// its task's status, as the core holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Doing {
+pub enum MemberState {
     Thinking,
     /// Runs a tool, by its name.
     Tool(String),
@@ -27,7 +27,7 @@ pub enum Doing {
     Stopped,
 }
 
-impl Doing {
+impl MemberState {
     /// What `member` does: `task` is its task in the plan, `agent` the chat's agent of its
     /// thread, `ended` whether the team ended.
     pub fn of(
@@ -48,7 +48,8 @@ impl Doing {
             _ => member.status,
         };
         match status {
-            _ if ended && status.at_work() => Self::Stopped,
+            // The end stopped every member at work or waiting; a hand-in stays in review.
+            _ if ended && (status.at_work() || status == TaskStatus::Blocked) => Self::Stopped,
             TaskStatus::Open => Self::Stopped,
             TaskStatus::Claimed => Self::Given,
             TaskStatus::Running => match agent.map(|agent| (&agent.state, &agent.running)) {
@@ -223,22 +224,22 @@ mod tests {
     fn a_member_follows_its_own_events_while_its_task_runs() {
         let running = task(TaskStatus::Running, "m1");
         let doing = |state| {
-            Doing::of(
+            MemberState::of(
                 &member(TaskStatus::Running),
                 Some(&running),
                 Some(&agent(state)),
                 false,
             )
         };
-        assert_eq!(doing(AgentState::Thinking), Doing::Thinking);
-        assert_eq!(doing(AgentState::Writing), Doing::Writing);
+        assert_eq!(doing(AgentState::Thinking), MemberState::Thinking);
+        assert_eq!(doing(AgentState::Writing), MemberState::Writing);
         assert_eq!(
             doing(AgentState::Tool("run_command".into())),
-            Doing::Tool("run_command".into())
+            MemberState::Tool("run_command".into())
         );
         assert_eq!(
-            Doing::of(&member(TaskStatus::Running), Some(&running), None, false),
-            Doing::Thinking
+            MemberState::of(&member(TaskStatus::Running), Some(&running), None, false),
+            MemberState::Thinking
         );
     }
 
@@ -247,27 +248,32 @@ mod tests {
         let running = task(TaskStatus::Running, "m1");
         let member_running = member(TaskStatus::Running);
         assert_eq!(
-            Doing::of(&member_running, Some(&running), None, true),
-            Doing::Stopped
+            MemberState::of(&member_running, Some(&running), None, true),
+            MemberState::Stopped
+        );
+        let blocked = task(TaskStatus::Blocked, "m1");
+        assert_eq!(
+            MemberState::of(&member(TaskStatus::Blocked), Some(&blocked), None, true),
+            MemberState::Stopped
         );
         // The task moved on to another member.
         let theirs = task(TaskStatus::Running, "m2");
         assert_eq!(
-            Doing::of(&member_running, Some(&theirs), None, false),
-            Doing::Stopped
+            MemberState::of(&member_running, Some(&theirs), None, false),
+            MemberState::Stopped
         );
         // A failed member stays failed though its task was given again.
         assert_eq!(
-            Doing::of(&member(TaskStatus::Failed), Some(&theirs), None, false),
-            Doing::Failed
+            MemberState::of(&member(TaskStatus::Failed), Some(&theirs), None, false),
+            MemberState::Failed
         );
         // The task's own status leads the team's.
         let review = Task {
             gate: Some(GoalCheck::UserConfirmation),
             ..task(TaskStatus::Review, "m1")
         };
-        let doing = Doing::of(&member_running, Some(&review), None, false);
-        assert_eq!(doing, Doing::Review { for_user: true });
+        let doing = MemberState::of(&member_running, Some(&review), None, false);
+        assert_eq!(doing, MemberState::Review { for_user: true });
         assert_eq!(doing.work_kind(), Some(WorkKind::WaitingForUser));
     }
 
@@ -276,14 +282,14 @@ mod tests {
         let mut blocked = task(TaskStatus::Blocked, "m1");
         blocked.waits_on = Some(WaitsOn::Lead);
         blocked.note = " which clock? ".into();
-        let line = Doing::Blocked.line(Some(&blocked), &[], false, "m1");
+        let line = MemberState::Blocked.line(Some(&blocked), &[], false, "m1");
         assert_eq!(line, "blocked \u{00B7} asks the lead: which clock?");
         assert_eq!(
-            Doing::Tool("run_command".into()).line(None, &[], false, "m1"),
+            MemberState::Tool("run_command".into()).line(None, &[], false, "m1"),
             lower_first(crate::tools::phrase("run_command", "m1"))
         );
         assert_eq!(
-            Doing::Stopped.line(None, &[], true, "m1"),
+            MemberState::Stopped.line(None, &[], true, "m1"),
             "stopped with the team"
         );
     }

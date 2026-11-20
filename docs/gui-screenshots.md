@@ -17,7 +17,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 |---|---|
 | `wait=MS` | lets the core answer and the window draw |
 | `project=N`, `thread=N` | chooses the Nth project or chat of the lists |
-| `center=chat\|review\|settings\|customize\|artifacts` | switches the middle column (`connectors` still names Customize) (it does not load that page's data; use the click paths for that) |
+| `center=chat\|review\|settings\|customize\|artifacts\|overview\|team` | switches the middle column (`connectors` still names Customize) (it does not load that page's data; use the click paths for that) |
 | `review` | opens the review page |
 | `file=PATH[:LINE]` | opens a file in the viewer |
 | `fake=welcome`, `welcome=form`, `welcome=address:URL` | the first screen of a clean install, its form, an address typed in it (`key=enter` connects) |
@@ -32,6 +32,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `fake=chat`, `fake=chat-open` | a long chat with folded turns, steps of each state, markdown with code and a table, a picture, a notice, an error, tasks and pins; `-open` unfolds the first turn and a step |
 | `fake=activity-thinking\|stalled\|writing\|planning\|steps\|agents\|waiting\|compacting` | after `fake=chat`: a running turn in each kind of work the working row tells apart (`fake=retry` and `fake=unreachable` show the held one) |
 | `fake=team`, `fake=team-ended` | after `fake=chat`: the chat leads a team of seven members on a plan of eight tasks, one in each status (the core's `Team`, `TaskChanged` and member events), running or ended on its steps; the Overview and the plan strip get the answers their requests would give; then `modal=team-stop|team-budget|task-card` opens the yes Stop team asks for, the budget form or the card of task #4 |
+| `fake=team-2\|team-6\|team-24\|team-24-ended\|team-empty` | after `fake=chat`: a team of two members on four tasks, six on eight, or twenty-four on forty-four whose first waves are done (its done members fold by role, its done waves fold), the large one ended on its steps, or a TEAM chat with no plan yet; `center=team` shows the Team page and `layer=people\|plan\|both\|unfold` its layers or a long plan's done waves |
 | `fake=mcp` | five connectors, one of each state, in the place of the config's |
 | `open=pins\|plan\|panel\|done`, `scroll=N`, `right=lower` | the pins drawer, the plan's rows, the composer's panel, the Todo's finished tasks; the transcript from its Nth row; the right column with its tall upper modules folded |
 | `hover=X,Y` | moves the pointer to a point of the window, for what shows only under it (the composer's tab, a module header's grip) |

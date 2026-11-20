@@ -9,7 +9,7 @@ use crate::thread::{GoalCheck, Task, TaskStatus, WaitsOn};
 
 /// A plan of more tasks than this folds its done waves.
 pub const FOLD_PAST: usize = 40;
-const NODE_W: f32 = 156.;
+const NODE_W: f32 = 170.;
 const NODE_H: f32 = 58.;
 const ROW_GAP: f32 = 8.;
 const WAVE_GAP: f32 = 26.;

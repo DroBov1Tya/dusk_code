@@ -114,6 +114,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                 .children(current),
         )
         .children(counts.map(|counts| bar(counts, ws.dock.counts_before, cx)))
+        .children(crate::pages::team::module::open_link(
+            chat.team.is_some(),
+            cx,
+        ))
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_plan(cx)));
     let rows = open.then(|| {
         let shown = chat.tasks.len().min(IN_SIGHT);

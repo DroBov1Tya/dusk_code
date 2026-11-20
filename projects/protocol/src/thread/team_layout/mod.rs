@@ -14,7 +14,7 @@ mod people;
 mod plan;
 mod select;
 
-pub use member::Doing;
+pub use member::MemberState;
 pub use people::{FoldChip, MemberNode, People, people};
 pub use plan::{FOLD_PAST, Folded, Plan, TaskNode, WaveHead, plan, task_word, waves};
 pub use select::{Lit, Pick, Related};

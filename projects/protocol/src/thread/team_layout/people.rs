@@ -5,8 +5,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use super::{Arrow, Edge, EdgeLabel, EdgeTone, Ends, Rect, across, arc, member::Doing};
-use crate::thread::{Subagent, Task, TaskStatus, Team, WaitsOn, find_task, plural, short_model};
+use super::{Arrow, Edge, EdgeLabel, EdgeTone, Ends, Rect, across, arc, member::MemberState};
+use crate::thread::{
+    Subagent, Task, TaskStatus, Team, TeamEnd, WaitsOn, find_task, plural, short_model,
+};
 
 /// Where the member column starts and how wide it is.
 const MEMBERS_X: f32 = 356.;
@@ -15,11 +17,13 @@ const CARD_H: f32 = 66.;
 const LINE_H: f32 = 28.;
 const LINE_STEP: f32 = 34.;
 const CARD_GAP: f32 = 8.;
-const LEAD_W: f32 = 184.;
+const LEAD_W: f32 = 236.;
 const LEAD_H: f32 = 66.;
 const CHIP_W: f32 = 162.;
 const CHIP_H: f32 = 26.;
 const CHIP_STEP: f32 = 32.;
+/// The longest words a half-width chip holds.
+const CHIP_CHARS: usize = 16;
 const LABEL_W: f32 = 144.;
 const WAIT_LABEL_W: f32 = 160.;
 /// The layer's width with room for an arc's words beside the member column.
@@ -44,7 +48,7 @@ pub struct MemberNode {
     pub task: Option<String>,
     /// "31 steps · 204k tokens", once its task spent anything.
     pub spend: Option<String>,
-    pub doing: Doing,
+    pub state: MemberState,
     /// What it does, in a line.
     pub line: String,
     /// One or two words for a narrow row.
@@ -123,7 +127,7 @@ pub fn people(team: &Team, tasks: &[Task], agents: &BTreeMap<String, Subagent>) 
     for member in &team.members {
         let found = find_task(tasks, &member.task_id);
         let task = found.map(|(_, task)| task);
-        let doing = Doing::of(member, task, agents.get(&member.thread_id), ended);
+        let state = MemberState::of(member, task, agents.get(&member.thread_id), ended);
         let model = member
             .model
             .as_deref()
@@ -137,20 +141,20 @@ pub fn people(team: &Team, tasks: &[Task], agents: &BTreeMap<String, Subagent>) 
             number: found.map(|(number, _)| number),
             task: found.map(|(number, task)| task.numbered(number)),
             spend: task.and_then(Task::spend),
-            line: doing.line(task, tasks, ended, &member.thread_id),
-            word: doing.word(task),
-            narrow: narrow_line(&doing, task, tasks, team),
-            doing,
+            line: state.line(task, tasks, ended, &member.thread_id),
+            word: state.word(task),
+            narrow: narrow_line(&state, task, tasks, team),
+            state,
             one_line: false,
             rect: Rect::default(),
         };
         let given_again = task
             .and_then(|task| task.owner.as_ref())
             .is_some_and(|owner| owner.thread_id != member.thread_id);
-        match &node.doing {
-            Doing::Done => done.push(node),
-            Doing::Stopped => stopped.push(node),
-            Doing::Failed if given_again => failed_again.push(node),
+        match &node.state {
+            MemberState::Done => done.push(node),
+            MemberState::Stopped => stopped.push(node),
+            MemberState::Failed if given_again => failed_again.push(node),
             _ => active.push(node),
         }
     }
@@ -191,7 +195,12 @@ pub fn people(team: &Team, tasks: &[Task], agents: &BTreeMap<String, Subagent>) 
                 1 => role,
                 count => format!("{role} \u{00D7}{count}"),
             };
-            folds.push((TaskStatus::Done, text, names, CHIP_W));
+            // A long role takes the column's width rather than being cut.
+            let w = match text.chars().count() > CHIP_CHARS {
+                true => MEMBER_W,
+                false => CHIP_W,
+            };
+            folds.push((TaskStatus::Done, text, names, w));
         }
     } else {
         for mut node in done {
@@ -259,7 +268,7 @@ pub fn people(team: &Team, tasks: &[Task], agents: &BTreeMap<String, Subagent>) 
     let mut labels = Vec::new();
     for node in &members {
         let (tone, arrow, label) = lead_edge(node, tasks);
-        let asks = matches!(node.doing, Doing::Blocked) && arrow == Arrow::In;
+        let asks = matches!(node.state, MemberState::Blocked) && arrow == Arrow::In;
         edges.push(Edge::new(
             Ends::Lead(node.thread_id.clone()),
             across(lead, node.rect),
@@ -315,16 +324,16 @@ fn chip_name(node: &MemberNode) -> String {
 fn lead_edge(node: &MemberNode, tasks: &[Task]) -> (EdgeTone, Arrow, String) {
     let number = node.number.map_or_else(String::new, |n| format!(" #{n}"));
     let task = find_task(tasks, &node.task_id).map(|(_, task)| task);
-    match &node.doing {
-        Doing::Review { .. } => (EdgeTone::Accent, Arrow::In, format!("handed in{number}")),
-        Doing::Blocked => match task.and_then(|task| task.waits_on.as_ref()) {
+    match &node.state {
+        MemberState::Review { .. } => (EdgeTone::Accent, Arrow::In, format!("handed in{number}")),
+        MemberState::Blocked => match task.and_then(|task| task.waits_on.as_ref()) {
             Some(WaitsOn::Lead | WaitsOn::Message(_)) => {
                 (EdgeTone::Warning, Arrow::In, "asks the lead".into())
             }
             _ => (EdgeTone::Line, Arrow::Out, format!("gave{number}")),
         },
-        Doing::Done | Doing::Stopped => (EdgeTone::Faint, Arrow::None, String::new()),
-        Doing::Failed => (EdgeTone::Danger, Arrow::None, "failed".into()),
+        MemberState::Done | MemberState::Stopped => (EdgeTone::Faint, Arrow::None, String::new()),
+        MemberState::Failed => (EdgeTone::Danger, Arrow::None, "failed".into()),
         _ => {
             let reworks = task.map_or(0, |task| task.reworks);
             let label = match reworks {
@@ -394,8 +403,11 @@ fn waits(
 
 /// The lead's line: how many are at work, in review and blocked, or how the team ended.
 fn lead_line(team: &Team, tasks: &[Task]) -> String {
-    if team.ended().is_some() {
-        return team.progress_note();
+    match team.ended() {
+        Some(TeamEnd::Done) => return "done".into(),
+        Some(TeamEnd::Stopped) => return "stopped".into(),
+        Some(end) => return format!("ended \u{2014} {}", end.reason()),
+        None => {}
     }
     let count = |status| tasks.iter().filter(|task| task.status == status).count();
     let mut parts = vec![format!("{} at work", team.at_work())];
@@ -413,12 +425,12 @@ fn lead_line(team: &Team, tasks: &[Task]) -> String {
 
 /// The narrow row's second line: what a blocked member waits on, what a working one
 /// does, why a failed one failed, or what it spent.
-fn narrow_line(doing: &Doing, task: Option<&Task>, tasks: &[Task], team: &Team) -> String {
+fn narrow_line(state: &MemberState, task: Option<&Task>, tasks: &[Task], team: &Team) -> String {
     let note = task
         .map(|task| task.note.trim().to_owned())
         .unwrap_or_default();
-    match doing {
-        Doing::Blocked => {
+    match state {
+        MemberState::Blocked => {
             let on = task.and_then(|task| match &task.waits_on {
                 Some(WaitsOn::Task(id)) => find_task(tasks, id),
                 _ => None,
@@ -434,8 +446,8 @@ fn narrow_line(doing: &Doing, task: Option<&Task>, tasks: &[Task], team: &Team) 
                 _ => "blocked".into(),
             }
         }
-        Doing::Failed if !note.is_empty() => note,
-        Doing::Tool(_) | Doing::Given => doing.line(task, tasks, false, ""),
+        MemberState::Failed if !note.is_empty() => note,
+        MemberState::Tool(_) | MemberState::Given => state.line(task, tasks, false, ""),
         _ => task
             .and_then(Task::spend)
             .unwrap_or_else(|| plural(0, "step")),
