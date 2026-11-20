@@ -78,7 +78,7 @@ pub fn listing(
             .as_deref()
             .and_then(|installed| newer(&entry.version, installed)),
         installed,
-        unfit: entry.download_here().err(),
+        unfit: entry.unfit(),
         tier: tier(source, entry),
         source: source.name.clone(),
         kind: entry.kind,

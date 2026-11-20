@@ -61,14 +61,6 @@ impl Upstream {
             (1..=MAX_FILES).contains(&self.files.len()),
             "an upstream names 1 to {MAX_FILES} files"
         );
-        let total = self
-            .files
-            .iter()
-            .fold(0u64, |total, file| total.saturating_add(file.size));
-        ensure!(
-            total <= MAX_TOTAL_BYTES,
-            "an upstream names {total} bytes; at most {MAX_TOTAL_BYTES} are fetched for one item"
-        );
         let mut paths = BTreeSet::new();
         let mut targets = BTreeSet::new();
         for file in &self.files {
@@ -93,6 +85,20 @@ impl Upstream {
                 "an upstream file's size is not 1 to {MAX_FILE_BYTES} bytes"
             );
         }
+        Ok(())
+    }
+
+    /// Whether its files may be fetched: together within `MAX_TOTAL_BYTES`. Not part of
+    /// `check`, so one item over it is unfit alone instead of failing its whole list.
+    pub fn fits(&self) -> Result<()> {
+        let total = self
+            .files
+            .iter()
+            .fold(0u64, |total, file| total.saturating_add(file.size));
+        ensure!(
+            total <= MAX_TOTAL_BYTES,
+            "its files come to {total} bytes; at most {MAX_TOTAL_BYTES} are fetched for one item"
+        );
         Ok(())
     }
 
@@ -126,6 +132,7 @@ impl Upstream {
 /// Every file of `upstream`, fetched and checked, by its `to`.
 pub async fn fetch_all(upstream: &Upstream) -> Result<BTreeMap<String, Vec<u8>>> {
     upstream.check()?;
+    upstream.fits()?;
     let mut fetched = Vec::new();
     for file in &upstream.files {
         let url = format!("{HOST}/{}/{}/{}", upstream.repo, upstream.commit, file.path);

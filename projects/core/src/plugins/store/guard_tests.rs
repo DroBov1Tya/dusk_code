@@ -522,22 +522,34 @@ fn the_official_names_stay_taken_when_its_list_fails() {
     assert!(guard::shadow("release-notes", taken.iter().map(String::as_str)).is_some());
 }
 
-/// One item's pinned files are bounded together, before anything is fetched, so a list
-/// cannot make a review hold hundreds of megabytes.
-#[test]
-fn an_item_s_pinned_files_are_bounded_together() {
+/// One item's pinned files are bounded together: that item is unfit and is never
+/// fetched, and the rest of its list, signed or not, reads as before.
+#[tokio::test]
+async fn an_oversized_item_is_unfit_alone() {
     use super::upstream::{MAX_FILE_BYTES, MAX_TOTAL_BYTES};
     let files: Vec<String> = (0..=MAX_TOTAL_BYTES / MAX_FILE_BYTES)
         .map(|n| {
             format!(
-                r#"{{"path": "loose/{n}.md", "to": "loose/{n}.md", "sha256": "{SHA}", "size": {MAX_FILE_BYTES}}}"#
+                r#"{{"path": "big/{n}.md", "to": "big/{n}.md", "sha256": "{SHA}", "size": {MAX_FILE_BYTES}}}"#
             )
         })
         .collect();
-    let entry = pinned("loose", "skill").replace(
-        &format!(r#"[{{"path": "loose/SKILL.md", "to": "loose/SKILL.md", "sha256": "{SHA}", "size": 10}}]"#),
+    let big = pinned("big", "skill").replace(
+        &format!(
+            r#"[{{"path": "big/SKILL.md", "to": "big/SKILL.md", "sha256": "{SHA}", "size": 10}}]"#
+        ),
         &format!("[{}]", files.join(",")),
     );
-    let error = index::parse(list(1, &[entry]).as_bytes(), now()).unwrap_err();
+    let json = list(1, &[big, pinned("small", "skill")]);
+    let (key, signature) = signed(&json);
+    let index = index::verify(json.as_bytes(), &signature, &key, now()).unwrap();
+    assert_eq!(index.plugins.len(), 2);
+    let unfit = index.plugins[0].unfit().unwrap();
+    assert!(unfit.contains("at most"), "{unfit}");
+    // An item pinned upstream that fits is installable, with no package of its own.
+    assert_eq!(index.plugins[1].unfit(), None);
+    let error = super::upstream::fetch_all(index.plugins[0].upstream.as_ref().unwrap())
+        .await
+        .unwrap_err();
     assert!(format!("{error:#}").contains("at most"), "{error:#}");
 }

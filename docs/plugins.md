@@ -888,7 +888,8 @@ of a commit of its author's GitHub repository:
 `https://raw.githubusercontent.com/<repo>/<commit>/<path>`, without redirects, and checks
 all of them before writing any: a file of another size or hash, a file not named, a
 missing one or one that is not UTF-8 text refuses the install. At most 200 files of 4 MiB
-each and 32 MiB in all; `path` and `to` are plain relative paths. A pack's `pack.yml` is written by the core
+each and 32 MiB in all (an item over that cannot be installed; the rest of its list
+reads as before); `path` and `to` are plain relative paths. A pack's `pack.yml` is written by the core
 from the entry. The record keeps the item's author, license and the commit's address.
 Contents does not show such an item before it is installed (there is no package).
 
