@@ -207,11 +207,7 @@ fn section(text: &str, allowance: usize) -> String {
     // One line longer than the share has no whole line to end at. The note of a cut at a
     // line end is short, so only more than that is a line to cut.
     if out.len() > allowance + SECTION_NOTE / 2 {
-        let mut end = allowance;
-        while !out.is_char_boundary(end) {
-            end -= 1;
-        }
-        out.truncate(end);
+        out.truncate(out.floor_char_boundary(allowance));
         out.push_str("\n[cut; read this file alone with path]");
     }
     out

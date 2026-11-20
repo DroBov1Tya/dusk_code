@@ -3,7 +3,11 @@
 //! files, from the copy here or the checked package, and escapes what could hide text; a
 //! file that is not text is shown by its size only.
 
-use dusk_protocol::plugin::{Contents, FilePreview, Listing, PREVIEW_BYTES};
+use dusk_protocol::{
+    catalog::split_front_matter,
+    plugin::{Contents, FilePreview, Listing, PREVIEW_BYTES},
+    thread::short_size,
+};
 use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 
 use super::capsule::clip;
@@ -128,7 +132,7 @@ fn tree(contents: &Contents, chosen: Option<&str>, cx: &mut Context<Workspace>) 
             column = column.child(row(depth, format!("{folder}/"), None, cx).text_color(muted));
         }
         rows += 1;
-        let size = bytes(file.size);
+        let size = short_size(file.size);
         let picked = chosen == Some(file.path.as_str());
         let mut item = row(parents.len(), (*name).to_owned(), Some(size), cx)
             .id(SharedString::from(format!("contents-{index}")))
@@ -235,7 +239,7 @@ fn preview(opened: &Opened, width: f32, cx: &App) -> Div {
             frame.child(body).when(file.truncated, |frame| {
                 frame.child(div().meta().text_color(muted).child(format!(
                     "Only the first {} are shown.",
-                    bytes(PREVIEW_BYTES as u64)
+                    short_size(PREVIEW_BYTES as u64)
                 )))
             })
         }
@@ -244,24 +248,12 @@ fn preview(opened: &Opened, width: f32, cx: &App) -> Div {
 
 /// The `---` block a skill's file opens with, fences included, and the rest.
 fn front_matter(text: &str) -> (Option<&str>, &str) {
-    let Some(after) = text.strip_prefix("---\n") else {
-        return (None, text);
-    };
-    match after.find("\n---\n") {
-        Some(end) => {
-            let split = 4 + end + 5;
-            (Some(&text[..split - 1]), &text[split..])
+    match split_front_matter(text) {
+        Ok((_, body)) => {
+            let block = &text[..text.len() - body.len()];
+            (Some(block.trim_end_matches(['\r', '\n'])), body)
         }
-        None => (None, text),
-    }
-}
-
-/// A size in bytes, KiB or MiB.
-fn bytes(size: u64) -> String {
-    match size {
-        0..1024 => format!("{size} B"),
-        1024..1_048_576 => format!("{:.0} KiB", size as f64 / 1024.),
-        _ => format!("{:.1} MiB", size as f64 / 1_048_576.),
+        Err(_) => (None, text),
     }
 }
 

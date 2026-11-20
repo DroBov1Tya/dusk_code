@@ -4016,6 +4016,11 @@
         "name": {
           "description": "`server__tool`, the name its switch goes by.",
           "type": "string"
+        },
+        "short_name": {
+          "default": "",
+          "description": "The tool's own name on its server, made a plain line by the core, to show; `name`\nholds it changed to fit a model.\nEmpty from a core older than protocol 37.",
+          "type": "string"
         }
       },
       "required": [

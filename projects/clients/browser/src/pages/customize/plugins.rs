@@ -10,7 +10,7 @@ use leptos::prelude::*;
 
 /// The installed plugins; none, a way to their Workshop.
 #[component]
-pub fn Plugins(discover: RwSignal<bool>) -> impl IntoView {
+pub fn Plugins(discover: RwSignal<Option<bool>>) -> impl IntoView {
     let app = state();
     view! {
         <Show when=move || app.status.with(|s| s.as_ref().is_some_and(|s| !s.plugins.is_empty()))

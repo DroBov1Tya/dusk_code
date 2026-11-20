@@ -125,7 +125,7 @@ impl Upstream {
         for file in &self.files {
             hash.update(format!("\n{} {} {}", file.to, file.sha256, file.size).as_bytes());
         }
-        fetch::hex(&hash.finalize())
+        dusk_protocol::text::hex(&hash.finalize())
     }
 }
 
@@ -164,7 +164,7 @@ pub fn assemble(
             .remove(&file.path)
             .with_context(|| format!("{} is missing", file.path))?;
         ensure!(
-            body.len() as u64 == file.size && fetch::hex(&Sha256::digest(&body)) == file.sha256,
+            body.len() as u64 == file.size && dusk_protocol::text::sha256_hex(&body) == file.sha256,
             "{} is not the file the list pins",
             file.path
         );

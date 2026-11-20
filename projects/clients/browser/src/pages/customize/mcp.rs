@@ -14,7 +14,7 @@ use dusk_protocol::{
 use leptos::prelude::*;
 
 #[component]
-pub fn Mcp(discover: RwSignal<bool>) -> impl IntoView {
+pub fn Mcp(discover: RwSignal<Option<bool>>) -> impl IntoView {
     let servers = RwSignal::new(Vec::<McpInfo>::new());
     let loaded = RwSignal::new(false);
     let load = move || {

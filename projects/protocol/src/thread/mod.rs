@@ -35,8 +35,8 @@ pub use job::{JobInfo, JobResult, job_message};
 pub use link::{THREAD_LINK_PREFIX, links_in, thread_link, thread_of_link};
 pub use live::{LiveTurn, STALLED_AFTER_MS, Work, WorkKind, activity};
 pub use message::{
-    Compaction, LocalUnsent, Message, MessageRole, Part, Source, UndoPoint, has_pasted, plain,
-    sound_tag, source_tag, split, wrap,
+    Compaction, LocalUnsent, Message, MessageRole, Part, Source, UndoPoint, has_pasted, labelled,
+    plain, sound_tag, source_tag, split, wrap,
 };
 pub use name::{ARBITER_THREAD, agent_name, fnv1a, name_seed};
 pub use overview::{
@@ -48,15 +48,21 @@ pub use suggestion::{SUGGEST_NEXT_TOOL, SUGGESTION_CHARS, SuggestNext, Suggestio
 pub use summary::{Found, Thread};
 pub use task::{
     PLAN_PAGE_DONE, PlanCounts, PlanPage, Task, TaskItem, TaskOwner, TaskStatus, WaitsOn,
+    current_task,
 };
 pub use team::{
-    MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MAX_TEAM_MINUTES, MAX_TEAM_STEPS, MAX_TEAM_TOKENS, Team,
-    TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed,
+    BUDGET_NEAR, BudgetPart, MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MAX_TEAM_MINUTES, MAX_TEAM_STEPS,
+    MAX_TEAM_TOKENS, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed,
 };
-pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, short_count};
+pub use tokens::{
+    AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, plural, short_count, short_size,
+};
 pub use transcript::{
     AgentState, Applied, ChatLog, DETAIL_KEYS, FAILED_PREFIXES, MAX_MARK_CHARS, Note, Retry,
     RetryRow, SHOWN_CHARS, Span, Subagent, Tone, Tool, ToolState, TurnSpend, clip, marks, note,
     retry_row, stored_failure, tool_detail, turn_spend, unmarked,
 };
-pub use turn::{Turn, TurnFailure, TurnStatus, TurnWait, duration_words};
+pub use turn::{
+    Turn, TurnFailure, TurnStatus, TurnWait, age_words, ago_words, clock_words, duration_words,
+    duration_words_secs,
+};

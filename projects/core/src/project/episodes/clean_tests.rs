@@ -5,7 +5,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::message::plain::hidden;
+use dusk_protocol::text::is_hidden;
 
 const FIELDS: [Field; 6] = [
     Field::Tool,
@@ -289,7 +289,7 @@ fn fits(text: &str, field: Field) -> bool {
         && text.trim() == text
         && !text
             .chars()
-            .any(|c| c.is_control() || hidden(c) || matches!(c, '[' | ']' | '{' | '}' | '"'))
+            .any(|c| c.is_control() || is_hidden(c) || matches!(c, '[' | ']' | '{' | '}' | '"'))
 }
 
 /// Pieces a rule looks for, to be put side by side in any order.

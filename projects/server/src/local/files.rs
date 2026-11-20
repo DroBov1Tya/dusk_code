@@ -13,6 +13,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, ensure};
 use dusk_core::app::{Paths, command_writable_folders};
+use dusk_protocol::text::hex;
 use nix::libc::{O_DIRECTORY, O_NOFOLLOW, O_NONBLOCK};
 use sha2::{Digest, Sha256};
 use tracing::warn;
@@ -325,10 +326,6 @@ pub fn read_key(files: &RunFiles) -> Result<[u8; KEY_LEN]> {
         .read_to_end(&mut text)
         .context("cannot read the core key")?;
     unhex(&text).ok_or_else(|| anyhow!("the core key is malformed"))
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn unhex(text: &[u8]) -> Option<[u8; KEY_LEN]> {

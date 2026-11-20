@@ -6,15 +6,22 @@
 //! still use them, so they stay as the user's own. Only `DROPPED` files go.
 
 use std::{
-    fs::{self, OpenOptions},
-    io::{ErrorKind, Write},
+    fs,
+    io::ErrorKind,
     path::{Component, Path},
 };
 
 use anyhow::{Context, Result, ensure};
-use sha2::{Digest, Sha256};
+use dusk_protocol::text::sha256_hex;
 
-use crate::{init::create_private_dir, init::paths::Paths, release::resources};
+use crate::{
+    init::{
+        create_private_dir,
+        files::{remove_empty_parents, write_private, write_private_program},
+        paths::Paths,
+    },
+    release::resources,
+};
 
 /// Kept edited shipped files by their hash in older builds.
 pub const LOCK_FILE: &str = "builtin.lock";
@@ -271,7 +278,7 @@ impl Synced {
                     write(&target, &contents)?;
                     synced.written.push(path);
                 }
-                Some(disk) if hash(&disk) != hash(&contents) => {
+                Some(disk) if sha256_hex(&disk) != sha256_hex(&contents) => {
                     write(&target, &contents)?;
                     synced.updated.push(path);
                 }
@@ -304,7 +311,7 @@ impl Synced {
                 };
                 let metadata = fs::symlink_metadata(&file)?;
                 let contents = crate::init::files::read_regular(&file, metadata.len())?;
-                if hash(&contents) != shipped_hash {
+                if sha256_hex(&contents) != shipped_hash {
                     continue;
                 }
                 fs::remove_file(&file).context("cannot remove an old shipped file")?;
@@ -315,13 +322,7 @@ impl Synced {
                         .into_owned(),
                 );
                 // A folder that still holds anything stays.
-                let mut folder = file.parent();
-                while let Some(parent) = folder.filter(|parent| *parent != root) {
-                    if fs::remove_dir(parent).is_err() {
-                        break;
-                    }
-                    folder = parent.parent();
-                }
+                remove_empty_parents(&file, |parent| parent == root);
             }
         }
         Ok(())
@@ -382,29 +383,11 @@ fn write(target: &Path, contents: &[u8]) -> Result<()> {
     if let Some(parent) = target.parent() {
         create_private_dir(parent)?;
     }
-    let script = contents.starts_with(b"#!");
-    let temporary = target.with_file_name(format!(".duskcode-writing-{}", uuid::Uuid::now_v7()));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(if script { 0o700 } else { 0o600 });
+    if contents.starts_with(b"#!") {
+        write_private_program(target, contents)
+    } else {
+        write_private(target, contents)
     }
-    let mut file = options
-        .open(&temporary)
-        .with_context(|| format!("cannot write {}", target.display()))?;
-    file.write_all(contents)
-        .and_then(|()| file.sync_all())
-        .with_context(|| format!("cannot write {}", target.display()))?;
-    fs::rename(&temporary, target).with_context(|| format!("cannot replace {}", target.display()))
-}
-
-fn hash(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[cfg(test)]
@@ -517,7 +500,7 @@ mod tests {
         fs::write(skill.join("edited.py"), "user changes").unwrap();
         fs::write(skill.join("SKILL.md"), "the skill").unwrap();
         fs::write(moved.join("old.py"), shipped).unwrap();
-        let digest = hash(shipped);
+        let digest = sha256_hex(shipped);
         let mut dropped = vec![
             ("skills/legacy/old.py", digest.as_str()),
             ("skills/legacy/edited.py", digest.as_str()),

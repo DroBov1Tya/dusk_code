@@ -14,7 +14,7 @@ use crate::init::paths::Paths;
 
 use super::{
     MAX_MANIFEST_BYTES, MAX_TRANSACTION_BYTES, PENDING_RESTORE, VERSION,
-    files::{Temporary, private_file, read_bounded, sync_directory},
+    files::{Temporary, read_bounded, sync_directory},
     manifest::{Manifest, validate_manifest},
     restore::{preflight, remove_empty_destination},
     restore_guard::{
@@ -22,6 +22,7 @@ use super::{
     },
     verify::{inspect_tree_path, verify_tree},
 };
+use crate::init::files::new_private_file;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,7 +60,7 @@ pub fn publish_transaction(
         ("transaction.json", json.as_slice()),
         ("manifest.json", manifest),
     ] {
-        let mut file = private_file(&journal.path.join(name))?;
+        let mut file = new_private_file(&journal.path.join(name))?;
         file.write_all(contents)?;
         file.sync_all()?;
     }

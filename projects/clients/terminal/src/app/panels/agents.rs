@@ -99,12 +99,12 @@ impl SubagentView {
     }
 
     /// How long work was observed, frozen on completion or loss of the stream.
-    pub fn elapsed_ms(&self) -> u64 {
+    pub fn elapsed_ms(&self) -> i64 {
         let end = self
             .finished_at
             .or(self.unavailable_at)
             .unwrap_or_else(now_ms);
-        end.saturating_sub(self.started_at).max(0) as u64
+        end.saturating_sub(self.started_at).max(0)
     }
 
     fn record_output(&mut self, text: &str) {

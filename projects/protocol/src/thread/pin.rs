@@ -3,7 +3,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::thread::{Line, MessageRole, Part, block::is_plain, split, unmarked};
+use crate::{
+    text::is_plain,
+    thread::{Line, MessageRole, Part, split, unmarked},
+};
 
 /// The most pins a thread keeps.
 pub const MAX_PINS: usize = 8;

@@ -326,8 +326,7 @@ pub fn rows(mirrors: &[Mirror], fetched: &[Fetched], failed: &[SourceFailure]) -
 
 /// The first 16 hex digits of the SHA-256 of a key, to tell keys apart at a glance.
 fn fingerprint(key: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hex = super::fetch::hex(&Sha256::digest(key.as_bytes()));
+    let mut hex = dusk_protocol::text::sha256_hex(key.as_bytes());
     hex.truncate(16);
     hex
 }
