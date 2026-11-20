@@ -548,14 +548,13 @@ fn check_picture(picture: &Cover, max: u64) -> Result<()> {
 }
 
 /// Not empty, not padded, at most `max` characters, and none that is a control or one
-/// that turns the text around (bidi overrides and isolates), which could make a caption
-/// or a name read as something else.
+/// that hides or turns the text around, which could make a caption or a name read as
+/// something else (`dusk_protocol::text::is_plain_line`).
 fn is_line(text: &str, max: usize) -> bool {
-    let bidi = |c: char| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
     !text.trim().is_empty()
         && text.trim() == text
         && text.chars().count() <= max
-        && !text.chars().any(|c| c.is_control() || bidi(c))
+        && dusk_protocol::text::is_plain_line(text)
 }
 
 /// The type of a cover or screenshot, by its extension.

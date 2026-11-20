@@ -23,7 +23,7 @@ impl<const MAX: usize> Line<MAX> {
             "the text starting {quoted:?} is over {MAX} characters"
         );
         ensure!(
-            text.chars().all(is_plain),
+            crate::text::is_plain_line(text),
             "the text starting {quoted:?} must be one line without control characters"
         );
         Ok(Self(text.to_owned()))
@@ -32,13 +32,6 @@ impl<const MAX: usize> Line<MAX> {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-}
-
-/// Neither a control character, a line break, nor a character that reorders the text
-/// around it, which could make a label read as something else.
-pub(crate) fn is_plain(c: char) -> bool {
-    !c.is_control()
-        && !matches!(c, '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }
 
 impl<const MAX: usize> std::fmt::Display for Line<MAX> {

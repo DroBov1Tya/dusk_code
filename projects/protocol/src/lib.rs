@@ -16,7 +16,7 @@
 //! - `project`: projects, their git state, diffs and files;
 //! - `plugin`: what a plugin may do, where its parts show and the views it draws;
 //! - `release`, `system`: releases and installs, and what the process takes;
-//! - `text`: what every part does to text the same way: hex, cuts.
+//! - `text`: what every part does to text the same way: hex, cuts, hidden characters.
 //!
 //! A new type goes into the domain it belongs to, in a file of its own when it has its own
 //! reason to change; a new domain needs a reason none of these has.

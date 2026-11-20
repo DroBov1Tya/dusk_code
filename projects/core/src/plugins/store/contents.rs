@@ -15,7 +15,10 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use dusk_protocol::plugin::{Contents, FilePreview, FileRef, LOCAL_SOURCE, PREVIEW_BYTES};
+use dusk_protocol::{
+    plugin::{Contents, FilePreview, FileRef, LOCAL_SOURCE, PREVIEW_BYTES},
+    text::is_hidden,
+};
 use parking_lot::Mutex;
 
 use super::{
@@ -294,8 +297,9 @@ fn is_text(head: &[u8], whole: bool) -> bool {
     }
 }
 
-/// The first `PREVIEW_BYTES` of `bytes` as text a client draws as it is: control and bidi
-/// characters, which could hide text or turn it around, shown as escapes; line breaks
+/// The first `PREVIEW_BYTES` of `bytes` as text a client draws as it is: control and
+/// hidden characters (`dusk_protocol::text::is_hidden`), which could hide text or turn it
+/// around, shown as escapes; line breaks
 /// and tabs kept, carriage returns dropped.
 pub fn preview(bytes: &[u8], truncated: bool) -> Result<FilePreview> {
     let head = &bytes[..bytes.len().min(PREVIEW_BYTES)];
@@ -306,13 +310,12 @@ pub fn preview(bytes: &[u8], truncated: bool) -> Result<FilePreview> {
         }
         Err(_) => bail!("not UTF-8 text"),
     };
-    let bidi = |c: char| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}' | '\u{061c}');
     let mut shown = String::with_capacity(text.len());
     for c in text.chars() {
         match c {
             '\n' | '\t' => shown.push(c),
             '\r' => {}
-            c if c.is_control() || bidi(c) => shown.extend(c.escape_unicode()),
+            c if c.is_control() || is_hidden(c) => shown.extend(c.escape_unicode()),
             c => shown.push(c),
         }
     }
