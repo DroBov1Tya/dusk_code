@@ -17,11 +17,12 @@ use crate::{init::paths::Paths, state::State};
 
 use super::{
     BACKUPS, FORMAT, MAGIC, MAX_MANIFEST_BYTES, VERSION,
-    files::{Temporary, private_dir, private_file, sync_directory},
+    files::{Temporary, sync_directory},
     inventory::{Inventory, collect},
     manifest::{Kind, Manifest, validate_manifest},
     verify::{directory_tree, inspect_tree_path},
 };
+use crate::init::files::{new_private_dir, new_private_file};
 
 /// Export only the standard database. A custom database needs an explicit migration
 /// policy; silently backing up the unused default would lose history on the new machine.
@@ -68,7 +69,7 @@ pub async fn export(
     let snapshot = temporary.path.join("state.db");
     // SQLite permits an empty destination. Pre-create it with 0600 rather than allowing
     // SQLite to choose permissions, and keep it behind the private staging directory.
-    private_file(&snapshot)?.sync_all()?;
+    new_private_file(&snapshot)?.sync_all()?;
     let snapshot_name = snapshot.to_str().context("snapshot path is not UTF-8")?;
     sqlx::query("VACUUM INTO ?")
         .bind(snapshot_name)
@@ -118,7 +119,7 @@ pub fn export_files(
     temporary: Temporary,
 ) -> Result<PathBuf> {
     let data = temporary.path.join("data");
-    private_dir(&data)?;
+    new_private_dir(&data)?;
     let mut inventory = Inventory::default();
     collect(
         paths.config_root(),
@@ -151,7 +152,7 @@ pub fn export_files(
         "archive manifest is too large"
     );
     let archive_path = temporary.path.join("archive");
-    let mut output = BufWriter::new(private_file(&archive_path)?);
+    let mut output = BufWriter::new(new_private_file(&archive_path)?);
     output.write_all(MAGIC)?;
     output.write_all(&(json.len() as u64).to_le_bytes())?;
     output.write_all(&json)?;

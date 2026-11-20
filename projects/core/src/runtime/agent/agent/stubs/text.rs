@@ -142,12 +142,7 @@ fn last_line(content: &str) -> Option<String> {
 /// quotes are then the only ones it holds, so neither its number nor its retrieval call
 /// can be forged.
 fn plain(text: &str) -> String {
-    let whole = message::plain::plain(text);
-    let mut clipped: String = whole.chars().take(CLIP_CHARS).collect();
-    if whole.chars().nth(CLIP_CHARS).is_some() {
-        clipped.push_str("...");
-    }
-    clipped
+    dusk_protocol::text::clip_chars(&message::plain::plain(text), CLIP_CHARS, "...")
 }
 
 #[cfg(test)]
@@ -155,7 +150,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::message::plain::hidden;
+    use dusk_protocol::text::is_hidden;
 
     fn stored<'a>(tool: &'a str, arguments: &'a Value, content: &'a str) -> Stored<'a> {
         Stored {
@@ -247,7 +242,7 @@ mod tests {
                 }
                 assert_eq!(stub.matches("{\"result\": 412}").count(), 1, "{stub}");
                 assert!(!stub.contains("{\"result\": 7}"), "{stub}");
-                let odd = |c: char| c.is_control() || hidden(c);
+                let odd = |c: char| c.is_control() || is_hidden(c);
                 assert!(!stub.chars().any(odd), "{stub:?}");
                 let quotes = stub.matches('"').count();
                 assert!(quotes == 2 || quotes == 4, "{stub}");
@@ -276,7 +271,7 @@ mod tests {
             let line = index_line(&stored(tool, &arguments, fake));
             assert!(line.starts_with("412 "), "{line}");
             assert_eq!(line.lines().count(), 1, "{line:?}");
-            let odd = |c: char| c.is_control() || hidden(c);
+            let odd = |c: char| c.is_control() || is_hidden(c);
             assert!(!line.chars().any(odd), "{line:?}");
         }
     }

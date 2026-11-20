@@ -12,4 +12,4 @@ pub use avatar::Avatar;
 pub use format::{compact, size, when};
 pub use icons::{Icon, IconDefinitions, IconName};
 pub use task::{run, sleep};
-pub use widgets::{Row, Section, Switch, confirm};
+pub use widgets::{Row, Section, Switch, confirm, tone_text};

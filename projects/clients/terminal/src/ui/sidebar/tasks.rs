@@ -1,6 +1,6 @@
 //! The tasks still open, each folded to its name and progress or unfolded to its steps.
 
-use dusk_protocol::thread::Task;
+use dusk_protocol::thread::{Task, TaskCard, clock_words, task_card};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -14,10 +14,10 @@ use super::{
     section::{GAUGE, PAD, fill, ruled, scroll_limit, section},
 };
 use crate::ui::{
-    text::format::format_duration,
+    text::{format::printable, wrap},
     theme::{
         ACCENT, DEEP, DONE, DOT, FOLDED, HAIRLINE, ON, POSITIVE, TEXT, TEXT_SOFT, UNFOLDED, bold,
-        fg,
+        fg, tone_fg,
     },
 };
 use dusk_protocol::system::now_ms;
@@ -35,7 +35,13 @@ impl Sidebar<'_> {
                 rows.push((Line::default(), None));
             }
             let unfolded = self.app.unfolded_tasks.contains(&task.task_id);
-            for line in task_lines(task, unfolded, width, now) {
+            let card = unfolded
+                .then(|| task_card(&self.app.tasks, &task.task_id))
+                .flatten();
+            for line in task_lines(task, unfolded, width, now).into_iter().chain(
+                card.map(|card| card_lines(&card, width))
+                    .unwrap_or_default(),
+            ) {
                 rows.push((line, Some(task.task_id.clone())));
             }
         }
@@ -84,6 +90,27 @@ impl Sidebar<'_> {
     }
 }
 
+/// What the plan holds of an unfolded task beyond its steps: its status, role and model,
+/// its member, and each field of its card wrapped to the width. Model text: plain text.
+fn card_lines(card: &TaskCard, width: usize) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(Span::styled(
+        fill(&card.head, width),
+        fg(tone_fg(card.status.tone())),
+    ))];
+    let owner = card
+        .owner
+        .as_ref()
+        .map(|owner| ("Member", owner.name.clone()));
+    for (label, value) in owner.into_iter().chain(card.fields.iter().cloned()) {
+        let spans = vec![
+            Span::styled(format!("{label}: "), fg(TEXT_SOFT)),
+            Span::styled(printable(&value), fg(TEXT)),
+        ];
+        lines.extend(wrap::words(spans, width, 2).into_iter().map(Line::from));
+    }
+    lines
+}
+
 fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'static>> {
     let finished = task.items.iter().filter(|item| item.done).count();
     let count = format!(" {finished}/{}", task.items.len());
@@ -120,10 +147,7 @@ fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'
             .started_at
             .map(|start| {
                 let end = item.finished_at.unwrap_or(now);
-                format!(
-                    " {}",
-                    format_duration(end.saturating_sub(start).max(0) as u64)
-                )
+                format!(" {}", clock_words(end.saturating_sub(start)))
             })
             .unwrap_or_default();
         lines.push(Line::from(vec![

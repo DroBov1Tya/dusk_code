@@ -3,10 +3,13 @@
 
 use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::thread::{
-    LogEntry, LogKind, Overview, PlanCounts, TaskStatus, Team, TeamStatus, ThreadTokens,
+    BudgetPart, LogEntry, LogKind, Overview, PlanCounts, Task, Team, ThreadTokens,
 };
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName, button::Button},
+    component::{
+        ActiveTheme, Icon, IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
     *,
 };
 
@@ -26,19 +29,18 @@ pub enum Form {
 
 /// The log lines the column shows; the page shows all the Overview has.
 const NARROW_LOG: usize = 8;
-/// A budget part this used warns.
-const NEAR: f32 = 0.8;
 
 /// Every section the chat has something for, in order.
 pub fn all(ws: &Workspace, form: Form, cx: &mut Context<Workspace>) -> Vec<Div> {
     let chat = ws.shown_chat();
     let shown = ws.overview.of(ws.shown.as_deref());
     let overview = shown.and_then(|shown| shown.overview.as_ref());
+    let tasks = chat.map_or(&[][..], |chat| chat.tasks.as_slice());
     [
         shown.and_then(|shown| progress(shown, form, cx)),
         shown
             .and_then(|shown| shown.team.as_ref())
-            .and_then(|team| members(team, form, cx)),
+            .and_then(|team| members(team, tasks, form, cx)),
         chat.and_then(|chat| chat.usage)
             .and_then(|usage| tokens(&usage, shown.and_then(|s| s.plan), form, cx)),
         ws.context.is_some().then(|| context_section(ws, form, cx)),
@@ -111,26 +113,19 @@ fn mono(text: String) -> Div {
     div().small().font_family("Menlo").child(text)
 }
 
-fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
-    let counts = shown.plan.filter(|counts| total(*counts) > 0)?;
+fn progress(shown: &Shown, form: Form, cx: &mut Context<Workspace>) -> Option<Div> {
+    let counts = shown.plan.filter(|counts| counts.total() > 0)?;
     let theme = cx.theme();
-    let all = total(counts);
-    let running = counts.claimed + counts.running;
-    let aside = shown.team.as_ref().map(|team| {
-        let state = match team.status {
-            TeamStatus::Running => "running",
-            TeamStatus::Ended(_) => "ended",
-        };
-        div().child(format!("{state} \u{00B7} {} min", team.used.minutes))
-    });
+    let all = counts.total();
+    let running = counts.at_work();
+    let aside = shown
+        .team
+        .as_ref()
+        .map(|team| div().child(team.progress_note()));
     // A segment a status, as wide as its share, in the order done, at work, blocked, the
     // rest: the bar stays the same size whether the plan has 3 tasks or 300.
-    let parts = [
-        (counts.done, theme.success),
-        (running + counts.review, theme.primary),
-        (counts.blocked + counts.failed, theme.warning),
-        (counts.open, theme.border),
-    ];
+    let colors = [theme.success, theme.primary, theme.warning, theme.border];
+    let parts = counts.shares().into_iter().zip(colors);
     let segments = div()
         .flex()
         .flex_row()
@@ -138,19 +133,14 @@ fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
         .gap(px(2.))
         .my_3()
         .overflow_hidden()
-        .children(
-            parts
-                .into_iter()
-                .filter(|(count, _)| *count > 0)
-                .map(|(count, color)| {
-                    div()
-                        .w(relative(count as f32 / all as f32))
-                        .min_w(px(3.))
-                        .h(px(6.))
-                        .rounded_full()
-                        .bg(color)
-                }),
-        );
+        .children(parts.filter(|(count, _)| *count > 0).map(|(count, color)| {
+            div()
+                .w(relative(count as f32 / all as f32))
+                .min_w(px(3.))
+                .h(px(6.))
+                .rounded_full()
+                .bg(color)
+        }));
     let mut body = div()
         .flex()
         .flex_col()
@@ -161,52 +151,49 @@ fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
         ]))
         .child(segments);
     if let Some(team) = &shown.team {
-        let (budget, used) = (team.budget, team.used);
-        body = body
-            .child(budget_row(
-                "Steps",
-                used.steps.into(),
-                budget.steps().into(),
-                "",
-                cx,
-            ))
-            .child(budget_row("Tokens", used.tokens, budget.tokens(), "", cx))
-            .child(budget_row(
-                "Time",
-                used.minutes.into(),
-                budget.minutes().into(),
-                " min",
-                cx,
-            ));
+        body = body.children(team.budget_parts().map(|part| budget_row(part, cx)));
+        // Only a running team can be stopped or given more.
+        if team.ended().is_none() {
+            body = body.child(steer(team, cx));
+        }
     }
     Some(frame(form, "Progress", aside, body, cx))
 }
 
-fn total(counts: PlanCounts) -> u32 {
-    counts.open
-        + counts.claimed
-        + counts.running
-        + counts.blocked
-        + counts.review
-        + counts.done
-        + counts.failed
+/// Edit budget and Stop team, under the budget they act on.
+fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
+    let team = team.clone();
+    div()
+        .flex()
+        .flex_row()
+        .justify_end()
+        .gap_2()
+        .pt_2()
+        .child(
+            Button::new("team-budget")
+                .small()
+                .ghost()
+                .label("Edit budget")
+                .on_click(
+                    cx.listener(move |ws, _, window, cx| ws.ask_team_budget(&team, window, cx)),
+                ),
+        )
+        .child(
+            Button::new("team-stop")
+                .small()
+                .ghost()
+                .label("Stop team")
+                .on_click(cx.listener(|ws, _, _, cx| ws.ask_stop_team(cx))),
+        )
 }
 
 /// One part of the team's budget: its name, a thin bar, and "used of all".
-fn budget_row(name: &'static str, used: u64, all: u64, unit: &str, cx: &App) -> Div {
+fn budget_row(part: BudgetPart, cx: &App) -> Div {
     let theme = cx.theme();
-    let share = (used as f32 / all.max(1) as f32).min(1.);
-    let fill = if share >= NEAR {
+    let fill = if part.near() {
         theme.warning
     } else {
         theme.muted_foreground
-    };
-    let amount = |value: u64| {
-        if unit.is_empty() {
-            widgets::short(value)
-        } else {
-            value.to_string()
-        }
     };
     div()
         .flex()
@@ -216,69 +203,74 @@ fn budget_row(name: &'static str, used: u64, all: u64, unit: &str, cx: &App) -> 
         .h(px(24.))
         .meta()
         .text_color(theme.muted_foreground)
-        .child(div().w(px(64.)).child(name))
+        .child(div().w(px(64.)).child(part.name))
         .child(
             div()
                 .flex_1()
                 .h(px(4.))
                 .rounded_full()
                 .bg(theme.border)
-                .child(div().h_full().w(relative(share)).rounded_full().bg(fill)),
+                .child(
+                    div()
+                        .h_full()
+                        .w(relative(part.share()))
+                        .rounded_full()
+                        .bg(fill),
+                ),
         )
-        .child(div().w(px(96.)).text_right().child(format!(
-            "{} of {}{unit}",
-            amount(used),
-            amount(all)
-        )))
+        .child(div().w(px(96.)).text_right().child(part.text()))
 }
 
-fn members(team: &Team, form: Form, cx: &App) -> Option<Div> {
+fn members(team: &Team, tasks: &[Task], form: Form, cx: &mut Context<Workspace>) -> Option<Div> {
     if team.members.is_empty() {
         return None;
     }
-    let theme = cx.theme();
-    let at_work = team
-        .members
-        .iter()
-        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
-        .count();
+    let muted = cx.theme().muted_foreground;
     let mut body = div().flex().flex_col();
-    for member in &team.members {
-        let (word, color) = match member.status {
-            TaskStatus::Open | TaskStatus::Claimed => ("waits", theme.muted_foreground),
-            TaskStatus::Running => ("running", theme.primary),
-            TaskStatus::Blocked => ("blocked", theme.warning),
-            TaskStatus::Review => ("in review", theme.primary),
-            TaskStatus::Done => ("done", theme.success),
-            TaskStatus::Failed => ("failed", theme.danger),
-        };
+    for (index, member) in team.member_rows(tasks).into_iter().enumerate() {
+        let color = widgets::tone(member.status.tone(), cx);
+        let thread_id = member.thread_id.clone();
+        // A click opens its chat, as a subagent's opens from the agents window.
         body = body.child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .h(px(36.))
-                .small()
-                .child(widgets::icon(IconName::Bot, color))
+            widgets::row(("team-member", index), false, cx)
+                .h(px(48.))
+                .mx_0()
+                .child(widgets::icon(IconName::Bot, color).flex_none())
                 .child(
                     div()
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(member.name.clone()),
-                )
-                .child(
-                    div()
+                        .flex()
+                        .flex_col()
                         .flex_1()
                         .min_w_0()
-                        .truncate()
-                        .meta()
-                        .text_color(theme.muted_foreground)
-                        .child(member.role.clone().unwrap_or_else(|| "general".into())),
+                        .child(
+                            div()
+                                .small()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(member.name.clone()),
+                        )
+                        .child(
+                            div()
+                                .meta()
+                                .text_color(muted)
+                                .truncate()
+                                .child(member.line()),
+                        ),
                 )
-                .child(div().meta().text_color(color).child(word)),
+                .child(
+                    div()
+                        .flex_none()
+                        .meta()
+                        .text_color(color)
+                        .child(member.status.member_word()),
+                )
+                .on_click(cx.listener(move |ws, _, _, cx| ws.open_agent_chat(&thread_id, cx))),
         );
     }
-    let aside = div().child(format!("{at_work} of {} at work", team.members.len()));
+    let aside = div().child(format!(
+        "{} of {} at work",
+        team.at_work(),
+        team.members.len()
+    ));
     Some(frame(form, "Members", Some(aside), body, cx))
 }
 
@@ -286,9 +278,9 @@ fn tokens(usage: &ThreadTokens, plan: Option<PlanCounts>, form: Form, cx: &App) 
     if usage.model_calls == 0 {
         return None;
     }
-    let spent = usage.spent.prompt_tokens + usage.spent.completion_tokens;
-    let cached = usage.spent.cached_prompt_tokens * 100 / usage.spent.prompt_tokens.max(1);
-    let calls = widgets::count(usage.model_calls as usize, "call");
+    let spent = usage.spent_tokens();
+    let cached = usage.cached_percent();
+    let calls = widgets::count(usage.model_calls, "call");
     let aside = match usage.cost() {
         Some(cost) => format!("{calls} \u{00B7} {cost}"),
         None => calls,
@@ -297,12 +289,8 @@ fn tokens(usage: &ThreadTokens, plan: Option<PlanCounts>, form: Form, cx: &App) 
         figure(widgets::short(spent), "spent", cx),
         figure(format!("{cached}%"), "from cache", cx),
     ];
-    if let Some(done) = plan.map(|plan| plan.done).filter(|done| *done > 0) {
-        items.push(figure(
-            widgets::short(spent / u64::from(done)),
-            "per task done",
-            cx,
-        ));
+    if let Some(per_task) = plan.and_then(|plan| usage.per_task(plan.done)) {
+        items.push(figure(widgets::short(per_task), "per task done", cx));
     }
     Some(frame(
         form,
@@ -330,7 +318,7 @@ fn changes(overview: &Overview, form: Form, cx: &App) -> Option<Div> {
         .flex()
         .flex_row()
         .gap_1()
-        .child(widgets::count(changes.files as usize, "file"))
+        .child(widgets::count(changes.files, "file"))
         .child(div().text_color(ok).child(format!("+{}", changes.added)))
         .child(
             div()
@@ -353,7 +341,7 @@ fn changes(overview: &Overview, form: Form, cx: &App) -> Option<Div> {
             ],
         ));
     }
-    let more = (changes.files as usize).saturating_sub(changes.newest.len());
+    let more = changes.more();
     if more > 0 {
         body = body.child(row(
             div()
@@ -372,11 +360,7 @@ fn activity(overview: &Overview, form: Form, cx: &App) -> Option<Div> {
         return None;
     }
     let muted = cx.theme().muted_foreground;
-    let aside = format!(
-        "{} \u{00B7} {} asked",
-        widgets::count(activity.tool_runs as usize, "tool run"),
-        widgets::count(activity.agents_asked as usize, "agent"),
-    );
+    let aside = activity.summary();
     let mut body = div().flex().flex_col();
     for tool in &activity.by_tool {
         body = body.child(row(

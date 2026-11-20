@@ -74,7 +74,11 @@ pub fn render(
         };
         let description = match &server.state {
             McpState::Failed(error) => error.clone(),
-            _ => server.target.clone(),
+            // A server the Workshop added says where from, beside where it goes.
+            _ => match &server.added_from {
+                Some(from) => format!("{} \u{b7} {}", server.target, from.label()),
+                None => server.target.clone(),
+            },
         };
         let name = server.name.clone();
         let (restart, sign_in, open) = (name.clone(), name.clone(), name.clone());

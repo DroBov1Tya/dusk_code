@@ -4,12 +4,14 @@
 //! - `events`: what the core sends, folded into that state;
 //! - `render`: the window drawn from it;
 //! - `keys`: the shortcuts and what Escape closes;
+//! - `seen`: telling the core a chat was read while it is shown;
 //! - `toast`: short notes over any page that go away on their own.
 
 mod events;
 pub mod keys;
 mod new;
 mod render;
+mod seen;
 mod toast;
 
 use std::{
@@ -50,6 +52,8 @@ pub enum Center {
     Schedules,
     /// How the shown chat's work stands, as a page.
     Overview,
+    /// The team that runs the shown chat's plan, as a graph.
+    Team,
 }
 
 /// The modules of the right column, in their default order top to bottom.
@@ -59,6 +63,8 @@ pub enum Right {
     /// How the shown chat's work stands: plan, team, tokens, context, changes, activity
     /// and its log.
     Overview,
+    /// The team that runs the shown chat's plan, in rows.
+    Team,
     Screenshots,
     Git,
     Files,
@@ -72,9 +78,10 @@ pub enum Right {
 }
 
 impl Right {
-    pub const ALL: [Right; 10] = [
+    pub const ALL: [Right; 11] = [
         Right::Arbiter,
         Right::Overview,
+        Right::Team,
         Right::Screenshots,
         Right::Git,
         Right::Files,
@@ -90,6 +97,7 @@ impl Right {
         match self {
             Self::Arbiter => "arbiter",
             Self::Overview => "overview",
+            Self::Team => "team",
             Self::Screenshots => "screenshots",
             Self::Git => "git",
             Self::Files => "files",
@@ -229,6 +237,8 @@ pub struct Workspace {
     pub expanded: HashSet<String>,
     pub context: Option<ContextReport>,
     pub context_load: crate::columns::inspector::context::ContextLoad,
+    /// What the Team page keeps of its own.
+    pub team_page: crate::pages::team::TeamPage,
     /// The core's answers the Overview draws.
     pub overview: crate::columns::inspector::overview::Shown,
     /// The plan strip and the views tab over the composer.

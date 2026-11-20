@@ -6,11 +6,11 @@ use crate::{
     api,
     link::Conn,
     state::state,
-    ui::{Icon, IconName, compact, run, sleep},
+    ui::{Icon, IconName, compact, confirm, run, sleep, tone_text},
 };
 use dusk_protocol::thread::{
-    ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG, Overview, PlanCounts, TaskStatus,
-    Team, TeamStatus, ThreadTokens,
+    BUDGET_FIELDS, BudgetPart, ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG,
+    Overview, PlanCounts, Task, Team, TeamBudget, ThreadTokens, plural,
 };
 use leptos::prelude::*;
 
@@ -36,6 +36,14 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
     let more = RwSignal::new(false);
     let asked_at = StoredValue::new(f64::MIN);
     let waiting = StoredValue::new(false);
+    let form = BudgetForm::new();
+    // The plan's tasks and the token report as memos: the chat changes with every
+    // streamed event, and only these parts of it are drawn here.
+    let tasks = Memo::new(move |_| {
+        app.chat(&id.get_value())
+            .map(|chat| chat.with(|c| c.tasks.clone()))
+            .unwrap_or_default()
+    });
 
     let fetch = move || {
         asked_at.set_value(js_sys::Date::now());
@@ -80,10 +88,10 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
         chat.map(|chat| chat.with(|data| data.moved));
         refresh();
     });
-    let usage = move || {
+    let usage = Memo::new(move |_| {
         app.chat(&id.get_value())
             .and_then(|chat| chat.with(|data| data.usage))
-    };
+    });
     let load_older = move |_| {
         let thread = id.get_value();
         let oldest = older.with_untracked(|lines| lines.last().map(|line| line.at));
@@ -117,9 +125,11 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
                 Some(a) => {
                     let narrow = !wide.get();
                     view! {
-                        {progress(a.plan, a.team.as_ref())}
-                        {a.team.as_ref().and_then(members)}
-                        {usage().and_then(|usage| tokens(usage, a.plan))}
+                        {progress(a.plan, a.team.as_ref(), id.get_value(), form)}
+                        {a.team.as_ref().and_then(|team| {
+                            tasks.with(|tasks| members(team, tasks, id.get_value()))
+                        })}
+                        {usage.get().and_then(|usage| tokens(usage, a.plan))}
                         <section class="ov-sec">
                             <Head title="Context" aside=String::new() />
                             {super::context::report_view(a.context.clone())}
@@ -149,37 +159,53 @@ fn figure(value: String, label: &'static str) -> impl IntoView {
     view! { <div class="ov-stat"><b>{value}</b><span>{label}</span></div> }
 }
 
-fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
-    let running = counts.claimed + counts.running;
-    let all = running + counts.open + counts.blocked + counts.review + counts.done + counts.failed;
+/// The budget form's state. It lives as long as the Overview, not the section drawn
+/// around it, which the core's answers and the chat's events draw again and again.
+#[derive(Clone, Copy)]
+struct BudgetForm {
+    editing: RwSignal<bool>,
+    error: RwSignal<Option<String>>,
+    fields: [RwSignal<String>; 4],
+}
+
+impl BudgetForm {
+    fn new() -> Self {
+        Self {
+            editing: RwSignal::new(false),
+            error: RwSignal::new(None),
+            fields: std::array::from_fn(|_| RwSignal::new(String::new())),
+        }
+    }
+}
+
+fn progress(
+    counts: PlanCounts,
+    team: Option<&Team>,
+    thread: String,
+    form: BudgetForm,
+) -> Option<AnyView> {
+    let running = counts.at_work();
+    let all = counts.total();
     if all == 0 {
         return None;
     }
-    let aside = team.map_or_else(String::new, |team| {
-        let state = match team.status {
-            TeamStatus::Running => "running",
-            TeamStatus::Ended(_) => "ended",
-        };
-        format!("{state} \u{00B7} {} min", team.used.minutes)
-    });
-    let parts = [
-        ("done", counts.done),
-        ("run", running + counts.review),
-        ("block", counts.blocked + counts.failed),
-        ("", counts.open),
-    ];
-    let segments = parts
+    let aside = team.map_or_else(String::new, Team::progress_note);
+    let segments = ["done", "run", "block", ""]
         .into_iter()
+        .zip(counts.shares())
         .filter(|(_, count)| *count > 0)
         // One segment a status, as wide as its share: 200 tasks stay one bar.
         .map(|(class, count)| view! { <i class=class style=format!("flex:{count}")></i> })
         .collect_view();
     let budget = team.map(|team| {
-        let (budget, used) = (team.budget, team.used);
+        // Only a running team can be stopped or given more.
+        let controls = team
+            .ended()
+            .is_none()
+            .then(|| view! { <TeamControls thread budget=team.budget form /> });
         view! {
-            {budget_row("Steps", used.steps.into(), budget.steps().into(), "")}
-            {budget_row("Tokens", used.tokens, budget.tokens(), "")}
-            {budget_row("Time", used.minutes.into(), budget.minutes().into(), " min")}
+            {team.budget_parts().into_iter().map(budget_row).collect_view()}
+            {controls}
         }
     });
     Some(
@@ -199,59 +225,123 @@ fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
     )
 }
 
-fn budget_row(name: &'static str, used: u64, all: u64, unit: &'static str) -> impl IntoView {
-    let share = (used as f64 / all.max(1) as f64).min(1.0);
-    let amount = move |value: u64| {
-        if unit.is_empty() {
-            compact(value)
-        } else {
-            value.to_string()
+/// Stop team and the budget of a running team, under its Progress. Stopping asks first;
+/// the budget opens as four fields in place, read back with the protocol's own limits.
+#[component]
+fn TeamControls(thread: String, budget: TeamBudget, form: BudgetForm) -> impl IntoView {
+    let thread = StoredValue::new(thread);
+    let BudgetForm {
+        editing,
+        error,
+        fields,
+    } = form;
+    let stop = move |_| {
+        let asked = "Stop the team? Members at work are stopped and their tasks go back to \
+                     open. The plan and what is done stay.";
+        if confirm(asked) {
+            let id = thread.get_value();
+            run(async move { api::stop_team(&id).await }, |()| ());
         }
     };
+    let save = move |_| {
+        let texts = fields.map(|field| field.get_untracked());
+        match TeamBudget::read(texts.each_ref().map(String::as_str)) {
+            Err(why) => error.set(Some(format!("{why:#}"))),
+            Ok(budget) => {
+                let id = thread.get_value();
+                run(
+                    async move { api::set_team_budget(&id, budget).await },
+                    move |()| {
+                        editing.set(false);
+                        error.set(None);
+                    },
+                );
+            }
+        }
+    };
+    let form = move || {
+        editing.get().then(|| {
+            let inputs = BUDGET_FIELDS
+                .iter()
+                .zip(fields)
+                .map(|(name, field)| {
+                    view! {
+                        <label class="ov-field">
+                            <span class="muted">{*name}</span>
+                            <input prop:value=move || field.get()
+                                on:input=move |ev| field.set(event_target_value(&ev)) />
+                        </label>
+                    }
+                })
+                .collect_view();
+            view! {
+                <div class="ov-budget-form">{inputs}</div>
+                {move || error.get().map(|why| view! { <p class="bad small">{why}</p> })}
+                <div class="ov-actions">
+                    <button class="ghost" on:click=move |_| editing.set(false)>"Cancel"</button>
+                    <button class="primary" on:click=save>"Save budget"</button>
+                </div>
+            }
+        })
+    };
+    view! {
+        <Show when=move || !editing.get()>
+            <div class="ov-actions">
+                <button class="ghost" on:click=move |_| {
+                    // The form opens on the budget as it is now, and keeps what is typed
+                    // while the Overview draws again around it.
+                    for (field, text) in fields.iter().zip(budget.fields()) {
+                        field.set(text);
+                    }
+                    error.set(None);
+                    editing.set(true);
+                }>"Edit budget"</button>
+                <button class="ghost danger" on:click=stop>"Stop team"</button>
+            </div>
+        </Show>
+        {form}
+    }
+}
+
+fn budget_row(part: BudgetPart) -> impl IntoView {
     view! {
         <div class="ov-budget">
-            <span>{name}</span>
+            <span>{part.name}</span>
             <div class="ov-track">
-                <i class:near={share >= 0.8} style=format!("width:{:.0}%", share * 100.0)></i>
+                <i class:near=part.near() style=format!("width:{:.0}%", part.share() * 100.0)></i>
             </div>
-            <span class="num">{format!("{} of {}{unit}", amount(used), amount(all))}</span>
+            <span class="num">{part.text()}</span>
         </div>
     }
 }
 
-fn members(team: &Team) -> Option<AnyView> {
+/// The team's members with their tasks, models and spend; a click opens a member's chat
+/// as a subagent's opens.
+fn members(team: &Team, tasks: &[Task], parent: String) -> Option<AnyView> {
     if team.members.is_empty() {
         return None;
     }
-    let at_work = team
-        .members
-        .iter()
-        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
-        .count();
+    let app = state();
     let rows = team
-        .members
-        .iter()
+        .member_rows(tasks)
+        .into_iter()
         .map(|member| {
-            let (word, class) = match member.status {
-                TaskStatus::Open | TaskStatus::Claimed => ("waits", "muted"),
-                TaskStatus::Running => ("running", "live"),
-                TaskStatus::Blocked => ("blocked", "warn"),
-                TaskStatus::Review => ("in review", "live"),
-                TaskStatus::Done => ("done", "good"),
-                TaskStatus::Failed => ("failed", "bad"),
-            };
-            let role = member.role.clone().unwrap_or_else(|| "general".into());
+            let class = tone_text(member.status.tone());
+            let line = member.line();
+            let open = (parent.clone(), member.thread_id.clone());
             view! {
-                <div class="ov-row">
+                <button class="ov-member" on:click=move |_| app.subagent.set(Some(open.clone()))>
                     <span class=format!("ov-glyph {class}")><Icon name=IconName::Bot /></span>
-                    <span class="name">{member.name.clone()}</span>
-                    <span class="muted cut grow">{role}</span>
-                    <span class=class>{word}</span>
-                </div>
+                    <span class="ov-member-text">
+                        <span class="name">{member.name}</span>
+                        <span class="muted cut">{line}</span>
+                    </span>
+                    <span class=class>{member.status.member_word()}</span>
+                </button>
             }
         })
         .collect_view();
-    let aside = format!("{at_work} of {} at work", team.members.len());
+    let aside = format!("{} of {} at work", team.at_work(), team.members.len());
     Some(
         view! { <section class="ov-sec"><Head title="Members" aside=aside />{rows}</section> }
             .into_any(),
@@ -262,15 +352,16 @@ fn tokens(usage: ThreadTokens, plan: PlanCounts) -> Option<AnyView> {
     if usage.model_calls == 0 {
         return None;
     }
-    let spent = usage.spent.prompt_tokens + usage.spent.completion_tokens;
-    let cached = usage.spent.cached_prompt_tokens * 100 / usage.spent.prompt_tokens.max(1);
+    let spent = usage.spent_tokens();
+    let cached = usage.cached_percent();
     let calls = plural(usage.model_calls, "call");
     let aside = match usage.cost() {
         Some(cost) => format!("{calls} \u{00B7} {cost}"),
         None => calls,
     };
-    let per_task =
-        (plan.done > 0).then(|| figure(compact(spent / u64::from(plan.done)), "per task done"));
+    let per_task = usage
+        .per_task(plan.done)
+        .map(|per_task| figure(compact(per_task), "per task done"));
     Some(
         view! {
             <section class="ov-sec">
@@ -304,13 +395,8 @@ fn changes(overview: &Overview) -> Option<AnyView> {
             }
         })
         .collect_view();
-    let more = (changes.files as usize).saturating_sub(changes.newest.len());
-    let aside = format!(
-        "{} \u{00B7} +{} \u{2212}{}",
-        plural(changes.files.into(), "file"),
-        changes.added,
-        changes.removed
-    );
+    let more = changes.more();
+    let aside = changes.summary();
     Some(
         view! {
             <section class="ov-sec">
@@ -328,11 +414,7 @@ fn activity(overview: &Overview) -> Option<AnyView> {
     if activity.tool_runs == 0 && activity.agents_asked == 0 {
         return None;
     }
-    let aside = format!(
-        "{} \u{00B7} {} asked",
-        plural(activity.tool_runs, "tool run"),
-        plural(activity.agents_asked.into(), "agent")
-    );
+    let aside = activity.summary();
     let rows = activity
         .by_tool
         .iter()
@@ -387,10 +469,6 @@ fn log(newest: &[LogEntry], older: Vec<LogEntry>, narrow: bool) -> Option<AnyVie
         }
         .into_any(),
     )
-}
-
-fn plural(count: u64, noun: &str) -> String {
-    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
 }
 
 /// The local time of day of a log line.

@@ -81,7 +81,7 @@ pub fn Sidebar() -> impl IntoView {
                 </For>
                 <div class="group-head"><span>"Chats"</span></div>
                 <Show when=move || listed.with(|t| t.is_empty())><p class="sidebar-empty">{move || if search.get().is_empty() { "Your chats will appear here." } else { "No matching chats." }}</p></Show>
-                <For each=loose key=|t| (t.id.clone(), chat_title(t)) let:thread>
+                <For each=loose key=|t| (t.id.clone(), chat_title(t), t.unread) let:thread>
                     <ChatRow thread />
                 </For>
             </div>
@@ -145,7 +145,7 @@ fn project_group(
                     <Icon name=IconName::Ellipsis />
                 </button>
             </div>
-            <For each=chats key=|t| (t.id.clone(), chat_title(t)) let:thread>
+            <For each=chats key=|t| (t.id.clone(), chat_title(t), t.unread) let:thread>
                 <ChatRow thread />
             </For>
         </div>
@@ -170,13 +170,19 @@ fn ChatRow(thread: Thread) -> impl IntoView {
     };
     let title = chat_title(&thread);
     let open_id = id.clone();
+    let unread = thread.unread;
+    let lit = {
+        let working = working.clone();
+        move || unread && !working()
+    };
     view! {
-        <div class="chat-row" class:active=active>
+        <div class="chat-row" class:active=active class:unread=unread>
             <button class="chat-title" aria-current=move || current().then_some("page")
                 on:click=move |_| app.open_chat(open_id.clone())>
                 {title}
             </button>
             <Show when=working><span class="spinner" title="working"></span></Show>
+            <Show when=lit><span class="unread-dot" title="unread"></span></Show>
             <button class="icon hover" title="Delete chat" aria-label="Delete chat" on:click=move |_| {
                 let id = id.clone();
                 if confirm("Delete this chat for good?") {

@@ -116,9 +116,53 @@ pub struct Listing {
     /// come from.
     #[serde(default)]
     pub from: Option<String>,
+    /// For a connector: how its server is reached and what it asks of the user. Its one
+    /// entry in `connectors` says what it runs or reaches and whether it is added here.
+    #[serde(default)]
+    pub server: Option<ServerSpec>,
 }
 
 impl Listing {
+    /// What every client says above the lines of a connector from a source without a
+    /// key, before anything else: nobody vouches for it, where its list comes from, whose
+    /// claim its author is, and the exact host its requests, sign-in and keys go to.
+    /// Empty for any other listing.
+    pub fn unvouched(&self) -> Vec<String> {
+        if self.kind != Kind::Connector || self.tier != Tier::Unverified {
+            return Vec::new();
+        }
+        let from = match &self.from {
+            Some(host) => format!("{} ({host})", self.source),
+            None => self.source.clone(),
+        };
+        let mut lines = vec![format!(
+            "Nobody vouches for {}. It comes from {from}, a source you added without a key: \
+             nobody signed its list, and what it says about itself is only its claim.",
+            self.name
+        )];
+        if !self.author.is_empty() {
+            lines.push(format!(
+                "The source says it is by {}; nothing checks that.",
+                self.author
+            ));
+        }
+        for connector in &self.connectors {
+            lines.push(match &connector.runs {
+                Runs::Url(url) => {
+                    let host = url
+                        .strip_prefix("https://")
+                        .and_then(|rest| rest.split(['/', '?', '#']).next())
+                        .unwrap_or(url);
+                    format!(
+                        "Its tool calls, its sign-in token and any key you put in are sent to {host}."
+                    )
+                }
+                Runs::Command(line) => format!("It runs {line} on this computer, as you."),
+            });
+        }
+        lines
+    }
+
     /// The lines of `permissions` after those of its programs and connectors: what else
     /// it may reach.
     pub fn reach(&self) -> &[String] {
@@ -134,6 +178,55 @@ pub struct Connector {
     pub name: String,
     pub runs: Runs,
     pub state: ConnectorState,
+}
+
+/// What a connector listing needs to become an MCP server here: never a secret's value,
+/// only the names the user fills in once it is added.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerSpec {
+    pub auth: Auth,
+    /// The headers (a remote server) or environment variables (a program) the user fills
+    /// in after adding it; the server stays off until they do.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+    /// An `https` page of the service's own about its server.
+    #[serde(default)]
+    pub docs: Option<String>,
+    pub run_by: RunBy,
+    /// What the agent can reach through it, one line, as its source says.
+    #[serde(default)]
+    pub reaches: String,
+    /// For a program: the package it fetches and where from, such as
+    /// `@playwright/mcp@0.0.86 from npm`.
+    #[serde(default)]
+    pub package: Option<String>,
+}
+
+/// How a connector's server knows the user.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Auth {
+    /// It answers anybody.
+    #[default]
+    None,
+    /// The user signs in in their browser once it is added; the token stays in the
+    /// config folder.
+    #[serde(rename = "oauth")]
+    OAuth,
+    /// A key or token the user puts in `secrets` themselves.
+    Key,
+}
+
+/// Who runs a connector's server: the service it reaches, or somebody else.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunBy {
+    #[default]
+    Vendor,
+    Community,
 }
 
 /// What an MCP server is: a program on this computer, or an address on the network.
@@ -176,7 +269,8 @@ pub enum Tier {
     /// From a mirror the user added.
     Community,
     /// From a source the user added without a key: nobody signed its list, so it may
-    /// bring only skills, packs and agents, and none of them is updated on its own.
+    /// bring only skills, packs, agents and connectors to a public `https` address, and
+    /// none of them is updated on its own.
     Unverified,
     /// Found in the plugins folder, not installed by any source: no key vouches for it.
     Local,
@@ -192,6 +286,9 @@ pub enum Kind {
     /// A set of skills.
     Pack,
     Agent,
+    /// An MCP server to add to the connectors: no files of its own, only where the server
+    /// is or the program it starts. A list read by an older duskcode leaves it out.
+    Connector,
 }
 
 /// The star count of a GitHub repository, as the publisher of a list counted it when
@@ -303,7 +400,8 @@ pub enum StoreRequest {
         #[serde(default)]
         kinds: Vec<Kind>,
     },
-    /// Installs or updates `name` at `version` from `source` and switches it on.
+    /// Installs or updates `name` at `version` from `source` and switches it on; a
+    /// connector's server is added to the connectors as the settings add one.
     /// `agreed` is the listing's `permissions` the user was shown; a listing that
     /// changed since is refused.
     /// `tier` is the one the user was shown; the install is refused when the source
@@ -319,7 +417,7 @@ pub enum StoreRequest {
         #[serde(default)]
         sha256: Option<String>,
     },
-    /// Removes a plugin installed from the store.
+    /// Removes a plugin, skill, pack, agent or connector installed from the store.
     Remove { name: String },
     /// Updates every installed plugin whose update asks for nothing more; answered with
     /// `Response::StoreUpdates`.
@@ -478,3 +576,41 @@ pub struct FilePreview {
 
 /// The most of one file `StoreRequest::File` answers with.
 pub const PREVIEW_BYTES: usize = 256 * 1024;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unverified_connector_says_who_vouches_and_where_it_goes() {
+        let listing = Listing {
+            name: "notion-workspace".into(),
+            kind: Kind::Connector,
+            tier: Tier::Unverified,
+            source: "loose".into(),
+            from: Some("lists.example.net".into()),
+            author: "Notion".into(),
+            connectors: vec![Connector {
+                name: "notion-workspace".into(),
+                runs: Runs::Url("https://mcp.notion-workspace.app/mcp".into()),
+                state: ConnectorState::NotAdded,
+            }],
+            ..Listing::default()
+        };
+        let lines = listing.unvouched();
+        assert!(lines[0].starts_with("Nobody vouches for notion-workspace"));
+        assert!(lines[0].contains("loose (lists.example.net)"));
+        assert!(lines[1].contains("says it is by Notion; nothing checks that"));
+        assert!(lines[2].contains("are sent to mcp.notion-workspace.app."));
+        let vouched = Listing {
+            tier: Tier::Verified,
+            ..listing.clone()
+        };
+        assert!(vouched.unvouched().is_empty());
+        let skill = Listing {
+            kind: Kind::Skill,
+            ..listing
+        };
+        assert!(skill.unvouched().is_empty());
+    }
+}

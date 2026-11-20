@@ -22,15 +22,16 @@
 use std::path::Path;
 
 use anyhow::{Result, ensure};
-use tracing::{debug, info};
+use dusk_protocol::thread::team_call_id;
+use tracing::{debug, info, warn};
 
 use super::{card, clean, gate};
 use crate::{
     catalog::{agents::GENERAL_AGENT, skills},
-    config::{ApprovalPolicy, Config},
+    config::{ApprovalPolicy, Config, Effort},
     providers::ProviderRegistry,
     runtime::{
-        Launcher,
+        Launcher, ThreadEvent,
         model_choice::Choice,
         thread::start::{read_prompt, start_member_thread},
     },
@@ -202,7 +203,34 @@ pub(super) async fn give(
     );
     deliver_card(launcher, lead, &member, &claimed, folder).await?;
     drop(admitted);
+    announce(launcher, lead, &member, role, &claimed).await;
     Ok(Given::Claimed(Box::new(claimed)))
+}
+
+/// Tells the lead's clients that `member` works on `task`, as an asked agent is told:
+/// the member's own events follow under its thread, so the chat's agents, their count
+/// and the arbiter's "asked" rows show the team's members too.
+async fn announce(launcher: &Launcher, lead: &str, member: &str, role: &str, task: &PlanTask) {
+    let Some(mailbox) = launcher.mailboxes.get(lead).await else {
+        return;
+    };
+    let asked = match launcher.state.agent_effort(member).await {
+        Ok(asked) => asked,
+        Err(error) => {
+            warn!("member {member}: {error:#}");
+            None
+        }
+    };
+    let effort = Effort::for_subagent(launcher.config.current().effort(), asked);
+    mailbox.emit(ThreadEvent::SubagentStarted {
+        call_id: team_call_id(&task.task_id),
+        thread_id: member.to_owned(),
+        agent: role.to_owned(),
+        task: task.description.clone(),
+        effort,
+        model: task.model.clone(),
+        task_id: Some(task.task_id.clone()),
+    });
 }
 
 /// A new thread under the lead that works as `role`, with the role's usual prompt.

@@ -3,7 +3,7 @@
 
 use crate::{
     api,
-    state::{View, state},
+    state::{AppState, View, state},
     ui::run,
 };
 use dusk_protocol::{config::Settings, plugin::Scope};
@@ -57,7 +57,15 @@ pub fn Customize(tab: Tab) -> impl IntoView {
     let panel = RwSignal::new(None::<Settings>);
     let reload = move || run(api::settings_panel(), move |p| panel.set(Some(p)));
     reload();
-    let discover = RwSignal::new(false);
+    // Discover or Installed as the user chose; until then Discover while nothing is
+    // installed on the tab, as in the desktop app.
+    let discover = RwSignal::new(None::<bool>);
+    let discovering = Signal::derive(move || {
+        discover.get().unwrap_or_else(|| {
+            tab.scope()
+                .is_some_and(|scope| nothing_installed(scope, panel, app))
+        })
+    });
     view! {
         <div class="page">
             <h2>"Customize"</h2>
@@ -67,8 +75,8 @@ pub fn Customize(tab: Tab) -> impl IntoView {
                         on:click=move |_| app.show(View::Customize(t))>{label}</button>
                 })}
             </div>
-            {tab.scope().map(|_| view! { <workshop::ViewSwitch discover /> })}
-            {move || match (tab.scope(), discover.get()) {
+            {tab.scope().map(|_| view! { <workshop::ViewSwitch discover discovering /> })}
+            {move || match (tab.scope(), discovering.get()) {
                 (Some(scope), true) => view! { <Workshop scope /> }.into_any(),
                 _ => match tab {
                     Tab::Agents => view! { <Agents panel reload /> }.into_any(),
@@ -80,6 +88,19 @@ pub fn Customize(tab: Tab) -> impl IntoView {
                 },
             }}
         </div>
+    }
+}
+
+/// Whether the settings and status read so far show nothing installed for `scope`; the
+/// agents' graph always holds the built-in ones.
+fn nothing_installed(scope: Scope, panel: RwSignal<Option<Settings>>, app: AppState) -> bool {
+    match scope {
+        Scope::Connectors => panel.with(|p| p.as_ref().is_some_and(|p| p.mcp.is_empty())),
+        Scope::Skills => panel.with(|p| p.as_ref().is_some_and(|p| p.skills.is_empty())),
+        Scope::Plugins => app
+            .status
+            .with(|s| s.as_ref().is_some_and(|s| s.plugins.is_empty())),
+        Scope::Agents => false,
     }
 }
 

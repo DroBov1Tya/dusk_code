@@ -6,6 +6,62 @@ branches after end-to-end testing. Entries of unreleased changes live in `change
 
 ## Unreleased
 
+## 0.77.0 - 2026-11-20
+
+### Added
+
+- The desktop app has a Team page: the lead and its members in layers with who gave, handed in or waits on whom, and the plan in waves by dependency, a task standing right of everything it needs; pointing at a member or a task lights the other layer. A narrow Team module in the right column shows who is at work and opens the page.
+
+- The Overview's Members show each member's task, model and steps and tokens, and a click opens the member's chat (the agent chat window in the desktop app, the subagent view in the browser, tab and enter in the terminal's /overview).
+
+- A team's members show as the chat's agents: the agents button, the Subagents window and the Arbiter list them with their task. `SubagentStarted` carries the plan task a member was given (`task_id`).
+
+- A running team can be stopped (after a yes) and its budget changed from the Overview's Progress in the desktop app and the browser, and with `s` and `b` in the terminal's /overview. Tokens may be written as 400k or 4M.
+
+- A click on a task of the plan strip opens its card: why it is blocked or failed and what it waits on, its brief, acceptance, files, gate, dependencies, attempts and reworks, steps, tokens and changed files, and its member's chat a click away. In the terminal an unfolded task in the sidebar shows the same card.
+
+- A chat the agent answered, asked something in, asked a yes in, or ended a turn in while you were looking elsewhere is marked unread: a steady accent dot before its title (the title one weight heavier) in the desktop and web sidebars, a `•` in the terminal's chat list. The working ring still wins while the agent works. The mark goes once the chat is shown in a window or tab in front, is kept across restarts, and clears on every client at once. A turn you stopped yourself, your own messages, progress inside a turn and agents' talk to each other mark nothing. Protocol: `Thread.unread`, `ThreadRequest::Seen { thread_id }`, `ThreadEvent::Unread(bool)`.
+
+- The Workshop lists connectors: a service's own MCP server, such as Notion, Linear or GitHub, added to your connectors from Customize, Connectors, Discover after a window that shows its address or the pinned package it runs, who runs it, what it reaches and the keys it will ask for. Signing in goes through the existing MCP sign-in; Remove takes the server out again. A source without a key may offer only remote connectors to a public https address, never one that runs a program. The agent's Workshop search finds them too.
+
+### Changed
+
+- When the agent moves from one kind of work to the next, the words beside the mark no longer cut over: the old ones rise and fade as the new ones come up, the mark changes with them, and the time and counts after them glide to their new place. The phrase of a running turn's heading changes the same way. Under reduced motion the change is instant.
+
+- In the browser, a Customize tab with nothing installed opens on its Workshop's Discover, as in the desktop app, until you pick Discover or Installed.
+
+- Protocol 37: each MCP tool in the settings carries `short_name`, the server's own name for it, so clients no longer split `server__tool` themselves and a server whose name holds `__` shows its tools right.
+
+- Sizes, times and counts read the same in the terminal, desktop and browser apps. File and memory sizes show one decimal from KB up (`1.5 KB`, `12.0 MB`, up to TB) in every app; the desktop artifacts, Workshop file list and Usage page used other units. Elapsed clocks show `00:06` everywhere, the desktop audio player included. Check and pull request times on the desktop say "just now" instead of "now ago". Counts take their plural only when they are not one in the terminal Overview ("1 tool run", "1 file", "1 call").
+
+- A skill change row shows the first line of the agent's reason in every app, without a colon when there is none. The browser no longer shows control and text-direction characters from skill data; the terminal marks them with `?` in the reason as it did in the name.
+
+- A team says how it stands and why it ended ("ended — ran out of steps after 57 min", "stopped", "done") in the Overview's Progress, the plan strip and the terminal's rail and /overview; once a team ended, the plan strip no longer names a task as in work. Task and member words, glyphs and colours now come from one place for all three clients.
+
+- The Workshop search finds the same listings in every app: the terminal now looks in tags, and the browser looks in a local pack's title and description. The category menu lists the fixed categories in their order, then any other, in the terminal and browser as on the desktop.
+
+### Fixed
+
+- The appsec-reviewer agent finds its two security skills again after the Workshop renamed their pack to dev-workflow-skills.
+
+- A skill or agent file that starts with a byte order mark is read with its front matter instead of being refused.
+
+- The desktop app shows a skill's front matter apart from its text when the file has Windows line endings or blanks after the closing `---`, and a body line that starts with `---` no longer ends the front matter early.
+
+- A platform plugin that writes lines it should not no longer fills the log with one warning a line: dropped lines are reported at most once a minute, with their count.
+
+- A size just under the next unit reads `1.0 MB` instead of `1024.0 KB`, at every unit. A plan window of zero minutes is named "Plan limit". A turn length too large to count no longer overflows. In the terminal, a tab in a skill change's reason shows as a space, the team budget line counts steps the way the other apps do (`5k`), and "1 tool", "1 line" and "1 file" are counted in the singular.
+
+### Security
+
+- One set of hidden characters now guards every place the core cleans or checks untrusted text: bidi controls and marks, line separators, zero-width and other invisible format characters, blank fillers, variation selectors that hide bytes (FE00-FE0D, E0100-E01EF) and the Unicode tag block. Labels the model shows (`show` blocks, pins) and plugin listings now also refuse left-to-right and right-to-left marks, zero-width spaces, byte order marks and stray tags; emoji joined by zero-width joiners, soft hyphens and subdivision flags still work. A plugin's command line, programs and source address refuse every hidden character. Plugin file previews escape every hidden character, skill change reasons and team task lines drop or mark them, and MCP tool names reach clients cleaned.
+
+- Workshop sources without a key are held tighter. No source but the official one can bring an agent named like a built-in one (`general` and the shipped agents), and such a folder is not used. Agents from an Unverified source are marked in `ask_agent`'s list and their prompt, and a skill's or agent's third-party text is now closed after it, with lines that forge its markers taken out. A damaged store record makes everything the store installed count as unverified instead of dropping the marks. `add_workshop_source` is refused at once in scheduled, headless and API chats instead of waiting for an answer, and the source's name comes from its address. A review's hash covers the item's kind and the pack.yml written for it, a first install shows its instruction file whole, one item's pinned files are capped at 32 MiB, near-duplicate names are caught more widely, and the official list's names stay taken while it cannot be read.
+
+- The config file is read without following a link swapped in after its checks, without blocking on a FIFO, and only up to 1 MiB. The logs folder is refused when it is a symlink, as every other config folder already is. MCP sign-in tokens and shipped files are saved through the same atomic private write as the rest of the config, so two saves of a token never share a staging file and a failed save leaves none behind.
+
+- The update check and the resource check read GitHub's answers up to a fixed size instead of without end.
+
 ## 0.76.0 - 2026-11-19
 
 ### Added

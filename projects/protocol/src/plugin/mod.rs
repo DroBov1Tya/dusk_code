@@ -6,6 +6,7 @@
 //! - `contract`: what a plugin that serves a whole domain says to the core, and back;
 //! - `compat`: the systems and clients a plugin runs on;
 //! - `cover_art`: the gradient a plugin without a cover is drawn on;
+//! - `filter`: what narrows the Workshop's list, the same in every client;
 //! - `permission`: what a plugin asks to be allowed, and nothing more is;
 //! - `place`: where a plugin's part shows and what a click on it opens;
 //! - `scope`: which listings each shelf of Customize offers in its Workshop;
@@ -17,6 +18,7 @@
 mod compat;
 pub mod contract;
 mod cover_art;
+mod filter;
 mod permission;
 mod place;
 mod scope;
@@ -28,14 +30,15 @@ mod wire;
 pub use compat::{Client, Os, allows, runs_here};
 pub use contract::{ForgeProvides, Provides};
 pub use cover_art::{CoverArt, Hsl, cover_art};
+pub use filter::{StoreFilter, categories};
 pub use permission::{KeyUse, Permissions, ProjectAccess};
 pub use place::{Opens, Part, Place};
 pub use scope::Scope;
 pub use store::{
-    CATEGORIES, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind,
+    Auth, CATEGORIES, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind,
     LOCAL_SOURCE, Listing, OFFICIAL_SOURCE, Order, PICKS, PREVIEW_BYTES, Picks, Probe, RepoStars,
-    Review, Runs, ScreenshotRef, SourceFailure, SourceRow, StoreList, StoreRequest, Tier,
-    UpdateReport,
+    Review, RunBy, Runs, ScreenshotRef, ServerSpec, SourceFailure, SourceRow, StoreList,
+    StoreRequest, Tier, UpdateReport,
 };
 pub use suggestion::{
     MAX_LABEL_CHARS, MAX_SUGGESTED, SEARCH_WORKSHOP_TOOL, SUGGEST_TOOL, Suggested, Suggestion,

@@ -104,11 +104,7 @@ pub fn search(sequence: u64, tool: &str, text: &str, query: &str) -> String {
 
 /// `line` cut to at most `max` bytes at a character boundary.
 fn truncated(line: &str, max: usize) -> &str {
-    let mut end = max.min(line.len());
-    while !line.is_char_boundary(end) {
-        end -= 1;
-    }
-    &line[..end]
+    &line[..line.floor_char_boundary(max)]
 }
 
 #[cfg(test)]

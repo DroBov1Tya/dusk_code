@@ -7,6 +7,7 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 use dusk_protocol::{
     client::CHATGPT_USAGE_URL,
     model::{PlanWindow, RateLimit, RateLimits},
+    thread::duration_words_secs,
 };
 use gpui_kit::{
     component::{
@@ -204,12 +205,12 @@ fn plan_row(window: &PlanWindow, cx: &App) -> Div {
                 .items_baseline()
                 .gap_2()
                 .small()
-                .child(div().flex_1().child(window_name(window.minutes)))
+                .child(div().flex_1().child(window.name()))
                 .children(window.resets_in.map(|seconds| {
                     div()
                         .meta()
                         .text_color(muted)
-                        .child(format!("Resets in {}", words(seconds)))
+                        .child(format!("Resets in {}", duration_words_secs(seconds)))
                 }))
                 .child(
                     div()
@@ -237,7 +238,7 @@ fn minute_row(label: &str, limit: &RateLimit, muted: Hsla) -> Div {
         widgets::short(limit.limit)
     );
     if let Some(seconds) = limit.resets_in {
-        left.push_str(&format!(", resets in {}", words(seconds)));
+        left.push_str(&format!(", resets in {}", duration_words_secs(seconds)));
     }
     div()
         .flex()
@@ -247,23 +248,6 @@ fn minute_row(label: &str, limit: &RateLimit, muted: Hsla) -> Div {
         .small()
         .child(div().flex_1().child(label.to_owned()))
         .child(div().meta().text_color(muted).child(left))
-}
-
-/// A plan window's name from its length; the provider gives no other.
-fn window_name(minutes: Option<u64>) -> String {
-    match minutes {
-        Some(300) => "5-hour limit".into(),
-        Some(10_080) => "Weekly".into(),
-        Some(minutes) if minutes.is_multiple_of(1440) => format!("{}-day limit", minutes / 1440),
-        Some(minutes) if minutes.is_multiple_of(60) => format!("{}-hour limit", minutes / 60),
-        Some(minutes) => format!("{minutes}-minute limit"),
-        None => "Plan limit".into(),
-    }
-}
-
-fn words(seconds: u64) -> String {
-    let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
-    dusk_protocol::thread::duration_words(ms)
 }
 
 const STEPS: usize = 24;

@@ -6,12 +6,18 @@
 //! are a dot each; waiting for the user is a steady ring; compacting draws three lines
 //! together; a turn the provider holds is a ring that does not move.
 //!
+//! When the kind or its words change, the new take the old one's place in a short swap
+//! (`swap`): never a hard cut, and what stands after the words glides to its new place.
+//!
 //! Every mark stands in one slot of the same size, so the row never moves when the kind
 //! changes. What moves is drawn through `ui::looping`: one shared clock, at most thirty
 //! frames a second, still under reduced motion, and gone with the row when nothing runs.
 
 mod glyph;
 mod shimmer;
+mod swap;
+
+pub use swap::Swaps;
 
 use std::time::{Duration, Instant};
 
@@ -47,16 +53,103 @@ fn tones(cx: &App) -> Tones {
     }
 }
 
-/// The mark of `work`, in its slot.
-pub fn mark(work: &Work, cx: &App) -> Div {
-    let tones = tones(cx);
-    let slot = div()
+/// What the row shows of the work, as the swaps tell one from the next.
+#[derive(Clone)]
+pub struct Said(pub Work);
+
+impl swap::Shown for Said {
+    /// The kind and its words. A held turn's words count down and agents come and go:
+    /// neither is a change of what the row says.
+    fn key(&self) -> String {
+        match self.0.kind {
+            WorkKind::Held => "held".to_owned(),
+            WorkKind::Agents { .. } => "agents".to_owned(),
+            kind => format!("{kind:?} {}", self.0.label),
+        }
+    }
+}
+
+/// The same work as a mark tells it: the kind alone, and whether it stalled.
+#[derive(Clone)]
+pub struct Marked(pub Work);
+
+impl swap::Shown for Marked {
+    fn key(&self) -> String {
+        match self.0.kind {
+            WorkKind::Agents { .. } => "agents".to_owned(),
+            kind => format!("{kind:?} {}", self.0.stalled),
+        }
+    }
+}
+
+/// The places of a chat's working row that swap.
+#[derive(Default)]
+pub struct RowSwaps {
+    pub words: Swaps<Said>,
+    pub marks: Swaps<Marked>,
+    /// The phrases of the running turn's headings, by the item each starts at.
+    pub headings: Swaps<SharedString>,
+}
+
+impl RowSwaps {
+    /// A new turn begins with nothing to swap from.
+    pub fn clear(&self) {
+        self.words.clear();
+        self.marks.clear();
+        self.headings.clear();
+    }
+}
+
+fn slot() -> Div {
+    div()
         .flex_none()
         .w(px(SLOT))
         .h(px(glyph::SIZE))
         .flex()
         .items_center()
-        .justify_center();
+        .justify_center()
+}
+
+/// The mark of `work`, in its slot.
+pub fn mark(work: &Work, cx: &App) -> Div {
+    slot().child(mark_of(work, cx))
+}
+
+/// The mark of `work` in its slot, taking the last mark's place in a swap.
+pub fn mark_swapping(work: &Work, swaps: &RowSwaps, cx: &App) -> Div {
+    swaps.marks.mark(
+        "mark",
+        Marked(work.clone()),
+        slot(),
+        |marked| mark_of(&marked.0, cx),
+        cx,
+    )
+}
+
+/// The words of `work`, taking the last words' place in a swap.
+pub fn words_swapping(work: &Work, swaps: &RowSwaps, cx: &App) -> Div {
+    swaps
+        .words
+        .words("words", Said(work.clone()), |said| words(&said.0, cx), cx)
+}
+
+/// A turn heading's phrase, taking the last one's place in a swap.
+pub fn phrase_swapping(
+    place: impl Into<SharedString>,
+    phrase: SharedString,
+    swaps: &RowSwaps,
+    cx: &App,
+) -> Div {
+    swaps.headings.words(
+        place,
+        phrase,
+        |phrase| phrase.clone().into_any_element(),
+        cx,
+    )
+}
+
+fn mark_of(work: &Work, cx: &App) -> AnyElement {
+    let tones = tones(cx);
     match work.kind {
         WorkKind::Thinking => {
             // A stalled turn turns toward the warning colour; the spark goes on.
@@ -64,17 +157,17 @@ pub fn mark(work: &Work, cx: &App) -> Div {
                 true => tones.accent.mix_oklab(tones.warning, 0.75),
                 false => tones.accent,
             };
-            slot.child(glyph::spark(color))
+            glyph::spark(color).into_any_element()
         }
-        WorkKind::Writing => slot.child(glyph::still_dot(tones.muted.opacity(0.7))),
-        WorkKind::Planning => slot.child(glyph::lines(tones.accent, tones.muted)),
-        WorkKind::Steps => slot.child(glyph::live(tones.accent)),
+        WorkKind::Writing => glyph::still_dot(tones.muted.opacity(0.7)).into_any_element(),
+        WorkKind::Planning => glyph::lines(tones.accent, tones.muted).into_any_element(),
+        WorkKind::Steps => glyph::live(tones.accent).into_any_element(),
         WorkKind::Agents { working, started } => {
-            slot.child(glyph::dots(working, started, tones.accent, tones.muted))
+            glyph::dots(working, started, tones.accent, tones.muted).into_any_element()
         }
-        WorkKind::WaitingForUser => slot.child(glyph::ring(tones.warning, false)),
-        WorkKind::Compacting => slot.child(glyph::squeeze(tones.muted, tones.text)),
-        WorkKind::Held => slot.child(glyph::ring(tones.warning.opacity(0.7), true)),
+        WorkKind::WaitingForUser => glyph::ring(tones.warning, false).into_any_element(),
+        WorkKind::Compacting => glyph::squeeze(tones.muted, tones.text).into_any_element(),
+        WorkKind::Held => glyph::ring(tones.warning.opacity(0.7), true).into_any_element(),
     }
 }
 

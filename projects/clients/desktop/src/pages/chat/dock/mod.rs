@@ -104,7 +104,7 @@ impl Workspace {
         }
     }
 
-    /// Asks the core for the shown chat's plan counts; a burst of changes asks once more
+    /// Asks the core for the shown chat's plan counts and team; a burst of changes asks once more
     /// after the answer, never twice at a time.
     pub fn load_plan_counts(&mut self, cx: &mut Context<Self>) {
         if self.dock.busy {
@@ -118,11 +118,21 @@ impl Workspace {
         let asked = thread_id.clone();
         self.core.call(
             cx,
-            move |client| async move { Ok(client.work().plan_tasks(&thread_id, 1).await?.counts) },
+            move |client| async move {
+                let work = client.work();
+                let counts = work.plan_tasks(&thread_id, 1).await?.counts;
+                Ok((counts, work.team(&thread_id).await?))
+            },
             move |ws, result, cx| {
                 ws.dock.busy = false;
                 match result {
-                    Ok(counts) => {
+                    Ok((counts, team)) => {
+                        // The strip says how the team stands, in a chat opened after it
+                        // started too; its events keep it current from here, and an
+                        // answer older than the last of them is dropped.
+                        if let (Some(team), Some(chat)) = (team, ws.chats.get_mut(&asked)) {
+                            chat.team_answer(team, dusk_protocol::system::now_ms());
+                        }
                         // The bar eases from the shares it showed for the same chat.
                         ws.dock.counts_before = match &ws.dock.counts {
                             Some((chat, before)) if *chat == asked && *before != counts => {

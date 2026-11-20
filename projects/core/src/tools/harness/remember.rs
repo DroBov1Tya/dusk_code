@@ -107,8 +107,7 @@ pub(crate) fn project_folder(cwd: &Path) -> String {
         .take(NAME_CHARS)
         .collect();
     let hash = Sha256::digest(cwd.as_os_str().as_encoded_bytes());
-    let hash: String = hash[..6].iter().map(|byte| format!("{byte:02x}")).collect();
-    format!("{name}-{hash}")
+    format!("{name}-{}", dusk_protocol::text::hex(&hash[..6]))
 }
 
 /// The memory as it is on disk, cut to `max_chars`; a missing file is an empty memory.

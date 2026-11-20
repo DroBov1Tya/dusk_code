@@ -90,11 +90,38 @@ async fn a_chain_runs_to_done_and_wakes_the_lead_only_for_its_reviews() {
     assert!(lines[1].contains("its gate was not run"), "{}", lines[1]);
     assert!(lines[3].starts_with("Team ended: done. 3 of 3 tasks;"));
     assert!(lines.iter().all(|line| line.len() <= 400));
+    let mut expected = rig.members().await;
+    expected.sort();
     // Clients heard of every task and of the team.
     let events = rig.events.lock().unwrap();
     let heard = |wanted: fn(&ThreadEvent) -> bool| events.iter().filter(|e| wanted(e)).count();
     assert!(heard(|event| matches!(event, ThreadEvent::TaskChanged(_))) >= 9);
     assert!(heard(|event| matches!(event, ThreadEvent::Team(_))) >= 2);
+    // Each member was announced as an agent with its task, so the chat counts it as one.
+    let announced: Vec<(&str, &str)> = events
+        .iter()
+        .filter_map(|event| match event {
+            ThreadEvent::SubagentStarted {
+                call_id,
+                task_id: Some(task_id),
+                ..
+            } => Some((call_id.as_str(), task_id.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(announced.len(), 3, "{announced:?}");
+    for (call_id, task_id) in &announced {
+        assert_eq!(*call_id, dusk_protocol::thread::team_call_id(task_id));
+        assert!(plan.iter().any(|task| task.task_id == *task_id));
+    }
+    let mut chat = dusk_protocol::thread::ChatLog::<std::convert::Infallible>::default();
+    for event in events.iter() {
+        chat.apply(event.clone(), 0);
+    }
+    let mut members: Vec<String> = chat.agents.keys().cloned().collect();
+    members.sort();
+    assert_eq!(members, expected);
+    assert!(chat.agents.values().all(|agent| !agent.working()));
 }
 
 #[tokio::test]
@@ -307,11 +334,11 @@ async fn a_card_delivered_again_is_dropped() {
             .unwrap();
         rig.pass().await;
     }
-    assert_eq!(rig.uids(&member).await, [format!("card:{}:1", ids[0])]);
     until("the member read its card", || async {
         !rig.state().has_pending(&member).await.unwrap()
     })
     .await;
+    assert_eq!(rig.uids(&member).await, [format!("card:{}:1", ids[0])]);
     let messages = rig.state().list_messages(&member).await.unwrap();
     let cards: Vec<_> = messages
         .iter()
@@ -347,8 +374,12 @@ async fn a_task_the_lead_sends_back_wakes_the_same_member_once() {
     rig.launcher().team_changed(&rig.lead).await;
     rig.pass().await;
 
+    // The hand-in sets Review before it tells the lead, so wait for the line too.
+    let waits = |line: &String| line.contains("waits for you");
     until("the member handed in again", || async {
-        rig.status(&ids[0]).await == PlanStatus::Review && rig.turns(&member).await == (2, false)
+        rig.status(&ids[0]).await == PlanStatus::Review
+            && rig.turns(&member).await == (2, false)
+            && rig.lines().await.iter().filter(|line| waits(line)).count() >= 2
     })
     .await;
     let task = rig.task(&ids[0]).await;
@@ -360,7 +391,6 @@ async fn a_task_the_lead_sends_back_wakes_the_same_member_once() {
         uids,
         [format!("card:{}:1", ids[0]), format!("rework:{}:1", ids[0])]
     );
-    let waits = |line: &String| line.contains("waits for you");
     assert_eq!(
         rig.lines().await.iter().filter(|line| waits(line)).count(),
         2

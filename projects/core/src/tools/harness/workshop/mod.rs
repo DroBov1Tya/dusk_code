@@ -22,15 +22,13 @@ use crate::{config::Config, init::paths::Paths, plugins::store};
 /// with no listing and a source that failed is an error, so the model can say the store
 /// could not be read instead of that it offers nothing.
 async fn read(paths: &Paths, config: &Config) -> Result<StoreList> {
-    let here = store::Here {
-        yours: config.mcp().keys().cloned().collect(),
-        on: config
-            .plugins()
-            .iter()
-            .filter(|(_, plugin)| plugin.enabled)
-            .map(|(name, _)| name.clone())
-            .collect(),
-    };
+    let on = config
+        .plugins()
+        .iter()
+        .filter(|(_, plugin)| plugin.enabled)
+        .map(|(name, _)| name.clone())
+        .collect();
+    let here = store::Here::of(config, paths, on);
     let mirrors = &config.workshop().sources;
     let list = store::list(paths, mirrors, Order::Trust, None, &[], &here).await?;
     if list.listings.is_empty() && !list.failed.is_empty() {

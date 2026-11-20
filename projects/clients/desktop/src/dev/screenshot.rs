@@ -12,6 +12,8 @@
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - with `DUSK_MASCOT=MS` in the environment every subagent's mascot is held that many
 //!   milliseconds into its activity, so done and failed can be seen mid-motion;
+//! - with `DUSK_SWAP=MS` in the environment a change of the working row's words is held
+//!   that many milliseconds into its swap (`fake=activity-thinking`, then `-steps`);
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
 //! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;
@@ -33,6 +35,8 @@
 //! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
 //!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
 //!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
+//! - `fake=team|team-ended`: after `fake=chat`, the chat leads a team of seven members on
+//!   eight tasks, one in each status, running or ended on its steps (see `dev::team`);
 //! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
 //!   icon, and a chat that links two of them, drawn as chips;
 //! - `fake=forge-signin|forge-unserved`: the quiet line in Changes when the forge asks to sign in,
@@ -260,6 +264,10 @@ fn act(
                     ws.overview.back = Some(Center::Chat);
                     Center::Overview
                 }
+                "team" => {
+                    ws.team_page.back = Some(Center::Chat);
+                    Center::Team
+                }
                 _ => Center::Chat,
             };
             if ws.center == Center::Schedules {
@@ -350,6 +358,15 @@ fn act(
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
+            // After `fake=team`: the yes Stop team asks for, the budget form and a task's card.
+            "team-stop" => ws.ask_stop_team(cx),
+            // The card of task #4, blocked on the lead with a note.
+            "task-card" => ws.open_task_card("t4", cx),
+            "team-budget" => {
+                if let Some(team) = ws.overview.team.clone() {
+                    ws.ask_team_budget(&team, window, cx);
+                }
+            }
             // The arbiter's window, with a few things said so its timeline has rows.
             "whatsnew" => {
                 ws.modal = Some(crate::modal::Modal::WhatsNew {
@@ -538,6 +555,7 @@ fn act(
             cx.notify();
         }
         "fake" if value == "pulls" => fake_pulls(ws, cx),
+        "fake" if value == "unread" => fake_unread(ws, cx),
         "fake" if value == "forge-signin" || value == "forge-unserved" => {
             fake_forge(ws, value == "forge-signin", cx)
         }
@@ -594,6 +612,19 @@ fn act(
             super::polish::state(ws, value, cx)
         }
         "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
+        "fake" if value == "team" || value == "team-ended" => super::team::fake(ws, value, cx),
+        "fake" if value.starts_with("team-") => super::team_sizes::fake(ws, value, cx),
+        // The Team page's layers, and a long plan's done waves shown.
+        "layer" => {
+            use crate::pages::team::Layer;
+            match value {
+                "people" => ws.team_page.layer = Layer::People,
+                "plan" => ws.team_page.layer = Layer::Plan,
+                "unfold" => ws.team_page.unfold = true,
+                _ => ws.team_page.layer = Layer::Both,
+            }
+            cx.notify();
+        }
         // The transcript scrolled so its Nth row is at the top.
         "scroll" => {
             ws.list.scroll_to(ListOffset {
@@ -766,6 +797,7 @@ fn act(
                         task: (*task).into(),
                         effort: None,
                         model: Some("chatgpt/gpt-5.5".into()),
+                        task_id: None,
                     });
                     let inner = match index {
                         1 => Some(ThreadEvent::ToolStarted(ToolCall {
@@ -920,6 +952,7 @@ fn act(
                 task: "Compare the two takes".into(),
                 effort: None,
                 model: Some("chatgpt/gpt-5.5".into()),
+                task_id: None,
             });
             ws.chats.insert("demo".into(), chat);
             ws.shown = Some("demo".into());
@@ -1046,6 +1079,39 @@ fn fake_forge(ws: &mut Workspace, sign_in: bool, cx: &mut Context<Workspace>) {
 }
 
 /// Pull requests in every state, for the Changes module and a chat row's icon.
+/// Three loose chats at the top of the list: one unread, one read, one unread whose
+/// agent works again, so its ring stands where the dot would be.
+fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    let chats = [
+        ("fake-unread", "Answered while you were away", true),
+        ("fake-read", "Read and quiet", false),
+        ("fake-unread-working", "Unread but at work again", true),
+    ];
+    for (index, (id, title, unread)) in chats.into_iter().enumerate() {
+        ws.threads.insert(
+            index,
+            dusk_protocol::thread::Thread {
+                id: id.to_owned(),
+                source: "gui".to_owned(),
+                created_at: 0,
+                title: Some(title.to_owned()),
+                active_at: 0,
+                parent_thread_id: None,
+                agent: None,
+                name: None,
+                project: None,
+                temporary: false,
+                owner: None,
+                unread,
+            },
+        );
+    }
+    let mut working = crate::pages::chat::transcript::Transcript::default();
+    working.working = true;
+    ws.chats.insert("fake-unread-working".to_owned(), working);
+    cx.notify();
+}
+
 fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{
         Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
@@ -1191,6 +1257,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             project: Some(project.dir.to_string_lossy().into_owned()),
             temporary: false,
             owner: None,
+            unread: false,
         },
     );
     crate::pages::chat::pull_link::show(ws, cx);

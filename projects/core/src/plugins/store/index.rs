@@ -8,6 +8,10 @@
 //! who made each entry: `author`, `license`, `source`, `categories` and `badge`, all
 //! required; and for a plugin what it runs and adds, `mcp`, `programs` and `skills`,
 //! which its manifest must say exactly.
+//!
+//! A connector (`kind: connector`, formats 2 and 3) has no package: its `server` says
+//! where the MCP server is or which pinned package starts it. A duskcode before it leaves
+//! such an entry out, as any kind it does not know.
 
 use anyhow::{Context, Result, bail, ensure};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
@@ -145,6 +149,8 @@ pub struct Entry {
     /// Format 3, a skill, pack or agent: its files at a pinned commit of the author's
     /// repository, instead of `downloads`.
     pub upstream: Option<super::upstream::Upstream>,
+    /// A connector: its MCP server, instead of `downloads`.
+    pub server: Option<super::connector::Spec>,
     /// The list's format, which says what its manifest is checked against.
     #[serde(skip)]
     pub format: u32,
@@ -343,6 +349,10 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
             "fields of format 3 in a format {format} list"
         );
     }
+    if entry.kind == Kind::Connector {
+        return check_connector(entry);
+    }
+    ensure!(entry.server.is_none(), "only a connector names a server");
     match &entry.upstream {
         Some(upstream) => {
             ensure!(
@@ -426,6 +436,55 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
     Ok(())
 }
 
+/// A connector: its server and how it is shown, nothing to download or unpack, and none
+/// of what a package brings. Its name is its MCP server's.
+fn check_connector(entry: &Entry) -> Result<()> {
+    let server = entry
+        .server
+        .as_ref()
+        .context("a connector names no server")?;
+    ensure!(
+        is_word(&entry.name, MAX_WORD),
+        "a connector's name is a word of a-z, 0-9 and -"
+    );
+    ensure!(
+        entry.downloads.is_empty()
+            && entry.upstream.is_none()
+            && entry.mcp.is_empty()
+            && entry.programs.is_empty()
+            && entry.skills.is_empty()
+            && entry.providers.is_empty()
+            && entry.permissions == Permissions::default(),
+        "a connector has no package, programs, skills, providers or permissions"
+    );
+    server.check()?;
+    if let Some(page) = &entry.homepage {
+        ensure!(page.starts_with("https://"), "the homepage is not https");
+    }
+    ensure!(
+        entry.category.is_empty() || is_word(&entry.category, MAX_WORD),
+        "the category is not a word of a-z, 0-9 and -"
+    );
+    ensure!(
+        entry.tags.len() <= MAX_TAGS && entry.tags.iter().all(|tag| is_word(tag, MAX_WORD)),
+        "up to {MAX_TAGS} tags of a-z, 0-9 and - are allowed"
+    );
+    if let Some(cover) = &entry.cover {
+        check_cover(cover)?;
+    }
+    ensure!(
+        entry.screenshots.len() <= MAX_SCREENSHOTS,
+        "up to {MAX_SCREENSHOTS} screenshots are allowed"
+    );
+    for screenshot in &entry.screenshots {
+        check_screenshot(screenshot)?;
+    }
+    for date in [&entry.created, &entry.updated].into_iter().flatten() {
+        DateTime::parse_from_rfc3339(date).context("a date is not RFC 3339")?;
+    }
+    Ok(())
+}
+
 /// A plugin's servers and programs: a few, each one plain line, named once.
 fn check_brings(entry: &Entry) -> Result<()> {
     ensure!(
@@ -451,14 +510,17 @@ fn check_brings(entry: &Entry) -> Result<()> {
             ),
         }
         ensure!(
-            is_line(&server.line(), MAX_LINE),
+            is_exact_line(&server.line(), MAX_LINE),
             "the MCP server {} is not one plain line of up to {MAX_LINE} characters",
             server.name
         );
     }
     ensure!(
         entry.programs.len() <= MAX_PROGRAMS
-            && entry.programs.iter().all(|line| is_line(line, MAX_LINE))
+            && entry
+                .programs
+                .iter()
+                .all(|line| is_exact_line(line, MAX_LINE))
             && entry.programs.windows(2).all(|pair| pair[0] < pair[1]),
         "programs are up to {MAX_PROGRAMS} plain lines, sorted, each once"
     );
@@ -481,7 +543,7 @@ fn check_credit(entry: &Entry) -> Result<()> {
     ensure!(
         source.starts_with("https://")
             && source.len() <= MAX_URL
-            && is_line(source, MAX_URL)
+            && is_exact_line(source, MAX_URL)
             && !source.contains(' '),
         "the source is not an https address"
     );
@@ -548,14 +610,19 @@ fn check_picture(picture: &Cover, max: u64) -> Result<()> {
 }
 
 /// Not empty, not padded, at most `max` characters, and none that is a control or one
-/// that turns the text around (bidi overrides and isolates), which could make a caption
-/// or a name read as something else.
-fn is_line(text: &str, max: usize) -> bool {
-    let bidi = |c: char| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
+/// that hides or turns the text around, which could make a caption or a name read as
+/// something else (`dusk_protocol::text::is_plain_line`).
+pub fn is_line(text: &str, max: usize) -> bool {
     !text.trim().is_empty()
         && text.trim() == text
         && text.chars().count() <= max
-        && !text.chars().any(|c| c.is_control() || bidi(c))
+        && dusk_protocol::text::is_plain_line(text)
+}
+
+/// `is_line` for what names a program or an address: no hidden character at all, not even
+/// the joiners and soft hyphen a caption may hold, so what runs reads as it is approved.
+pub fn is_exact_line(text: &str, max: usize) -> bool {
+    is_line(text, max) && !text.chars().any(dusk_protocol::text::is_hidden)
 }
 
 /// The type of a cover or screenshot, by its extension.
@@ -598,14 +665,33 @@ pub fn brings(programs: &[String], servers: &[Server]) -> Vec<String> {
 
 impl Entry {
     /// What the user agrees to by installing it, one line each: first one per program,
-    /// then one per MCP server, in their order, as `Listing::permissions` says.
-    pub fn consent(&self) -> Vec<String> {
+    /// then one per MCP server, in their order, as `Listing::permissions` says. `tier` is
+    /// the one the listing earns: a connector's claims read as claims below Verified.
+    pub fn consent(&self, tier: dusk_protocol::plugin::Tier) -> Vec<String> {
+        if let Some(server) = self
+            .server
+            .as_ref()
+            .filter(|_| self.kind == Kind::Connector)
+        {
+            let mut lines = brings(&[], &[server.server(&self.name)]);
+            lines.extend(server.consent(&self.name, tier));
+            return lines;
+        }
         let mut lines = brings(&self.programs, &self.mcp);
         lines.extend(self.permissions.lines());
         for url in &self.providers {
             lines.push(format!("send your chats to {url} when you pick its model"));
         }
         lines
+    }
+
+    /// Why it cannot be installed here, when it cannot: an item pinned upstream whose
+    /// files are too many bytes, or one with no package for this machine.
+    pub fn unfit(&self) -> Option<String> {
+        match &self.upstream {
+            Some(upstream) => upstream.fits().err().map(|error| error.to_string()),
+            None => self.download_here().err(),
+        }
     }
 
     /// The package for this machine, or why there is none.
@@ -672,5 +758,23 @@ impl Entry {
             && self.source.is_none()
             && self.categories.is_empty()
             && self.badge.is_none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn what_runs_holds_no_hidden_character_a_caption_may() {
+        for kept in ["a soft\u{AD}hyphen", "a joined \u{1F469}\u{200D}\u{1F4BB}"] {
+            assert!(is_line(kept, 80), "{kept:?}");
+            assert!(!is_exact_line(kept, 80), "{kept:?}");
+        }
+        assert!(is_exact_line(
+            "npx -y some-server --config ./config.json",
+            80
+        ));
+        assert!(!is_exact_line("--config ./con\u{AD}fig.json", 80));
     }
 }

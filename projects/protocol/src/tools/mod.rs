@@ -12,6 +12,7 @@ pub use approval::{ApprovalRequest, ApprovalStep, Decision, Request};
 pub use card::{Card, CardKind};
 pub use phrase::{is_agent_tool, phrase};
 pub use question::{
-    DECLINED, MAX_OPTION_CHARS, MAX_OPTIONS, MAX_QUESTION_CHARS, MIN_OPTIONS, Question, SKIPPED,
+    DECLINED, MAX_OPTION_CHARS, MAX_OPTIONS, MAX_QUESTION_CHARS, MIN_OPTIONS, Question,
+    QuestionQueue, SKIPPED,
 };
 pub use result::{ToolResult, WindowAccess};

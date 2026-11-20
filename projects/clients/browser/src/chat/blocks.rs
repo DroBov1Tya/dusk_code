@@ -13,7 +13,7 @@ use crate::{
     state::{Chat, state},
     ui::{Icon, IconName},
 };
-use dusk_protocol::thread::{ChatLog, Part as TextPart, Tool, ToolState, split};
+use dusk_protocol::thread::{ChatLog, Tool, ToolState, labelled};
 use dusk_protocol::tools::Card;
 use leptos::{html, prelude::*};
 use std::collections::HashMap;
@@ -442,19 +442,9 @@ fn item_view(
 
 /// A message as the user wrote it: each paste and kept file as a short label.
 fn user_text(text: &str) -> String {
-    split(text)
-        .into_iter()
-        .map(|part| match part {
-            TextPart::Text(text) => text.to_owned(),
-            TextPart::Pasted(pasted) => {
-                format!("[pasted {} lines]", pasted.lines().count().max(1))
-            }
-            TextPart::Source(name) => format!("[{name}]"),
-            TextPart::Sound { path, .. } => {
-                format!("[{}]", path.rsplit('/').next().unwrap_or(path))
-            }
-        })
-        .collect()
+    labelled(text, |pasted| {
+        format!("pasted {} lines", pasted.lines().count().max(1))
+    })
 }
 
 /// A new chat from the history up to this item; none while its stored message is not
@@ -609,6 +599,8 @@ fn TurnView(block: Memo<Option<Block>>, source: Source) -> impl IntoView {
         let took = took.get();
         steps.with(|steps| source.with(|c| heading(c, steps, took)))
     });
+    let title = Memo::new(move |_| head.with(|h| h.title.clone()));
+    let drawn = StoredValue::new(false);
     // A folded turn still shows what its steps changed in skills, as the desktop does.
     let calls = move || {
         steps.with(|steps| {
@@ -627,7 +619,14 @@ fn TurnView(block: Memo<Option<Block>>, source: Source) -> impl IntoView {
         <details class="steps">
             <summary>
                 {move || head.with(|h| h.running).then(|| view! { <span class="act-slot" aria-hidden="true"><span class="act-live"></span></span> })}
-                <span>{move || head.with(|h| h.title.clone())}</span>
+                {move || {
+                    // A phrase that takes another's place comes in softly; the one a
+                    // turn is first drawn with simply stands.
+                    let title = title.get();
+                    let coming = drawn.get_value();
+                    drawn.set_value(true);
+                    view! { <span class="steps-title" class:coming=coming>{title}</span> }
+                }}
                 <span class="muted">{move || head.with(|h| h.names.clone())}</span>
                 {move || {
                     let failed = head.with(|h| h.failed);

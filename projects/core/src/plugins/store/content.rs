@@ -82,7 +82,9 @@ pub fn files_of(
     unverified: bool,
 ) -> Result<Files> {
     ensure!(
-        entry.consent().is_empty(),
+        entry
+            .consent(dusk_protocol::plugin::Tier::Official)
+            .is_empty(),
         "a skill, pack or agent asks for no permissions; the list says it does"
     );
     ensure!(
@@ -112,27 +114,34 @@ pub fn files_of(
     result
 }
 
+/// The `pack.yml` the core writes for a pack fetched from upstream, from its entry.
+pub fn pack_yml(entry: &Entry) -> Option<String> {
+    if entry.kind != Kind::Pack {
+        return None;
+    }
+    let text = |value: &str| serde_json::Value::from(value).to_string();
+    let items: Vec<serde_json::Value> = entry
+        .skills
+        .iter()
+        .map(|item| item.as_str().into())
+        .collect();
+    Some(format!(
+        "name: {}\ntitle: {}\ndescription: {}\nvendor: {}\nkind: skills\nitems: {}\nlicense: {}\n",
+        text(&entry.name),
+        text(&entry.name),
+        text(&entry.description),
+        text(entry.author.as_deref().unwrap_or("")),
+        serde_json::Value::from(items),
+        text(entry.license.as_deref().unwrap_or("")),
+    ))
+}
+
 /// Files fetched from upstream, laid out as a package would hold them; a pack gets the
 /// `pack.yml` its entry describes, since its author's repository has none.
 fn write_files(entry: &Entry, files: &BTreeMap<String, Vec<u8>>, folder: &Path) -> Result<()> {
     crate::init::create_private_dir(folder)?;
     let mut all = files.clone();
-    if entry.kind == Kind::Pack {
-        let text = |value: &str| serde_json::Value::from(value).to_string();
-        let items: Vec<serde_json::Value> = entry
-            .skills
-            .iter()
-            .map(|item| item.as_str().into())
-            .collect();
-        let yaml = format!(
-            "name: {}\ntitle: {}\ndescription: {}\nvendor: {}\nkind: skills\nitems: {}\nlicense: {}\n",
-            text(&entry.name),
-            text(&entry.name),
-            text(&entry.description),
-            text(entry.author.as_deref().unwrap_or("")),
-            serde_json::Value::from(items),
-            text(entry.license.as_deref().unwrap_or("")),
-        );
+    if let Some(yaml) = pack_yml(entry) {
         ensure!(
             all.insert(pack::FILE.to_owned(), yaml.into_bytes())
                 .is_none(),
@@ -207,6 +216,7 @@ pub fn read(entry: &Entry, unpacked: &Path) -> Result<Files> {
         Kind::Agent => ("agents", "AGENT.md"),
         Kind::Pack => bail!("a pack has no pack.yml"),
         Kind::Plugin => bail!("a plugin is not placed as files"),
+        Kind::Connector => bail!("a connector has no files"),
     };
     ensure!(
         top.len() == 1 && top.contains(&entry.name),

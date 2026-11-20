@@ -51,6 +51,7 @@ pub fn mcp(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         state,
         tools: Vec::new(),
         icon: None,
+        added_from: None,
     };
     let ready = |tools: &[&str]| McpState::Ready(tools.iter().map(|tool| (*tool).into()).collect());
     if let Some(settings) = ws.settings.as_mut() {
@@ -518,7 +519,10 @@ fn activity(ws: &mut Workspace, shown: &str, kind: &str, turn: dusk_protocol::th
         }
     };
     let started = ThreadEvent::TurnStarted(turn);
-    chat.apply(started.clone());
+    // One kind after another in the same turn, so the row's words swap as they do live.
+    if !chat.working {
+        chat.apply(started.clone());
+    }
     let steps = chat.items.len();
     let events = match kind {
         "thinking" => vec![ThreadEvent::Model(ModelEvent::Reasoning(
@@ -569,6 +573,7 @@ fn activity(ws: &mut Workspace, shown: &str, kind: &str, turn: dusk_protocol::th
                     task: "Review the change".into(),
                     effort: None,
                     model: None,
+                    task_id: None,
                 });
             }
             events.push(ThreadEvent::AgentsWorking(true));
@@ -628,6 +633,7 @@ fn agent_tree(ws: &mut Workspace) {
         enabled: name != "docs",
         links: links.iter().map(|link| (*link).to_owned()).collect(),
         children,
+        source: None,
     };
     let problem = |node: &str, reason: &str| Problem {
         node: node.into(),

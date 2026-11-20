@@ -7,7 +7,7 @@ use dusk_protocol::{
 
 use std::time::Instant;
 
-use super::{Activity, App, Entry, Focus, Poll, Tone};
+use super::{Activity, App, Entry, Focus, Tone};
 
 impl App {
     pub fn apply(&mut self, event: ThreadEvent) {
@@ -107,7 +107,7 @@ impl App {
                 self.turn_running = false;
                 self.last_turn_duration_ms = turn
                     .finished_at
-                    .map(|finished| finished.saturating_sub(turn.started_at).max(0) as u64);
+                    .map(|finished| finished.saturating_sub(turn.started_at).max(0));
                 self.turn_started_at = None;
                 self.output_samples.clear();
                 match turn.status {
@@ -116,7 +116,7 @@ impl App {
                     TurnStatus::Failed => {}
                     _ => {
                         if let Some(ms) = self.last_turn_duration_ms {
-                            let took = dusk_protocol::thread::duration_words(ms as i64);
+                            let took = dusk_protocol::thread::duration_words(ms);
                             self.transcript
                                 .notice(format!("Worked for {took}"), Tone::Info);
                         }
@@ -153,25 +153,37 @@ impl App {
                 task,
                 effort,
                 model,
+                task_id,
                 ..
             } => {
                 let parent = self.thread_id.clone();
-                self.start_subagent(thread_id, agent, task, (effort, model), parent);
+                self.start_subagent(thread_id, agent, task, (effort, model), parent, task_id);
             }
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
             ThreadEvent::FromJob(_) => self.jobs_stale = true,
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
-            ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_) => self.overview_stale = true,
+            // A task of the plan moved: the member rows and the task's lines follow it.
+            ThreadEvent::TaskChanged(task) => {
+                match self
+                    .tasks
+                    .iter_mut()
+                    .find(|known| known.task_id == task.task_id)
+                {
+                    Some(known) => *known = task,
+                    None => self.tasks.push(task),
+                }
+                self.overview_stale = true;
+            }
+            ThreadEvent::Team(team) => {
+                self.team_heard(team, false);
+                self.overview_stale = true;
+            }
             ThreadEvent::Goal {
                 goal,
                 note,
                 started,
             } => self.goal_changed(goal, note, started),
-            // A second question waits behind the first instead of taking its place.
-            ThreadEvent::Question(question) if self.poll.is_some() => {
-                self.polls_waiting.push_back(question)
-            }
-            ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
+            ThreadEvent::Question(question) => self.ask_question(question),
             ThreadEvent::Approval(request) => self.ask_approval(request, None),
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
             ThreadEvent::ArbiterDecided {

@@ -50,6 +50,7 @@ fn kind(kind: Kind) -> &'static str {
         Kind::Skill => "skill",
         Kind::Pack => "pack",
         Kind::Agent => "agent",
+        Kind::Connector => "connector",
     }
 }
 

@@ -6,6 +6,7 @@ use std::fmt::Write;
 
 use anyhow::{Context, bail};
 use chrono::DateTime;
+use dusk_protocol::text::clip_chars;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
@@ -108,7 +109,7 @@ impl Tool for RecallTool {
 }
 
 fn miss(query: &str, stored: u64) -> String {
-    let echoed: String = plain(query).chars().take(MAX_ECHO_CHARS).collect();
+    let echoed = clip_chars(&plain(query), MAX_ECHO_CHARS, "");
     format!("No notes match \"{echoed}\" in this project ({stored} stored).")
 }
 
@@ -165,10 +166,7 @@ fn cut(text: &str, max: usize) -> String {
     if text.len() <= max {
         return text.to_owned();
     }
-    let mut end = max - CUT.len_utf8();
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = text.floor_char_boundary(max - CUT.len_utf8());
     format!("{}{CUT}", &text[..end])
 }
 

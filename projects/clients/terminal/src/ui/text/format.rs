@@ -1,15 +1,4 @@
-//! Small text forms more than one view shows: durations and one-line text.
-
-/// `mm:ss`, or `h:mm:ss` from an hour on.
-pub fn format_duration(ms: u64) -> String {
-    let seconds = ms / 1_000;
-    let minutes = seconds / 60;
-    if minutes >= 60 {
-        format!("{}:{:02}:{:02}", minutes / 60, minutes % 60, seconds % 60)
-    } else {
-        format!("{minutes:02}:{:02}", seconds % 60)
-    }
-}
+//! Small text forms more than one view shows: one-line text.
 
 pub fn one_line(text: &str) -> String {
     printable(text)

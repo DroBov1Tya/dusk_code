@@ -58,8 +58,12 @@ impl Suggested {
     }
 
     /// The shelf whose Workshop lists the row: Plugins for a plugin, even one that brings
-    /// a connector, since that is where it is installed and switched.
+    /// a connector, since that is where it is installed and switched; Connectors for a
+    /// connector listing.
     pub fn scope(&self) -> Scope {
+        if self.kind == Kind::Connector {
+            return Scope::Connectors;
+        }
         let probe = Listing {
             kind: self.kind,
             ..Listing::default()
@@ -142,6 +146,7 @@ mod tests {
         assert_eq!(row(Kind::Skill).scope(), Scope::Skills);
         assert_eq!(row(Kind::Plugin).scope(), Scope::Plugins);
         assert_eq!(row(Kind::Agent).scope(), Scope::Agents);
+        assert_eq!(row(Kind::Connector).scope(), Scope::Connectors);
     }
 
     #[test]

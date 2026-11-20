@@ -36,8 +36,8 @@ struct Arguments {
     /// Words to look for in names, descriptions, tags, categories and skills; empty
     /// lists the most trusted listings.
     query: String,
-    /// Only these kinds; all when left out. `connector` is a plugin that brings an MCP
-    /// server.
+    /// Only these kinds; all when left out. `connector` is an MCP server to add, or a
+    /// plugin that brings one.
     #[serde(default)]
     kinds: Vec<Wanted>,
     /// At most this many listings, 1 to 20; 8 when left out.
@@ -62,7 +62,10 @@ impl Wanted {
             Self::Skill => listing.kind == Kind::Skill,
             Self::Pack => listing.kind == Kind::Pack,
             Self::Agent => listing.kind == Kind::Agent,
-            Self::Connector => listing.kind == Kind::Plugin && !listing.connectors.is_empty(),
+            Self::Connector => {
+                listing.kind == Kind::Connector
+                    || listing.kind == Kind::Plugin && !listing.connectors.is_empty()
+            }
         }
     }
 }
@@ -199,13 +202,26 @@ pub(super) fn line(listing: &Listing, config: &Config) -> String {
     if !listing.skills.is_empty() {
         about.push(format!("{} skills", listing.skills.len()));
     }
-    if !listing.connectors.is_empty() {
+    if let Some(server) = &listing.server {
+        let reaches = listing.connectors.first().map(|c| match &c.runs {
+            dusk_protocol::plugin::Runs::Url(url) => format!("remote at {url}"),
+            dusk_protocol::plugin::Runs::Command(line) => format!("runs {line}"),
+        });
+        about.extend(reaches.map(|line| untrusted::line(&line, 120)));
+        about.push(match server.auth {
+            dusk_protocol::plugin::Auth::None => "no sign-in".to_owned(),
+            dusk_protocol::plugin::Auth::OAuth => "the user signs in".to_owned(),
+            dusk_protocol::plugin::Auth::Key => "the user puts in a key".to_owned(),
+        });
+    } else if !listing.connectors.is_empty() {
         let names: Vec<&str> = listing.connectors.iter().map(|c| c.name.as_str()).collect();
         about.push(format!("connectors {}", names.join(", ")));
     }
     match (&listing.installed, &listing.update) {
         (Some(version), Some(newer)) => about.push(format!("installed {version}, update {newer}")),
+        (Some(_), None) if listing.kind == Kind::Connector => about.push("added".to_owned()),
         (Some(version), None) => about.push(format!("installed {version}")),
+        (None, _) if listing.kind == Kind::Connector => about.push("not added".to_owned()),
         (None, _) => about.push("not installed".to_owned()),
     }
     if listing.installed.is_some() && listing.kind == Kind::Plugin {
@@ -229,5 +245,6 @@ fn kind_word(kind: Kind) -> &'static str {
         Kind::Skill => "skill",
         Kind::Pack => "pack",
         Kind::Agent => "agent",
+        Kind::Connector => "connector",
     }
 }

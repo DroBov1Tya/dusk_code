@@ -81,10 +81,7 @@ async fn complete_with(
         "GitHub has no tree for {tag} ({})",
         response.status()
     );
-    let tree: Tree = response
-        .json()
-        .await
-        .context("unexpected answer from GitHub")?;
+    let tree: Tree = super::update::read_json(response).await?;
     ensure!(
         !tree.truncated,
         "the repository tree for {tag} is too large to check"
@@ -279,11 +276,7 @@ fn git_hash(bytes: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(format!("blob {}\0", bytes.len()).as_bytes());
     hasher.update(bytes);
-    hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    dusk_protocol::text::hex(&hasher.finalize())
 }
 
 #[cfg(test)]

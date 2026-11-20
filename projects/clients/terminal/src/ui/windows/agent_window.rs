@@ -1,7 +1,7 @@
 //! One subagent's thread in a window over the screen: its numbers at the top, beside its
 //! loader, and below them its conversation and actions as they happen.
 
-use dusk_protocol::thread::AUTO_COMPACT_PERCENT;
+use dusk_protocol::thread::{AUTO_COMPACT_PERCENT, clock_words};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -22,7 +22,7 @@ use super::{
     wrap,
 };
 use crate::app::{App, Panel, TEXT_COLUMN, TranscriptHit, compact_number};
-use crate::ui::text::format::{format_duration, one_line};
+use crate::ui::text::format::one_line;
 
 const STOP: &str = " \u{25A0} stop ";
 
@@ -132,7 +132,7 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
             Vec::new(),
         ];
     };
-    let elapsed = format_duration(card.elapsed_ms());
+    let elapsed = clock_words(card.elapsed_ms());
     let state = match (&card.phase, card.unavailable_at, card.is_working()) {
         (_, Some(_), _) => Span::styled(format!("unavailable after {elapsed}"), fg(NEGATIVE)),
         (Some((phase, note)), _, working) => {

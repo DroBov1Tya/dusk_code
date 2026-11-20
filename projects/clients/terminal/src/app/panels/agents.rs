@@ -36,6 +36,8 @@ pub struct SubagentView {
     pub model: Option<String>,
     /// The thread that asked it.
     pub parent: Option<String>,
+    /// The task of the plan it was given, when it is a team member.
+    pub task_id: Option<String>,
     pub started_at: i64,
     pub finished_at: Option<i64>,
     /// When its event stream was lost, without an observed completion.
@@ -99,12 +101,12 @@ impl SubagentView {
     }
 
     /// How long work was observed, frozen on completion or loss of the stream.
-    pub fn elapsed_ms(&self) -> u64 {
+    pub fn elapsed_ms(&self) -> i64 {
         let end = self
             .finished_at
             .or(self.unavailable_at)
             .unwrap_or_else(now_ms);
-        end.saturating_sub(self.started_at).max(0) as u64
+        end.saturating_sub(self.started_at).max(0)
     }
 
     fn record_output(&mut self, text: &str) {
@@ -212,6 +214,7 @@ impl App {
                 task,
                 effort,
                 model,
+                task_id,
                 ..
             } => self.start_subagent(
                 child,
@@ -219,6 +222,7 @@ impl App {
                 task,
                 (effort, model),
                 Some(thread_id.to_owned()),
+                task_id,
             ),
             ThreadEvent::Subagent {
                 thread_id: child,
@@ -270,6 +274,7 @@ impl App {
             format!("{verdict} {what}"),
             (None, None),
             None,
+            None,
         );
         if let Some(card) = self.subagents.last_mut() {
             card.finished_at = Some(now_ms());
@@ -284,6 +289,7 @@ impl App {
         task: String,
         (effort, model): (Option<Effort>, Option<String>),
         parent: Option<String>,
+        task_id: Option<String>,
     ) {
         let earlier = self
             .subagents
@@ -300,6 +306,7 @@ impl App {
             effort,
             model,
             parent,
+            task_id,
             started_at: now_ms(),
             finished_at: None,
             unavailable_at: None,
@@ -310,6 +317,66 @@ impl App {
             running: Vec::new(),
             output: VecDeque::new(),
         });
+    }
+
+    /// The chat's team as the core told it: by its event, or, when `answer`, by a
+    /// request that an event newer than it may have overtaken. Its members become cards
+    /// by the rule every client shares (`Team::changes`), so a chat opened while its team
+    /// runs or after lists them as the desktop and browser do, and an ended team stops
+    /// its members whether its roster still names them or not.
+    pub fn team_heard(&mut self, team: dusk_protocol::thread::Team, answer: bool) {
+        use dusk_protocol::thread::{KnownAgent, TeamChange};
+        let stale = |held: &dusk_protocol::thread::Team| match answer {
+            true => !team.replaces(held),
+            false => team.older_run_than(held),
+        };
+        if self.team.as_ref().is_some_and(stale) {
+            return;
+        }
+        let known: Vec<KnownAgent<'_>> = self
+            .subagents
+            .iter()
+            .map(|card| KnownAgent {
+                thread_id: &card.thread_id,
+                task_id: card.task_id.as_deref(),
+                working: card.state.working(),
+            })
+            .collect();
+        let changes = team.changes(&self.tasks, &known);
+        let now = now_ms();
+        for change in changes {
+            match change {
+                TeamChange::Stop(thread_id) => {
+                    if let Some(card) = self.subagents.iter_mut().find(|c| c.thread_id == thread_id)
+                    {
+                        card.state = AgentState::Done;
+                        card.running.clear();
+                        card.finished_at.get_or_insert(now);
+                    }
+                }
+                TeamChange::Join(member) => {
+                    let thread_id = member.thread_id.clone();
+                    let parent = Some(team.thread_id.clone());
+                    let shown = (None, member.model);
+                    let task_id = Some(member.task_id);
+                    self.start_subagent(
+                        thread_id,
+                        member.role,
+                        member.task,
+                        shown,
+                        parent,
+                        task_id,
+                    );
+                    if !member.state.working()
+                        && let Some(card) = self.subagents.last_mut()
+                    {
+                        card.state = member.state;
+                        card.finished_at = Some(now);
+                    }
+                }
+            }
+        }
+        self.team = Some(team);
     }
 
     /// Whether an unfolded task shows a step whose timer runs.

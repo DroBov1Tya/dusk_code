@@ -28,15 +28,15 @@ summary word for word.\n\n";
 
 /// A context loaded to check its size and left as it was, for the next reader to take
 /// over when nothing was written in between, so a step costs one load and not two.
-pub struct Loaded {
+pub(crate) struct Loaded {
     /// The `limits.stub_results` switch it was loaded with.
-    pub stub_results: bool,
-    pub conversation: Conversation,
+    stub_results: bool,
+    conversation: Conversation,
 }
 
 impl Loaded {
     /// The conversation as loaded with `stub_results`, from `loaded` when it matches.
-    pub async fn take(
+    pub(crate) async fn take(
         loaded: Option<Self>,
         agent: &Agent,
         stub_results: bool,
@@ -124,7 +124,7 @@ impl Agent {
     /// to work on: a queued message, or the running `turn`. Without a turn this is the
     /// point between turns, where `limits.compact_early` compacts sooner. A context left
     /// as it was is handed back, for the next step to read without a reload.
-    pub async fn compact_if_needed(
+    pub(crate) async fn compact_if_needed(
         &self,
         turn: Option<&Turn>,
         inbox: &mut Inbox,

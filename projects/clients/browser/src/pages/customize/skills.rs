@@ -12,7 +12,7 @@ use leptos::prelude::*;
 pub fn Skills(
     panel: RwSignal<Option<Settings>>,
     reload: impl Fn() + Clone + Send + Sync + 'static,
-    discover: RwSignal<bool>,
+    discover: RwSignal<Option<bool>>,
 ) -> impl IntoView {
     let open = RwSignal::new(None::<String>);
     let text = RwSignal::new(String::new());

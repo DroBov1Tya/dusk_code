@@ -10,9 +10,12 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use sha2::{Digest, Sha256};
+use dusk_protocol::text::sha256_hex;
 
-use crate::{init::paths::Paths, release::resources};
+use crate::{
+    init::{files::remove_empty_parents, paths::Paths},
+    release::resources,
+};
 
 /// Far above any skill or agent file.
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
@@ -52,12 +55,12 @@ pub fn write_wanted(
     let root = paths.rules_root();
     for (relative, bytes) in wanted {
         let target = root.join(relative);
-        let on_disk = fs::read(&target).ok().map(|disk| hash(&disk));
+        let on_disk = fs::read(&target).ok().map(|disk| sha256_hex(&disk));
         let ours = record.get(relative);
         // Missing, or still as the plugin wrote it: the plugin's version goes in, unless
         // the file already holds it, as on every scan when nothing changed.
         if on_disk.is_none() || on_disk.as_ref() == ours {
-            let new = hash(bytes);
+            let new = sha256_hex(bytes);
             if on_disk.as_ref() != Some(&new) {
                 crate::init::create_private_dir(target.parent().context("no folder")?)?;
                 crate::init::files::write_private(&target, bytes)?;
@@ -72,10 +75,18 @@ pub fn write_wanted(
         .collect();
     for relative in gone {
         let target = root.join(&relative);
-        if fs::read(&target).ok().map(|disk| hash(&disk)).as_ref() == record.get(&relative)
+        if fs::read(&target)
+            .ok()
+            .map(|disk| sha256_hex(&disk))
+            .as_ref()
+            == record.get(&relative)
             && fs::remove_file(&target).is_ok()
         {
-            remove_empty_parents(&root, &target);
+            // Folders left empty under `skills/` or `agents/` go; those two stay.
+            remove_empty_parents(&target, |parent| {
+                let part = parent.strip_prefix(&root).ok();
+                part.is_none_or(|part| part.components().count() < 2)
+            });
         }
         record.remove(&relative);
     }
@@ -85,26 +96,13 @@ pub fn write_wanted(
     write_record(record_file, &record)
 }
 
-/// Folders left empty under `skills/` or `agents/`; one that holds anything stays.
-fn remove_empty_parents(root: &Path, file: &Path) {
-    let mut folder = file.parent();
-    while let Some(parent) = folder {
-        let part = parent.strip_prefix(root).ok();
-        if part.is_none_or(|part| part.components().count() < 2) || fs::remove_dir(parent).is_err()
-        {
-            break;
-        }
-        folder = parent.parent();
-    }
-}
-
 /// Beside the plugins, so it goes when the user removes the folder of plugins whole.
 fn record_file(paths: &Paths, plugin: &str) -> PathBuf {
     super::catalog::folder(paths).join(format!(".installed-{plugin}"))
 }
 
 /// Lines of `hash path`; anything else is dropped, which only means a file is kept.
-fn read_record(file: &Path) -> BTreeMap<PathBuf, String> {
+pub(crate) fn read_record(file: &Path) -> BTreeMap<PathBuf, String> {
     let text = fs::read_to_string(file).unwrap_or_default();
     text.lines()
         .filter_map(|line| line.split_once(' '))
@@ -132,13 +130,6 @@ fn write_record(file: &Path, record: &BTreeMap<PathBuf, String>) -> Result<()> {
         text.push_str(&format!("{hash} {path}\n"));
     }
     crate::init::files::write_private(file, text.as_bytes())
-}
-
-fn hash(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[cfg(test)]

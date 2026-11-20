@@ -85,7 +85,7 @@ impl App {
             let why = listing.unfit.as_deref().unwrap_or("already installed");
             self.flash = Some(format!("cannot install here: {why}"));
         } else {
-            let unverified = listing.tier == dusk_protocol::plugin::Tier::Unverified;
+            let unverified = crate::app::reviewed_first(&listing);
             let review = Action::ReviewListing {
                 source: listing.source.clone(),
                 name: listing.name.clone(),

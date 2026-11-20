@@ -1,5 +1,6 @@
 //! The panel on screen: which one draws, the window it sits in, and the rows they share.
 
+use dusk_protocol::thread::labelled;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -141,7 +142,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 .iter()
                 .enumerate()
                 .map(|(index, point)| {
-                    let text = paste::labelled(&point.text).replace('\n', " ");
+                    let text = labelled(&point.text, paste::label).replace('\n', " ");
                     selectable(
                         vec![
                             Span::styled(format!(" {:>3}  ", index + 1), dim()),
@@ -213,12 +214,21 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             context(report),
             None,
         ),
-        Panel::Overview(view) => (
-            "overview",
-            "up/down scroll  any other key closes",
-            overview(app, view),
-            None,
-        ),
+        Panel::Overview(view) => {
+            let running = app.team.as_ref().is_some_and(|team| team.ended().is_none());
+            let hints = match (&view.budget, view.stopping) {
+                (Some(_), _) => "up/down field  type to change  enter save  esc cancel",
+                (None, true) => "stop team? y stops it  any other key keeps it running",
+                (None, false) if running => {
+                    "up/down scroll  tab member  enter open  s stop  b budget  esc close"
+                }
+                (None, false) if app.team.is_some() => {
+                    "up/down scroll  tab member  enter open its chat  esc close"
+                }
+                (None, false) => "up/down scroll  any other key closes",
+            };
+            ("overview", hints, overview(app, view), None)
+        }
         Panel::Diff(view) => {
             let width = screen.width.saturating_sub(8).min(116) as usize;
             let (lines, hints) = match view.open {
@@ -355,21 +365,4 @@ pub fn fit(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
             Line::from(spans).style(style)
         })
         .collect()
-}
-
-pub fn ago(ms: i64) -> String {
-    match age(ms).as_str() {
-        "now" => "just now".into(),
-        age => format!("{age} ago"),
-    }
-}
-
-pub fn age(ms: i64) -> String {
-    let minutes = ms.max(0) / 60_000;
-    match minutes {
-        0 => "now".into(),
-        1..60 => format!("{minutes}m"),
-        60..1440 => format!("{}h", minutes / 60),
-        _ => format!("{}d", minutes / 1440),
-    }
 }

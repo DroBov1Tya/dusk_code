@@ -8,11 +8,13 @@ mod workshop;
 
 pub use agents::{AgentWindow, SubagentView};
 pub use panel::{
-    Connection, DiffView, JobsView, ModelList, ModelRow, OverviewView, Panel, PluginRow, Preset,
-    Preview, SecretEntry, ThreadList, step,
+    BudgetEdit, Connection, DiffView, JobsView, ModelList, ModelRow, OverviewView, Panel,
+    PluginRow, Preset, Preview, SecretEntry, ThreadList, step,
 };
 pub use settings::{
     AgentRow, FileButton, FileEditor, HitTarget, McpRow, SettingCategory, SettingsHit,
     SettingsView, SwitchKind,
 };
-pub use workshop::{Choice, Confirm, PackPage, Reviewed, Row, Step, Workshop, choices, order_word};
+pub use workshop::{
+    Choice, Confirm, PackPage, Reviewed, Row, Step, Workshop, choices, order_word, reviewed_first,
+};

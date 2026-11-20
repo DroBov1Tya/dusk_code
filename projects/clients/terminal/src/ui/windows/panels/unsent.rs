@@ -1,5 +1,6 @@
 //! /resend: messages kept locally while no model answered.
 
+use dusk_protocol::thread::labelled;
 use ratatui::text::{Line, Span};
 
 use super::frame::selectable;
@@ -45,7 +46,7 @@ pub fn unsent(app: &App, selected: usize, width: usize) -> (Vec<Line<'static>>, 
             index == selected,
         ));
         if index == selected {
-            let preview = paste::labelled(&message.content);
+            let preview = labelled(&message.content, paste::label);
             let wrapped = wrap::words(vec![Span::raw(preview)], width.saturating_sub(3).max(1), 0);
             lines.extend(
                 wrapped

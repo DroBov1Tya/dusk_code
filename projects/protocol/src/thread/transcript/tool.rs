@@ -69,11 +69,7 @@ impl Tool {
 
 /// The first `SHOWN_CHARS` characters, marked when more were cut.
 pub fn clip(text: &str) -> String {
-    let mut clipped: String = text.chars().take(SHOWN_CHARS).collect();
-    if clipped.len() < text.len() {
-        clipped.push_str("\n...");
-    }
-    clipped
+    crate::text::clip_chars(text, SHOWN_CHARS, "\n...")
 }
 
 /// The arguments that say what a tool was asked, in the order they are looked for.

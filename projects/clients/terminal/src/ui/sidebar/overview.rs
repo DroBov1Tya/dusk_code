@@ -2,7 +2,7 @@
 //! context gauge, the activity of the turn, and the plan's line and its members while
 //! the chat has a plan.
 
-use dusk_protocol::thread::{AUTO_COMPACT_PERCENT, ThreadTokens};
+use dusk_protocol::thread::{AUTO_COMPACT_PERCENT, ThreadTokens, clock_words, plural};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -16,16 +16,13 @@ use super::{
     section::{GAUGE, PAD, fill, row, ruled},
 };
 use crate::app::compact_number;
+use crate::ui::theme::{
+    ACCENT, DEEP, DUSK, HAIRLINE, NEGATIVE, RAISED, TEXT, TEXT_MUTED, TEXT_SOFT, USER_BAR, bold,
+    dusk, fg,
+};
 use crate::ui::windows::panels::{
     fit,
-    overview::{member_line, plan_line, total},
-};
-use crate::ui::{
-    text::format::format_duration,
-    theme::{
-        ACCENT, DEEP, DUSK, HAIRLINE, NEGATIVE, RAISED, TEXT, TEXT_MUTED, TEXT_SOFT, USER_BAR,
-        bold, dusk, fg,
-    },
+    overview::{member_line, plan_line, status_line},
 };
 
 /// The Overview without a plan: eleven lines and a blank one below.
@@ -34,17 +31,22 @@ const BASE_HEIGHT: u16 = 12;
 const MEMBERS_SHOWN: usize = 4;
 
 impl Sidebar<'_> {
-    /// The rows the Overview takes: the plan adds its heading, its line and members.
+    /// The rows the Overview takes: the plan adds its heading and its line, a team its
+    /// status and members.
     pub fn overview_height(&self) -> u16 {
         if !self.has_plan() {
             return BASE_HEIGHT;
         }
-        let members = self.app.team.as_ref().map_or(0, |team| team.members.len());
-        BASE_HEIGHT + 3 + members.min(MEMBERS_SHOWN) as u16
+        let team = self
+            .app
+            .team
+            .as_ref()
+            .map_or(0, |team| 1 + team.members.len().min(MEMBERS_SHOWN) as u16);
+        BASE_HEIGHT + 3 + team
     }
 
     fn has_plan(&self) -> bool {
-        self.app.plan.is_some_and(|counts| total(counts) > 0)
+        self.app.plan.is_some_and(|counts| counts.total() > 0)
     }
 
     pub fn overview(&self, frame: &mut Frame, area: Rect) {
@@ -60,17 +62,14 @@ impl Sidebar<'_> {
         let elapsed = self
             .app
             .elapsed_ms()
-            .map(format_duration)
+            .map(clock_words)
             .unwrap_or_else(|| "--:--".into());
         let time_label = if self.app.turn_started_at.is_some() {
             "turn"
         } else {
             "last turn"
         };
-        let mut calls = match model_calls {
-            1 => " \u{00B7} 1 call".to_owned(),
-            calls => format!(" \u{00B7} {calls} calls"),
-        };
+        let mut calls = format!(" \u{00B7} {}", plural(model_calls, "call"));
         if let Some(cost) = self.app.tokens.cost() {
             calls.push_str(&format!(" \u{00B7} {cost}"));
         }
@@ -163,9 +162,12 @@ impl Sidebar<'_> {
             lines.push(Line::default());
             lines.push(ruled("Plan", None, width));
             lines.push(Line::from(Span::styled(
-                fill(&plan_line(counts, team), width),
+                fill(&plan_line(counts), width),
                 fg(TEXT_SOFT),
             )));
+            if let Some(team) = team {
+                lines.push(fit(vec![status_line(team, "")], width).remove(0));
+            }
             for member in team
                 .iter()
                 .flat_map(|team| &team.members)

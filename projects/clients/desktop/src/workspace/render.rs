@@ -41,6 +41,7 @@ impl Render for Workspace {
         self.record_place();
         crate::plugins::settle(self, window, cx);
         welcome::settle(self, window, cx);
+        super::seen::settle(self, window, cx);
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
         let (frame, theme_border) = (rail::color(cx), theme.border);
@@ -54,6 +55,7 @@ impl Render for Workspace {
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
             Center::Overview => inspector::overview::page(self, cx).into_any_element(),
+            Center::Team => crate::pages::team::render(self, cx).into_any_element(),
         };
         let terminal = crate::columns::terminal::render(self, window, cx);
         let right_dock = crate::plugins::right_dock(self, window, cx);

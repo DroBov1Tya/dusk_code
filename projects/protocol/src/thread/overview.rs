@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::thread::Line;
+use crate::thread::{Line, plural};
 
 /// The most used tools an `Overview` names.
 pub const OVERVIEW_TOOLS: usize = 8;
@@ -70,6 +70,34 @@ pub struct ChangedPath {
     pub removed: u64,
 }
 
+impl Activity {
+    /// "12 tool runs · 1 agent asked".
+    pub fn summary(&self) -> String {
+        format!(
+            "{} \u{00B7} {} asked",
+            plural(self.tool_runs, "tool run"),
+            plural(self.agents_asked, "agent")
+        )
+    }
+}
+
+impl ChangeSum {
+    /// "3 files · +40 −2".
+    pub fn summary(&self) -> String {
+        format!(
+            "{} \u{00B7} +{} \u{2212}{}",
+            plural(self.files, "file"),
+            self.added,
+            self.removed
+        )
+    }
+
+    /// Changed paths past the newest ones listed.
+    pub fn more(&self) -> usize {
+        (self.files as usize).saturating_sub(self.newest.len())
+    }
+}
+
 /// One line of a thread's event log, written by the core from what it stored.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,4 +117,44 @@ pub enum LogKind {
     Done,
     Stopped,
     Failed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summaries_count_in_the_plural_unless_one() {
+        let activity = Activity {
+            tool_runs: 1,
+            by_tool: Vec::new(),
+            agents_asked: 2,
+        };
+        assert_eq!(activity.summary(), "1 tool run \u{00B7} 2 agents asked");
+        let path = ChangedPath {
+            path: "a".into(),
+            added: 1,
+            removed: 0,
+        };
+        let changes = ChangeSum {
+            files: 3,
+            added: 40,
+            removed: 2,
+            newest: vec![path.clone(), path],
+        };
+        assert_eq!(changes.summary(), "3 files \u{00B7} +40 \u{2212}2");
+        assert_eq!(changes.more(), 1);
+        let one = ChangeSum {
+            files: 1,
+            ..ChangeSum::default()
+        };
+        assert_eq!(one.summary(), "1 file \u{00B7} +0 \u{2212}0");
+        assert_eq!(one.more(), 1);
+        let listed = ChangeSum {
+            files: 0,
+            newest: changes.newest.clone(),
+            ..ChangeSum::default()
+        };
+        assert_eq!(listed.more(), 0);
+    }
 }

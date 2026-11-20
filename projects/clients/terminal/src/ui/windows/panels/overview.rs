@@ -5,40 +5,51 @@
 use ratatui::text::{Line, Span};
 
 use dusk_protocol::thread::{
-    LogKind, PlanCounts, TaskStatus, Team, TeamMember, TeamStatus, ThreadTokens,
+    BUDGET_FIELDS, LogKind, PlanCounts, Team, TeamMember, ThreadTokens, plural, role_name,
 };
 
 use super::context::context;
-use crate::app::{App, OverviewView, compact_number};
+use crate::app::{App, BudgetEdit, OverviewView, compact_number};
 use crate::ui::text::format::printable;
 use crate::ui::windows::theme::{
-    ACCENT, DONE, DOT, FAILED, NEGATIVE, ON, POSITIVE, TEXT, TEXT_MUTED, WARNING, bold, dim, fg,
+    ACCENT, DONE, DOT, FAILED, NEGATIVE, ON, POSITIVE, TEXT, TEXT_MUTED, bold, dim, fg, tone_fg,
 };
 
 pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if let Some(counts) = app.plan.filter(|counts| total(*counts) > 0) {
-        heading(&mut lines, "progress", plan_line(counts, app.team.as_ref()));
+    if let Some(counts) = app.plan.filter(|counts| counts.total() > 0) {
+        heading(&mut lines, "progress", plan_line(counts));
         if let Some(team) = &app.team {
-            let (budget, used) = (team.budget, team.used);
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "   steps {} of {} {DOT} tokens {} of {} {DOT} time {} of {} min",
-                    used.steps,
-                    budget.steps(),
-                    compact_number(used.tokens),
-                    compact_number(budget.tokens()),
-                    used.minutes,
-                    budget.minutes()
-                ),
-                dim(),
-            )));
+            lines.push(status_line(team, "   "));
+            if let Some(edit) = &view.budget {
+                lines.extend(budget_lines(edit));
+            }
+            let parts: Vec<String> = team
+                .budget_parts()
+                .iter()
+                .map(|part| format!("{} {}", part.name.to_lowercase(), part.text()))
+                .collect();
+            let budget = format!("   {}", parts.join(&format!(" {DOT} ")));
+            lines.push(Line::from(Span::styled(budget, dim())));
         }
     }
     if let Some(team) = app.team.as_ref().filter(|team| !team.members.is_empty()) {
-        heading(&mut lines, "members", format!("{} at work", at_work(team)));
-        for member in &team.members {
-            lines.push(member_line(member, "   "));
+        heading(&mut lines, "members", format!("{} at work", team.at_work()));
+        // Each with its task, model and spend under it; tab chooses one, enter opens it.
+        for (index, row) in team.member_rows(&app.tasks).iter().enumerate() {
+            let chosen = view.member == Some(index);
+            let mut line = member_line(
+                &team.members[index],
+                if chosen { " \u{203A} " } else { "   " },
+            );
+            if chosen {
+                line = line.style(bold(TEXT));
+            }
+            lines.push(line);
+            lines.push(Line::from(Span::styled(
+                format!("     {}", printable(&row.line())),
+                dim(),
+            )));
         }
     }
     if app.tokens.model_calls > 0 {
@@ -48,11 +59,7 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     lines.extend(context(&view.context));
     let changes = &view.overview.changes;
     if changes.files > 0 {
-        let sum = format!(
-            "{} files {DOT} +{} \u{2212}{}",
-            changes.files, changes.added, changes.removed
-        );
-        heading(&mut lines, "changes", sum);
+        heading(&mut lines, "changes", changes.summary());
         for path in &changes.newest {
             lines.push(Line::from(vec![
                 Span::raw(format!("   {}", printable(&path.path))),
@@ -63,11 +70,7 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     }
     let activity = &view.overview.activity;
     if activity.tool_runs > 0 || activity.agents_asked > 0 {
-        let sum = format!(
-            "{} tool runs {DOT} {} agents asked",
-            activity.tool_runs, activity.agents_asked
-        );
-        heading(&mut lines, "activity", sum);
+        heading(&mut lines, "activity", activity.summary());
         for tool in &activity.by_tool {
             lines.push(Line::from(vec![
                 Span::raw(format!("   {}", printable(&tool.name))),
@@ -95,35 +98,29 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     lines
 }
 
-/// `plan 4/7 · ● 2 · ◆ 1 · 12m`: done of all, at work, blocked, and the team's minutes.
-pub fn plan_line(counts: PlanCounts, team: Option<&Team>) -> String {
-    let mut line = format!(
+/// `plan 4/7 · ● 2 · ◆ 1`: done of all, at work, blocked.
+pub fn plan_line(counts: PlanCounts) -> String {
+    format!(
         "plan {}/{} {DOT} {ON} {} {DOT} \u{25C6} {}",
         counts.done,
-        total(counts),
-        counts.claimed + counts.running,
+        counts.total(),
+        counts.at_work(),
         counts.blocked
-    );
-    if let Some(team) = team {
-        line.push_str(&format!(" {DOT} {}m", team.used.minutes));
-        if let TeamStatus::Ended(_) = team.status {
-            line.push_str(" ended");
-        }
-    }
-    line
+    )
+}
+
+/// `running · 23 min`, or how the team ended and why, in a warning once it did.
+pub fn status_line(team: &Team, indent: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("{indent}{}", team.progress_note()),
+        fg(tone_fg(team.tone())),
+    ))
 }
 
 /// `● Ember-0c coder running`, the dot in the colour of its task's state.
 pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
-    let (word, color) = match member.status {
-        TaskStatus::Open | TaskStatus::Claimed => ("waits", TEXT_MUTED),
-        TaskStatus::Running => ("running", ACCENT),
-        TaskStatus::Blocked => ("blocked", WARNING),
-        TaskStatus::Review => ("in review", ACCENT),
-        TaskStatus::Done => ("done", POSITIVE),
-        TaskStatus::Failed => ("failed", NEGATIVE),
-    };
-    let role = member.role.as_deref().unwrap_or("general");
+    let (word, color) = (member.status.member_word(), tone_fg(member.status.tone()));
+    let role = role_name(member.role.as_deref());
     Line::from(vec![
         Span::styled(format!("{indent}{ON} "), fg(color)),
         Span::styled(printable(&member.name), bold(TEXT)),
@@ -133,30 +130,36 @@ pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
     ])
 }
 
-pub fn total(counts: PlanCounts) -> u32 {
-    counts.open
-        + counts.claimed
-        + counts.running
-        + counts.blocked
-        + counts.review
-        + counts.done
-        + counts.failed
-}
-
-fn at_work(team: &Team) -> usize {
-    team.members
-        .iter()
-        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
-        .count()
+/// The budget being changed: a field a line, the chosen one marked, and why the last
+/// save was refused.
+fn budget_lines(edit: &BudgetEdit) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(Span::styled("   budget", bold(TEXT)))];
+    for (index, (name, value)) in BUDGET_FIELDS.iter().zip(&edit.fields).enumerate() {
+        let chosen = index == edit.selected;
+        let mark = if chosen { "\u{203A}" } else { " " };
+        lines.push(Line::from(vec![
+            Span::styled(format!("   {mark} {name:<16}"), dim()),
+            Span::styled(
+                format!("{value}{}", if chosen { "_" } else { "" }),
+                if chosen { bold(ACCENT) } else { fg(TEXT) },
+            ),
+        ]));
+    }
+    if let Some(error) = &edit.error {
+        lines.push(Line::from(Span::styled(
+            format!("     {}", printable(error)),
+            fg(NEGATIVE),
+        )));
+    }
+    lines
 }
 
 fn tokens_line(tokens: &ThreadTokens) -> String {
-    let spent = tokens.spent.prompt_tokens + tokens.spent.completion_tokens;
-    let cached = tokens.spent.cached_prompt_tokens * 100 / tokens.spent.prompt_tokens.max(1);
     let mut line = format!(
-        "{} spent {DOT} {cached}% from cache {DOT} {} calls",
-        compact_number(spent),
-        tokens.model_calls
+        "{} spent {DOT} {}% from cache {DOT} {}",
+        compact_number(tokens.spent_tokens()),
+        tokens.cached_percent(),
+        plural(tokens.model_calls, "call")
     );
     if let Some(cost) = tokens.cost() {
         line.push_str(&format!(" {DOT} {cost}"));

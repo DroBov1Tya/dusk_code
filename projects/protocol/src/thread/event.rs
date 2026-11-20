@@ -144,7 +144,8 @@ pub enum ThreadEvent {
         tokens: u64,
         limit: u64,
     },
-    /// The tool call `call_id` gave `task` to `agent`, which works in thread `thread_id`
+    /// The tool call `call_id` gave `task` to `agent`, or the team gave a member the
+    /// plan's task `task_id`; the agent works in thread `thread_id`
     /// on `model` (`provider/model`) and reasons at `effort`; `None` is the provider's
     /// default.
     SubagentStarted {
@@ -156,6 +157,10 @@ pub enum ThreadEvent {
         /// None when no model is chosen, and in events of older cores.
         #[serde(default)]
         model: Option<String>,
+        /// The task of the plan a team member was given, its `call_id` then
+        /// `team:<task_id>`; none for an agent a tool call asked.
+        #[serde(default)]
+        task_id: Option<String>,
     },
     /// An event of a subagent's thread. A subagent's own subagents come wrapped once more.
     Subagent {
@@ -212,6 +217,9 @@ pub enum ThreadEvent {
     /// The thread's pins changed, by a pin, an unpin or an /undo that took a pinned
     /// message: all of them, oldest message first.
     Pins(Vec<Pin>),
+    /// Something for the user arrived in the chat (true), or a client showed it to them
+    /// (false): its `Thread::unread` changed. Every client listing the chat hears it.
+    Unread(bool),
     /// A skill file changed by a tool call of this thread, or such a change was undone.
     SkillChanged(crate::catalog::SkillChange),
     /// /fork wrote its summary; a client opens a new thread that starts from it.

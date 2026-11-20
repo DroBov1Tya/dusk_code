@@ -80,6 +80,33 @@ pub struct OverviewView {
     pub context: ContextReport,
     /// The line kept in view while scrolling.
     pub row: usize,
+    /// `s` asked "Stop team? y/n": `y` stops it, any other key answers no.
+    pub stopping: bool,
+    /// The running team's budget being changed.
+    pub budget: Option<BudgetEdit>,
+    /// The member row chosen with tab, which enter opens.
+    pub member: Option<usize>,
+}
+
+impl OverviewView {
+    pub fn new(overview: dusk_protocol::thread::Overview, context: ContextReport) -> Self {
+        Self {
+            overview,
+            context,
+            row: 0,
+            stopping: false,
+            budget: None,
+            member: None,
+        }
+    }
+}
+
+/// A team's budget as four fields of text, one chosen to type into.
+pub struct BudgetEdit {
+    pub fields: [String; 4],
+    pub selected: usize,
+    /// Why the last save was refused.
+    pub error: Option<String>,
 }
 
 pub struct DiffView {

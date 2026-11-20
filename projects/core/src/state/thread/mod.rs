@@ -11,6 +11,7 @@ mod files;
 mod goal;
 mod mode;
 mod threads;
+mod unread;
 mod work;
 
 pub use changes::ChangeQuery;

@@ -357,7 +357,7 @@ fn sent_sounds(text: &str) -> Vec<crate::pages::chat::transcript::Clip> {
 /// A message as one short line for a list: attachments by name, and an answer to the
 /// agent's question as the answer alone.
 pub fn label(text: &str) -> String {
-    use dusk_protocol::thread::{Part, split};
+    use dusk_protocol::thread::labelled;
     let text = match text
         .strip_prefix("QUESTION: ")
         .and_then(|rest| rest.split_once("\nANSWER: "))
@@ -365,17 +365,7 @@ pub fn label(text: &str) -> String {
         Some((_, answer)) => format!("Answer: {answer}"),
         None => text.to_owned(),
     };
-    let plain: String = split(&text)
-        .into_iter()
-        .map(|part| match part {
-            Part::Text(text) => text.to_owned(),
-            Part::Pasted(pasted) => {
-                format!("[{}]", crate::pages::chat::composer::paste_label(pasted))
-            }
-            Part::Source(name) => format!("[{name}]"),
-            Part::Sound { path, .. } => format!("[{}]", file_name(path)),
-        })
-        .collect();
+    let plain = labelled(&text, crate::pages::chat::composer::paste_label);
     plain.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -460,9 +450,4 @@ impl Workspace {
         );
         cx.notify();
     }
-}
-
-/// The last part of a path, as a label.
-fn file_name(path: &str) -> &str {
-    path.rsplit(['/', '\\']).next().unwrap_or(path)
 }

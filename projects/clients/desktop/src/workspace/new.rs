@@ -92,6 +92,9 @@ impl Workspace {
             },
         )
         .detach();
+        // A chat shown while the window was in the back is read once it comes forward.
+        cx.observe_window_activation(window, |_, _, cx| cx.notify())
+            .detach();
         let first = status.borrow().clone();
         let mut workspace = Self {
             core,
@@ -174,6 +177,7 @@ impl Workspace {
             limit_edit,
             context_open: HashSet::new(),
             context_load: Default::default(),
+            team_page: Default::default(),
             overview: Default::default(),
             models_open: HashSet::new(),
             sent_pictures: HashMap::new(),

@@ -28,7 +28,9 @@ use std::{collections::HashMap, time::Instant};
 use dusk_protocol::{
     catalog::SkillPack,
     client::Switch as CoreSwitch,
-    plugin::{CATEGORIES, Kind, Listing, Order, Picks, SourceFailure, Tier, UpdateReport},
+    plugin::{
+        Kind, Listing, Order, Picks, SourceFailure, StoreFilter, Tier, UpdateReport, categories,
+    },
 };
 use gpui_kit::{
     component::{
@@ -128,6 +130,24 @@ pub enum Reviewed {
     Failed(String),
 }
 
+impl Workshop {
+    /// The shelf, the search `query` and the filters chosen, as one filter.
+    pub fn filter(&self, query: &str) -> StoreFilter<'_> {
+        StoreFilter::new(
+            Some(self.scope),
+            query,
+            &self.tiers,
+            &self.kinds,
+            self.category.as_deref(),
+        )
+    }
+
+    /// Nothing narrows the list and it is in trust order: the storefront, not results.
+    fn browsing(&self, query: &str) -> bool {
+        self.filter(query).browsing(self.order)
+    }
+}
+
 pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
     let shop = &ws.workshop;
     let Some(listings) = &shop.listings else {
@@ -167,38 +187,14 @@ pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Wor
         notes = notes.child(failed_sources(&shop.failed_sources, cx));
     }
     page = page.child(notes);
-    let shown = visible(shop, listings, query);
-    if browsing(shop, query) && shop.shelf.is_none() {
+    let shown = shop.filter(query).visible(listings);
+    if shop.browsing(query) && shop.shelf.is_none() {
         let featured = hero::featured(&shown);
         if !featured.is_empty() {
             page = page.child(hero::render(ws, &featured, grid, cx));
         }
     }
     measured.child(page.child(shelves::render(ws, &shown, query, grid, cx)))
-}
-
-/// Nothing narrows the list and it is in trust order: the storefront, not results.
-fn browsing(shop: &Workshop, query: &str) -> bool {
-    query.is_empty()
-        && shop.category.is_none()
-        && shop.tiers.is_empty()
-        && shop.kinds.is_empty()
-        && shop.order == Order::Trust
-}
-
-/// The listings of the shelf left after the search, the tiers and the kinds chosen, in the
-/// core's order.
-fn visible<'a>(shop: &Workshop, listings: &'a [Listing], query: &str) -> Vec<&'a Listing> {
-    listings
-        .iter()
-        .filter(|listing| shop.scope.holds(listing))
-        .filter(|listing| shop.tiers.is_empty() || shop.tiers.contains(&listing.tier))
-        .filter(|listing| shop.kinds.is_empty() || shop.kinds.contains(&listing.kind))
-        .filter(|listing| {
-            let tags = listing.tags.join(" ");
-            super::super::matches(query, &[&listing.name, &listing.description, &tags])
-        })
-        .collect()
 }
 
 /// The listing a window or a page is about, by its source and name.
@@ -531,7 +527,7 @@ impl Workspace {
     pub fn confirm_store(&mut self, confirm: Confirm, window: &mut Window, cx: &mut Context<Self>) {
         self.workshop.review = None;
         if let Confirm::Install(listing) = &confirm
-            && listing.tier == Tier::Unverified
+            && reviewed_first(listing)
         {
             // Nobody signed its list: the files are shown before the yes, and the install
             // names the ones shown.
@@ -568,7 +564,7 @@ impl Workspace {
                     }
                     _ => None,
                 };
-                if listing.tier == Tier::Unverified && sha256.is_none() {
+                if reviewed_first(&listing) && sha256.is_none() {
                     return;
                 }
                 self.store_work(
@@ -580,7 +576,7 @@ impl Workspace {
                     },
                 );
             }
-            Confirm::Remove(name) => {
+            Confirm::Remove(name, _) => {
                 let removed = name.clone();
                 self.store_work(name, "Removing...", cx, move |client| async move {
                     client.plugins().remove(&removed).await
@@ -615,30 +611,10 @@ impl Workspace {
     }
 }
 
-/// The categories the listings name, each once, for the filter menu: the fixed ones in
-/// their order, then any other a format 2 list gave, by name.
-fn categories(listings: &[Listing]) -> Vec<String> {
-    let named: std::collections::BTreeSet<&str> = listings
-        .iter()
-        .flat_map(|listing| {
-            listing
-                .categories
-                .iter()
-                .map(String::as_str)
-                .chain([listing.category.as_str()])
-        })
-        .filter(|category| !category.is_empty())
-        .collect();
-    let fixed = CATEGORIES
-        .iter()
-        .filter(|category| named.contains(*category));
-    let other = named
-        .iter()
-        .filter(|category| !CATEGORIES.contains(*category));
-    fixed
-        .chain(other)
-        .map(|category| (*category).to_owned())
-        .collect()
+/// Whether the files of `listing` are shown before the yes: an Unverified one's, since
+/// nobody signed its list. A connector has no files; its address is in the yes itself.
+pub fn reviewed_first(listing: &Listing) -> bool {
+    listing.tier == Tier::Unverified && listing.kind != Kind::Connector
 }
 
 /// What a listing is, in a word.
@@ -648,6 +624,7 @@ pub fn kind_word(kind: Kind) -> &'static str {
         Kind::Skill => "Skill",
         Kind::Pack => "Pack",
         Kind::Agent => "Agent",
+        Kind::Connector => "Connector",
     }
 }
 

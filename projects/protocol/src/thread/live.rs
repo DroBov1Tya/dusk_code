@@ -154,6 +154,14 @@ impl LiveTurn {
         }
     }
 
+    /// The agent of `thread_id` stopped without an event of its own, as a team's end
+    /// stops a member that never ran: the working row stops counting it.
+    pub fn agent_stopped(&mut self, thread_id: &str) {
+        if let Some(agent) = self.agents.iter_mut().find(|(id, _)| id == thread_id) {
+            agent.1 = false;
+        }
+    }
+
     /// The user answered every question on the client's side; the message is on its way.
     pub fn answered(&mut self) {
         self.questions = 0;
@@ -304,6 +312,7 @@ mod tests {
             task: "look".into(),
             effort: None,
             model: None,
+            task_id: None,
         }
     }
 

@@ -7,7 +7,10 @@ use crate::{
     state::state,
     ui::{Icon, IconName, compact},
 };
-use dusk_protocol::model::{PlanWindow, RateLimits};
+use dusk_protocol::{
+    model::{PlanWindow, RateLimits},
+    thread::duration_words_secs,
+};
 use leptos::prelude::*;
 
 #[component]
@@ -85,7 +88,7 @@ fn Limits() -> impl IntoView {
                         let limit = limit.filter(|l| l.limit > 0)?;
                         let mut left = format!("{} of {} left this minute", compact(limit.remaining), compact(limit.limit));
                         if let Some(seconds) = limit.resets_in {
-                            left.push_str(&format!(", resets in {}", words(seconds)));
+                            left.push_str(&format!(", resets in {}", duration_words_secs(seconds)));
                         }
                         Some(view! { <div class="limits-row"><span class="grow">{label}</span><span class="muted">{left}</span></div> })
                     }).collect_view()}
@@ -105,28 +108,11 @@ fn window_row(window: PlanWindow) -> impl IntoView {
     view! {
         <div class="limits-window">
             <div class="limits-row">
-                <span class="grow">{window_name(window.minutes)}</span>
-                {window.resets_in.map(|s| view! { <span class="muted">{format!("Resets in {}", words(s))}</span> })}
+                <span class="grow">{window.name()}</span>
+                {window.resets_in.map(|s| view! { <span class="muted">{format!("Resets in {}", duration_words_secs(s))}</span> })}
                 <span class="num">{format!("{percent}%")}</span>
             </div>
             <div class="limits-bar"><span class=fill style:width=format!("{percent}%")></span></div>
         </div>
     }
-}
-
-/// A plan window's name from its length; the provider gives no other.
-fn window_name(minutes: Option<u64>) -> String {
-    match minutes {
-        Some(300) => "5-hour limit".into(),
-        Some(10_080) => "Weekly".into(),
-        Some(m) if m.is_multiple_of(1440) => format!("{}-day limit", m / 1440),
-        Some(m) if m.is_multiple_of(60) => format!("{}-hour limit", m / 60),
-        Some(m) => format!("{m}-minute limit"),
-        None => "Plan limit".into(),
-    }
-}
-
-fn words(seconds: u64) -> String {
-    let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
-    dusk_protocol::thread::duration_words(ms)
 }

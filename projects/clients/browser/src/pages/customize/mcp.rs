@@ -14,7 +14,7 @@ use dusk_protocol::{
 use leptos::prelude::*;
 
 #[component]
-pub fn Mcp(discover: RwSignal<bool>) -> impl IntoView {
+pub fn Mcp(discover: RwSignal<Option<bool>>) -> impl IntoView {
     let servers = RwSignal::new(Vec::<McpInfo>::new());
     let loaded = RwSignal::new(false);
     let load = move || {
@@ -48,6 +48,7 @@ pub fn Mcp(discover: RwSignal<bool>) -> impl IntoView {
                         <div class="tile-head"><span class="tile-title"><Avatar name=server.name.clone() /><b>{server.name.clone()}</b></span>
                             <span class="chip">{if server.remote { "remote" } else { "local" }}</span></div>
                         <p class="muted">{server.target.clone()}</p>
+                        {server.added_from.as_ref().map(|from| view! { <p class="muted">{from.label()}</p> })}
                         <p class:bad=failed>{state_text}</p>
                         <details><summary>{format!("{} tools", server.tools.len())}</summary>
                             {server.tools.clone().into_iter().map(|t| {

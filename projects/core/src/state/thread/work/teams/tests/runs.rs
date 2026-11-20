@@ -30,6 +30,9 @@ async fn every_end_is_kept_and_a_later_run_starts_again() {
             .await
             .unwrap();
         assert_eq!((run.status, run.started_at), (TeamStatus::Running, at));
+        // Clients tell this run from the last one by when it started.
+        let shown = state.team(LEAD, at).await.unwrap().unwrap();
+        assert_eq!(shown.started_at, Some(at));
         assert!(matches!(
             state.start_team("m0", plain(), ceilings(), at + 1).await,
             Err(TeamError::Running)
