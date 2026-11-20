@@ -158,7 +158,7 @@ impl Spec {
         }
         let line = self.server("x").line();
         ensure!(
-            super::index::is_line(&line, MAX_LINE),
+            super::index::is_exact_line(&line, MAX_LINE),
             "the connector is not one plain line of up to {MAX_LINE} characters"
         );
         match self.auth {
@@ -184,7 +184,7 @@ impl Spec {
             ensure!(
                 docs.starts_with("https://")
                     && !docs.contains(' ')
-                    && super::index::is_line(docs, MAX_LINE),
+                    && super::index::is_exact_line(docs, MAX_LINE),
                 "the docs are not an https address"
             );
         }
@@ -275,7 +275,8 @@ fn check_command(command: &str, args: &[String]) -> Result<()> {
         "the package is not pinned to one exact version"
     );
     ensure!(
-        args.iter().all(|arg| super::index::is_line(arg, MAX_LINE)),
+        args.iter()
+            .all(|arg| super::index::is_exact_line(arg, MAX_LINE)),
         "an argument is not one plain line"
     );
     Ok(())
