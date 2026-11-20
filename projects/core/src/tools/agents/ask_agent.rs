@@ -133,6 +133,7 @@ impl AskAgent {
                 effort,
                 // Subagents answer on the chat's model.
                 model: self.launcher.model.current().map(|choice| choice.name()),
+                task_id: None,
             });
         }
         self.launcher

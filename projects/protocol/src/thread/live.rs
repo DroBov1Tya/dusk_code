@@ -304,6 +304,7 @@ mod tests {
             task: "look".into(),
             effort: None,
             model: None,
+            task_id: None,
         }
     }
 

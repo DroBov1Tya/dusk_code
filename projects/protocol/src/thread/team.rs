@@ -13,6 +13,11 @@ pub const MAX_TEAM_STEPS: u32 = 5_000;
 pub const MAX_TEAM_TOKENS: u64 = 100_000_000;
 pub const MAX_TEAM_MINUTES: u32 = 1_440;
 
+/// The `call_id` of the `SubagentStarted` that announces the member given `task_id`.
+pub fn team_call_id(task_id: &str) -> String {
+    format!("team:{task_id}")
+}
+
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Team {

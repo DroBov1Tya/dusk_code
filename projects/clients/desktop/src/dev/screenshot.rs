@@ -769,6 +769,7 @@ fn act(
                         task: (*task).into(),
                         effort: None,
                         model: Some("chatgpt/gpt-5.5".into()),
+                        task_id: None,
                     });
                     let inner = match index {
                         1 => Some(ThreadEvent::ToolStarted(ToolCall {
@@ -923,6 +924,7 @@ fn act(
                 task: "Compare the two takes".into(),
                 effort: None,
                 model: Some("chatgpt/gpt-5.5".into()),
+                task_id: None,
             });
             ws.chats.insert("demo".into(), chat);
             ws.shown = Some("demo".into());

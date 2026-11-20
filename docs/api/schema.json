@@ -10718,7 +10718,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The tool call `call_id` gave `task` to `agent`, which works in thread `thread_id`\non `model` (`provider/model`) and reasons at `effort`; `None` is the provider's\ndefault.",
+          "description": "The tool call `call_id` gave `task` to `agent`, or the team gave a member the\nplan's task `task_id`; the agent works in thread `thread_id`\non `model` (`provider/model`) and reasons at `effort`; `None` is the provider's\ndefault.",
           "properties": {
             "SubagentStarted": {
               "properties": {
@@ -10748,6 +10748,14 @@
                 },
                 "task": {
                   "type": "string"
+                },
+                "task_id": {
+                  "default": null,
+                  "description": "The task of the plan a team member was given, its `call_id` then\n`team:<task_id>`; none for an agent a tool call asked.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "thread_id": {
                   "type": "string"

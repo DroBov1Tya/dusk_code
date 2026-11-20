@@ -569,6 +569,7 @@ fn activity(ws: &mut Workspace, shown: &str, kind: &str, turn: dusk_protocol::th
                     task: "Review the change".into(),
                     effort: None,
                     model: None,
+                    task_id: None,
                 });
             }
             events.push(ThreadEvent::AgentsWorking(true));

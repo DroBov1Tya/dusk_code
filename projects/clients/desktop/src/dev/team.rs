@@ -229,6 +229,17 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
             chat.apply(ThreadEvent::TaskChanged(task.clone()));
         }
         for made in made.iter().filter(|made| made.owned) {
+            // The core announces each member as it gives it its task.
+            let task_id = format!("t{}", made.number);
+            chat.apply(ThreadEvent::SubagentStarted {
+                call_id: dusk_protocol::thread::team_call_id(&task_id),
+                thread_id: member_thread(made.number),
+                agent: made.role.into(),
+                task: made.text.into(),
+                effort: None,
+                model: Some("chatgpt/gpt-5.5".into()),
+                task_id: Some(task_id),
+            });
             for event in member_events(made) {
                 chat.apply(ThreadEvent::Subagent {
                     thread_id: member_thread(made.number),
