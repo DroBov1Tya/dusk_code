@@ -10,6 +10,7 @@ mod picture;
 mod project;
 mod search;
 mod sphere;
+mod task_card;
 mod team;
 mod viewer;
 mod whats_new;
@@ -110,6 +111,10 @@ pub enum Modal {
     },
     /// A plugin's part that opens as a window.
     Plugin(crate::plugins::Key),
+    /// A task of the shown chat's plan, opened from its row.
+    TaskCard {
+        task_id: String,
+    },
     /// Stopping the shown chat's team; asks first.
     StopTeam {
         thread_id: String,
@@ -169,6 +174,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
+        Modal::TaskCard { task_id } => (
+            task_card::title(ws, task_id).unwrap_or_else(|| "Task".to_owned()),
+            560.,
+            task_card::render(ws, task_id, cx),
+        ),
         Modal::StopTeam { .. } => ("Stop team".to_owned(), 480., team::stop(cx)),
         Modal::TeamBudget(form) => ("Team budget".to_owned(), 520., team::budget(form, cx)),
         // It has the whole window, not a panel with a title.

@@ -2,11 +2,13 @@
 //! the words every client shows for it and its plan.
 
 mod budget;
+mod card;
 mod members;
 mod plan;
 mod status;
 
 pub use budget::BUDGET_FIELDS;
+pub use card::{TaskCard, task_card};
 pub use members::{MemberRow, short_model};
 pub use plan::find_task;
 pub use status::task_in_work;

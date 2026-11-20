@@ -354,8 +354,10 @@ fn act(
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
-            // After `fake=team`: the yes Stop team asks for, and the budget form.
+            // After `fake=team`: the yes Stop team asks for, the budget form and a task's card.
             "team-stop" => ws.ask_stop_team(cx),
+            // The card of task #4, blocked on the lead with a note.
+            "task-card" => ws.open_task_card("t4", cx),
             "team-budget" => {
                 if let Some(team) = ws.overview.team.clone() {
                     ws.ask_team_budget(&team, window, cx);

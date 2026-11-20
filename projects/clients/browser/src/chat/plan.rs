@@ -9,13 +9,15 @@ use crate::{
     ui::{Icon, IconName, run, tone_text},
 };
 use dusk_protocol::thread::{
-    GoalCheck, PlanCounts, Task, TaskStatus, TeamEnd, WorkKind, task_in_work,
+    GoalCheck, PlanCounts, Task, TaskCard, TaskStatus, TeamEnd, WorkKind, task_card, task_in_work,
 };
 use leptos::prelude::*;
 
 #[component]
 pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
     let open = RwSignal::new(false);
+    // The task whose card shows under the rows.
+    let chosen = RwSignal::new(None::<String>);
     let counts = RwSignal::new(None::<PlanCounts>);
     let tasks = Memo::new(move |_| chat.with(|c| c.tasks.clone()));
     // The counts and the team are the core's: asked again whenever the tasks move. The
@@ -108,15 +110,25 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
                                             .map(|(i, task)| (i + 1, task.clone()))
                                     })
                                 });
-                                let _ = (first_number, task_id);
+                                let _ = first_number;
+                                let (found_row, clicked) = (task_id.clone(), task_id);
                                 view! {
-                                    <li class="plan-row" class:done=move || task.with(|t| t.as_ref().is_some_and(|(_, t)| t.status == TaskStatus::Done))>
+                                    <li class="plan-row" class:done=move || task.with(|t| t.as_ref().is_some_and(|(_, t)| t.status == TaskStatus::Done))
+                                        class:chosen=move || chosen.with(|c| c.as_deref() == Some(found_row.as_str()))
+                                        on:click=move |_| chosen.update(|c| *c = match c.as_deref() == Some(clicked.as_str()) {
+                                            true => None,
+                                            false => Some(clicked.clone()),
+                                        })>
                                         {move || task.get().map(|(number, task)| row(number, task, id.get_value()))}
                                     </li>
                                 }
                             }
                         </For>
                     </ol>
+                    {move || chosen.get().and_then(|task_id| {
+                        let card = chat.with(|c| task_card(&c.tasks, &task_id))?;
+                        Some(card_view(card, id.get_value(), chosen))
+                    })}
                 </Show>
             </div>
         </Show>
@@ -130,7 +142,9 @@ fn row(number: usize, task: Task, thread_id: String) -> impl IntoView {
     let word = if for_user {
         let task_id = task.task_id.clone();
         view! {
-            <button class="link plan-word" title="Confirm this task is done" on:click=move |_| {
+            <button class="link plan-word" title="Confirm this task is done" on:click=move |ev| {
+                // The row under it opens the card; this click only confirms.
+                ev.stop_propagation();
                 let (thread_id, task_id) = (thread_id.clone(), task_id.clone());
                 run(async move { api::confirm_task(&thread_id, &task_id).await }, |()| ());
             }>"confirm"</button>
@@ -146,6 +160,41 @@ fn row(number: usize, task: Task, thread_id: String) -> impl IntoView {
         {task.owner.map(|owner| view! { <span class="plan-owner muted">{owner.name}</span> })}
         {word}
     }
+}
+
+/// A task's card under the rows: why it waits or failed, what it depends on and spent,
+/// and its member's chat a click away. The fields are the protocol's.
+fn card_view(card: TaskCard, thread_id: String, chosen: RwSignal<Option<String>>) -> AnyView {
+    let app = crate::state::state();
+    let tone = tone_text(card.status.tone());
+    let fields = card
+        .fields
+        .into_iter()
+        .map(|(label, value)| {
+            view! { <div class="plan-field"><span class="muted">{label}</span><span>{value}</span></div> }
+        })
+        .collect_view();
+    let owner = card.owner.map(|owner| {
+        let open = (thread_id, owner.thread_id);
+        view! {
+            <button class="ghost" on:click=move |_| app.subagent.set(Some(open.clone()))>
+                {format!("Open {}'s chat", owner.name)}
+            </button>
+        }
+    });
+    view! {
+        <div class="plan-card">
+            <div class="plan-card-head">
+                <b>{card.title}</b>
+                <span class="grow"></span>
+                <button class="ghost" on:click=move |_| chosen.set(None)>"Close"</button>
+            </div>
+            <div class=tone>{card.head}</div>
+            {fields}
+            <div class="plan-card-foot">{owner}</div>
+        </div>
+    }
+    .into_any()
 }
 
 /// The plan as one bar of fixed width, the shares in their colours. The four shares

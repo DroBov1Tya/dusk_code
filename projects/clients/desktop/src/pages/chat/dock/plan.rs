@@ -233,7 +233,7 @@ fn bar(counts: PlanCounts, before: Option<(PlanCounts, std::time::Instant)>, cx:
 /// One task: its number, the state's glyph and word, its words on one line and its owner.
 /// A task that waits for the user's confirmation has `confirm` for its word, and a
 /// click on it passes the task.
-fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
+fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, accent) = (theme.muted_foreground, theme.primary);
     let (glyph, color) = (task.status.glyph(), widgets::tone(task.status.tone(), cx));
@@ -247,7 +247,11 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
                 .text_color(accent)
                 .cursor_pointer()
                 .child("confirm")
-                .on_click(cx.listener(move |ws, _, _, cx| ws.confirm_task(&task_id, cx)))
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    // The row under it opens the card; this click only confirms.
+                    cx.stop_propagation();
+                    ws.confirm_task(&task_id, cx)
+                }))
                 .into_any_element()
         }
         false => word
@@ -266,7 +270,10 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
     });
     // A list item sizes to its content unless told otherwise; full width keeps the status
     // words in one column at the right edge.
+    // A click on the row opens the task's card.
+    let card = task.task_id.clone();
     div()
+        .id(SharedString::from(format!("plan-row-{}", task.task_id)))
         .w_full()
         .flex()
         .flex_row()
@@ -274,6 +281,9 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
         .gap_2()
         .h(px(ROW))
         .px_2()
+        .cursor_pointer()
+        .hover(|row| row.bg(cx.theme().list_hover))
+        .on_click(cx.listener(move |ws, _, _, cx| ws.open_task_card(&card, cx)))
         .child(
             div()
                 .flex_none()
