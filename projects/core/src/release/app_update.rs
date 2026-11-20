@@ -59,7 +59,7 @@ pub async fn install(
     progress.send_modify(|value| value.stage = InstallStage::Verifying);
     tokio::task::spawn_blocking(move || {
         ensure!(
-            update::sha256_hex(&image) == expected,
+            dusk_protocol::text::sha256_hex(&image) == expected,
             "the download does not match its checksum; nothing was changed"
         );
         progress.send_modify(|value| value.stage = InstallStage::Installing);
