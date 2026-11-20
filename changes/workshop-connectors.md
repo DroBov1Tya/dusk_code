@@ -1,2 +1,0 @@
-Added
-The Workshop lists connectors: a service's own MCP server, such as Notion, Linear or GitHub, added to your connectors from Customize, Connectors, Discover after a window that shows its address or the pinned package it runs, who runs it, what it reaches and the keys it will ask for. Signing in goes through the existing MCP sign-in; Remove takes the server out again. A source without a key may offer only remote connectors to a public https address, never one that runs a program. The agent's Workshop search finds them too.

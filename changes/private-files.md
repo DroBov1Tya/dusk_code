@@ -1,2 +1,0 @@
-Security
-The config file is read without following a link swapped in after its checks, without blocking on a FIFO, and only up to 1 MiB. The logs folder is refused when it is a symlink, as every other config folder already is. MCP sign-in tokens and shipped files are saved through the same atomic private write as the rest of the config, so two saves of a token never share a staging file and a failed save leaves none behind.
