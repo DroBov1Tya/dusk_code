@@ -6,7 +6,7 @@
 
 use dusk_protocol::{
     catalog::SkillPack,
-    plugin::{Kind, Listing, Tier},
+    plugin::{Listing, Tier},
 };
 use gpui_kit::{
     component::{
@@ -19,7 +19,6 @@ use gpui_kit::{
 
 use super::{Grid, capsule, filters, grid, tier};
 use crate::{
-    pages::customize::matches,
     ui::{Type, size},
     workspace::Workspace,
 };
@@ -93,7 +92,7 @@ pub fn render(
 ) -> Div {
     let shop = &ws.workshop;
     let page = div().flex().flex_col().gap(px(size::GAP_XXL));
-    if !super::browsing(shop, query) {
+    if !shop.browsing(query) {
         let mut items: Vec<Item> = shown.iter().copied().map(Item::Listing).collect();
         items.extend(local_packs(ws, query).into_iter().map(Item::Pack));
         if items.is_empty() {
@@ -328,25 +327,9 @@ fn items<'a>(ws: &'a Workspace, shelf: Shelf, shown: &[&'a Listing], query: &str
 /// Packs here that no listing of the store names, unless a filter leaves them out.
 fn local_packs<'a>(ws: &'a Workspace, query: &str) -> Vec<&'a SkillPack> {
     let shop = &ws.workshop;
-    let listed = |name: &str| {
-        shop.listings
-            .iter()
-            .flatten()
-            .any(|listing| listing.kind == Kind::Pack && listing.name == name)
-    };
-    let shown = shop.scope.kinds().contains(&Kind::Pack)
-        && (shop.tiers.is_empty() || shop.tiers.contains(&Tier::Local))
-        && (shop.kinds.is_empty() || shop.kinds.contains(&Kind::Pack))
-        && shop.category.is_none();
-    if !shown {
-        return Vec::new();
-    }
-    shop.packs
-        .iter()
-        .flatten()
-        .filter(|pack| !listed(&pack.name))
-        .filter(|pack| matches(query, &[&pack.name, &pack.title, &pack.description]))
-        .collect()
+    let packs = shop.packs.as_deref().unwrap_or_default();
+    let listings = shop.listings.as_deref().unwrap_or_default();
+    shop.filter(query).local_packs(packs, listings)
 }
 
 fn nothing(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {

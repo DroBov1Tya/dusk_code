@@ -120,8 +120,9 @@ pub fn chat_row(
         .unwrap_or_else(|| "New chat".to_owned());
     let prefix = "chat";
     let fading = ws.fading.contains(&thread.id);
-    // A chat whose agent works turns a small ring; the others rest on a dot. Both stand
-    // in a box of one size, so the titles keep one left edge.
+    // A chat whose agent works turns a small ring; the others rest on a dot, lit in the
+    // accent, without motion, while something in it is unread. All stand in a box of one
+    // size, so the titles keep one left edge.
     let mark = div()
         .size(px(MARK))
         .flex_none()
@@ -137,6 +138,8 @@ pub fn chat_row(
                     icon.rotate(percentage(delta))
                 }),
         )
+    } else if thread.unread {
+        mark.child(div().size_1p5().rounded_full().bg(accent))
     } else {
         mark.child(div().size_1p5().rounded_full().bg(muted.opacity(0.4)))
     };
@@ -150,7 +153,14 @@ pub fn chat_row(
                     .text_color(muted),
             )
         })
-        .child(div().flex_1().min_w_0().truncate().child(title))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .when(thread.unread, |title| title.font_weight(FontWeight::MEDIUM))
+                .child(title),
+        )
         .children(pulls_badge(ws, thread, prefix, cx))
         .when_some(place, |row, place| {
             row.child(

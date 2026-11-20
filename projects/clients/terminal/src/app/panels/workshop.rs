@@ -5,7 +5,7 @@
 
 use dusk_protocol::{
     catalog::SkillPack,
-    plugin::{Kind, Listing, Order, Review, SourceFailure, Tier},
+    plugin::{Kind, Listing, Order, Review, SourceFailure, StoreFilter, Tier},
 };
 
 #[derive(Default)]
@@ -139,35 +139,20 @@ impl Workshop {
     /// The listings that match the filter in the store's order, then the packs here that
     /// no listing names.
     pub fn shown(&self) -> Vec<Row<'_>> {
-        let filter = self.filter.to_lowercase();
-        let hit = |texts: &[&str]| {
-            filter.is_empty()
-                || texts
-                    .iter()
-                    .any(|text| text.to_lowercase().contains(&filter))
-        };
-        let listings = self.listings.iter().flatten();
-        let mut rows: Vec<Row<'_>> = listings
-            .clone()
-            .filter(|listing| hit(&[&listing.name, &listing.description]))
+        let listings = self.listings.as_deref().unwrap_or_default();
+        let packs = self.packs.as_deref().unwrap_or_default();
+        let filter = StoreFilter::new(None, &self.filter, &[], &[], self.category.as_deref());
+        filter
+            .visible(listings)
+            .into_iter()
             .map(Row::Listing)
-            .collect();
-        if self.category.is_none() {
-            let listed = |name: &str| {
-                listings
-                    .clone()
-                    .any(|listing| listing.kind == Kind::Pack && listing.name == name)
-            };
-            rows.extend(
-                self.packs
-                    .iter()
-                    .flatten()
-                    .filter(|pack| !listed(&pack.name))
-                    .filter(|pack| hit(&[&pack.name, &pack.title, &pack.description]))
+            .chain(
+                filter
+                    .local_packs(packs, listings)
+                    .into_iter()
                     .map(Row::Pack),
-            );
-        }
-        rows
+            )
+            .collect()
     }
 
     /// The listing of a pack by name, when a source lists it.

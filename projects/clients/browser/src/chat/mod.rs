@@ -19,6 +19,7 @@ pub use composer::Draft;
 pub use pictures::Picture;
 pub mod data;
 pub mod inspector;
+pub mod seen;
 pub mod subagent;
 
 use crate::{

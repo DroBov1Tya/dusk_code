@@ -11,7 +11,7 @@ use std::{
 use dusk_core::app::ArtifactStore;
 use dusk_protocol::{
     thread::{Goal, JobInfo, LocalUnsent, Task, ThreadTokens},
-    tools::Question,
+    tools::QuestionQueue,
 };
 
 use super::{Activity, App, Asked, Focus, Input, Poll, SubagentView, Transcript};
@@ -91,8 +91,7 @@ per_thread! {
     forked: Option<String>,
     undone: Option<String>,
     poll: Option<Poll>,
-    polls_waiting: VecDeque<Question>,
-    poll_answers: Vec<String>,
+    questions: QuestionQueue,
     suggestion: dusk_protocol::thread::Suggestion,
     approvals: Vec<Asked>,
     local_unsent: Vec<LocalUnsent>,
@@ -105,7 +104,7 @@ per_thread! {
     agent_scroll: usize,
     goal: Option<Goal>,
     turn_started_at: Option<i64>,
-    last_turn_duration_ms: Option<u64>,
+    last_turn_duration_ms: Option<i64>,
     turn_spend: Option<dusk_protocol::thread::TurnSpend>,
     turn_running: bool,
     compacting: bool,

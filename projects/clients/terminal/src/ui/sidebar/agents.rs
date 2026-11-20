@@ -1,6 +1,7 @@
 //! The subagents, grouped by the zone of their work, each with its loader, name, time,
 //! state and task.
 
+use dusk_protocol::thread::clock_words;
 use unicode_width::UnicodeWidthStr;
 
 use dusk_protocol::agent::Zone;
@@ -18,10 +19,7 @@ use super::{
 };
 use crate::ui::{
     loader::{Loader, agent_name, identity},
-    text::{
-        format::{format_duration, one_line},
-        wrap,
-    },
+    text::{format::one_line, wrap},
     theme::{ACCENT, DEEP, TEXT, TEXT_SOFT, bold, fg},
 };
 
@@ -76,7 +74,7 @@ impl Sidebar<'_> {
             let running = agent.is_working();
             let [top, middle, bottom] = loader.rows(running.then_some(self.app.frame));
             let name = agent_name(&agent.thread_id);
-            let age = format_duration(agent.elapsed_ms());
+            let age = clock_words(agent.elapsed_ms());
             // The phase the agent is in, as it said; without one, whether it is still at work.
             let state = match (&agent.phase, agent.unavailable_at, running) {
                 (_, Some(_), _) => "unavailable",

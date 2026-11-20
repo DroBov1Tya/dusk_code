@@ -102,7 +102,7 @@ pub fn render(chat: &Transcript, cx: &App) -> AnyElement {
     for text in fields.into_iter().flatten() {
         counts = counts.child(dot()).child(div().flex_none().child(text));
     }
-    row.child(activity::mark(&status.work, cx))
+    row.child(activity::mark_swapping(&status.work, &chat.swaps, cx))
         .child(
             div()
                 .flex()
@@ -114,7 +114,7 @@ pub fn render(chat: &Transcript, cx: &App) -> AnyElement {
                         .min_w_0()
                         .truncate()
                         .font_features(tabular())
-                        .child(activity::words(&status.work, cx)),
+                        .child(activity::words_swapping(&status.work, &chat.swaps, cx)),
                 )
                 .child(counts),
         )

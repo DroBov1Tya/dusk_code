@@ -110,6 +110,7 @@ fn threads() -> Vec<T> {
             pinned: true,
         },
         T::Pins { thread_id: id() },
+        T::Seen { thread_id: id() },
     ]
 }
 
@@ -495,5 +496,7 @@ fn rest() -> Vec<R> {
         R::Store(St::RemoveSource { name: word() }),
         R::InstallUpdate { tag: word() },
         R::Shutdown,
+        R::Clients,
+        R::Disconnect { id: 1 },
     ]
 }

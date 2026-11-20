@@ -713,8 +713,10 @@ names its address: only a key vouches. What it may bring is held tighter
 - its serial is not held to: whoever serves an unsigned list can write any serial, so the
   rule would protect nothing and could lock you out. The commit and file hashes the
   record keeps of what was installed are what holds;
-- its names never pass for a trusted or installed one: a name that is, or is one edit
-  from (dashes and case aside), a name an Official or Verified listing offers, anything
+- its names never pass for a trusted or installed one: a name that is, or is close to
+  (dashes and case aside: one edit for 5 letters or more, two for 8 or more, a swap of
+  two letters counting as one, or a name of 8 or more with words added), a name an
+  Official or Verified listing offers, the official list's names as last read, anything
   installed from another source, a built-in skill, the `duskcode` pack or a folder under
   `skills/` or `agents/` is shown and refused as taken;
 - a listing shows its source and the host of its list, and its `author` as that source's
@@ -728,10 +730,18 @@ confirmation says plainly that nobody vouches for it. The install names the revi
 `package_sha256`, and the core refuses it when the files are no longer those. "Update all"
 never updates an Unverified item: it is left for you, with why.
 
-What an Unverified skill then asks of the agent is your call. `load_skill` gives its text
-after a line saying it comes from an unverified source and is data from a third party, not
-instructions from you; the skill list marks it with its source; its `links:` lead only to
-skills of its own folder, never to built-in skills such as `skill-evolve` or to your own.
+What an Unverified skill or agent then asks of the agent is your call. `load_skill` gives a
+skill's text, and an agent's prompt carries its text, between a line saying it comes from
+an unverified source and is data from a third party, not instructions from you, and a line
+closing it; a line of the text that would pass for either is taken out. The skill list and
+`ask_agent`'s list mark it with its source. A skill's `links:` lead only to skills of its
+own folder, never to built-in skills such as `skill-evolve` or to your own: those are the
+only skills `load_skill` offers after it. Its text may still name another skill, which the
+model may load as it may any skill listed; the marker is what tells it whose words those
+are. When the store's record cannot be read, everything the store installed counts as
+from an unknown, unverified source. Removing such an item keeps the files you edited, and they stay
+marked as that source's, not your own, while their folder is there. No source but the official one may bring an agent
+named as, or close to, an agent duskcode brings (`general` and the shipped ones).
 Its scripts are plain text, written readable and writable by you only, and run under the
 permission mode you chose, like any command.
 
@@ -743,8 +753,12 @@ time, in every mode, full access included, with the name, the address, whether i
 keyed or Unverified and what an Unverified source may bring. Only a client that could add
 the source itself may answer (the desktop app or the terminal; not a browser, not a chat
 shared through a scope bound to it, not a chat platform). The yes adds it the way
-Settings does, reading the list again, and the tool answers with how many listings it
-read. The address is refused before you are asked when it is not https or not public.
+Settings does, reading the list again, under a name the core gives it from the address
+(the agent's name is kept only when it is made of the address's own words and claims no
+trust, such as `official`), and the tool answers with how many listings it
+read. The address is refused before you are asked when it is not https or not public. In a chat nobody who may answer is
+in (a scheduled run, a headless `duskcode run`, a chat an API token started) the call is
+refused at once, so a run never waits for an answer that cannot come.
 
 ### index.json
 
@@ -895,7 +909,8 @@ of a commit of its author's GitHub repository:
 `https://raw.githubusercontent.com/<repo>/<commit>/<path>`, without redirects, and checks
 all of them before writing any: a file of another size or hash, a file not named, a
 missing one or one that is not UTF-8 text refuses the install. At most 200 files of 4 MiB
-each; `path` and `to` are plain relative paths. A pack's `pack.yml` is written by the core
+each and 32 MiB in all (an item over that cannot be installed; the rest of its list
+reads as before); `path` and `to` are plain relative paths. A pack's `pack.yml` is written by the core
 from the entry. The record keeps the item's author, license and the commit's address.
 Contents does not show such an item before it is installed (there is no package).
 

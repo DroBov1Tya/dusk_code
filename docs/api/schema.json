@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 36,
+  "x-protocol": 37,
   "x-oldest": 36,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -273,6 +273,14 @@
         },
         "name": {
           "type": "string"
+        },
+        "source": {
+          "default": null,
+          "description": "Where it came from when the Workshop installed it from a source nobody vouches\nfor: `<source>, unverified`, as a skill's `source` says it. `None` otherwise.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "version": {
           "description": "`None` for the chat and the built-in general agent, which have no AGENT.md.",
@@ -626,25 +634,40 @@
       },
       "type": "object"
     },
-    "Auth": {
-      "description": "How a connector's server knows the user.",
-      "oneOf": [
-        {
-          "const": "none",
-          "description": "It answers anybody.",
+    "AttachedClient": {
+      "properties": {
+        "id": {
+          "description": "Never reused within a run; what `Request::Disconnect` names.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "label": {
+          "description": "What the client called itself in its hello, such as `tui`.",
           "type": "string"
         },
-        {
-          "const": "oauth",
-          "description": "The user signs in in their browser once it is added; the token stays in the\nconfig folder.",
+        "scope": {
+          "description": "What it may do: `full`, `web` or `threads`.",
           "type": "string"
         },
-        {
-          "const": "key",
-          "description": "A key or token the user puts in `secrets` themselves.",
+        "since": {
+          "description": "When it attached, in seconds since the Unix epoch.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "transport": {
+          "description": "How it is connected, such as `in-process` or `socket`.",
           "type": "string"
         }
-      ]
+      },
+      "required": [
+        "id",
+        "label",
+        "transport",
+        "scope",
+        "since"
+      ],
+      "type": "object"
     },
     "Balance": {
       "description": "Money left on a provider account, as the provider wrote it.",
@@ -2527,6 +2550,27 @@
             "PluginNotice"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The core is about to stop, for every client; sent before the events close.",
+          "properties": {
+            "CoreStopping": {
+              "properties": {
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "CoreStopping"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -3519,11 +3563,6 @@
           "const": "pack",
           "description": "A set of skills.",
           "type": "string"
-        },
-        {
-          "const": "connector",
-          "description": "An MCP server to add to the connectors: no files of its own, only where the server\nis or the program it starts. A list read by an older duskcode leaves it out.",
-          "type": "string"
         }
       ]
     },
@@ -3693,18 +3732,6 @@
             "$ref": "#/$defs/ScreenshotRef"
           },
           "type": "array"
-        },
-        "server": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ServerSpec"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "For a connector: how its server is reached and what it asks of the user. Its one\nentry in `connectors` says what it runs or reaches and whether it is added here."
         },
         "skills": {
           "default": [],
@@ -6497,8 +6524,36 @@
         },
         {
           "const": "Shutdown",
-          "description": "Closes every thread and stops the core; the last request a client sends.",
+          "description": "Closes every thread and stops the core for every attached client; the last\nrequest a client sends. Full access only.",
           "type": "string"
+        },
+        {
+          "const": "Clients",
+          "description": "The clients attached to the core now.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Detaches client `id`, closing its events. Full access only.",
+          "properties": {
+            "Disconnect": {
+              "properties": {
+                "id": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Disconnect"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -6675,6 +6730,22 @@
             "Done"
           ],
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The clients attached to the core.",
+          "properties": {
+            "Clients": {
+              "items": {
+                "$ref": "#/$defs/AttachedClient"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "Clients"
+          ],
+          "type": "object"
         },
         {
           "additionalProperties": false,
@@ -7689,14 +7760,6 @@
       ],
       "type": "string"
     },
-    "RunBy": {
-      "description": "Who runs a connector's server: the service it reaches, or somebody else.",
-      "enum": [
-        "vendor",
-        "community"
-      ],
-      "type": "string"
-    },
     "Runs": {
       "description": "What an MCP server is: a program on this computer, or an address on the network.",
       "oneOf": [
@@ -7888,51 +7951,6 @@
       "required": [
         "keychain",
         "entries"
-      ],
-      "type": "object"
-    },
-    "ServerSpec": {
-      "description": "What a connector listing needs to become an MCP server here: never a secret's value,\nonly the names the user fills in once it is added.",
-      "properties": {
-        "auth": {
-          "$ref": "#/$defs/Auth"
-        },
-        "docs": {
-          "default": null,
-          "description": "An `https` page of the service's own about its server.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "package": {
-          "default": null,
-          "description": "For a program: the package it fetches and where from, such as\n`@playwright/mcp@0.0.86 from npm`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "reaches": {
-          "default": "",
-          "description": "What the agent can reach through it, one line, as its source says.",
-          "type": "string"
-        },
-        "run_by": {
-          "$ref": "#/$defs/RunBy"
-        },
-        "secrets": {
-          "default": [],
-          "description": "The headers (a remote server) or environment variables (a program) the user fills\nin after adding it; the server stays off until they do.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "auth",
-        "run_by"
       ],
       "type": "object"
     },
@@ -9100,7 +9118,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Installs or updates `name` at `version` from `source` and switches it on; a\nconnector's server is added to the connectors as the settings add one.\n`agreed` is the listing's `permissions` the user was shown; a listing that\nchanged since is refused.\n`tier` is the one the user was shown; the install is refused when the source\nearns another one now.\n`sha256` is the `package_sha256` of the `Review` the user was shown; an\nUnverified listing is installed only with it, and only while it still holds.",
+          "description": "Installs or updates `name` at `version` from `source` and switches it on.\n`agreed` is the listing's `permissions` the user was shown; a listing that\nchanged since is refused.\n`tier` is the one the user was shown; the install is refused when the source\nearns another one now.\n`sha256` is the `package_sha256` of the `Review` the user was shown; an\nUnverified listing is installed only with it, and only while it still holds.",
           "properties": {
             "Install": {
               "properties": {
@@ -9147,7 +9165,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Removes a plugin, skill, pack, agent or connector installed from the store.",
+          "description": "Removes a plugin installed from the store.",
           "properties": {
             "Remove": {
               "properties": {
@@ -10200,6 +10218,11 @@
             "string",
             "null"
           ]
+        },
+        "unread": {
+          "default": false,
+          "description": "An answer, a question, a request for a yes or the end of a turn arrived since a\nclient last showed the chat (`ThreadRequest::Seen`). Never for an agent's thread.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -11143,6 +11166,19 @@
         },
         {
           "additionalProperties": false,
+          "description": "Something for the user arrived in the chat (true), or a client showed it to them\n(false): its `Thread::unread` changed. Every client listing the chat hears it.",
+          "properties": {
+            "Unread": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "Unread"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "A skill file changed by a tool call of this thread, or such a change was undone.",
           "properties": {
             "SkillChanged": {
@@ -11820,6 +11856,27 @@
             "Pins"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A client shows the chat to the user: it is read. Clients listing it hear\n`ThreadEvent::Unread(false)` when it was unread.",
+          "properties": {
+            "Seen": {
+              "properties": {
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Seen"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -11892,7 +11949,7 @@
         },
         {
           "const": "unverified",
-          "description": "From a source the user added without a key: nobody signed its list, so it may\nbring only skills, packs, agents and connectors to a public `https` address, and\nnone of them is updated on its own.",
+          "description": "From a source the user added without a key: nobody signed its list, so it may\nbring only skills, packs and agents, and none of them is updated on its own.",
           "type": "string"
         },
         {

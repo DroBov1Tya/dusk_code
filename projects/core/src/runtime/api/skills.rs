@@ -39,12 +39,10 @@ impl Runtime {
             &self.launcher.config.current(),
         );
         let installed = crate::plugins::store::installed_skills(&self.launcher.paths);
-        let unverified = crate::plugins::store::unverified_skills(&self.launcher.paths);
+        let origins = crate::plugins::store::origin::Origins::load(&self.launcher.paths);
         for skill in &mut skills {
             // Marked whatever its front matter claims: nobody vouches for its source.
-            if let Some((_, source)) =
-                crate::plugins::store::unverified_source(&unverified, &skill.name)
-            {
+            if let Some((_, source)) = origins.unverified("skills", &skill.name) {
                 skill.kind = skills::SkillKind::Other;
                 skill.source = Some(format!("{source}, unverified"));
             } else if skill.kind == skills::SkillKind::Own && installed.contains(&skill.name) {

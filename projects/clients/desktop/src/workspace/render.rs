@@ -41,6 +41,7 @@ impl Render for Workspace {
         self.record_place();
         crate::plugins::settle(self, window, cx);
         welcome::settle(self, window, cx);
+        super::seen::settle(self, window, cx);
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
         let (frame, theme_border) = (rail::color(cx), theme.border);

@@ -104,7 +104,7 @@ fn record_file(paths: &Paths, plugin: &str) -> PathBuf {
 }
 
 /// Lines of `hash path`; anything else is dropped, which only means a file is kept.
-fn read_record(file: &Path) -> BTreeMap<PathBuf, String> {
+pub(crate) fn read_record(file: &Path) -> BTreeMap<PathBuf, String> {
     let text = fs::read_to_string(file).unwrap_or_default();
     text.lines()
         .filter_map(|line| line.split_once(' '))

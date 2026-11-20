@@ -267,21 +267,13 @@ fn stage_icon(stage: CheckStage, cx: &App) -> AnyElement {
 /// How long a running check has run, or how long ago one ended; nothing unknown.
 fn timing(check: &Check, now: i64) -> Option<String> {
     match (check.started, check.finished) {
-        (_, Some(finished)) => Some(format!("{} ago", ago(now - finished))),
+        (_, Some(finished)) => Some(dusk_protocol::thread::ago_words(
+            (now - finished).saturating_mul(1000),
+        )),
         (Some(started), None) if matches!(check.stage, CheckStage::Running) => Some(
             dusk_protocol::thread::duration_words((now - started).saturating_mul(1000)),
         ),
         _ => None,
-    }
-}
-
-/// `seconds` in its largest whole unit: "now", "4m", "4h", "3d".
-pub fn ago(seconds: i64) -> String {
-    match seconds.max(0) {
-        0..60 => "now".to_owned(),
-        s @ 60..3600 => format!("{}m", s / 60),
-        s @ 3600..86400 => format!("{}h", s / 3600),
-        s => format!("{}d", s / 86400),
     }
 }
 

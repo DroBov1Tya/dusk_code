@@ -19,6 +19,8 @@ fn bridge_refused(request: &Request) -> bool {
     matches!(
         request,
         Request::Shutdown
+            | Request::Clients
+            | Request::Disconnect { .. }
             | Request::Catalog(
                 CatalogRequest::McpServerText { .. }
                     | CatalogRequest::SaveMcpServer { old: Some(_), .. }
@@ -102,6 +104,7 @@ fn every_area() -> &'static [Area] {
         Area::StoreInstall,
         Area::Update,
         Area::Shutdown,
+        Area::Clients,
     ];
     for area in ALL {
         match area {
@@ -126,7 +129,8 @@ fn every_area() -> &'static [Area] {
             | Area::Store
             | Area::StoreInstall
             | Area::Update
-            | Area::Shutdown => {}
+            | Area::Shutdown
+            | Area::Clients => {}
         }
     }
     ALL
@@ -161,6 +165,8 @@ fn a_scope_bound_to_threads_reaches_nothing_but_threads() {
                 | Request::SystemReport
                 | Request::InstallUpdate { .. }
                 | Request::Shutdown
+                | Request::Clients
+                | Request::Disconnect { .. }
         );
         assert!(!(kept_out && about_threads), "{}", name(&request));
     }
@@ -205,6 +211,7 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.resend_local_unsent",
         "thread.resume",
         "thread.search",
+        "thread.seen",
         "thread.send",
         "thread.skill_changes",
         "thread.stop_agent",
@@ -267,6 +274,8 @@ fn a_browser_is_refused_this_list_and_no_more() {
     let expected = [
         "catalog.mcp_server_text",
         "catalog.save_mcp_server.saved",
+        "clients",
+        "disconnect",
         "plugin.close",
         "plugin.event",
         "plugin.open",
@@ -306,4 +315,17 @@ fn skill_diff_and_undo_need_catalog_and_no_thread_bound_scope() {
     assert!(Scope::threads([THREAD.to_owned()], &[Area::ThreadRead]).permits(&listed));
     let scope = Scope::threads([THREAD.to_owned()], &[Area::ThreadRead]);
     assert!(scope.covers(THREAD) && !scope.covers("thread-b"));
+}
+
+/// Marking a chat read is reading it, about that one chat: a scope bound to chats checks
+/// it against its own (`serve::admit` tests another chat is refused).
+#[test]
+fn marking_a_chat_seen_is_reading_that_chat() {
+    let seen = Request::Thread(ThreadRequest::Seen {
+        thread_id: "a".into(),
+    });
+    assert_eq!(classify(&seen).subject, Subject::Thread("a"));
+    assert!(Scope::threads(["a".to_owned()], &[Area::ThreadRead]).permits(&seen));
+    let writer = Scope::threads(["a".to_owned()], &[Area::ThreadWrite]);
+    assert!(!writer.permits(&seen), "seeing is reading");
 }

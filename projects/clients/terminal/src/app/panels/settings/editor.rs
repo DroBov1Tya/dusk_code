@@ -115,7 +115,7 @@ pub(super) fn flatten(
     let active = parent_active && node.enabled;
     rows.push(AgentRow {
         name: node.name.clone(),
-        description: node.description.clone(),
+        description: node.about(),
         version: node.version,
         enabled: node.enabled,
         links: node.links.clone(),

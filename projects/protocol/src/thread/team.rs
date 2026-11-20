@@ -139,6 +139,87 @@ pub struct TeamUsed {
     pub minutes: u32,
 }
 
+/// From this share of a budget part on, clients draw it as nearly spent.
+pub const BUDGET_NEAR: f32 = 0.8;
+
+/// One part of a team's budget as the Overview draws it: its name, a bar and "used of all".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BudgetPart {
+    pub name: &'static str,
+    pub used: u64,
+    pub all: u64,
+    /// Counted in minutes; the others are plain counts.
+    pub minutes: bool,
+}
+
+impl BudgetPart {
+    /// How much is used, from 0 to 1.
+    pub fn share(&self) -> f32 {
+        (self.used as f32 / self.all.max(1) as f32).min(1.)
+    }
+
+    pub fn near(&self) -> bool {
+        self.share() >= BUDGET_NEAR
+    }
+
+    /// "1.2k of 5k", or "12 of 60 min".
+    pub fn text(&self) -> String {
+        if self.minutes {
+            format!("{} of {} min", self.used, self.all)
+        } else {
+            let short = crate::thread::short_count;
+            format!("{} of {}", short(self.used), short(self.all))
+        }
+    }
+}
+
+impl Team {
+    pub fn state_word(&self) -> &'static str {
+        match self.status {
+            TeamStatus::Running => "running",
+            TeamStatus::Ended(_) => "ended",
+        }
+    }
+
+    /// "running · 12 min".
+    pub fn progress_note(&self) -> String {
+        format!("{} \u{00B7} {} min", self.state_word(), self.used.minutes)
+    }
+
+    /// Members whose task is claimed or running.
+    pub fn at_work(&self) -> usize {
+        self.members
+            .iter()
+            .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
+            .count()
+    }
+
+    /// Steps, tokens and time: what is used of each part of the budget.
+    pub fn budget_parts(&self) -> [BudgetPart; 3] {
+        let (budget, used) = (self.budget, self.used);
+        [
+            BudgetPart {
+                name: "Steps",
+                used: used.steps.into(),
+                all: budget.steps().into(),
+                minutes: false,
+            },
+            BudgetPart {
+                name: "Tokens",
+                used: used.tokens,
+                all: budget.tokens(),
+                minutes: false,
+            },
+            BudgetPart {
+                name: "Time",
+                used: used.minutes.into(),
+                all: budget.minutes().into(),
+                minutes: true,
+            },
+        ]
+    }
+}
+
 /// A thread that holds a task of the plan.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -224,5 +305,72 @@ mod tests {
             serde_json::to_value(TeamStatus::Ended(TeamEnd::Quiet)).unwrap(),
             json!({ "ended": "quiet" })
         );
+    }
+
+    fn team(status: TeamStatus, members: &[TaskStatus]) -> Team {
+        Team {
+            thread_id: "t".into(),
+            status,
+            budget: TeamBudget::new(2, 100, 5_000, 60).unwrap(),
+            used: TeamUsed {
+                at_once: 1,
+                steps: 80,
+                tokens: 1_250,
+                minutes: 12,
+            },
+            members: members
+                .iter()
+                .map(|status| TeamMember {
+                    thread_id: "m".into(),
+                    name: "Ember".into(),
+                    role: None,
+                    model: None,
+                    task_id: "x".into(),
+                    status: *status,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_team_says_its_state_minutes_and_members_at_work() {
+        let members = [
+            TaskStatus::Open,
+            TaskStatus::Claimed,
+            TaskStatus::Running,
+            TaskStatus::Review,
+        ];
+        let running = team(TeamStatus::Running, &members);
+        assert_eq!(running.state_word(), "running");
+        assert_eq!(running.progress_note(), "running \u{00B7} 12 min");
+        assert_eq!(running.at_work(), 2);
+        let ended = team(TeamStatus::Ended(TeamEnd::Done), &[]);
+        assert_eq!(ended.progress_note(), "ended \u{00B7} 12 min");
+        assert_eq!(ended.at_work(), 0);
+        let texts: Vec<String> = running
+            .budget_parts()
+            .iter()
+            .map(BudgetPart::text)
+            .collect();
+        assert_eq!(texts, ["80 of 100", "1.3k of 5k", "12 of 60 min"]);
+        let names = running.budget_parts().map(|part| part.name);
+        assert_eq!(names, ["Steps", "Tokens", "Time"]);
+    }
+
+    #[test]
+    fn a_budget_part_is_near_from_eighty_percent_and_never_past_full() {
+        let part = |used, all| BudgetPart {
+            name: "Steps",
+            used,
+            all,
+            minutes: false,
+        };
+        assert!(!part(79, 100).near());
+        assert!(part(80, 100).near(), "exactly 80% is near");
+        assert_eq!(part(80, 100).share(), 0.8);
+        assert_eq!(part(150, 100).share(), 1.);
+        assert_eq!(part(0, 0).share(), 0.);
+        assert_eq!(part(5, 0).share(), 1., "nothing to spend is spent");
+        assert_eq!(part(1_500, 2_000).text(), "1.5k of 2k");
     }
 }

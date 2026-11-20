@@ -200,6 +200,22 @@ mod tests {
         }
     }
 
+    /// A client bound to a chat marks only that chat read: another's unread mark is not
+    /// its to clear.
+    #[tokio::test]
+    async fn a_bound_client_marks_only_its_own_chat_seen() {
+        let server = server("seen").await;
+        let seen = |thread_id: &str| {
+            Request::Thread(ThreadRequest::Seen {
+                thread_id: thread_id.to_owned(),
+            })
+        };
+        assert_eq!(server.admit(1, &seen("a")).await, Ok(None));
+        for thread_id in ["b", "b1", "nowhere"] {
+            assert_eq!(server.admit(1, &seen(thread_id)).await, Err(NO_THREAD));
+        }
+    }
+
     /// A change of the settings a tool proposed is answered only by a client that could
     /// make it: a shared chat's scope may answer its other requests, never this one.
     #[tokio::test]

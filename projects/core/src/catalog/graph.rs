@@ -28,6 +28,8 @@ use anyhow::{Context, Result, anyhow, ensure};
 use serde::Deserialize;
 use serde_json::Value;
 
+pub use dusk_protocol::catalog::split_front_matter;
+
 use crate::init::{files::read_regular, paths::is_plain_folder_name};
 
 pub use dusk_protocol::catalog::{NodeText, Problem};
@@ -40,7 +42,6 @@ const MAX_TAGS: usize = 6;
 const MAX_TAG_CHARS: usize = 24;
 const MAX_DEPTH: usize = 8;
 const MAX_NODES: usize = 1000;
-const FENCE: &str = "---";
 /// Folders that hold dependencies or build output, never nodes, and can be huge.
 const SKIPPED: [&str; 6] = [
     "node_modules",
@@ -383,25 +384,6 @@ fn plain(value: &Value) -> Option<String> {
 pub fn read_text(file: &Path) -> Result<String> {
     let bytes = read_regular(file, MAX_NODE_BYTES).context("cannot read the file")?;
     String::from_utf8(bytes).map_err(|_| anyhow!("the file is not valid UTF-8 text"))
-}
-
-/// Splits `---\n<front>\n---\n<body>`.
-pub fn split_front_matter(text: &str) -> Result<(&str, &str)> {
-    let rest = text
-        .strip_prefix(FENCE)
-        .and_then(|rest| {
-            rest.strip_prefix('\n')
-                .or_else(|| rest.strip_prefix("\r\n"))
-        })
-        .context("the file must start with a --- front matter line")?;
-    let mut offset = 0;
-    for line in rest.split_inclusive('\n') {
-        if line.trim_end() == FENCE {
-            return Ok((&rest[..offset], &rest[offset + line.len()..]));
-        }
-        offset += line.len();
-    }
-    Err(anyhow!("front matter has no closing --- line"))
 }
 
 #[cfg(test)]

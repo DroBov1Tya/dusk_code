@@ -30,11 +30,28 @@ pub struct Record {
     /// The same for each mirror, by the address of its list.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mirrors: BTreeMap<String, u64>,
+    /// The names the official list offered when it was last accepted, so they stay
+    /// taken for an Unverified source while that list cannot be read.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub official_names: std::collections::BTreeSet<String>,
     pub installed: BTreeMap<String, Installed>,
     /// The connectors it added, by the name of their MCP server in the config; apart from
     /// `installed`, so a duskcode that knows no connectors reads the record as before.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub connectors: BTreeMap<String, Installed>,
+    /// Folders of items removed from a source other than the official one that still
+    /// hold files the user edited, by their folder under the rules folder: what is left
+    /// stays that source's, never the user's own, while the folder is there.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub left: BTreeMap<String, Left>,
+}
+
+/// Where the files left in a removed item's folder came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Left {
+    pub source: String,
+    /// Nothing signed the list it came from.
+    pub unverified: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

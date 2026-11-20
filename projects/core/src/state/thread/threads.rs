@@ -494,6 +494,7 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         // The runtime marks the threads of its database in memory.
         temporary: false,
         owner: row.try_get("owner")?,
+        unread: row.try_get("unread")?,
     })
 }
 

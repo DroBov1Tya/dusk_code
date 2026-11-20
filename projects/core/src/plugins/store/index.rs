@@ -676,6 +676,15 @@ impl Entry {
         lines
     }
 
+    /// Why it cannot be installed here, when it cannot: an item pinned upstream whose
+    /// files are too many bytes, or one with no package for this machine.
+    pub fn unfit(&self) -> Option<String> {
+        match &self.upstream {
+            Some(upstream) => upstream.fits().err().map(|error| error.to_string()),
+            None => self.download_here().err(),
+        }
+    }
+
     /// The package for this machine, or why there is none.
     /// A skill, pack or agent is plain files, so its one package is for `any` system
     /// and processor; a plugin runs programs, so a package of it for `any` is refused.

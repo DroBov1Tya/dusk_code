@@ -91,9 +91,12 @@ pub fn shadow<'a>(name: &str, taken: impl IntoIterator<Item = &'a str>) -> Optio
     })
 }
 
-/// The same name, or one edit apart once case and dashes are left out: `debuging` for
-/// `debugging`. Names are `a-z0-9-` already, so no look-alike letter gets in; a short
-/// name must match exactly, or every three letters would clash.
+/// The same name, or nearly, once case and dashes are left out: one edit apart for a
+/// name of 5 or more (`debuging` for `debugging`), two for one of 8 or more, a swap of
+/// two letters counting as one edit (`debuggnig`), or one of 8 or more with words
+/// added before or after it (`code-reviewer-pro`). Names are `a-z0-9-` already, so no
+/// look-alike letter gets in; a short name must match exactly, or every three letters
+/// would clash.
 pub fn close(a: &str, b: &str) -> bool {
     let plain = |text: &str| -> Vec<u8> {
         text.bytes()
@@ -105,20 +108,45 @@ pub fn close(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
-    a.len().min(b.len()) >= 5 && one_edit(&a, &b)
+    let (short, long) = if a.len() <= b.len() {
+        (&a, &b)
+    } else {
+        (&b, &a)
+    };
+    let edits = match short.len() {
+        0..5 => return false,
+        5..8 => 1,
+        _ => 2,
+    };
+    (short.len() >= 8 && (long.starts_with(short) || long.ends_with(short)))
+        || distance(short, long) <= edits
 }
 
-/// Whether one insertion, deletion or substitution turns `a` into `b`.
-fn one_edit(a: &[u8], b: &[u8]) -> bool {
-    let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
-    if long.len() - short.len() > 1 {
-        return false;
+/// Edits that turn `a` into `b`: insertions, deletions, substitutions and swaps of two
+/// letters side by side (optimal string alignment).
+fn distance(a: &[u8], b: &[u8]) -> usize {
+    let width = b.len() + 1;
+    let mut rows = vec![0usize; (a.len() + 1) * width];
+    let at = |i: usize, j: usize| i * width + j;
+    for i in 0..=a.len() {
+        rows[at(i, 0)] = i;
     }
-    let start = short.iter().zip(long).take_while(|(x, y)| x == y).count();
-    match short.len() == long.len() {
-        true => short[start + 1..] == long[start + 1..],
-        false => short[start..] == long[start + 1..],
+    for j in 0..=b.len() {
+        rows[at(0, j)] = j;
     }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let mut best = (rows[at(i - 1, j)] + 1)
+                .min(rows[at(i, j - 1)] + 1)
+                .min(rows[at(i - 1, j - 1)] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                best = best.min(rows[at(i - 2, j - 2)] + 1);
+            }
+            rows[at(i, j)] = best;
+        }
+    }
+    rows[at(a.len(), b.len())]
 }
 
 /// The files of an Unverified install: text only, so nothing it writes is a program to

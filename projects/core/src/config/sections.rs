@@ -352,6 +352,21 @@ fn default_team_max_gate_runs() -> u32 {
 /// A role name is an agent's folder name.
 const MAX_ROLE_NAME: usize = 64;
 
+/// How apps share the core. Off, every app starts its own core as before.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreSection {
+    /// The first app owns the core and serves it on a private socket; later apps attach.
+    #[serde(default)]
+    pub shared: bool,
+}
+
+impl CoreSection {
+    pub(super) fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// Which model a team's members answer on, as `provider/model`. The user's alone: a role
 /// from a pack must not choose what the user pays for. A member's model is `models[role]`,
 /// else `model`, else the chat's.

@@ -68,7 +68,7 @@ pub fn question_labels(question: &dusk_protocol::tools::Question) -> Option<Vec<
 
 /// A label for display: the model's text without control and text-direction characters,
 /// which could make a button read as something else. Labels from blocks are already so.
-fn plain(text: &str) -> String {
+pub fn plain(text: &str) -> String {
     text.trim()
         .chars()
         .filter(|c| {
