@@ -6,16 +6,24 @@ use super::Subscribers;
 use super::publish::publish;
 use crate::runtime::Runtime;
 use dusk_protocol::client::Event;
-use dusk_protocol::thread::ThreadEvent;
+use dusk_protocol::thread::{ThreadEvent, TurnStatus};
 use tracing::warn;
 
-/// Whether the chat's event is something for its user: the end of a turn, however it
-/// ended (an answer, a question the model asked, a failure, a limit), a thread that
-/// stopped, and a request for a yes, an agent's below it too. The user's own messages,
-/// progress inside a turn and what agents say to each other are not.
+/// Whether the chat's event is something for its user: the end of a turn the user did
+/// not stop (an answer, a question the model asked, a failure), a limit that stopped one
+/// (the output cap, a broken answer, a context too large), a thread that stopped, and a
+/// request for a yes, an agent's below it too. A turn the user stopped, by a stop or by
+/// a message sent to go first, ends `Interrupted` with no limit before it: the user did
+/// that and saw it. Their own messages, progress inside a turn and what agents say to
+/// each other are not for them either.
 fn for_the_user(event: &ThreadEvent) -> bool {
     match event {
-        ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) | ThreadEvent::Approval(_) => true,
+        ThreadEvent::TurnFinished(turn) => turn.status != TurnStatus::Interrupted,
+        ThreadEvent::OutputLimitReached
+        | ThreadEvent::AnswerCut { .. }
+        | ThreadEvent::ContextTooLarge { .. }
+        | ThreadEvent::Failed(_)
+        | ThreadEvent::Approval(_) => true,
         ThreadEvent::Subagent { event, .. } => asks_the_user(event),
         _ => false,
     }
