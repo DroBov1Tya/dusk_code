@@ -37,6 +37,10 @@ pub struct Record {
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub official_names: std::collections::BTreeSet<String>,
     pub installed: BTreeMap<String, Installed>,
+    /// The connectors it added, by the name of their MCP server in the config; apart from
+    /// `installed`, so a duskcode that knows no connectors reads the record as before.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub connectors: BTreeMap<String, Installed>,
     /// Folders of items removed from a source other than the official one that still
     /// hold files the user edited, by their folder under the rules folder: what is left
     /// stays that source's, never the user's own, while the folder is there.
@@ -80,6 +84,14 @@ pub struct Installed {
     pub license: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub origin: String,
+    /// For a connector: the command line or address it added, so a server the user
+    /// changed since is theirs, not the store's to remove.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target: String,
+    /// For a connector: the tier its listing earned when it was added, shown beside its
+    /// server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<Tier>,
 }
 
 fn is_plugin(kind: &Kind) -> bool {
@@ -119,6 +131,8 @@ impl Installed {
             author: String::new(),
             license: String::new(),
             origin: String::new(),
+            target: String::new(),
+            tier: None,
         }
     }
 

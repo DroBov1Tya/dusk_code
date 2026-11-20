@@ -82,7 +82,9 @@ pub fn files_of(
     unverified: bool,
 ) -> Result<Files> {
     ensure!(
-        entry.consent().is_empty(),
+        entry
+            .consent(dusk_protocol::plugin::Tier::Official)
+            .is_empty(),
         "a skill, pack or agent asks for no permissions; the list says it does"
     );
     ensure!(
@@ -214,6 +216,7 @@ pub fn read(entry: &Entry, unpacked: &Path) -> Result<Files> {
         Kind::Agent => ("agents", "AGENT.md"),
         Kind::Pack => bail!("a pack has no pack.yml"),
         Kind::Plugin => bail!("a plugin is not placed as files"),
+        Kind::Connector => bail!("a connector has no files"),
     };
     ensure!(
         top.len() == 1 && top.contains(&entry.name),

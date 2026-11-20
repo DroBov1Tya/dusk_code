@@ -38,7 +38,7 @@ pub async fn run(
 
 fn attach(hub: &Arc<Hub>) -> Result<(Arc<Client>, mpsc::UnboundedReceiver<Event>)> {
     // What a browser may ask is the core's to check: it is attached with the web scope.
-    let mut client = hub.attach(Hello::new("web"), Scope::web())?;
+    let mut client = hub.attach_labelled(Hello::new("web"), Scope::web(), "ws")?;
     let events = std::mem::replace(&mut client.events, mpsc::unbounded_channel().1);
     Ok((Arc::new(client), events))
 }

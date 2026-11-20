@@ -212,6 +212,8 @@ fn kind_tag(kind: Kind) -> &'static str {
         Kind::Skill => "[skill]",
         Kind::Pack => "[pack]",
         Kind::Agent => "[agent]",
+        // A connector is an MCP server; the short word keeps the states in line.
+        Kind::Connector => "[mcp]",
     }
 }
 

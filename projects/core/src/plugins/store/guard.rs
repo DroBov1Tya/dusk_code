@@ -1,7 +1,8 @@
 //! What a source without a key may bring, and what it may never take. Nobody signed its
 //! list, so the core believes nothing of it but the files it pins: it keeps only skills,
 //! packs and agents fetched from a pinned upstream commit with the SHA-256 of every file,
-//! text only; no plugin (a program) and no package. Its names may not pass for a name
+//! text only, and connectors to a public `https` address, which run nothing here; no
+//! plugin or local connector (a program) and no package. Its names may not pass for a name
 //! that is trusted or already here. What its text then asks of the agent, scripts
 //! included, is the user's to accept: the install says so before it happens.
 
@@ -14,15 +15,28 @@ use super::index::Index;
 
 /// What an Unverified source may bring, as the owner is told.
 pub const BRINGS: &str = "It may bring only skills, packs and agents whose text files are \
-    pinned to a GitHub commit; never a plugin or a program. Nobody vouches for them.";
+    pinned to a GitHub commit, and connectors to a public https address; never a plugin or \
+    a program. Nobody vouches for them.";
 
 /// Keeps of an unsigned list only what an Unverified source may bring, without its
 /// pictures and stars, and says what it left out.
 pub fn admit(index: &mut Index) {
-    let (mut plugins, mut packaged) = (0, 0);
+    let (mut plugins, mut packaged, mut local) = (0, 0, 0);
     index.plugins.retain_mut(|entry| {
         match entry.kind {
             Kind::Plugin => plugins += 1,
+            Kind::Connector
+                if entry
+                    .server
+                    .as_ref()
+                    .is_some_and(|server| server.url.is_some()) =>
+            {
+                entry.cover = None;
+                entry.screenshots.clear();
+                entry.stars = 0;
+                return true;
+            }
+            Kind::Connector => local += 1,
             _ if entry.upstream.is_none() => packaged += 1,
             Kind::Skill | Kind::Pack | Kind::Agent => {
                 // Parsed images from a list nobody signed buy nothing; the name's
@@ -40,6 +54,12 @@ pub fn admit(index: &mut Index) {
         parts.push(format!(
             "{plugins} {} ignored: an unverified source cannot bring programs",
             noun(plugins, "plugin")
+        ));
+    }
+    if local > 0 {
+        parts.push(format!(
+            "{local} {} ignored: an unverified source cannot bring programs",
+            noun(local, "local connector")
         ));
     }
     if packaged > 0 {

@@ -63,7 +63,7 @@ impl Confirm {
     /// The hash an install names: the files shown, when they were read and may be
     /// installed. `None` for any other tier, which needs none.
     pub fn agreed(&self) -> Option<Option<String>> {
-        if self.listing.tier != Tier::Unverified {
+        if !reviewed_first(&self.listing) {
             return Some(None);
         }
         match &self.review {
@@ -73,6 +73,13 @@ impl Confirm {
             _ => None,
         }
     }
+}
+
+/// Whether the files of `listing` are read and shown before the yes: an Unverified
+/// one's, since nobody signed its list. A connector has no files; its address is in the
+/// yes itself.
+pub fn reviewed_first(listing: &Listing) -> bool {
+    listing.tier == Tier::Unverified && listing.kind != dusk_protocol::plugin::Kind::Connector
 }
 
 /// A row of the list: a listing of the store, or a pack here that no source lists.

@@ -64,6 +64,11 @@ impl CoreLock {
         &self.path
     }
 
+    /// Another handle on the lock: it stays held while either is open.
+    pub(super) fn share(&self) -> Result<File> {
+        self.file.try_clone().context("cannot share the core lock")
+    }
+
     /// Replaces the line in the lock with `info`.
     pub fn write_info(&self, info: &LockInfo) -> Result<()> {
         let mut line = serde_json::to_string(info)?;

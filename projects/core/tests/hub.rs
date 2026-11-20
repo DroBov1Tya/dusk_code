@@ -257,3 +257,17 @@ fn an_attached_role_writes_no_core_log() {
     assert!(logs.join("attached.log").exists());
     assert!(!logs.join("core.log").exists());
 }
+
+/// Every client attaches at this core's protocol exactly, so none below 37 ever gets a
+/// store list: the connector listings and `Listing.server` that 37 added never reach a
+/// client that cannot read them.
+#[tokio::test]
+async fn a_client_of_an_older_protocol_is_never_attached() {
+    let (hub, _root) = core("older-protocol").await;
+    let older = Hello {
+        protocol: dusk_protocol::client::PROTOCOL_VERSION - 1,
+        ..Hello::new("old")
+    };
+    assert!(hub.attach(older.clone(), Scope::full()).is_err());
+    assert!(hub.attach_labelled(older, Scope::full(), "socket").is_err());
+}

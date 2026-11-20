@@ -8,7 +8,8 @@
 //! - `stream`: the frame pump the WebSocket and the local JSON lines share;
 //! - `bridge`: one WebSocket stream per attached browser;
 //! - `local`: the core shared by the apps of one user: its run folder, lock and key, the
-//!   JSON lines transport of the local API and the rules for a core of another version;
+//!   socket it is served on with its handshake, the JSON lines transport of the local API
+//!   and the rules for a core of another version;
 //! - `server`: the routes, and starting and stopping.
 
 mod auth;
@@ -17,6 +18,6 @@ mod files;
 mod guard;
 pub mod local;
 mod server;
-pub mod stream;
+mod stream;
 
 pub use server::{Config, DEFAULT_PORT, WebServer, start};

@@ -84,6 +84,16 @@ impl Hub {
         self.handover.subscribe()
     }
 
+    /// Withdraws the handover asked when nobody waits for its answer any more: the asking
+    /// app left or gave up. A later ask, still awaited, stays.
+    pub fn withdraw_handover(&self) {
+        let mut answer = self.answer.lock();
+        if answer.as_ref().is_some_and(|reply| reply.is_closed()) {
+            *answer = None;
+            self.handover.send_replace(None);
+        }
+    }
+
     /// The owner's answer to the handover asked.
     pub fn answer_handover(&self, accept: bool) {
         if let Some(reply) = self.answer.lock().take() {

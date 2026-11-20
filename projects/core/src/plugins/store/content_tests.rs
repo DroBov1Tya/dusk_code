@@ -216,6 +216,8 @@ fn a_single_skill_installs_beside_the_others_and_never_onto_a_pack() {
                 author: String::new(),
                 license: String::new(),
                 origin: String::new(),
+                target: String::new(),
+                tier: None,
             },
         );
         Ok(())

@@ -89,6 +89,7 @@ fn kind_paths(kind: Kind) -> &'static [&'static str] {
         Kind::Pack => PACKAGE,
         Kind::Skill => BOOK,
         Kind::Agent => BOT,
+        Kind::Connector => PLUG,
     }
 }
 
@@ -116,6 +117,12 @@ const BOOK: &[&str] = &[
     "M12 7v14",
     "M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 \
      0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z",
+];
+const PLUG: &[&str] = &[
+    "M12 22v-5",
+    "M9 8V2",
+    "M15 8V2",
+    "M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z",
 ];
 const BOT: &[&str] = &[
     "M12 8V4H8",
