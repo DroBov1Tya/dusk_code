@@ -189,6 +189,7 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
         budget: TeamBudget::new(3, 400, 4_000_000, 120).expect("a budget within the ceilings"),
         used,
         members,
+        started_at: Some(now_ms() - 23 * 60_000),
     }
 }
 

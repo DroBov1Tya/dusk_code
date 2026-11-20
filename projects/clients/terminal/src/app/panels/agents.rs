@@ -326,7 +326,11 @@ impl App {
     /// its members whether its roster still names them or not.
     pub fn team_heard(&mut self, team: dusk_protocol::thread::Team, answer: bool) {
         use dusk_protocol::thread::{KnownAgent, TeamChange};
-        if answer && self.team.as_ref().is_some_and(|held| !team.replaces(held)) {
+        let stale = |held: &dusk_protocol::thread::Team| match answer {
+            true => !team.replaces(held),
+            false => team.older_run_than(held),
+        };
+        if self.team.as_ref().is_some_and(stale) {
             return;
         }
         let known: Vec<KnownAgent<'_>> = self

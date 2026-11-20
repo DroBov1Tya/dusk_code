@@ -9949,6 +9949,15 @@
           },
           "type": "array"
         },
+        "started_at": {
+          "default": null,
+          "description": "When this run of the team started, in Unix milliseconds. Running the plan again\nafter a team ended starts a new run of the same chat's team; none from cores\nbefore runs were told apart.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "status": {
           "$ref": "#/$defs/TeamStatus"
         },

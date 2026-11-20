@@ -96,11 +96,24 @@ impl Team {
         changes
     }
 
+    /// Whether this team is of a run older than `held`'s, such as an event of an ended run
+    /// replayed after the plan ran again: it changes nothing, and above all stops none of
+    /// the new run's members. Unknown when either run is not told (an older core).
+    pub fn older_run_than(&self, held: &Team) -> bool {
+        matches!((self.started_at, held.started_at), (Some(mine), Some(theirs)) if mine < theirs)
+    }
+
     /// Whether this team, read by a request, may take the place of `held`, which the
     /// chat holds from an event or an earlier answer. An answer that was on its way
     /// while a newer event came is older: it has used no more, or it says running of a
     /// team that ended.
     pub fn replaces(&self, held: &Team) -> bool {
+        // Another run of the same chat's team: the later run wins, whatever its state.
+        if let (Some(mine), Some(theirs)) = (self.started_at, held.started_at)
+            && mine != theirs
+        {
+            return mine > theirs;
+        }
         match (self.ended(), held.ended()) {
             (None, Some(_)) => false,
             (Some(_), None) => true,
@@ -134,6 +147,7 @@ mod tests {
                     status: *status,
                 })
                 .collect(),
+            started_at: None,
         }
     }
 
@@ -172,5 +186,33 @@ mod tests {
         let mut later = running.clone();
         later.used.steps = 3;
         assert!(later.replaces(&running) && !running.replaces(&later));
+    }
+
+    /// Running the plan again starts a new run of the same team: the later run wins both
+    /// ways, whatever either says or used, and a team from a core that tells no runs falls
+    /// back to the rule within a run.
+    #[test]
+    fn a_later_run_replaces_an_earlier_one_and_never_the_reverse() {
+        let run = |started: i64, status: TeamStatus, minutes: u32| {
+            let mut team = team(status, &[]);
+            team.started_at = Some(started);
+            team.used.minutes = minutes;
+            team
+        };
+        let first_ended = run(100, TeamStatus::Ended(TeamEnd::Steps), 57);
+        let second_running = run(200, TeamStatus::Running, 1);
+        let second_ended = run(200, TeamStatus::Ended(TeamEnd::Done), 2);
+        // An old ended answer after the new run's event is refused.
+        assert!(!first_ended.replaces(&second_running));
+        assert!(first_ended.older_run_than(&second_running));
+        // The new run's answer replaces the old ended team, running or ended.
+        assert!(second_running.replaces(&first_ended));
+        assert!(second_ended.replaces(&first_ended));
+        assert!(!second_running.older_run_than(&first_ended));
+        // Within one run the earlier rule holds.
+        assert!(!second_running.replaces(&second_ended));
+        let mut unknown = second_running.clone();
+        unknown.started_at = None;
+        assert!(!unknown.replaces(&first_ended) && !unknown.older_run_than(&first_ended));
     }
 }

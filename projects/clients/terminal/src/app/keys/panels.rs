@@ -580,6 +580,7 @@ mod tests {
             budget: TeamBudget::new(3, 400, 4_000_000, 120).unwrap(),
             used: TeamUsed::default(),
             members: vec![member("m1"), member("m2")],
+            started_at: None,
         }
     }
 
@@ -695,6 +696,7 @@ mod team_tests {
                     status: *status,
                 })
                 .collect(),
+            started_at: None,
         }
     }
 

@@ -570,7 +570,59 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
                 status: *status,
             })
             .collect(),
+        started_at: None,
     }
+}
+
+/// A plan run twice: the second run's members are not stopped by the first run's end,
+/// whether it comes again as an event replayed after them or as a stale answer.
+#[test]
+fn a_new_run_is_not_ended_by_the_last_one() {
+    let run = |started: i64, ended: bool, members: &[(&str, &str, TaskStatus)]| {
+        let mut team = team(members);
+        team.started_at = Some(started);
+        if ended {
+            team.status = crate::thread::TeamStatus::Ended(crate::thread::TeamEnd::Steps);
+        }
+        team
+    };
+    let mut chat = Chat::default();
+    chat.apply(member_started("m1", "t1"), 1);
+    chat.apply(
+        ThreadEvent::Team(run(100, false, &[("m1", "t1", TaskStatus::Running)])),
+        2,
+    );
+    let first_end = run(100, true, &[]);
+    chat.apply(ThreadEvent::Team(first_end.clone()), 3);
+    assert!(!chat.agent("m1").unwrap().working());
+
+    // The plan runs again: m2 works on the second run's task.
+    chat.apply(member_started("m2", "t2"), 4);
+    chat.apply(
+        ThreadEvent::Team(run(200, false, &[("m2", "t2", TaskStatus::Running)])),
+        5,
+    );
+    chat.team_answer(first_end.clone(), 6);
+    chat.apply(ThreadEvent::Team(first_end), 7);
+    assert!(chat.agent("m2").unwrap().working());
+    assert!(
+        chat.team
+            .as_ref()
+            .is_some_and(|team| team.ended().is_none())
+    );
+
+    // A chat that held only the first run's end takes the second run's answer.
+    let mut later = Chat::default();
+    later.apply(
+        ThreadEvent::Team(run(100, true, &[("m1", "t1", TaskStatus::Done)])),
+        1,
+    );
+    later.team_answer(run(200, false, &[("m2", "t2", TaskStatus::Running)]), 2);
+    assert!(later.agent("m2").unwrap().working());
+    assert_eq!(
+        later.team.as_ref().and_then(|team| team.started_at),
+        Some(200)
+    );
 }
 
 /// A team's members are the chat's agents: those the core announced, and those of a

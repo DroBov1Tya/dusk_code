@@ -118,6 +118,7 @@ mod tests {
                 member("m2", "t2", Some("backend-engineer")),
                 member("m9", "gone", None),
             ],
+            started_at: None,
         };
         let rows = team.member_rows(&tasks);
         assert_eq!(rows[0].task.as_deref(), Some("#2 Remove expired entries"));

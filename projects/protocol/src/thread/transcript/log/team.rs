@@ -9,6 +9,13 @@ impl<L> ChatLog<L> {
     /// it gives it a task, and a member this chat never heard start, as in a chat opened
     /// while its team runs or after, joins in the state of its task.
     pub fn set_team(&mut self, team: Team, now: i64) {
+        if self
+            .team
+            .as_ref()
+            .is_some_and(|held| team.older_run_than(held))
+        {
+            return;
+        }
         let known: Vec<KnownAgent<'_>> = self
             .agents
             .values()

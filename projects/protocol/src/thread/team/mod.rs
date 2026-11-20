@@ -43,6 +43,11 @@ pub struct Team {
     pub used: TeamUsed,
     /// Newest first, at most `MAX_TEAM_MEMBERS`.
     pub members: Vec<TeamMember>,
+    /// When this run of the team started, in Unix milliseconds. Running the plan again
+    /// after a team ended starts a new run of the same chat's team; none from cores
+    /// before runs were told apart.
+    #[serde(default)]
+    pub started_at: Option<i64>,
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -328,6 +333,7 @@ mod tests {
                     task_id: "t1".into(),
                     status: TaskStatus::Review,
                 }],
+                started_at: None,
             };
             let text = serde_json::to_string(&team).unwrap();
             assert_eq!(serde_json::from_str::<Team>(&text).unwrap(), team);
@@ -360,6 +366,7 @@ mod tests {
                     status: *status,
                 })
                 .collect(),
+            started_at: None,
         }
     }
 

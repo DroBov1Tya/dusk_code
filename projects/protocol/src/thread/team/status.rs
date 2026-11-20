@@ -75,6 +75,7 @@ mod tests {
                 ..TeamUsed::default()
             },
             members: Vec::new(),
+            started_at: None,
         }
     }
 
