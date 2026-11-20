@@ -534,3 +534,86 @@ fn the_kept_suggestion_follows_the_chats_events() {
     hear(suggested("commit it"));
     assert_eq!(hear(ThreadEvent::Undone { text: "x".into() }), None);
 }
+
+/// The end of a turn marks a chat no client showed unread, and every client listing it
+/// hears so; the user's own message, progress and a subagent's turn do not. A client that
+/// shows the chat marks it read, and the others hear that too.
+#[tokio::test]
+async fn a_chat_turns_unread_for_the_user_and_read_once_seen() {
+    let root = temp_dir("serve_unread");
+    let paths = Paths::new(root.join("config"), root.join("work"));
+    let runtime = Runtime::start(paths, Some(root.join("state.db")))
+        .await
+        .unwrap();
+    let state = runtime.state();
+    state.create_thread("chat", "test").await.unwrap();
+    state.add_user_message("chat", "go", "go").await.unwrap();
+    let turn = state.start_turn("chat").await.unwrap().unwrap();
+    let subscribers = Subscribers::default();
+    let (queue, mut heard) = mpsc::unbounded_channel();
+    subscribers.lock().push(Subscriber {
+        client: 1,
+        scope: Scope::full(),
+        queue,
+    });
+    let (other, mut elsewhere) = mpsc::unbounded_channel();
+    subscribers.lock().push(Subscriber {
+        client: 2,
+        scope: Scope::threads(["another".to_owned()], &[crate::client::Area::ThreadRead]),
+        queue: other,
+    });
+    let (mut server, _) = Server::new(runtime, Arc::clone(&subscribers));
+    server
+        .clients
+        .insert(1, Attached::new("test".into(), Scope::full()));
+    server.caller = 1;
+    let unread = |server: &Server| {
+        let runtime = Arc::clone(&server.runtime);
+        async move {
+            let listed = runtime.list_threads().await.unwrap();
+            listed
+                .iter()
+                .any(|thread| thread.id == "chat" && thread.unread)
+        }
+    };
+
+    let not_for_the_user = [
+        ThreadEvent::Queued {
+            message_id: "m".into(),
+        },
+        ThreadEvent::TurnStarted(turn.clone()),
+        ThreadEvent::Subagent {
+            thread_id: "agent".into(),
+            event: Box::new(ThreadEvent::TurnFinished(turn.clone())),
+        },
+    ];
+    for event in &not_for_the_user {
+        super::unread::heard(&server.runtime, &subscribers, "chat", event).await;
+    }
+    assert!(!unread(&server).await);
+    assert!(heard.try_recv().is_err());
+
+    let finished = ThreadEvent::TurnFinished(turn);
+    super::unread::heard(&server.runtime, &subscribers, "chat", &finished).await;
+    assert!(unread(&server).await);
+    assert_eq!(
+        next_thread_event(&mut heard).await,
+        ThreadEvent::Unread(true)
+    );
+    super::unread::heard(&server.runtime, &subscribers, "chat", &finished).await;
+    assert!(heard.try_recv().is_err(), "told once");
+
+    let seen = ThreadRequest::Seen {
+        thread_id: "chat".into(),
+    };
+    assert_eq!(server.thread(seen).await.unwrap(), Response::Done);
+    assert!(!unread(&server).await);
+    assert_eq!(
+        next_thread_event(&mut heard).await,
+        ThreadEvent::Unread(false)
+    );
+    assert!(
+        elsewhere.try_recv().is_err(),
+        "a client bound elsewhere hears nothing"
+    );
+}

@@ -212,6 +212,9 @@ pub enum ThreadEvent {
     /// The thread's pins changed, by a pin, an unpin or an /undo that took a pinned
     /// message: all of them, oldest message first.
     Pins(Vec<Pin>),
+    /// Something for the user arrived in the chat (true), or a client showed it to them
+    /// (false): its `Thread::unread` changed. Every client listing the chat hears it.
+    Unread(bool),
     /// A skill file changed by a tool call of this thread, or such a change was undone.
     SkillChanged(crate::catalog::SkillChange),
     /// /fork wrote its summary; a client opens a new thread that starts from it.

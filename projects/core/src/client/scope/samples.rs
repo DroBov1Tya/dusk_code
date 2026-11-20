@@ -110,6 +110,7 @@ fn threads() -> Vec<T> {
             pinned: true,
         },
         T::Pins { thread_id: id() },
+        T::Seen { thread_id: id() },
     ]
 }
 

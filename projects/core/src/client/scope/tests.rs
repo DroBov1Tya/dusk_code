@@ -205,6 +205,7 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.resend_local_unsent",
         "thread.resume",
         "thread.search",
+        "thread.seen",
         "thread.send",
         "thread.skill_changes",
         "thread.stop_agent",
@@ -306,4 +307,17 @@ fn skill_diff_and_undo_need_catalog_and_no_thread_bound_scope() {
     assert!(Scope::threads([THREAD.to_owned()], &[Area::ThreadRead]).permits(&listed));
     let scope = Scope::threads([THREAD.to_owned()], &[Area::ThreadRead]);
     assert!(scope.covers(THREAD) && !scope.covers("thread-b"));
+}
+
+/// Marking a chat read is reading it, about that one chat: a scope bound to chats checks
+/// it against its own (`serve::admit` tests another chat is refused).
+#[test]
+fn marking_a_chat_seen_is_reading_that_chat() {
+    let seen = Request::Thread(ThreadRequest::Seen {
+        thread_id: "a".into(),
+    });
+    assert_eq!(classify(&seen).subject, Subject::Thread("a"));
+    assert!(Scope::threads(["a".to_owned()], &[Area::ThreadRead]).permits(&seen));
+    let writer = Scope::threads(["a".to_owned()], &[Area::ThreadWrite]);
+    assert!(!writer.permits(&seen), "seeing is reading");
 }
