@@ -4,7 +4,10 @@
 use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::thread::{LogEntry, LogKind, Overview, PlanCounts, Team, ThreadTokens};
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName, button::Button},
+    component::{
+        ActiveTheme, Icon, IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
     *,
 };
 
@@ -109,7 +112,7 @@ fn mono(text: String) -> Div {
     div().small().font_family("Menlo").child(text)
 }
 
-fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
+fn progress(shown: &Shown, form: Form, cx: &mut Context<Workspace>) -> Option<Div> {
     let counts = shown.plan.filter(|counts| counts.total() > 0)?;
     let theme = cx.theme();
     let all = counts.total();
@@ -173,8 +176,39 @@ fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
                 " min",
                 cx,
             ));
+        // Only a running team can be stopped or given more.
+        if team.ended().is_none() {
+            body = body.child(steer(team, cx));
+        }
     }
     Some(frame(form, "Progress", aside, body, cx))
+}
+
+/// Edit budget and Stop team, under the budget they act on.
+fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
+    let team = team.clone();
+    div()
+        .flex()
+        .flex_row()
+        .justify_end()
+        .gap_2()
+        .pt_2()
+        .child(
+            Button::new("team-budget")
+                .small()
+                .ghost()
+                .label("Edit budget")
+                .on_click(
+                    cx.listener(move |ws, _, window, cx| ws.ask_team_budget(&team, window, cx)),
+                ),
+        )
+        .child(
+            Button::new("team-stop")
+                .small()
+                .ghost()
+                .label("Stop team")
+                .on_click(cx.listener(|ws, _, _, cx| ws.ask_stop_team(cx))),
+        )
 }
 
 /// One part of the team's budget: its name, a thin bar, and "used of all".

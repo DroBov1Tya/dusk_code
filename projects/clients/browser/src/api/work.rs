@@ -5,7 +5,7 @@ use crate::link::request;
 use dusk_protocol::{
     client::{Response, WorkRequest},
     project::{Change, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanCounts, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanCounts, Team, TeamBudget},
 };
 
 use super::*;
@@ -82,6 +82,18 @@ pub async fn plan_counts(thread_id: &str) -> Res<PlanCounts> {
 pub async fn team(thread_id: &str) -> Res<Option<Team>> {
     let thread_id = thread_id.to_owned();
     ask!(work(WorkRequest::Team { thread_id }), Response::Team(t) => t)
+}
+
+/// Ends the chat's running team as stopped; its events move the plan and the team.
+pub async fn stop_team(thread_id: &str) -> Res<()> {
+    let thread_id = thread_id.to_owned();
+    done(work(WorkRequest::StopTeam { thread_id })).await
+}
+
+/// Gives the chat's running team `budget`, within the ceilings of the settings.
+pub async fn set_team_budget(thread_id: &str, budget: TeamBudget) -> Res<()> {
+    let thread_id = thread_id.to_owned();
+    done(work(WorkRequest::SetTeamBudget { thread_id, budget })).await
 }
 
 /// Passes a task that waits for the user's confirmation; its own event moves the row.

@@ -352,6 +352,13 @@ fn act(
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
+            // After `fake=team`: the yes Stop team asks for, and the budget form.
+            "team-stop" => ws.ask_stop_team(cx),
+            "team-budget" => {
+                if let Some(team) = ws.overview.team.clone() {
+                    ws.ask_team_budget(&team, window, cx);
+                }
+            }
             // The arbiter's window, with a few things said so its timeline has rows.
             "whatsnew" => {
                 ws.modal = Some(crate::modal::Modal::WhatsNew {

@@ -3,11 +3,11 @@
 use super::EFFORTS;
 use crate::app::{
     Action, App, Panel,
-    panels::{Connection, ModelRow, Preset, SecretEntry, step},
+    panels::{BudgetEdit, Connection, ModelRow, Preset, SecretEntry, step},
     schedule::ScheduleAction,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dusk_protocol::{client::Command, release::InstallStage};
+use dusk_protocol::{client::Command, release::InstallStage, thread::TeamBudget};
 
 impl App {
     pub(super) fn panel_key(&mut self, key: KeyEvent) -> Action {
@@ -424,8 +424,44 @@ impl App {
                 }
             }
             Panel::Overview(view) => {
-                if !scroll(&mut view.row, key.code, up, down) {
-                    self.panel = None;
+                let team = self.team.as_ref().filter(|team| team.ended().is_none());
+                if let Some(edit) = &mut view.budget {
+                    match key.code {
+                        KeyCode::Esc => view.budget = None,
+                        KeyCode::Up | KeyCode::BackTab => edit.selected = (edit.selected + 3) % 4,
+                        KeyCode::Down | KeyCode::Tab => edit.selected = (edit.selected + 1) % 4,
+                        KeyCode::Backspace => {
+                            edit.fields[edit.selected].pop();
+                        }
+                        KeyCode::Char(c) if c.is_ascii_alphanumeric() || c == '.' => {
+                            edit.fields[edit.selected].push(c);
+                        }
+                        KeyCode::Enter => {
+                            let texts = edit.fields.each_ref().map(String::as_str);
+                            match TeamBudget::read(texts) {
+                                Ok(budget) => return Action::SetTeamBudget(budget),
+                                Err(error) => edit.error = Some(format!("{error:#}")),
+                            }
+                        }
+                        _ => {}
+                    }
+                    return Action::None;
+                }
+                let stopping = std::mem::take(&mut view.stopping);
+                match (key.code, team) {
+                    (KeyCode::Char('s'), Some(_)) if stopping => return Action::StopTeam,
+                    (KeyCode::Char('s'), Some(_)) => view.stopping = true,
+                    (KeyCode::Char('b'), Some(team)) => {
+                        view.budget = Some(BudgetEdit {
+                            fields: team.budget.fields(),
+                            selected: 0,
+                            error: None,
+                        });
+                    }
+                    // A first `s` is taken back by any other key.
+                    _ if stopping => {}
+                    _ if !scroll(&mut view.row, key.code, up, down) => self.panel = None,
+                    _ => {}
                 }
             }
             Panel::Threads(list) => match key.code {

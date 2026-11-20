@@ -905,6 +905,9 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .ov-row { height: 32px; display: flex; align-items: center; gap: 8px; font-size: 13.75px; }
 .ov-row + .ov-row { border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
 .ov-row .name { font-weight: 500; }
+.ov-actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+.ov-budget-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s2); }
+.ov-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .ov-row .live { color: var(--accent); } .ov-row .good { color: var(--good); } .ov-row .warn { color: var(--warn); } .ov-row .bad { color: var(--bad); }
 .ov-glyph { display: flex; } .ov-glyph .glyph { width: 14px; height: 14px; }
 .ov-glyph.muted { color: var(--muted); }

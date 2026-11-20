@@ -224,12 +224,14 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         return;
     };
     let mut made = plan();
-    // The end gave the tasks at work back: they are open, and no member works.
+    // The end gave the tasks at work back: they are open, and their members stopped.
+    let mut stopped = Vec::new();
     if ended {
         for made in &mut made {
             if made.status.at_work() {
                 made.status = TaskStatus::Open;
                 made.owned = false;
+                stopped.push(member_thread(made.number));
             }
         }
     }
@@ -258,6 +260,12 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
                     event: Box::new(event),
                 });
             }
+        }
+        for thread_id in stopped {
+            chat.apply(ThreadEvent::Subagent {
+                thread_id,
+                event: Box::new(ThreadEvent::Idle),
+            });
         }
         chat.apply(ThreadEvent::Team(team.clone()));
     }

@@ -50,8 +50,9 @@ pub use task::{
     PLAN_PAGE_DONE, PlanCounts, PlanPage, Task, TaskItem, TaskOwner, TaskStatus, WaitsOn,
 };
 pub use team::{
-    MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MAX_TEAM_MINUTES, MAX_TEAM_STEPS, MAX_TEAM_TOKENS, Team,
-    TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed, find_task, task_in_work, team_call_id,
+    BUDGET_FIELDS, MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MAX_TEAM_MINUTES, MAX_TEAM_STEPS,
+    MAX_TEAM_TOKENS, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed, find_task,
+    task_in_work, team_call_id,
 };
 pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, short_count};
 pub use transcript::{

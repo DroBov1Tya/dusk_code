@@ -10,6 +10,7 @@ mod picture;
 mod project;
 mod search;
 mod sphere;
+mod team;
 mod viewer;
 mod whats_new;
 
@@ -109,6 +110,12 @@ pub enum Modal {
     },
     /// A plugin's part that opens as a window.
     Plugin(crate::plugins::Key),
+    /// Stopping the shown chat's team; asks first.
+    StopTeam {
+        thread_id: String,
+    },
+    /// The budget of the shown chat's running team, being changed.
+    TeamBudget(team::BudgetForm),
     /// Going back to a message of the chat erases it and all after it; asks first.
     Rollback {
         thread_id: String,
@@ -162,6 +169,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
+        Modal::StopTeam { .. } => ("Stop team".to_owned(), 480., team::stop(cx)),
+        Modal::TeamBudget(form) => ("Team budget".to_owned(), 520., team::budget(form, cx)),
         // It has the whole window, not a panel with a title.
         Modal::Picture { image, size, view } => {
             return Some(picture::render(ws, image, *size, view, window, cx));

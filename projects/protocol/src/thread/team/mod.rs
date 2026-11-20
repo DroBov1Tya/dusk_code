@@ -1,9 +1,11 @@
 //! A team: the core's run of the plan of a root thread, its budget and its members, and
 //! the words every client shows for it and its plan.
 
+mod budget;
 mod plan;
 mod status;
 
+pub use budget::BUDGET_FIELDS;
 pub use plan::find_task;
 pub use status::task_in_work;
 

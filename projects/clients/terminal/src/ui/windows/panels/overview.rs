@@ -4,10 +4,12 @@
 
 use ratatui::text::{Line, Span};
 
-use dusk_protocol::thread::{LogKind, PlanCounts, Team, TeamEnd, TeamMember, ThreadTokens};
+use dusk_protocol::thread::{
+    BUDGET_FIELDS, LogKind, PlanCounts, Team, TeamEnd, TeamMember, ThreadTokens,
+};
 
 use super::context::context;
-use crate::app::{App, OverviewView, compact_number};
+use crate::app::{App, BudgetEdit, OverviewView, compact_number};
 use crate::ui::text::format::printable;
 use crate::ui::windows::theme::{
     ACCENT, DONE, DOT, FAILED, NEGATIVE, ON, POSITIVE, TEXT, TEXT_MUTED, WARNING, bold, dim, fg,
@@ -20,6 +22,9 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
         heading(&mut lines, "progress", plan_line(counts));
         if let Some(team) = &app.team {
             lines.push(status_line(team, "   "));
+            if let Some(edit) = &view.budget {
+                lines.extend(budget_lines(edit));
+            }
             let (budget, used) = (team.budget, team.used);
             lines.push(Line::from(Span::styled(
                 format!(
@@ -130,6 +135,30 @@ pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
         Span::raw("\t"),
         Span::styled(format!("{word}  "), fg(color)),
     ])
+}
+
+/// The budget being changed: a field a line, the chosen one marked, and why the last
+/// save was refused.
+fn budget_lines(edit: &BudgetEdit) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(Span::styled("   budget", bold(TEXT)))];
+    for (index, (name, value)) in BUDGET_FIELDS.iter().zip(&edit.fields).enumerate() {
+        let chosen = index == edit.selected;
+        let mark = if chosen { "\u{203A}" } else { " " };
+        lines.push(Line::from(vec![
+            Span::styled(format!("   {mark} {name:<16}"), dim()),
+            Span::styled(
+                format!("{value}{}", if chosen { "_" } else { "" }),
+                if chosen { bold(ACCENT) } else { fg(TEXT) },
+            ),
+        ]));
+    }
+    if let Some(error) = &edit.error {
+        lines.push(Line::from(Span::styled(
+            format!("     {}", printable(error)),
+            fg(NEGATIVE),
+        )));
+    }
+    lines
 }
 
 fn tokens_line(tokens: &ThreadTokens) -> String {

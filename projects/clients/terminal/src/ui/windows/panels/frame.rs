@@ -213,12 +213,16 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             context(report),
             None,
         ),
-        Panel::Overview(view) => (
-            "overview",
-            "up/down scroll  any other key closes",
-            overview(app, view),
-            None,
-        ),
+        Panel::Overview(view) => {
+            let running = app.team.as_ref().is_some_and(|team| team.ended().is_none());
+            let hints = match (&view.budget, view.stopping) {
+                (Some(_), _) => "up/down field  type to change  enter save  esc cancel",
+                (None, true) => "s again stops the team  any other key keeps it running",
+                (None, false) if running => "up/down scroll  s stop team  b budget  esc close",
+                (None, false) => "up/down scroll  any other key closes",
+            };
+            ("overview", hints, overview(app, view), None)
+        }
         Panel::Diff(view) => {
             let width = screen.width.saturating_sub(8).min(116) as usize;
             let (lines, hints) = match view.open {

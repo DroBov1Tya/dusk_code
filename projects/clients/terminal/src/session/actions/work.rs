@@ -1,7 +1,7 @@
 //! Actions on what a thread works on: its plan, changes, sources and jobs.
 
 use dusk_core::client::Client;
-use dusk_protocol::client::Command;
+use dusk_protocol::{client::Command, thread::TeamBudget};
 
 use crate::app::{App, DiffView, OverviewView, Panel, PasteEditor};
 use crate::session::{
@@ -31,14 +31,49 @@ pub async fn overview(client: &Client, app: &mut App) {
     };
     match crate::session::answers::read_overview(client, &thread_id).await {
         Ok((overview, context)) => {
-            app.panel = Some(Panel::Overview(Box::new(OverviewView {
-                overview,
-                context,
-                row: 0,
-            })));
+            app.panel = Some(Panel::Overview(Box::new(OverviewView::new(
+                overview, context,
+            ))));
             app.overview_stale = true;
         }
         Err(error) => app.error(format!("cannot read the Overview: {error:#}")),
+    }
+}
+
+/// Stops the chat's running team; its events move the plan, the clock reads the team.
+pub async fn stop_team(client: &Client, app: &mut App) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    match client.work().stop_team(&thread_id).await {
+        Ok(()) => {
+            app.flash = Some("Team stopped; its tasks at work went back to open".into());
+            app.overview_stale = true;
+        }
+        Err(error) => app.error(format!("cannot stop the team: {error:#}")),
+    }
+}
+
+/// Gives the chat's running team `budget`; a refusal stays under the fields.
+pub async fn set_team_budget(client: &Client, app: &mut App, budget: TeamBudget) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    let result = client.work().set_team_budget(&thread_id, budget).await;
+    let Some(Panel::Overview(view)) = &mut app.panel else {
+        return;
+    };
+    match result {
+        Ok(()) => {
+            view.budget = None;
+            app.flash = Some("Team budget saved".into());
+            app.overview_stale = true;
+        }
+        Err(error) => {
+            if let Some(edit) = &mut view.budget {
+                edit.error = Some(format!("{error:#}"));
+            }
+        }
     }
 }
 

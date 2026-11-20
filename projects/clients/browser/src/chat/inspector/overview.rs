@@ -6,11 +6,11 @@ use crate::{
     api,
     link::Conn,
     state::state,
-    ui::{Icon, IconName, compact, run, sleep, tone_text},
+    ui::{Icon, IconName, compact, confirm, run, sleep, tone_text},
 };
 use dusk_protocol::thread::{
-    ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG, Overview, PlanCounts, Team,
-    ThreadTokens,
+    BUDGET_FIELDS, ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG, Overview,
+    PlanCounts, Team, TeamBudget, ThreadTokens,
 };
 use leptos::prelude::*;
 
@@ -117,7 +117,7 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
                 Some(a) => {
                     let narrow = !wide.get();
                     view! {
-                        {progress(a.plan, a.team.as_ref())}
+                        {progress(a.plan, a.team.as_ref(), id.get_value())}
                         {a.team.as_ref().and_then(members)}
                         {usage().and_then(|usage| tokens(usage, a.plan))}
                         <section class="ov-sec">
@@ -149,7 +149,7 @@ fn figure(value: String, label: &'static str) -> impl IntoView {
     view! { <div class="ov-stat"><b>{value}</b><span>{label}</span></div> }
 }
 
-fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
+fn progress(counts: PlanCounts, team: Option<&Team>, thread: String) -> Option<AnyView> {
     let (running, all) = (counts.at_work(), counts.total());
     if all == 0 {
         return None;
@@ -169,10 +169,16 @@ fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
         .collect_view();
     let budget = team.map(|team| {
         let (budget, used) = (team.budget, team.used);
+        // Only a running team can be stopped or given more.
+        let controls = team
+            .ended()
+            .is_none()
+            .then(|| view! { <TeamControls thread budget /> });
         view! {
             {budget_row("Steps", used.steps.into(), budget.steps().into(), "")}
             {budget_row("Tokens", used.tokens, budget.tokens(), "")}
             {budget_row("Time", used.minutes.into(), budget.minutes().into(), " min")}
+            {controls}
         }
     });
     Some(
@@ -190,6 +196,74 @@ fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
         }
         .into_any(),
     )
+}
+
+/// Stop team and the budget of a running team, under its Progress. Stopping asks first;
+/// the budget opens as four fields in place, read back with the protocol's own limits.
+#[component]
+fn TeamControls(thread: String, budget: TeamBudget) -> impl IntoView {
+    let thread = StoredValue::new(thread);
+    let editing = RwSignal::new(false);
+    let error = RwSignal::new(None::<String>);
+    let fields = budget.fields().map(RwSignal::new);
+    let stop = move |_| {
+        let asked = "Stop the team? Members at work are stopped and their tasks go back to \
+                     open. The plan and what is done stay.";
+        if confirm(asked) {
+            let id = thread.get_value();
+            run(async move { api::stop_team(&id).await }, |()| ());
+        }
+    };
+    let save = move |_| {
+        let texts = fields.map(|field| field.get_untracked());
+        match TeamBudget::read(texts.each_ref().map(String::as_str)) {
+            Err(why) => error.set(Some(format!("{why:#}"))),
+            Ok(budget) => {
+                let id = thread.get_value();
+                run(
+                    async move { api::set_team_budget(&id, budget).await },
+                    move |()| {
+                        editing.set(false);
+                        error.set(None);
+                    },
+                );
+            }
+        }
+    };
+    let form = move || {
+        editing.get().then(|| {
+            let inputs = BUDGET_FIELDS
+                .iter()
+                .zip(fields)
+                .map(|(name, field)| {
+                    view! {
+                        <label class="ov-field">
+                            <span class="muted">{*name}</span>
+                            <input prop:value=move || field.get()
+                                on:input=move |ev| field.set(event_target_value(&ev)) />
+                        </label>
+                    }
+                })
+                .collect_view();
+            view! {
+                <div class="ov-budget-form">{inputs}</div>
+                {move || error.get().map(|why| view! { <p class="bad small">{why}</p> })}
+                <div class="ov-actions">
+                    <button class="ghost" on:click=move |_| editing.set(false)>"Cancel"</button>
+                    <button class="primary" on:click=save>"Save budget"</button>
+                </div>
+            }
+        })
+    };
+    view! {
+        <Show when=move || !editing.get()>
+            <div class="ov-actions">
+                <button class="ghost" on:click=move |_| editing.set(true)>"Edit budget"</button>
+                <button class="ghost danger" on:click=stop>"Stop team"</button>
+            </div>
+        </Show>
+        {form}
+    }
 }
 
 fn budget_row(name: &'static str, used: u64, all: u64, unit: &'static str) -> impl IntoView {
