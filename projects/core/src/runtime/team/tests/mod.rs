@@ -319,24 +319,25 @@ impl Rig {
         members.into_iter().map(|thread| thread.id).collect()
     }
 
-    /// What other threads wrote to the lead, read or still waiting, in order.
+    /// What other threads wrote to the lead, read or still waiting, in order. One
+    /// statement reads both tables, so a line admitted meanwhile is counted once.
     pub async fn lines(&self) -> Vec<String> {
-        let state = self.state();
-        let read = state.list_messages(&self.lead).await.unwrap();
-        let waiting = state.pending_messages(&self.lead).await.unwrap();
-        read.into_iter()
-            .filter(|message| message.from_thread_id.is_some())
-            .map(|message| message.content)
-            .chain(
-                waiting
-                    .into_iter()
-                    .filter(|pending| pending.from_thread_id.is_some())
-                    .map(|pending| pending.content),
-            )
-            .collect()
+        sqlx::query_scalar(
+            "SELECT content FROM (
+                SELECT content, 0 AS part, sequence AS n FROM messages
+                WHERE thread_id = ?1 AND from_thread_id IS NOT NULL
+                UNION ALL SELECT content, 1, pending_id FROM pending_messages
+                WHERE thread_id = ?1 AND from_thread_id IS NOT NULL)
+             ORDER BY part, n",
+        )
+        .bind(&self.lead)
+        .fetch_all(&self.state().pool)
+        .await
+        .unwrap()
     }
 
-    /// The uids of what was delivered to `thread`, read or still waiting.
+    /// The uids of what was delivered to `thread`, read or still waiting, in one
+    /// statement for the same reason.
     pub async fn uids(&self, thread: &str) -> Vec<String> {
         sqlx::query_scalar(
             "SELECT request_uid FROM messages WHERE thread_id = ?1 AND request_uid IS NOT NULL
@@ -407,6 +408,11 @@ pub(super) fn hang(asked: &Asked) -> Out {
         true => Out::Say("Noted.".into()),
         false => Out::Hang,
     }
+}
+
+/// Nobody answers, the lead included: what the lead is told stays unanswered.
+pub(super) fn silent(_: &Asked) -> Out {
+    Out::Hang
 }
 
 /// A member that answers `DONE` to everything, and a lead that notes what it is told.
