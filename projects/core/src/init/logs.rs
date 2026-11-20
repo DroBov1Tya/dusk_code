@@ -29,7 +29,7 @@ use tracing_subscriber::{
 
 use crate::{
     config::{Config, Traces},
-    init::paths::Paths,
+    init::{create_private_dir, paths::Paths},
 };
 
 const MAX_BYTES: u64 = 10 * 1024 * 1024;
@@ -133,19 +133,6 @@ fn tracer_provider(traces: &Traces) -> Result<SdkTracerProvider> {
     })
     .join()
     .map_err(|_| anyhow!("cannot set up the trace exporter"))?
-}
-
-fn create_private_dir(directory: &Path) -> Result<()> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(directory)
-        .with_context(|| format!("cannot create {}", directory.display()))
 }
 
 /// The log file to append to, private to the user, the old one set aside when large.

@@ -6,15 +6,22 @@
 //! still use them, so they stay as the user's own. Only `DROPPED` files go.
 
 use std::{
-    fs::{self, OpenOptions},
-    io::{ErrorKind, Write},
+    fs,
+    io::ErrorKind,
     path::{Component, Path},
 };
 
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::text::sha256_hex;
 
-use crate::{init::create_private_dir, init::paths::Paths, release::resources};
+use crate::{
+    init::{
+        create_private_dir,
+        files::{write_private, write_private_program},
+        paths::Paths,
+    },
+    release::resources,
+};
 
 /// Kept edited shipped files by their hash in older builds.
 pub const LOCK_FILE: &str = "builtin.lock";
@@ -382,22 +389,11 @@ fn write(target: &Path, contents: &[u8]) -> Result<()> {
     if let Some(parent) = target.parent() {
         create_private_dir(parent)?;
     }
-    let script = contents.starts_with(b"#!");
-    let temporary = target.with_file_name(format!(".duskcode-writing-{}", uuid::Uuid::now_v7()));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(if script { 0o700 } else { 0o600 });
+    if contents.starts_with(b"#!") {
+        write_private_program(target, contents)
+    } else {
+        write_private(target, contents)
     }
-    let mut file = options
-        .open(&temporary)
-        .with_context(|| format!("cannot write {}", target.display()))?;
-    file.write_all(contents)
-        .and_then(|()| file.sync_all())
-        .with_context(|| format!("cannot write {}", target.display()))?;
-    fs::rename(&temporary, target).with_context(|| format!("cannot replace {}", target.display()))
 }
 
 #[cfg(test)]

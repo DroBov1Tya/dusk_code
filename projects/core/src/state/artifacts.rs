@@ -6,7 +6,7 @@ use anyhow::{Context, Result, ensure};
 use dusk_protocol::text::sha256_hex;
 use uuid::Uuid;
 
-use crate::init::files::read_regular;
+use crate::init::files::{new_private_file, read_regular};
 
 pub use dusk_protocol::tools::Card;
 
@@ -150,14 +150,7 @@ pub fn is_card_id(id: &str) -> bool {
 }
 
 fn write_new(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(nix::libc::O_NOFOLLOW);
-    }
-    let mut file = options.open(path).context("create image artifact file")?;
+    let mut file = new_private_file(path).context("create image artifact file")?;
     file.write_all(bytes).context("write image artifact file")?;
     file.sync_all().context("flush image artifact file")
 }
