@@ -57,6 +57,7 @@ pub async fn run(
         .set_artifact_store(ArtifactStore::new(status.artifacts_dir.clone()));
     let mut open = None;
     let mut held = Held::new();
+    let mut seen = super::seen::Seen::default();
     if let Some(thread_id) = thread {
         open = Some(OpenThread::resume(client, &mut app, &thread_id).await?);
     }
@@ -208,6 +209,7 @@ pub async fn run(
             send(client, &mut app, &mut open, text, false).await;
         }
         tabs::tend(client, &mut app, &mut held).await;
+        seen.mark(client, app.thread_id.as_deref()).await;
         let working = app.is_busy() || app.agents_at_work() || app.tabs_working();
         terminal_status.update(working);
         // Work is activity too: the idle screen waits for both to stop.
@@ -283,6 +285,7 @@ pub async fn run(
                     let Some(next) = event else {
                         break;
                     };
+                    seen.hear(&next);
                     tabs::route(&mut app, &mut open, &mut held, next);
                     event = client.events.try_recv().ok();
                 }

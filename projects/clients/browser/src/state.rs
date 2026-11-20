@@ -186,6 +186,9 @@ impl AppState {
                     .threads
                     .with_untracked(|threads| threads.iter().any(|t| t.id == thread_id));
                 let renamed = matches!(*event, ThreadEvent::TitleChanged { .. });
+                if let ThreadEvent::Unread(unread) = *event {
+                    crate::chat::seen::heard(self, &thread_id, unread);
+                }
                 // /fork wrote its summary: the new chat starts from it.
                 if let ThreadEvent::Forked { summary } = &*event {
                     self.fork(thread_id.clone(), summary.clone());
