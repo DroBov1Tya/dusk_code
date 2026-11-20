@@ -451,14 +451,17 @@ fn check_brings(entry: &Entry) -> Result<()> {
             ),
         }
         ensure!(
-            is_line(&server.line(), MAX_LINE),
+            is_exact_line(&server.line(), MAX_LINE),
             "the MCP server {} is not one plain line of up to {MAX_LINE} characters",
             server.name
         );
     }
     ensure!(
         entry.programs.len() <= MAX_PROGRAMS
-            && entry.programs.iter().all(|line| is_line(line, MAX_LINE))
+            && entry
+                .programs
+                .iter()
+                .all(|line| is_exact_line(line, MAX_LINE))
             && entry.programs.windows(2).all(|pair| pair[0] < pair[1]),
         "programs are up to {MAX_PROGRAMS} plain lines, sorted, each once"
     );
@@ -481,7 +484,7 @@ fn check_credit(entry: &Entry) -> Result<()> {
     ensure!(
         source.starts_with("https://")
             && source.len() <= MAX_URL
-            && is_line(source, MAX_URL)
+            && is_exact_line(source, MAX_URL)
             && !source.contains(' '),
         "the source is not an https address"
     );
@@ -555,6 +558,12 @@ fn is_line(text: &str, max: usize) -> bool {
         && text.trim() == text
         && text.chars().count() <= max
         && dusk_protocol::text::is_plain_line(text)
+}
+
+/// `is_line` for what names a program or an address: no hidden character at all, not even
+/// the joiners and soft hyphen a caption may hold, so what runs reads as it is approved.
+fn is_exact_line(text: &str, max: usize) -> bool {
+    is_line(text, max) && !text.chars().any(dusk_protocol::text::is_hidden)
 }
 
 /// The type of a cover or screenshot, by its extension.
@@ -671,5 +680,23 @@ impl Entry {
             && self.source.is_none()
             && self.categories.is_empty()
             && self.badge.is_none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn what_runs_holds_no_hidden_character_a_caption_may() {
+        for kept in ["a soft\u{AD}hyphen", "a joined \u{1F469}\u{200D}\u{1F4BB}"] {
+            assert!(is_line(kept, 80), "{kept:?}");
+            assert!(!is_exact_line(kept, 80), "{kept:?}");
+        }
+        assert!(is_exact_line(
+            "npx -y some-server --config ./config.json",
+            80
+        ));
+        assert!(!is_exact_line("--config ./con\u{AD}fig.json", 80));
     }
 }
