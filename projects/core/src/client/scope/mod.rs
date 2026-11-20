@@ -72,6 +72,8 @@ pub enum Area {
     /// Installing a release of duskcode.
     Update,
     Shutdown,
+    /// Listing the attached clients and detaching one.
+    Clients,
 }
 
 /// What a browser may ask: everything but stopping the core, a shell, plugin parts,
@@ -183,6 +185,20 @@ impl Scope {
         }
     }
 
+    /// Whether it is full access: the only scope that learns which client stopped the core.
+    pub(super) fn is_full(&self) -> bool {
+        matches!(&self.0, Kind::Full)
+    }
+
+    /// What the scope is called in the list of clients.
+    pub(super) fn name(&self) -> &'static str {
+        match &self.0 {
+            Kind::Full => "full",
+            Kind::Web => "web",
+            Kind::Threads { .. } => "threads",
+        }
+    }
+
     /// Whether the client reads the text of a handler's error as it is: the user's own
     /// clients and the browser, which is the same person as the desktop. Any other gets
     /// `Shown` sentences and references.
@@ -192,7 +208,7 @@ impl Scope {
 
     /// Whether the client gets the status: it is settings-level state, so only a scope
     /// that may read the settings anyway has it.
-    pub(super) fn reads_status(&self) -> bool {
+    pub fn reads_status(&self) -> bool {
         match &self.0 {
             Kind::Full => true,
             Kind::Web => WEB.contains(&Area::Settings),

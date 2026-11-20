@@ -12,6 +12,8 @@
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - with `DUSK_MASCOT=MS` in the environment every subagent's mascot is held that many
 //!   milliseconds into its activity, so done and failed can be seen mid-motion;
+//! - with `DUSK_SWAP=MS` in the environment a change of the working row's words is held
+//!   that many milliseconds into its swap (`fake=activity-thinking`, then `-steps`);
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
 //! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;

@@ -20,7 +20,7 @@ use crate::{
         Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, model_choice::ModelChoice,
         team,
     },
-    state::{Thread, TurnStatus, estimate_tokens},
+    state::{Thread, TurnStatus},
 };
 
 /// Messages from agents a chat takes between two of the user's.
@@ -70,18 +70,7 @@ impl Launcher {
         cwd: &'a Path,
     ) -> BoxFuture<'a, bool> {
         Box::pin(async move {
-            let config = self.config.current();
-            let limit = self
-                .model
-                .current()
-                .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
-                    choice.input_limit(&config)
-                });
-            let tokens = estimate_tokens(content);
-            ensure!(
-                tokens <= limit,
-                "the message is about {tokens} tokens, past the input limit of {limit}"
-            );
+            self.model.ensure_fits(content, &self.config.current())?;
             let thread = self
                 .state
                 .load_thread(to)

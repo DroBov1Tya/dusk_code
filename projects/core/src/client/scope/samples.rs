@@ -496,5 +496,7 @@ fn rest() -> Vec<R> {
         R::Store(St::RemoveSource { name: word() }),
         R::InstallUpdate { tag: word() },
         R::Shutdown,
+        R::Clients,
+        R::Disconnect { id: 1 },
     ]
 }

@@ -3,6 +3,7 @@
 
 mod admit;
 mod catalog;
+mod clients;
 mod git;
 #[cfg(test)]
 mod plan_tests;
@@ -23,6 +24,7 @@ mod user_runs;
 mod voice;
 mod work;
 
+pub(super) use publish::stopping;
 use shown::ErrorView;
 pub use shown::Shown;
 pub use status::blank_status;
@@ -35,7 +37,9 @@ use crate::{
     terminal::Terminals,
 };
 use anyhow::{Result, anyhow};
-use dusk_protocol::client::{Event, ProjectRequest, Request, Response, Status, ThreadRequest};
+use dusk_protocol::client::{
+    Busy, Event, ProjectRequest, Request, Response, Status, ThreadRequest,
+};
 use dusk_protocol::thread::Turn;
 use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
@@ -86,7 +90,12 @@ pub enum Message {
         client: ClientId,
         source: String,
         scope: Scope,
+        transport: &'static str,
+        /// The app that runs the core; not counted as busy.
+        owner: bool,
     },
+    /// The hub is asked to stop the core, for every client; they were told already.
+    Stop,
     Call(Call),
     /// A client went away: it leaves every thread it had open.
     Detach(ClientId),
@@ -133,15 +142,26 @@ struct Attached {
     /// The source of the threads it creates.
     source: String,
     scope: Scope,
+    /// How it is connected, as `Request::Clients` tells.
+    transport: &'static str,
+    /// When it attached, in seconds since the Unix epoch.
+    since: i64,
     /// When its latest refused requests came, none older than `REFUSAL_WINDOW`.
     refusals: VecDeque<Instant>,
 }
 
 impl Attached {
+    #[cfg(test)]
     fn new(source: String, scope: Scope) -> Self {
+        Self::labelled(source, scope, "in-process")
+    }
+
+    fn labelled(source: String, scope: Scope, transport: &'static str) -> Self {
         Self {
             source,
             scope,
+            transport,
+            since: chrono::Utc::now().timestamp(),
             refusals: VecDeque::new(),
         }
     }
@@ -156,6 +176,11 @@ pub struct Server {
     refused_out: HashSet<ClientId>,
     subscribers: Subscribers,
     status: Arc<watch::Sender<Status>>,
+    /// How much the core is doing; see `clients::busy`.
+    busy: watch::Sender<Busy>,
+    /// The client attached as the app that owns the core: not counted as busy. Cleared
+    /// when it goes; the core has none until another is attached as the owner.
+    owner: Option<ClientId>,
     threads: HashMap<String, OpenThread>,
     terminals: Terminals,
     /// The repository status of the projects clients watch.
@@ -175,6 +200,12 @@ impl Server {
             refused_out: HashSet::new(),
             subscribers,
             status: Arc::new(sender),
+            busy: watch::channel(Busy {
+                clients: 0,
+                running: 0,
+            })
+            .0,
+            owner: None,
             threads: HashMap::new(),
             terminals: Terminals::new(crate::terminal::login_shell()),
             pulls: crate::project::forge::Tracker::default(),
@@ -219,12 +250,18 @@ impl Server {
             tokio::select! {
                 call = calls.recv() => match call {
                     None => break None,
-                    Some(Message::Attach { client, source, scope }) => {
-                        self.clients.insert(client, Attached::new(source, scope));
+                    Some(Message::Attach { client, source, scope, transport, owner }) => {
+                        if owner && self.owner.is_none() {
+                            self.owner = Some(client);
+                        }
+                        self.clients.insert(client, Attached::labelled(source, scope, transport));
+                        self.refresh_busy();
                     }
+                    Some(Message::Stop) => break None,
                     Some(Message::Detach(client)) => {
                         self.refused_out.remove(&client);
-                        self.detach(client).await
+                        self.detach(client).await;
+                        self.refresh_busy();
                     }
                     Some(Message::Call(Call { client, request, reply })) => {
                         // Every request passes here first, whichever part answers it.
@@ -238,7 +275,11 @@ impl Server {
                         };
                         let area = classify(&request).area;
                         match request {
-                            Request::Shutdown => break Some(reply),
+                            Request::Shutdown => {
+                                let label = self.label(client);
+                                publish::stopping(&self.subscribers, &format!("stopped by {label}"));
+                                break Some(reply);
+                            }
                             Request::InstallUpdate { tag } => {
                                 self.install_update(tag, self.error_view(client, area), reply)
                             }
@@ -278,6 +319,7 @@ impl Server {
                                 }
                                 // The client reads the status once it has the answer.
                                 self.refresh_status();
+                                self.refresh_busy();
                                 let _ = reply.send(response);
                             }
                         }
@@ -286,6 +328,7 @@ impl Server {
                 _ = clock.tick() => {
                     self.refresh_status();
                     self.close_orphans().await;
+                    self.refresh_busy();
                 }
                 _ = timetable.tick() => self.run_due_schedules().await,
                 _ = repositories.tick() => {
@@ -377,6 +420,8 @@ impl Server {
             Request::Terminal(request) => self.terminal(request).await,
             Request::SystemReport => Ok(Response::System(self.runtime.system_report().await?)),
             Request::Plugin(request) => self.plugin(request).await,
+            Request::Clients => Ok(Response::Clients(self.attached())),
+            Request::Disconnect { id } => self.disconnect(id).await,
             Request::InstallUpdate { .. } | Request::Store(_) | Request::Shutdown => {
                 Err(anyhow!("this request is answered by the loop"))
             }

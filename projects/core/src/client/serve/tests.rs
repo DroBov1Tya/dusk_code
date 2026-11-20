@@ -12,7 +12,7 @@ use crate::{
     tools::{Approvals, Progress},
 };
 use dusk_protocol::{
-    client::{ThreadRequest, WorkRequest},
+    client::{Busy, ThreadRequest, WorkRequest},
     thread::{ThreadEvent, TurnWait},
     tools::{Decision, Request as ToolRequest},
 };
@@ -93,6 +93,16 @@ async fn a_client_that_joins_a_waiting_turn_gets_the_wait_and_the_question() {
     assert_eq!(
         next_thread_event(&mut heard_second).await,
         ThreadEvent::Question(asked)
+    );
+
+    // The open chat with a turn waiting counts as running; neither client is the owner.
+    server.refresh_busy();
+    assert_eq!(
+        *server.busy().borrow(),
+        Busy {
+            clients: 2,
+            running: 1
+        }
     );
 }
 
@@ -273,6 +283,8 @@ async fn core_with_clients(
             client,
             source: "test".into(),
             scope,
+            transport: "in-process",
+            owner: false,
         };
         calls.send(attach).unwrap();
     }

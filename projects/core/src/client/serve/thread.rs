@@ -423,6 +423,9 @@ impl Server {
     /// A client went away: it leaves every thread, and the ones nobody keeps close.
     pub(super) async fn detach(&mut self, client: ClientId) {
         self.clients.remove(&client);
+        if self.owner == Some(client) {
+            self.owner = None;
+        }
         self.pulls.forget(client);
         self.user_runs.stop_client(client);
         self.subscribers

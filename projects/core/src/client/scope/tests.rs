@@ -19,6 +19,8 @@ fn bridge_refused(request: &Request) -> bool {
     matches!(
         request,
         Request::Shutdown
+            | Request::Clients
+            | Request::Disconnect { .. }
             | Request::Catalog(
                 CatalogRequest::McpServerText { .. }
                     | CatalogRequest::SaveMcpServer { old: Some(_), .. }
@@ -102,6 +104,7 @@ fn every_area() -> &'static [Area] {
         Area::StoreInstall,
         Area::Update,
         Area::Shutdown,
+        Area::Clients,
     ];
     for area in ALL {
         match area {
@@ -126,7 +129,8 @@ fn every_area() -> &'static [Area] {
             | Area::Store
             | Area::StoreInstall
             | Area::Update
-            | Area::Shutdown => {}
+            | Area::Shutdown
+            | Area::Clients => {}
         }
     }
     ALL
@@ -161,6 +165,8 @@ fn a_scope_bound_to_threads_reaches_nothing_but_threads() {
                 | Request::SystemReport
                 | Request::InstallUpdate { .. }
                 | Request::Shutdown
+                | Request::Clients
+                | Request::Disconnect { .. }
         );
         assert!(!(kept_out && about_threads), "{}", name(&request));
     }
@@ -268,6 +274,8 @@ fn a_browser_is_refused_this_list_and_no_more() {
     let expected = [
         "catalog.mcp_server_text",
         "catalog.save_mcp_server.saved",
+        "clients",
+        "disconnect",
         "plugin.close",
         "plugin.event",
         "plugin.open",

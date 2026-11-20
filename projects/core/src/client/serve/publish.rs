@@ -15,8 +15,31 @@ fn thread_of(event: &Event) -> Option<&str> {
         | Event::PluginFrame { .. }
         | Event::PluginNotice { .. }
         | Event::GitChanged { .. }
-        | Event::RepositoryStatus { .. } => None,
+        | Event::RepositoryStatus { .. }
+        | Event::CoreStopping { .. } => None,
     }
+}
+
+/// What a client without full access is told when the core stops: it never learns
+/// which other client or reason stopped it.
+const GENERIC_STOP: &str = "the core is stopping";
+
+/// Tells every attached client that the core is about to stop, whatever its scope. Only
+/// full-access clients read `reason`.
+pub(crate) fn stopping(subscribers: &Subscribers, reason: &str) {
+    let own = Event::CoreStopping {
+        reason: reason.to_owned(),
+    };
+    let other = Event::CoreStopping {
+        reason: GENERIC_STOP.to_owned(),
+    };
+    subscribers.lock().retain(|subscriber| {
+        let event = match subscriber.scope.is_full() {
+            true => &own,
+            false => &other,
+        };
+        subscriber.queue.send(event.clone()).is_ok()
+    });
 }
 
 /// Gives a thread's event to every attached client whose scope covers the thread,
