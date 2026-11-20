@@ -1,6 +1,7 @@
 //! Requests about one thread: opening, sending, pinning, closing.
 
 use super::publish::{publish, send_to};
+use super::unread;
 use super::{CLOSE_TIMEOUT, OpenThread, Running, Server};
 use super::{ClientId, Shown};
 use crate::runtime::ThreadHandle;
@@ -242,6 +243,10 @@ impl Server {
                 Response::SkillChanges(runtime.skill_changes(&thread_id).await?)
             }
             ThreadRequest::Pins { thread_id } => Response::Pins(runtime.pins(&thread_id).await?),
+            ThreadRequest::Seen { thread_id } => {
+                unread::set(&runtime, &self.subscribers, &thread_id, false).await;
+                Response::Done
+            }
         })
     }
 
@@ -260,6 +265,7 @@ impl Server {
         let current = Arc::clone(&running);
         let suggested: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let suggestion = Arc::clone(&suggested);
+        let runtime = Arc::clone(&self.runtime);
         let forward = tokio::spawn(async move {
             // A thread may say it is idle as it opens; it is done only once it has worked.
             let mut worked = false;
@@ -270,6 +276,7 @@ impl Server {
                     worked = true;
                     flag.store(false, Ordering::Relaxed);
                 }
+                unread::heard(&runtime, &subscribers, &id, &event).await;
                 // The start, the waits and the end of a turn are kept and sent under the
                 // lock a joining client takes, so it hears of a running turn before its
                 // end. A question is kept while the turn waits for the user's decision:

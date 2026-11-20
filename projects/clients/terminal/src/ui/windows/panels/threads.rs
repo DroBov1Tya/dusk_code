@@ -20,6 +20,8 @@ use crate::ui::windows::{
     wrap,
 };
 
+/// What marks a chat with something unread.
+const UNREAD: char = '\u{2022}';
 /// Messages shown at the end of a preview, after the one the thread began with.
 pub const PREVIEW_LAST: usize = 4;
 pub const PREVIEW_USER_LINES: usize = 3;
@@ -199,6 +201,8 @@ pub fn threads(list: &ThreadList, current: Option<&str>) -> Vec<Line<'static>> {
         .map(|(row, thread)| {
             let mark = if current == Some(thread.id.as_str()) {
                 Span::styled(format!(" {SUN_GLYPH} "), fg(ACCENT))
+            } else if thread.unread {
+                Span::styled(format!(" {UNREAD} "), fg(ACCENT))
             } else {
                 Span::raw("   ")
             };

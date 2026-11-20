@@ -540,6 +540,7 @@ fn act(
             cx.notify();
         }
         "fake" if value == "pulls" => fake_pulls(ws, cx),
+        "fake" if value == "unread" => fake_unread(ws, cx),
         "fake" if value == "forge-signin" || value == "forge-unserved" => {
             fake_forge(ws, value == "forge-signin", cx)
         }
@@ -1048,6 +1049,39 @@ fn fake_forge(ws: &mut Workspace, sign_in: bool, cx: &mut Context<Workspace>) {
 }
 
 /// Pull requests in every state, for the Changes module and a chat row's icon.
+/// Three loose chats at the top of the list: one unread, one read, one unread whose
+/// agent works again, so its ring stands where the dot would be.
+fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    let chats = [
+        ("fake-unread", "Answered while you were away", true),
+        ("fake-read", "Read and quiet", false),
+        ("fake-unread-working", "Unread but at work again", true),
+    ];
+    for (index, (id, title, unread)) in chats.into_iter().enumerate() {
+        ws.threads.insert(
+            index,
+            dusk_protocol::thread::Thread {
+                id: id.to_owned(),
+                source: "gui".to_owned(),
+                created_at: 0,
+                title: Some(title.to_owned()),
+                active_at: 0,
+                parent_thread_id: None,
+                agent: None,
+                name: None,
+                project: None,
+                temporary: false,
+                owner: None,
+                unread,
+            },
+        );
+    }
+    let mut working = crate::pages::chat::transcript::Transcript::default();
+    working.working = true;
+    ws.chats.insert("fake-unread-working".to_owned(), working);
+    cx.notify();
+}
+
 fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{
         Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
@@ -1193,6 +1227,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             project: Some(project.dir.to_string_lossy().into_owned()),
             temporary: false,
             owner: None,
+            unread: false,
         },
     );
     crate::pages::chat::pull_link::show(ws, cx);
