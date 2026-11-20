@@ -332,6 +332,7 @@ fn side(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
         );
     }
     let access = match (listing.kind, listing.permissions.is_empty()) {
+        (Kind::Connector, _) => listing.permissions.clone(),
         (Kind::Plugin, true) => vec!["Nothing beyond its own folder".to_owned()],
         (Kind::Plugin, false) => listing.permissions.clone(),
         _ => vec!["Nothing: it is text the model reads; it runs nothing".to_owned()],

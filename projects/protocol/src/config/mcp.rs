@@ -35,6 +35,32 @@ pub struct McpInfo {
     /// Its picture, a file the core found in the config's `icons` folder.
     #[serde(default)]
     pub icon: Option<std::path::PathBuf>,
+    /// The Workshop source that added it and the tier its listing had, while it is the
+    /// server that source added; none for a server set up by hand or a plugin's.
+    #[serde(default)]
+    pub added_from: Option<AddedFrom>,
+}
+
+/// Where a store-added MCP server came from, shown beside it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AddedFrom {
+    pub source: String,
+    pub tier: crate::plugin::Tier,
+}
+
+impl AddedFrom {
+    /// How every client words it.
+    pub fn label(&self) -> String {
+        let tier = match self.tier {
+            crate::plugin::Tier::Official => "Official",
+            crate::plugin::Tier::Verified => "Verified",
+            crate::plugin::Tier::Community => "Community",
+            crate::plugin::Tier::Unverified => "Unverified",
+            crate::plugin::Tier::Local => "Local",
+        };
+        format!("From {} \u{b7} {tier}", self.source)
+    }
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

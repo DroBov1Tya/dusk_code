@@ -59,6 +59,7 @@ pub fn kind_word(kind: Kind) -> &'static str {
         Kind::Skill => "Skill",
         Kind::Pack => "Pack",
         Kind::Agent => "Agent",
+        Kind::Connector => "Connector",
     }
 }
 
@@ -125,7 +126,12 @@ pub fn slot(listing: &Listing) -> AnyView {
         }
         .into_any(),
         (Some(_), None, _) => {
-            view! { <span class="slot-state installed"><Icon name=IconName::Check />"Installed"</span> }
+            // A connector is among the connectors, not installed: the words of its page.
+            let word = match listing.kind {
+                Kind::Connector => "Added",
+                _ => "Installed",
+            };
+            view! { <span class="slot-state installed"><Icon name=IconName::Check />{word}</span> }
                 .into_any()
         }
         (None, _, Some(_)) => view! { <span class="slot-note">"Cannot run here"</span> }.into_any(),

@@ -118,7 +118,10 @@ pub(super) fn mcp_row(server: &McpInfo, open: bool, width: usize) -> Row {
     let mut row = switch_row(first, on, width);
     let (text, style) = match &server.state {
         McpState::Failed(error) => (format!("{FAILED} {error}"), fg(NEGATIVE)),
-        _ => (server.target.clone(), dim()),
+        _ => match &server.added_from {
+            Some(from) => (format!("{} \u{b7} {}", server.target, from.label()), dim()),
+            None => (server.target.clone(), dim()),
+        },
     };
     // A failure is shown in full; an address stays on one line.
     match &server.state {

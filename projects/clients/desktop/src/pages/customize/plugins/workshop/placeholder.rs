@@ -172,5 +172,6 @@ fn glyph(kind: Kind) -> &'static str {
         Kind::Pack => icons::KIND_PACK,
         Kind::Skill => icons::KIND_SKILL,
         Kind::Agent => icons::KIND_AGENT,
+        Kind::Connector => icons::KIND_CONNECTOR,
     }
 }

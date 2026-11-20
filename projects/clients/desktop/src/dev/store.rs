@@ -12,8 +12,9 @@ use std::sync::Arc;
 use dusk_protocol::{
     catalog::{PackSkill, SkillPack},
     plugin::{
-        Client, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind, Listing,
-        Os, PICKS, Picks, RepoStars, Runs, ScreenshotRef, SourceFailure, Tier, UpdateReport,
+        Auth, Client, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind,
+        Listing, Os, PICKS, Picks, RepoStars, RunBy, Runs, ScreenshotRef, ServerSpec,
+        SourceFailure, Tier, UpdateReport,
     },
 };
 use gpui_kit::*;
@@ -34,6 +35,53 @@ use crate::{
     },
     workspace::{Center, Workspace},
 };
+
+/// A connector listing as the core shows one: its server as its one connector, and the
+/// lines asked before it is added.
+fn connector(name: &str, runs: Runs, server: ServerSpec, description: &str) -> Listing {
+    let target = match &runs {
+        Runs::Url(url) => format!("send the agent's requests for the tools of {name} to {url}"),
+        Runs::Command(line) => format!(
+            "start the MCP server {name} ({line}) on this computer; the agent may use its tools"
+        ),
+    };
+    let mut permissions = vec![target];
+    permissions.extend(server.package.as_ref().map(|package| {
+        format!("download {package} the first time {name} starts, and run it as you")
+    }));
+    permissions.push(match server.run_by {
+        RunBy::Vendor => format!("{name} is run by the service it reaches"),
+        RunBy::Community => format!("{name} is run by somebody other than the service"),
+    });
+    permissions.push(format!("reach {}", server.reaches));
+    if server.auth == Auth::OAuth {
+        permissions.push(
+            "ask you to sign in in your browser; the token stays in duskcode's config folder"
+                .into(),
+        );
+    }
+    Listing {
+        name: name.into(),
+        version: "1.0.0".into(),
+        description: description.into(),
+        kind: Kind::Connector,
+        tier: Tier::Verified,
+        source: "official".into(),
+        author: "a service".into(),
+        license: "LicenseRef-vendor-terms".into(),
+        homepage: server.docs.clone(),
+        category: "productivity".into(),
+        categories: vec!["productivity".into()],
+        connectors: vec![Connector {
+            name: name.into(),
+            runs,
+            state: ConnectorState::NotAdded,
+        }],
+        permissions,
+        server: Some(server),
+        ..Listing::default()
+    }
+}
 
 pub fn listings() -> Vec<Listing> {
     let listing = |name: &str, description: &str| Listing {
@@ -300,6 +348,48 @@ pub fn listings() -> Vec<Listing> {
             ..listing(
                 "my-hooks",
                 "Hooks of my own, dropped into the plugins folder.",
+            )
+        },
+        // Connectors: a service's server to sign in to, one run here from a pinned
+        // package and already added, and one from a source without a key.
+        connector(
+            "issue-tracker",
+            Runs::Url("https://mcp.tracker.example.com/mcp".into()),
+            ServerSpec {
+                auth: Auth::OAuth,
+                docs: Some("https://tracker.example.com/docs/mcp".into()),
+                reaches: "the issues and projects of the workspace you allow".into(),
+                ..ServerSpec::default()
+            },
+            "Find, create and update the issues of your tracker. The service's own server; \
+             you sign in with your account.",
+        ),
+        Listing {
+            installed: Some("1.0.0".into()),
+            ..connector(
+                "web-browser",
+                Runs::Command("npx -y @example/browser-mcp@1.4.2".into()),
+                ServerSpec {
+                    package: Some("@example/browser-mcp@1.4.2 from npm".into()),
+                    reaches: "any web page the agent opens in a browser here".into(),
+                    ..ServerSpec::default()
+                },
+                "A browser the agent drives: open pages, click, type and take screenshots.",
+            )
+        },
+        Listing {
+            tier: Tier::Unverified,
+            source: "loose".into(),
+            from: Some("lists.example.net".into()),
+            ..connector(
+                "docs-search",
+                Runs::Url("https://docs.example.net/mcp".into()),
+                ServerSpec {
+                    run_by: RunBy::Community,
+                    reaches: "the public documentation it indexes".into(),
+                    ..ServerSpec::default()
+                },
+                "Searches the documentation of popular libraries.",
             )
         },
     ];
@@ -715,7 +805,9 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         ("install", Some(listing)) => {
             ws.confirm_store(Confirm::Install(Box::new(listing)), window, cx)
         }
-        ("remove", Some(_)) => ws.confirm_store(Confirm::Remove(name.into()), window, cx),
+        ("remove", Some(listing)) => {
+            ws.confirm_store(Confirm::Remove(name.into(), listing.kind), window, cx)
+        }
         ("busy", Some(_)) => {
             ws.workshop.busy.insert(name.into(), "Installing...");
         }

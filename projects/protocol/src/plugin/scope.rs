@@ -7,8 +7,8 @@ use super::{Kind, Listing};
 /// A shelf of Customize that has a Workshop. Tools has none: the store lists no tools.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum Scope {
-    /// MCP servers: the store has no kind of its own for them, so it is the plugins that
-    /// bring one, as a listing's Connectors tab shows them.
+    /// MCP servers: the connector listings, and the plugins that bring a server, as a
+    /// listing's Connectors tab shows them.
     Connectors,
     Skills,
     #[default]
@@ -27,7 +27,8 @@ impl Scope {
     /// The kinds the store is asked for.
     pub fn kinds(self) -> Vec<Kind> {
         match self {
-            Self::Connectors | Self::Plugins => vec![Kind::Plugin],
+            Self::Connectors => vec![Kind::Connector, Kind::Plugin],
+            Self::Plugins => vec![Kind::Plugin],
             Self::Skills => vec![Kind::Skill, Kind::Pack],
             Self::Agents => vec![Kind::Agent],
         }
@@ -77,19 +78,38 @@ mod tests {
             listing(Kind::Pack, 0),
             listing(Kind::Agent, 0),
         );
+        let connector = listing(Kind::Connector, 1);
         let held = |scope: Scope| {
-            [&plain, &server, &skill, &pack, &agent].map(|listing| scope.holds(listing))
+            [&plain, &server, &skill, &pack, &agent, &connector].map(|listing| scope.holds(listing))
         };
-        assert_eq!(held(Scope::Connectors), [false, true, false, false, false]);
-        assert_eq!(held(Scope::Plugins), [true, true, false, false, false]);
-        assert_eq!(held(Scope::Skills), [false, false, true, true, false]);
-        assert_eq!(held(Scope::Agents), [false, false, false, false, true]);
+        assert_eq!(
+            held(Scope::Connectors),
+            [false, true, false, false, false, true]
+        );
+        assert_eq!(
+            held(Scope::Plugins),
+            [true, true, false, false, false, false]
+        );
+        assert_eq!(
+            held(Scope::Skills),
+            [false, false, true, true, false, false]
+        );
+        assert_eq!(
+            held(Scope::Agents),
+            [false, false, false, false, true, false]
+        );
     }
 
     #[test]
     fn a_shelf_asks_the_store_only_for_what_it_holds() {
         for scope in Scope::ALL {
-            for kind in [Kind::Plugin, Kind::Skill, Kind::Pack, Kind::Agent] {
+            for kind in [
+                Kind::Plugin,
+                Kind::Skill,
+                Kind::Pack,
+                Kind::Agent,
+                Kind::Connector,
+            ] {
                 if scope.holds(&listing(kind, 1)) {
                     assert!(scope.kinds().contains(&kind), "{scope:?} {kind:?}");
                 }

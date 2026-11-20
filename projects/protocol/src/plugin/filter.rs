@@ -231,6 +231,51 @@ mod tests {
     }
 
     #[test]
+    fn the_connectors_shelf_holds_connectors_and_plugins_that_bring_a_server() {
+        use crate::plugin::{Connector, ConnectorState, Runs};
+        let server = |name: &str, kind: Kind| Listing {
+            connectors: vec![Connector {
+                name: name.into(),
+                runs: Runs::Url("https://mcp.example.com/mcp".into()),
+                state: ConnectorState::NotAdded,
+            }],
+            ..listing(name, kind, Tier::Verified, &[])
+        };
+        let listings = [
+            server("tracker", Kind::Connector),
+            server("bot", Kind::Plugin),
+            listing("plain", Kind::Plugin, Tier::Official, &[]),
+            listing("notes", Kind::Skill, Tier::Official, &[]),
+        ];
+        let names = |filter: StoreFilter| -> Vec<String> {
+            filter
+                .visible(&listings)
+                .iter()
+                .map(|l| l.name.clone())
+                .collect()
+        };
+        let connectors = Some(Scope::Connectors);
+        assert_eq!(
+            names(StoreFilter::new(connectors, "", &[], &[], None)),
+            ["tracker", "bot"]
+        );
+        assert_eq!(
+            names(StoreFilter::new(
+                connectors,
+                "",
+                &[],
+                &[Kind::Connector],
+                None
+            )),
+            ["tracker"]
+        );
+        assert_eq!(
+            names(StoreFilter::new(Some(Scope::Plugins), "", &[], &[], None)),
+            ["bot", "plain"]
+        );
+    }
+
+    #[test]
     fn categories_list_the_fixed_ones_in_order_then_others_by_name() {
         let filed = |category: &str, more: &[&str]| Listing {
             category: category.into(),

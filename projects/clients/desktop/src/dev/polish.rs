@@ -51,6 +51,7 @@ pub fn mcp(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         state,
         tools: Vec::new(),
         icon: None,
+        added_from: None,
     };
     let ready = |tools: &[&str]| McpState::Ready(tools.iter().map(|tool| (*tool).into()).collect());
     if let Some(settings) = ws.settings.as_mut() {

@@ -141,12 +141,14 @@ macro_rules! lucide_thin {
 }
 
 /// The kinds of a Workshop listing in the place of a missing cover: the puzzle for a
-/// plugin, layers for a pack, an open book for a skill, a robot for an agent; and the
+/// plugin, layers for a pack, an open book for a skill, a robot for an agent, a plug for a
+/// connector; and the
 /// cloud struck out for a cover that could not be fetched while offline.
 pub const KIND_PLUGIN: &str = "icons/dusk/kind-plugin.svg";
 pub const KIND_PACK: &str = "icons/dusk/kind-pack.svg";
 pub const KIND_SKILL: &str = "icons/dusk/kind-skill.svg";
 pub const KIND_AGENT: &str = "icons/dusk/kind-agent.svg";
+pub const KIND_CONNECTOR: &str = "icons/dusk/kind-connector.svg";
 pub const CLOUD_OFF: &str = "icons/dusk/cloud-off.svg";
 
 const KIND_PLUGIN_SVG: &[u8] = lucide_thin!(
@@ -160,6 +162,9 @@ const KIND_SKILL_SVG: &[u8] = lucide_thin!(
 );
 const KIND_AGENT_SVG: &[u8] = lucide_thin!(
     r#"<path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />"#
+);
+const KIND_CONNECTOR_SVG: &[u8] = lucide_thin!(
+    r#"<path d="M12 22v-5" /><path d="M9 8V2" /><path d="M15 8V2" /><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />"#
 );
 const CLOUD_OFF_SVG: &[u8] = lucide!(
     r#"<path d="M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057" /><path d="M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78" /><path d="m2 2 20 20" />"#
@@ -229,6 +234,7 @@ impl AssetSource for Assets {
             KIND_PACK => return Ok(Some(Cow::Borrowed(KIND_PACK_SVG))),
             KIND_SKILL => return Ok(Some(Cow::Borrowed(KIND_SKILL_SVG))),
             KIND_AGENT => return Ok(Some(Cow::Borrowed(KIND_AGENT_SVG))),
+            KIND_CONNECTOR => return Ok(Some(Cow::Borrowed(KIND_CONNECTOR_SVG))),
             CLOUD_OFF => return Ok(Some(Cow::Borrowed(CLOUD_OFF_SVG))),
             _ => {}
         }

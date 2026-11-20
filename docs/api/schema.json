@@ -248,6 +248,22 @@
       ],
       "type": "object"
     },
+    "AddedFrom": {
+      "description": "Where a store-added MCP server came from, shown beside it.",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier"
+        }
+      },
+      "required": [
+        "source",
+        "tier"
+      ],
+      "type": "object"
+    },
     "AgentNode": {
       "description": "One agent in the tree a client draws: the chat at the root, then whom each may ask.",
       "properties": {
@@ -668,6 +684,26 @@
         "since"
       ],
       "type": "object"
+    },
+    "Auth": {
+      "description": "How a connector's server knows the user.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "It answers anybody.",
+          "type": "string"
+        },
+        {
+          "const": "oauth",
+          "description": "The user signs in in their browser once it is added; the token stays in the\nconfig folder.",
+          "type": "string"
+        },
+        {
+          "const": "key",
+          "description": "A key or token the user puts in `secrets` themselves.",
+          "type": "string"
+        }
+      ]
     },
     "Balance": {
       "description": "Money left on a provider account, as the provider wrote it.",
@@ -3563,6 +3599,11 @@
           "const": "pack",
           "description": "A set of skills.",
           "type": "string"
+        },
+        {
+          "const": "connector",
+          "description": "An MCP server to add to the connectors: no files of its own, only where the server\nis or the program it starts. A list read by an older duskcode leaves it out.",
+          "type": "string"
         }
       ]
     },
@@ -3732,6 +3773,18 @@
             "$ref": "#/$defs/ScreenshotRef"
           },
           "type": "array"
+        },
+        "server": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServerSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For a connector: how its server is reached and what it asks of the user. Its one\nentry in `connectors` says what it runs or reaches and whether it is added here."
         },
         "skills": {
           "default": [],
@@ -3907,6 +3960,18 @@
     "McpInfo": {
       "description": "A server as the settings show it: what the config says and how it stands.",
       "properties": {
+        "added_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AddedFrom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Workshop source that added it and the tier its listing had, while it is the\nserver that source added; none for a server set up by hand or a plugin's."
+        },
         "icon": {
           "default": null,
           "description": "Its picture, a file the core found in the config's `icons` folder.",
@@ -7765,6 +7830,14 @@
       ],
       "type": "string"
     },
+    "RunBy": {
+      "description": "Who runs a connector's server: the service it reaches, or somebody else.",
+      "enum": [
+        "vendor",
+        "community"
+      ],
+      "type": "string"
+    },
     "Runs": {
       "description": "What an MCP server is: a program on this computer, or an address on the network.",
       "oneOf": [
@@ -7956,6 +8029,51 @@
       "required": [
         "keychain",
         "entries"
+      ],
+      "type": "object"
+    },
+    "ServerSpec": {
+      "description": "What a connector listing needs to become an MCP server here: never a secret's value,\nonly the names the user fills in once it is added.",
+      "properties": {
+        "auth": {
+          "$ref": "#/$defs/Auth"
+        },
+        "docs": {
+          "default": null,
+          "description": "An `https` page of the service's own about its server.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "package": {
+          "default": null,
+          "description": "For a program: the package it fetches and where from, such as\n`@playwright/mcp@0.0.86 from npm`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reaches": {
+          "default": "",
+          "description": "What the agent can reach through it, one line, as its source says.",
+          "type": "string"
+        },
+        "run_by": {
+          "$ref": "#/$defs/RunBy"
+        },
+        "secrets": {
+          "default": [],
+          "description": "The headers (a remote server) or environment variables (a program) the user fills\nin after adding it; the server stays off until they do.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "auth",
+        "run_by"
       ],
       "type": "object"
     },
@@ -9123,7 +9241,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Installs or updates `name` at `version` from `source` and switches it on.\n`agreed` is the listing's `permissions` the user was shown; a listing that\nchanged since is refused.\n`tier` is the one the user was shown; the install is refused when the source\nearns another one now.\n`sha256` is the `package_sha256` of the `Review` the user was shown; an\nUnverified listing is installed only with it, and only while it still holds.",
+          "description": "Installs or updates `name` at `version` from `source` and switches it on; a\nconnector's server is added to the connectors as the settings add one.\n`agreed` is the listing's `permissions` the user was shown; a listing that\nchanged since is refused.\n`tier` is the one the user was shown; the install is refused when the source\nearns another one now.\n`sha256` is the `package_sha256` of the `Review` the user was shown; an\nUnverified listing is installed only with it, and only while it still holds.",
           "properties": {
             "Install": {
               "properties": {
@@ -9170,7 +9288,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Removes a plugin installed from the store.",
+          "description": "Removes a plugin, skill, pack, agent or connector installed from the store.",
           "properties": {
             "Remove": {
               "properties": {
@@ -11954,7 +12072,7 @@
         },
         {
           "const": "unverified",
-          "description": "From a source the user added without a key: nobody signed its list, so it may\nbring only skills, packs and agents, and none of them is updated on its own.",
+          "description": "From a source the user added without a key: nobody signed its list, so it may\nbring only skills, packs, agents and connectors to a public `https` address, and\nnone of them is updated on its own.",
           "type": "string"
         },
         {

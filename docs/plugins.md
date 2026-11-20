@@ -608,9 +608,42 @@ version (semver) that asks for nothing more than the version here; one that asks
 more is left for you to update by hand. A browser can look at the store but not install
 or update from it: a plugin runs programs on this machine.
 
-Single skills are offered on the Skills page; plugins, packs and agents under Plugins.
+Single skills are offered on the Skills page; plugins, packs and agents under Plugins;
+connectors, and the plugins that bring an MCP server, under Connectors.
 A client asks the core for the kinds its page shows (`StoreRequest::List` with `kinds`),
 so the split is the core's. Each page opens on Discover while nothing is installed there.
+
+### Connectors
+
+A connector listing (`kind: connector`) is a service's MCP server with nothing to
+download: its `server` says the `https` address it is at, or `npx`/`uvx` with a package
+pinned to one exact version, how it signs in (`none`, `oauth`, or a `key` the user puts
+in), the names of the headers or environment variables that key goes in (never a value),
+the service's page about it, who runs it and what it reaches. Customize, Connectors,
+Discover offers them with Add. Adding one writes the server into `config.yml` through the
+same path as the MCP settings, after a window that shows all of that; a server with a key
+is written switched off with those fields empty, and OAuth goes through the existing MCP
+sign-in. `store.json` records which connectors the store added, apart from the plugins,
+so an older duskcode reads it as before; Remove takes the server out unless you changed
+it since. A server of yours with the same name is never replaced.
+
+The address is `https` on the default port, on a named host written in plain ASCII (no
+punycode label), as it is written to the config and shown; names only a private network
+answers (`.local`, `.lan`, `.corp`, `.internal`, `.home.arpa`, `localhost` and the like)
+are refused, and the name must resolve to public addresses when the connector is added.
+A package is `npx -y name@MAJOR.MINOR.PATCH` with an npm registry name, or `uvx
+name===MAJOR.MINOR.PATCH` (`===`, so no padded or local version matches) with a
+normalised PyPI name: never a range, tag, folder,
+tarball or another protocol. A key goes in a header or variable the user names, never
+one that changes what runs (`PATH`, `NODE_OPTIONS`, `npm_config_*`, `PYTHON*`, `LD_*`,
+`DYLD_*` and the like) or one the transport sets. A connector never takes the name of a
+server a plugin here brings, and from any source but the official one not a name close
+to a server already set up. A local connector runs a program as you, so only an Official
+or Verified listing may bring one; a source without a key may offer only remote ones,
+and its confirmation says that nobody vouches for it and names the host its sign-in and
+keys go to. The MCP list shows which source added a server and its tier; a server the
+user removes, renames or points elsewhere in the settings is theirs from then on. A
+duskcode before connectors leaves such entries out of a list and reads the rest.
 
 ### Contents
 

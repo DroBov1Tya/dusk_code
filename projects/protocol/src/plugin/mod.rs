@@ -35,10 +35,10 @@ pub use permission::{KeyUse, Permissions, ProjectAccess};
 pub use place::{Opens, Part, Place};
 pub use scope::Scope;
 pub use store::{
-    CATEGORIES, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind,
+    Auth, CATEGORIES, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind,
     LOCAL_SOURCE, Listing, OFFICIAL_SOURCE, Order, PICKS, PREVIEW_BYTES, Picks, Probe, RepoStars,
-    Review, Runs, ScreenshotRef, SourceFailure, SourceRow, StoreList, StoreRequest, Tier,
-    UpdateReport,
+    Review, RunBy, Runs, ScreenshotRef, ServerSpec, SourceFailure, SourceRow, StoreList,
+    StoreRequest, Tier, UpdateReport,
 };
 pub use suggestion::{
     MAX_LABEL_CHARS, MAX_SUGGESTED, SEARCH_WORKSHOP_TOOL, SUGGEST_TOOL, Suggested, Suggestion,
