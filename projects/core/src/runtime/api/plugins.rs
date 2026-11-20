@@ -1,5 +1,8 @@
 //! Plugins and their settings.
 
+#[cfg(test)]
+mod connector_tests;
+
 use crate::runtime::Runtime;
 use anyhow::{Result, ensure};
 use std::sync::Arc;
@@ -176,8 +179,9 @@ impl Runtime {
     }
 
     /// Adds a connector's server through the settings' own path. The same connector added
-    /// before is replaced, keeping the secrets the user filled in; a server of the user's
-    /// under its name is never touched.
+    /// before is replaced, keeping the secrets the user filled in while it still goes to
+    /// the same address or program; a server of the user's under its name is never
+    /// touched.
     fn add_connector(
         &self,
         name: &str,
@@ -195,7 +199,11 @@ impl Runtime {
                     ours,
                     "a connector of yours is named {name}; rename or remove it to add this one"
                 );
-                connector::keep_secrets(&mut server, old);
+                // Keys the user typed went to that address or program; one the listing
+                // moved elsewhere starts without them.
+                if server.target() == old.target() {
+                    connector::keep_secrets(&mut server, old);
+                }
                 Some(name)
             }
         };
