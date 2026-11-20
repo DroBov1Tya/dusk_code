@@ -86,7 +86,8 @@ fn a_version_outside_the_range_is_refused() {
     for (protocol, expected) in [
         (35, Err(Refusal::Version)),
         (36, Ok(())),
-        (37, Err(Refusal::Version)),
+        (37, Ok(())),
+        (38, Err(Refusal::Version)),
     ] {
         hello.protocol = protocol;
         assert_eq!(hello.accepted(), expected, "protocol {protocol}");
@@ -109,7 +110,8 @@ fn a_name_with_a_newline_is_refused() {
 
 #[test]
 fn a_hello_without_auth_or_nonce_still_parses() {
-    let hello: Hello = serde_json::from_str(r#"{"protocol":36,"client":"tui"}"#).unwrap();
+    let json = format!(r#"{{"protocol":{PROTOCOL_VERSION},"client":"tui"}}"#);
+    let hello: Hello = serde_json::from_str(&json).unwrap();
     assert_eq!(hello, Hello::new("tui"));
 }
 
@@ -137,6 +139,7 @@ fn the_handshake_frames_are_pinned() {
         nonce: "cc".to_owned(),
     };
     let key = Hello {
+        protocol: 36,
         auth: Some(Claim::Key),
         ..Hello::new("tui")
     };

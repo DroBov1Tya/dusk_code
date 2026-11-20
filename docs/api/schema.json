@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 36,
+  "x-protocol": 37,
   "x-oldest": 36,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -3951,6 +3951,11 @@
         },
         "name": {
           "description": "`server__tool`, the name its switch goes by.",
+          "type": "string"
+        },
+        "short_name": {
+          "default": "",
+          "description": "The tool's own name on its server, to show; `name` holds it changed to fit a model.\nEmpty from a core older than protocol 37.",
           "type": "string"
         }
       },

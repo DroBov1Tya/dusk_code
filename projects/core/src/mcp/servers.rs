@@ -215,6 +215,7 @@ impl McpServers {
                 Some(McpToolInfo {
                     enabled: config.mode_tool_enabled(config.mode(), &name, ToolKind::Mcp),
                     name,
+                    short_name: tool.name.clone(),
                     description: tool.description.clone(),
                 })
             })
