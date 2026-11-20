@@ -51,6 +51,7 @@ pub fn node_view(
 ) -> impl IntoView {
     let name = node.name.clone();
     let (toggle, edit_name) = (name.clone(), name.clone());
+    let about = node.about();
     let children: Vec<_> = node
         .children
         .into_iter()
@@ -65,7 +66,7 @@ pub fn node_view(
                         let (toggle, reload) = (toggle.clone(), reload_toggle.clone());
                         run(api::switch(Flag::Agent(toggle), on), move |()| reload());
                     } />
-                <span class="muted">{node.description}</span>
+                <span class="muted">{about}</span>
                 <button class="ghost" on:click=move |_| edit(edit_name.clone())>"Edit"</button>
             </div>
             {(!children.is_empty()).then(|| view! { <ul>{children}</ul> })}

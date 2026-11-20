@@ -380,6 +380,14 @@ pub fn accept(paths: &Paths, fetched: &Fetched) -> Result<()> {
             *seen
         );
         *seen = serial;
+        if fetched.tier == Tier::Official {
+            record.official_names = fetched
+                .index
+                .plugins
+                .iter()
+                .map(|entry| entry.name.clone())
+                .collect();
+        }
         Ok(())
     })
 }

@@ -631,6 +631,7 @@ fn agent_tree(ws: &mut Workspace) {
         enabled: name != "docs",
         links: links.iter().map(|link| (*link).to_owned()).collect(),
         children,
+        source: None,
     };
     let problem = |node: &str, reason: &str| Problem {
         node: node.into(),

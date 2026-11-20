@@ -29,7 +29,8 @@ pub struct AddWorkshopSource {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct AddSourceArguments {
-    /// a-z, 0-9 and -, at most 32; shown as the listings' source.
+    /// A short name for it, a-z, 0-9 and -, from words of its address; the core names it
+    /// after the address when this one does not fit.
     name: String,
     /// The https address of its index.json, or https://github.com/<owner>/<repository>.
     url: String,
@@ -72,15 +73,10 @@ impl Tool for AddWorkshopSource {
             let arguments: AddSourceArguments = parse_arguments(arguments)?;
             let key = arguments.key.unwrap_or_default();
             let mirror = add::proposed(&self.config, &arguments.url, &key, Some(&arguments.name))?;
-            let approvals = context.approvals.as_ref().context(
-                "adding a Workshop source needs the owner's yes; nobody can answer here",
-            )?;
             let request = Request::Settings {
                 change: add::question(&mirror),
             };
-            approvals
-                .ask_owner(&context.thread_id, request, context.progress.clone())
-                .await?;
+            context.ask_owner(request).await?;
             let name = mirror.name.clone();
             let index = add::add(&self.config, mirror)
                 .await
@@ -125,7 +121,57 @@ mod tests {
         let mut context = tool_context(&scope);
         context.approvals = Some(Arc::new(Approvals::default()));
         let error = call(&tool, url, context).unwrap_err();
-        assert!(error.contains("no one can answer"), "{error}");
+        assert!(error.contains("owner's yes"), "{error}");
+        assert!(config.current().workshop().sources.is_empty());
+    }
+
+    /// Where no owner can answer, the call is refused at once instead of waiting for
+    /// good: a scheduled run, a headless run, a chat an API token started.
+    #[tokio::test]
+    async fn a_chat_nobody_can_answer_is_refused_at_once() {
+        let config = Arc::new(temp_live_config("add-source-unattended"));
+        let tool = AddWorkshopSource::new(Arc::clone(&config));
+        let dir = temp_dir("add-source-unattended");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = ToolScope::new(&dir, &dir).unwrap();
+        let state = Arc::new(crate::testing::temp_state("add-source-unattended").await);
+        state.create_thread("nightly", "schedule").await.unwrap();
+        state.create_thread("piped", "cli").await.unwrap();
+        state.create_thread("api", "tui").await.unwrap();
+        state.set_thread_owner("api", "token-1").await.unwrap();
+        state.create_thread("mine", "tui").await.unwrap();
+        let (events, _asked) = tokio::sync::mpsc::unbounded_channel();
+        let context = |thread: &str| {
+            let mut context = tool_context(&scope);
+            context.approvals = Some(Arc::new(Approvals::default()));
+            context.state = Some(Arc::clone(&state));
+            context.thread_id = thread.to_owned();
+            context.progress = Some(crate::tools::Progress {
+                call_id: "c".into(),
+                events: events.clone(),
+            });
+            context
+        };
+        let arguments =
+            serde_json::json!({"name": "far", "url": "https://far.example.com/index.json"});
+        for thread in ["nightly", "piped", "api"] {
+            let call = tool.call(arguments.clone(), context(thread));
+            let answer = tokio::time::timeout(std::time::Duration::from_secs(5), call)
+                .await
+                .expect("refused at once, not left waiting");
+            let error = format!("{:#}", answer.unwrap_err());
+            assert!(
+                error.contains("nobody who may give it"),
+                "{thread}: {error}"
+            );
+        }
+        // The owner's own chat is asked, and waits for the answer.
+        let call = tool.call(arguments, context("mine"));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(300), call)
+                .await
+                .is_err()
+        );
         assert!(config.current().workshop().sources.is_empty());
     }
 
@@ -158,8 +204,31 @@ mod tests {
             question.contains("Unverified") && question.contains("never a plugin"),
             "{question}"
         );
-        assert!(
-            add::proposed(&config, "https://far.example.com/i.json", "", Some("Far!")).is_err()
-        );
+        // The name is the core's: a suggestion that claims trust or is not the address's
+        // own words gives way to one from the address.
+        for suggested in [
+            "Far!",
+            "anthropic-official",
+            "official",
+            "far-verified",
+            "nearby",
+        ] {
+            let mirror = add::proposed(
+                &config,
+                "https://far.example.com/i.json",
+                "",
+                Some(suggested),
+            )
+            .unwrap();
+            assert_eq!(mirror.name, "far", "{suggested}");
+        }
+        let kept = add::proposed(
+            &config,
+            "https://far.example.com/i.json",
+            "",
+            Some("far-example"),
+        )
+        .unwrap();
+        assert_eq!(kept.name, "far-example");
     }
 }

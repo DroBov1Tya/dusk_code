@@ -15,6 +15,9 @@ use super::fetch::{self, Via};
 const HOST: &str = "https://raw.githubusercontent.com";
 pub const MAX_FILES: usize = 200;
 pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+/// All the files of one item together: far above a skill's text, and low enough that a
+/// list cannot make a review or an install hold hundreds of megabytes.
+pub const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_PATH: usize = 300;
 
 /// Where an entry's files are, as its list names them.
@@ -85,6 +88,20 @@ impl Upstream {
         Ok(())
     }
 
+    /// Whether its files may be fetched: together within `MAX_TOTAL_BYTES`. Not part of
+    /// `check`, so one item over it is unfit alone instead of failing its whole list.
+    pub fn fits(&self) -> Result<()> {
+        let total = self
+            .files
+            .iter()
+            .fold(0u64, |total, file| total.saturating_add(file.size));
+        ensure!(
+            total <= MAX_TOTAL_BYTES,
+            "its files come to {total} bytes; at most {MAX_TOTAL_BYTES} are fetched for one item"
+        );
+        Ok(())
+    }
+
     /// `github.com/owner/name at abc1234`, for the user.
     pub fn line(&self) -> String {
         format!(
@@ -94,9 +111,16 @@ impl Upstream {
         )
     }
 
-    /// One hash for the files the list pins, kept in the record as a package's is.
-    pub fn digest(&self) -> String {
+    /// One hash for what an install of `entry` from these files writes, kept in the
+    /// record as a package's is: the files the list pins, and what of the entry decides
+    /// where and as what they land, its name and kind and, for a pack, the `pack.yml` the
+    /// core writes from it. A review names it, so none of these can change after it.
+    pub fn digest(&self, entry: &super::index::Entry) -> String {
         let mut hash = Sha256::new();
+        hash.update(format!("{:?} {}\n", entry.kind, entry.name).as_bytes());
+        if let Some(yaml) = super::content::pack_yml(entry) {
+            hash.update(yaml.as_bytes());
+        }
         hash.update(self.commit.as_bytes());
         for file in &self.files {
             hash.update(format!("\n{} {} {}", file.to, file.sha256, file.size).as_bytes());
@@ -108,6 +132,7 @@ impl Upstream {
 /// Every file of `upstream`, fetched and checked, by its `to`.
 pub async fn fetch_all(upstream: &Upstream) -> Result<BTreeMap<String, Vec<u8>>> {
     upstream.check()?;
+    upstream.fits()?;
     let mut fetched = Vec::new();
     for file in &upstream.files {
         let url = format!("{HOST}/{}/{}/{}", upstream.repo, upstream.commit, file.path);
