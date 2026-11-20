@@ -6,9 +6,11 @@
 use crate::{
     api,
     state::Chat,
-    ui::{Icon, IconName, run},
+    ui::{Icon, IconName, run, tone_text},
 };
-use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus, WorkKind};
+use dusk_protocol::thread::{
+    GoalCheck, PlanCounts, Task, TaskStatus, TeamEnd, WorkKind, task_in_work,
+};
 use leptos::prelude::*;
 
 #[component]
@@ -16,19 +18,43 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
     let open = RwSignal::new(false);
     let counts = RwSignal::new(None::<PlanCounts>);
     let tasks = Memo::new(move |_| chat.with(|c| c.tasks.clone()));
-    // The counts are the core's: asked again whenever the tasks move.
+    // The counts and the team are the core's: asked again whenever the tasks move. The
+    // team's own events keep it current between.
     let asked = id.clone();
     Effect::new(move |_| {
         tasks.track();
         let id = asked.clone();
-        run(async move { api::plan_counts(&id).await }, move |c| {
-            counts.set(Some(c))
-        });
+        run(
+            async move { Ok((api::plan_counts(&id).await?, api::team(&id).await?)) },
+            move |(c, team)| {
+                counts.set(Some(c));
+                if let Some(team) = team {
+                    chat.update(|chat| chat.set_team(team, super::data::now_ms()));
+                }
+            },
+        );
     });
-    let shown = move || !tasks.with(Vec::is_empty) || counts.get().is_some_and(|c| total(c) > 0);
+    let shown = move || !tasks.with(Vec::is_empty) || counts.get().is_some_and(|c| c.total() > 0);
+    // An ended team says how it ended in the place of a task in work: none is.
     let current = move || {
-        tasks
-            .with(|tasks| current(tasks).map(|(n, t)| format!("#{n} {}", one_line(&t.description))))
+        chat.with(
+            |c| match c.team.as_ref().and_then(|team| Some((team.ended()?, team))) {
+                Some((end, team)) => {
+                    let tone = if end == TeamEnd::Done {
+                        "tone-good"
+                    } else {
+                        "tone-warn"
+                    };
+                    (team.status_line(), tone)
+                }
+                None => (
+                    task_in_work(&c.tasks, c.team.as_ref())
+                        .map(|(n, t)| t.numbered(n))
+                        .unwrap_or_default(),
+                    "muted",
+                ),
+            },
+        )
     };
     let id = StoredValue::new(id);
     // While the plan is written, its label carries the light.
@@ -57,10 +83,14 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
                     <Icon name=IconName::ChevronDown />
                     <span class="plan-label" class:act-shimmer=move || planning.get()>"Plan"</span>
                     {move || match counts.get() {
-                        Some(c) => view! { <span class="plan-summary">{summary(c)}</span> }.into_any(),
+                        Some(c) => view! { <span class="plan-summary">{c.summary()}</span> }.into_any(),
                         None => view! { <span class="plan-placeholder"></span> }.into_any(),
                     }}
-                    <span class="plan-current muted">{current}</span>
+                    {move || {
+                        let (text, tone) = current();
+                        let ended = chat.with(|c| c.team.as_ref().is_some_and(|t| t.ended().is_some()));
+                        view! { <span class=format!("plan-current {tone}") class:ended=ended>{text}</span> }
+                    }}
                     <Show when=move || counts.get().is_some()>{bar(counts)}</Show>
                 </button>
                 <Show when=move || open.get()>
@@ -94,7 +124,7 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
 }
 
 fn row(number: usize, task: Task, thread_id: String) -> impl IntoView {
-    let (glyph, tone) = look(task.status);
+    let (glyph, tone) = (task.status.glyph(), tone_text(task.status.tone()));
     let for_user =
         task.status == TaskStatus::Review && task.gate == Some(GoalCheck::UserConfirmation);
     let word = if for_user {
@@ -107,40 +137,15 @@ fn row(number: usize, task: Task, thread_id: String) -> impl IntoView {
         }
         .into_any()
     } else {
-        view! { <span class=format!("plan-word {tone}")>{task.status.name()}</span> }.into_any()
+        view! { <span class=format!("plan-word {tone}")>{task.status.word()}</span> }.into_any()
     };
     view! {
         <span class="plan-number muted num">{number}</span>
         <span class=format!("plan-glyph {tone}") aria-hidden="true">{glyph}</span>
-        <span class="plan-text">{one_line(&task.description)}</span>
+        <span class="plan-text">{task.title()}</span>
         {task.owner.map(|owner| view! { <span class="plan-owner muted">{owner.name}</span> })}
         {word}
     }
-}
-
-/// "3 of 7 done · 1 running": the parts that are not zero after the done.
-fn summary(counts: PlanCounts) -> String {
-    let mut text = format!("{} of {} done", counts.done, total(counts));
-    for (count, word) in [
-        (counts.running, "running"),
-        (counts.claimed, "claimed"),
-        (counts.review, "in review"),
-        (counts.blocked, "blocked"),
-        (counts.failed, "failed"),
-    ] {
-        if count > 0 {
-            text.push_str(&format!(" \u{00B7} {count} {word}"));
-        }
-    }
-    text
-}
-
-fn total(c: PlanCounts) -> u32 {
-    [
-        c.open, c.claimed, c.running, c.blocked, c.review, c.done, c.failed,
-    ]
-    .into_iter()
-    .fold(0, u32::saturating_add)
 }
 
 /// The plan as one bar of fixed width, the shares in their colours. The four shares
@@ -158,37 +163,9 @@ fn bar(counts: RwSignal<Option<PlanCounts>>) -> impl IntoView {
             {parts.into_iter().map(|(of, tone)| view! {
                 <span class=format!("tone-{tone}") style:width=move || {
                     let counts = counts.get().unwrap_or_default();
-                    format!("{}%", of(counts) as f32 * 100. / total(counts).max(1) as f32)
+                    format!("{}%", of(counts) as f32 * 100. / counts.total().max(1) as f32)
                 }></span>
             }).collect_view()}
         </span>
     }
-}
-
-/// The task the folded line names: the first running, else the first not over.
-fn current(tasks: &[Task]) -> Option<(usize, &Task)> {
-    let numbered = || tasks.iter().enumerate().map(|(i, t)| (i + 1, t));
-    numbered()
-        .find(|(_, t)| t.status == TaskStatus::Running)
-        .or_else(|| {
-            numbered().find(|(_, t)| !matches!(t.status, TaskStatus::Done | TaskStatus::Failed))
-        })
-}
-
-/// The glyph and tone of a status; its word is always beside it.
-fn look(status: TaskStatus) -> (&'static str, &'static str) {
-    match status {
-        TaskStatus::Open => ("\u{25CB}", "tone-muted"),
-        TaskStatus::Claimed => ("\u{25C9}", "tone-info"),
-        TaskStatus::Running => ("\u{25CF}", "tone-accent"),
-        TaskStatus::Blocked => ("\u{25C6}", "tone-warn"),
-        TaskStatus::Review => ("\u{25C7}", "tone-info"),
-        TaskStatus::Done => ("\u{2713}", "tone-good"),
-        TaskStatus::Failed => ("\u{2715}", "tone-bad"),
-    }
-}
-
-/// A task's words are model text: one line, drawn as plain text.
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

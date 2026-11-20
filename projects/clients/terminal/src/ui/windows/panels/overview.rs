@@ -4,22 +4,22 @@
 
 use ratatui::text::{Line, Span};
 
-use dusk_protocol::thread::{
-    LogKind, PlanCounts, TaskStatus, Team, TeamMember, TeamStatus, ThreadTokens,
-};
+use dusk_protocol::thread::{LogKind, PlanCounts, Team, TeamEnd, TeamMember, ThreadTokens};
 
 use super::context::context;
 use crate::app::{App, OverviewView, compact_number};
 use crate::ui::text::format::printable;
 use crate::ui::windows::theme::{
     ACCENT, DONE, DOT, FAILED, NEGATIVE, ON, POSITIVE, TEXT, TEXT_MUTED, WARNING, bold, dim, fg,
+    tone_fg,
 };
 
 pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if let Some(counts) = app.plan.filter(|counts| total(*counts) > 0) {
-        heading(&mut lines, "progress", plan_line(counts, app.team.as_ref()));
+    if let Some(counts) = app.plan.filter(|counts| counts.total() > 0) {
+        heading(&mut lines, "progress", plan_line(counts));
         if let Some(team) = &app.team {
+            lines.push(status_line(team, "   "));
             let (budget, used) = (team.budget, team.used);
             lines.push(Line::from(Span::styled(
                 format!(
@@ -36,7 +36,7 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
         }
     }
     if let Some(team) = app.team.as_ref().filter(|team| !team.members.is_empty()) {
-        heading(&mut lines, "members", format!("{} at work", at_work(team)));
+        heading(&mut lines, "members", format!("{} at work", team.at_work()));
         for member in &team.members {
             lines.push(member_line(member, "   "));
         }
@@ -95,34 +95,33 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     lines
 }
 
-/// `plan 4/7 · ● 2 · ◆ 1 · 12m`: done of all, at work, blocked, and the team's minutes.
-pub fn plan_line(counts: PlanCounts, team: Option<&Team>) -> String {
-    let mut line = format!(
+/// `plan 4/7 · ● 2 · ◆ 1`: done of all, at work, blocked.
+pub fn plan_line(counts: PlanCounts) -> String {
+    format!(
         "plan {}/{} {DOT} {ON} {} {DOT} \u{25C6} {}",
         counts.done,
-        total(counts),
-        counts.claimed + counts.running,
+        counts.total(),
+        counts.at_work(),
         counts.blocked
-    );
-    if let Some(team) = team {
-        line.push_str(&format!(" {DOT} {}m", team.used.minutes));
-        if let TeamStatus::Ended(_) = team.status {
-            line.push_str(" ended");
-        }
-    }
-    line
+    )
+}
+
+/// `running · 23 min`, or how the team ended and why, in a warning once it did.
+pub fn status_line(team: &Team, indent: &str) -> Line<'static> {
+    let color = match team.ended() {
+        None => TEXT_MUTED,
+        Some(TeamEnd::Done) => POSITIVE,
+        Some(_) => WARNING,
+    };
+    Line::from(Span::styled(
+        format!("{indent}{}", team.status_line()),
+        fg(color),
+    ))
 }
 
 /// `● Ember-0c coder running`, the dot in the colour of its task's state.
 pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
-    let (word, color) = match member.status {
-        TaskStatus::Open | TaskStatus::Claimed => ("waits", TEXT_MUTED),
-        TaskStatus::Running => ("running", ACCENT),
-        TaskStatus::Blocked => ("blocked", WARNING),
-        TaskStatus::Review => ("in review", ACCENT),
-        TaskStatus::Done => ("done", POSITIVE),
-        TaskStatus::Failed => ("failed", NEGATIVE),
-    };
+    let (word, color) = (member.status.word(), tone_fg(member.status.tone()));
     let role = member.role.as_deref().unwrap_or("general");
     Line::from(vec![
         Span::styled(format!("{indent}{ON} "), fg(color)),
@@ -131,23 +130,6 @@ pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
         Span::raw("\t"),
         Span::styled(format!("{word}  "), fg(color)),
     ])
-}
-
-pub fn total(counts: PlanCounts) -> u32 {
-    counts.open
-        + counts.claimed
-        + counts.running
-        + counts.blocked
-        + counts.review
-        + counts.done
-        + counts.failed
-}
-
-fn at_work(team: &Team) -> usize {
-    team.members
-        .iter()
-        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
-        .count()
 }
 
 fn tokens_line(tokens: &ThreadTokens) -> String {

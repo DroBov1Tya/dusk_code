@@ -1,4 +1,11 @@
-//! A team: the core's run of the plan of a root thread, its budget and its members.
+//! A team: the core's run of the plan of a root thread, its budget and its members, and
+//! the words every client shows for it and its plan.
+
+mod plan;
+mod status;
+
+pub use plan::find_task;
+pub use status::task_in_work;
 
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};

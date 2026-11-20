@@ -18,7 +18,7 @@ use super::{
 use crate::app::compact_number;
 use crate::ui::windows::panels::{
     fit,
-    overview::{member_line, plan_line, total},
+    overview::{member_line, plan_line, status_line},
 };
 use crate::ui::{
     text::format::format_duration,
@@ -34,17 +34,22 @@ const BASE_HEIGHT: u16 = 12;
 const MEMBERS_SHOWN: usize = 4;
 
 impl Sidebar<'_> {
-    /// The rows the Overview takes: the plan adds its heading, its line and members.
+    /// The rows the Overview takes: the plan adds its heading and its line, a team its
+    /// status and members.
     pub fn overview_height(&self) -> u16 {
         if !self.has_plan() {
             return BASE_HEIGHT;
         }
-        let members = self.app.team.as_ref().map_or(0, |team| team.members.len());
-        BASE_HEIGHT + 3 + members.min(MEMBERS_SHOWN) as u16
+        let team = self
+            .app
+            .team
+            .as_ref()
+            .map_or(0, |team| 1 + team.members.len().min(MEMBERS_SHOWN) as u16);
+        BASE_HEIGHT + 3 + team
     }
 
     fn has_plan(&self) -> bool {
-        self.app.plan.is_some_and(|counts| total(counts) > 0)
+        self.app.plan.is_some_and(|counts| counts.total() > 0)
     }
 
     pub fn overview(&self, frame: &mut Frame, area: Rect) {
@@ -163,9 +168,12 @@ impl Sidebar<'_> {
             lines.push(Line::default());
             lines.push(ruled("Plan", None, width));
             lines.push(Line::from(Span::styled(
-                fill(&plan_line(counts, team), width),
+                fill(&plan_line(counts), width),
                 fg(TEXT_SOFT),
             )));
+            if let Some(team) = team {
+                lines.push(fit(vec![status_line(team, "")], width).remove(0));
+            }
             for member in team
                 .iter()
                 .flat_map(|team| &team.members)

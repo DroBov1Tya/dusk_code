@@ -119,9 +119,12 @@ fn plan() -> Vec<Made> {
     ]
 }
 
-/// The thread of the member that holds task `number`.
+/// The thread of the member that holds task `number`; its name comes from it.
 fn member_thread(number: u32) -> String {
-    format!("team-member-{number}")
+    format!(
+        "0190f1c2-7a3b-7c4d-8e5f-{:012x}",
+        u64::from(number) * 0x9e37_79b9
+    )
 }
 
 fn task(made: &Made, now: i64) -> Task {
@@ -143,8 +146,8 @@ fn task(made: &Made, now: i64) -> Task {
     serde_json::from_value(json).expect("a made-up task reads back")
 }
 
-fn team(lead: &str, ended: bool) -> Team {
-    let members = plan()
+fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
+    let members = plan
         .iter()
         .filter(|made| made.owned)
         .rev()
@@ -220,8 +223,17 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         eprintln!("fake=team needs a shown chat: fake=chat first");
         return;
     };
-    let made = plan();
-    let team = team(&lead, ended);
+    let mut made = plan();
+    // The end gave the tasks at work back: they are open, and no member works.
+    if ended {
+        for made in &mut made {
+            if made.status.at_work() {
+                made.status = TaskStatus::Open;
+                made.owned = false;
+            }
+        }
+    }
+    let team = team(&lead, ended, &made);
     let tasks: Vec<Task> = made.iter().map(|made| task(made, now)).collect();
     if let Some(chat) = ws.chats.get_mut(&lead) {
         chat.tasks.clear();

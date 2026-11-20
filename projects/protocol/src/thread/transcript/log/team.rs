@@ -9,8 +9,10 @@ impl<L> ChatLog<L> {
     /// and a member this chat never heard start, as in a chat opened while its team
     /// runs or after, joins in the state of its task.
     pub fn set_team(&mut self, team: Team, now: i64) {
+        // An ended team cancelled its members at work, whatever their tasks last said.
+        let ended = team.ended().is_some();
         for member in &team.members {
-            let at_work = matches!(member.status, TaskStatus::Claimed | TaskStatus::Running);
+            let at_work = member.status.at_work() && !ended;
             match self.agents.get_mut(&member.thread_id) {
                 Some(agent) if agent.task_id.as_deref() == Some(member.task_id.as_str()) => {
                     // Its own events lead; a task no longer at work ended its turn.

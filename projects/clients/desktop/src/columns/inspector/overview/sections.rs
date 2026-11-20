@@ -2,9 +2,7 @@
 //! the same section draws in the column and on the page, only its frame differs.
 
 use crate::ui::elevation::{Elevation, Level};
-use dusk_protocol::thread::{
-    LogEntry, LogKind, Overview, PlanCounts, TaskStatus, Team, TeamStatus, ThreadTokens,
-};
+use dusk_protocol::thread::{LogEntry, LogKind, Overview, PlanCounts, Team, ThreadTokens};
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName, button::Button},
     *,
@@ -112,17 +110,14 @@ fn mono(text: String) -> Div {
 }
 
 fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
-    let counts = shown.plan.filter(|counts| total(*counts) > 0)?;
+    let counts = shown.plan.filter(|counts| counts.total() > 0)?;
     let theme = cx.theme();
-    let all = total(counts);
-    let running = counts.claimed + counts.running;
-    let aside = shown.team.as_ref().map(|team| {
-        let state = match team.status {
-            TeamStatus::Running => "running",
-            TeamStatus::Ended(_) => "ended",
-        };
-        div().child(format!("{state} \u{00B7} {} min", team.used.minutes))
-    });
+    let all = counts.total();
+    let running = counts.at_work();
+    let aside = shown
+        .team
+        .as_ref()
+        .map(|team| div().child(team.status_line()));
     // A segment a status, as wide as its share, in the order done, at work, blocked, the
     // rest: the bar stays the same size whether the plan has 3 tasks or 300.
     let parts = [
@@ -182,16 +177,6 @@ fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
     Some(frame(form, "Progress", aside, body, cx))
 }
 
-fn total(counts: PlanCounts) -> u32 {
-    counts.open
-        + counts.claimed
-        + counts.running
-        + counts.blocked
-        + counts.review
-        + counts.done
-        + counts.failed
-}
-
 /// One part of the team's budget: its name, a thin bar, and "used of all".
 fn budget_row(name: &'static str, used: u64, all: u64, unit: &str, cx: &App) -> Div {
     let theme = cx.theme();
@@ -237,21 +222,13 @@ fn members(team: &Team, form: Form, cx: &App) -> Option<Div> {
         return None;
     }
     let theme = cx.theme();
-    let at_work = team
-        .members
-        .iter()
-        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
-        .count();
+    let at_work = team.at_work();
     let mut body = div().flex().flex_col();
     for member in &team.members {
-        let (word, color) = match member.status {
-            TaskStatus::Open | TaskStatus::Claimed => ("waits", theme.muted_foreground),
-            TaskStatus::Running => ("running", theme.primary),
-            TaskStatus::Blocked => ("blocked", theme.warning),
-            TaskStatus::Review => ("in review", theme.primary),
-            TaskStatus::Done => ("done", theme.success),
-            TaskStatus::Failed => ("failed", theme.danger),
-        };
+        let (word, color) = (
+            member.status.word(),
+            widgets::tone(member.status.tone(), cx),
+        );
         body = body.child(
             div()
                 .flex()

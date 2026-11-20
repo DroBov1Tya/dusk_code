@@ -615,6 +615,12 @@ fn a_team_s_members_are_the_chat_s_agents() {
     let m2 = chat.agent("m2").unwrap();
     assert_eq!((m2.task_id.as_deref(), m2.started_at), (Some("t5"), 4));
     assert!(m2.working());
+
+    // A team that ended cancelled its members at work.
+    let mut ended = team(&[("m2", "t5", TaskStatus::Running)]);
+    ended.status = crate::thread::TeamStatus::Ended(crate::thread::TeamEnd::Steps);
+    chat.apply(ThreadEvent::Team(ended), 5);
+    assert!(chat.agents.values().all(|agent| !agent.working()));
 }
 
 fn suggestion() -> Suggestion {

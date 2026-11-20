@@ -6,7 +6,7 @@ use crate::ui::elevation::{Elevation, Level};
 use crate::ui::press::Press;
 use std::ops::Range;
 
-use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus};
+use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus, TeamEnd, task_in_work};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
     prelude::FluentBuilder,
@@ -34,7 +34,7 @@ const BAR_EASE: std::time::Duration = std::time::Duration::from_millis(300);
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat()?;
     let counts = ws.dock.counts_of(ws.shown.as_deref());
-    let all = counts.map_or(0, total);
+    let all = counts.map_or(0, PlanCounts::total);
     if chat.tasks.is_empty() && all == 0 {
         return None;
     }
@@ -49,8 +49,9 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         Some(counts) => div()
             .small()
             .text_color(theme.foreground)
-            .whitespace_nowrap()
-            .child(summary(counts))
+            .min_w_0()
+            .truncate()
+            .child(counts.summary())
             .into_any_element(),
         // The counts are on their way: a still placeholder of their size.
         None => div()
@@ -60,12 +61,33 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             .bg(border)
             .into_any_element(),
     };
-    let current = current(&chat.tasks).map(|(number, task)| {
-        div()
-            .meta()
-            .text_color(muted)
-            .truncate()
-            .child(format!("#{number} {}", one_line(&task.description)))
+    // An ended team says how it ended in the place of a task in work: none is.
+    let ended_team = chat
+        .team
+        .as_ref()
+        .is_some_and(|team| team.ended().is_some());
+    let ended = chat.team.as_ref().and_then(|team| {
+        let end = team.ended()?;
+        let color = match end {
+            TeamEnd::Done => theme.success,
+            _ => theme.warning,
+        };
+        Some(
+            div()
+                .meta()
+                .text_color(color)
+                .truncate()
+                .child(team.status_line()),
+        )
+    });
+    let current = ended.or_else(|| {
+        task_in_work(&chat.tasks, chat.team.as_ref()).map(|(number, task)| {
+            div()
+                .meta()
+                .text_color(muted)
+                .truncate()
+                .child(task.numbered(number))
+        })
     });
     let line = div()
         .id("plan-line")
@@ -99,7 +121,14 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                 .child(crate::pages::chat::activity::plan_label(planning, cx)),
         )
         .child(summary)
-        .child(div().flex_1().min_w_0().children(current))
+        // How a team ended keeps its words; the counts give way to them.
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .when(ended_team, |line| line.min_w(px(260.)))
+                .children(current),
+        )
         .children(counts.map(|counts| bar(counts, ws.dock.counts_before, cx)))
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_plan(cx)));
     let rows = open.then(|| {
@@ -157,60 +186,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     )
 }
 
-/// "3 of 7 done · 1 running · 1 blocked": the parts that are not zero after the done.
-fn summary(counts: PlanCounts) -> String {
-    let mut text = format!("{} of {} done", counts.done, total(counts));
-    for (count, word) in [
-        (counts.running, "running"),
-        (counts.claimed, "claimed"),
-        (counts.review, "in review"),
-        (counts.blocked, "blocked"),
-        (counts.failed, "failed"),
-    ] {
-        if count > 0 {
-            text.push_str(&format!(" \u{00B7} {count} {word}"));
-        }
-    }
-    text
-}
-
-fn total(counts: PlanCounts) -> u32 {
-    let PlanCounts {
-        open,
-        claimed,
-        running,
-        blocked,
-        review,
-        done,
-        failed,
-    } = counts;
-    [open, claimed, running, blocked, review, done, failed]
-        .into_iter()
-        .fold(0, u32::saturating_add)
-}
-
-/// The task the folded line names, with its number: the first running, else the first
-/// that is not over.
-fn current(tasks: &[Task]) -> Option<(usize, &Task)> {
-    let numbered = || {
-        tasks
-            .iter()
-            .enumerate()
-            .map(|(index, task)| (index + 1, task))
-    };
-    numbered()
-        .find(|(_, task)| task.status == TaskStatus::Running)
-        .or_else(|| {
-            numbered()
-                .find(|(_, task)| !matches!(task.status, TaskStatus::Done | TaskStatus::Failed))
-        })
-}
-
 /// The plan as one bar of fixed width: done, running, failed and blocked shares in their
 /// colours on the track; it never grows with the number of tasks.
 fn bar(counts: PlanCounts, before: Option<(PlanCounts, std::time::Instant)>, cx: &App) -> Div {
     let theme = cx.theme();
-    let share = |count: u32, of: PlanCounts| count as f32 / total(of).max(1) as f32;
+    let share = |count: u32, of: PlanCounts| count as f32 / of.total().max(1) as f32;
     // While the shares ease from what they were, each is between the old and the new.
     let easing = before.and_then(|(before, since)| {
         crate::pages::chat::activity::arriving(since, BAR_EASE, cx).map(|t| (before, t))
@@ -256,8 +236,8 @@ fn bar(counts: PlanCounts, before: Option<(PlanCounts, std::time::Instant)>, cx:
 fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (muted, accent) = (theme.muted_foreground, theme.primary);
-    let (glyph, color) = look(task.status, cx);
-    let word = div().flex_none().w(px(56.)).meta().text_right();
+    let (glyph, color) = (task.status.glyph(), widgets::tone(task.status.tone(), cx));
+    let word = div().flex_none().w(px(64.)).meta().text_right();
     let for_user =
         task.status == TaskStatus::Review && task.gate == Some(GoalCheck::UserConfirmation);
     let word = match for_user {
@@ -272,7 +252,7 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
         }
         false => word
             .text_color(color)
-            .child(task.status.name())
+            .child(task.status.word())
             .into_any_element(),
     };
     let owner = task.owner.as_ref().map(|owner| {
@@ -321,28 +301,8 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
                 .when(task.status == TaskStatus::Done, |text| {
                     text.text_color(muted)
                 })
-                .child(one_line(&task.description)),
+                .child(task.title()),
         )
         .children(owner)
         .child(word)
-}
-
-/// The glyph and colour of a status; its word is always beside it, so colour is never
-/// the only sign.
-fn look(status: TaskStatus, cx: &App) -> (&'static str, Hsla) {
-    let theme = cx.theme();
-    match status {
-        TaskStatus::Open => ("\u{25CB}", theme.muted_foreground),
-        TaskStatus::Claimed => ("\u{25C9}", theme.info),
-        TaskStatus::Running => ("\u{25CF}", theme.primary),
-        TaskStatus::Blocked => ("\u{25C6}", theme.warning),
-        TaskStatus::Review => ("\u{25C7}", theme.info),
-        TaskStatus::Done => ("\u{2713}", theme.success),
-        TaskStatus::Failed => ("\u{2715}", theme.danger),
-    }
-}
-
-/// A task's words are model text: one line, drawn as plain text.
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

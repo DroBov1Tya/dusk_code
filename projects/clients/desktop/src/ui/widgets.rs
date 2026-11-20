@@ -210,3 +210,17 @@ pub fn copy(id: SharedString, group: &SharedString, text: &str, cx: &App) -> Div
                 }),
         )
 }
+
+/// The text colour of a tone the protocol names, such as a task's status.
+pub fn tone(tone: dusk_protocol::thread::Tone, cx: &App) -> Hsla {
+    use dusk_protocol::thread::Tone;
+    let theme = cx.theme();
+    match tone {
+        Tone::Neutral => theme.muted_foreground,
+        Tone::Info => theme.info,
+        Tone::Success => theme.success,
+        Tone::Warning => theme.warning,
+        Tone::Danger => theme.danger,
+        Tone::Accent => theme.primary,
+    }
+}

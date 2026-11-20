@@ -6,11 +6,11 @@ use crate::{
     api,
     link::Conn,
     state::state,
-    ui::{Icon, IconName, compact, run, sleep},
+    ui::{Icon, IconName, compact, run, sleep, tone_text},
 };
 use dusk_protocol::thread::{
-    ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG, Overview, PlanCounts, TaskStatus,
-    Team, TeamStatus, ThreadTokens,
+    ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG, Overview, PlanCounts, Team,
+    ThreadTokens,
 };
 use leptos::prelude::*;
 
@@ -150,18 +150,11 @@ fn figure(value: String, label: &'static str) -> impl IntoView {
 }
 
 fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
-    let running = counts.claimed + counts.running;
-    let all = running + counts.open + counts.blocked + counts.review + counts.done + counts.failed;
+    let (running, all) = (counts.at_work(), counts.total());
     if all == 0 {
         return None;
     }
-    let aside = team.map_or_else(String::new, |team| {
-        let state = match team.status {
-            TeamStatus::Running => "running",
-            TeamStatus::Ended(_) => "ended",
-        };
-        format!("{state} \u{00B7} {} min", team.used.minutes)
-    });
+    let aside = team.map_or_else(String::new, Team::status_line);
     let parts = [
         ("done", counts.done),
         ("run", running + counts.review),
@@ -223,23 +216,12 @@ fn members(team: &Team) -> Option<AnyView> {
     if team.members.is_empty() {
         return None;
     }
-    let at_work = team
-        .members
-        .iter()
-        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
-        .count();
+    let at_work = team.at_work();
     let rows = team
         .members
         .iter()
         .map(|member| {
-            let (word, class) = match member.status {
-                TaskStatus::Open | TaskStatus::Claimed => ("waits", "muted"),
-                TaskStatus::Running => ("running", "live"),
-                TaskStatus::Blocked => ("blocked", "warn"),
-                TaskStatus::Review => ("in review", "live"),
-                TaskStatus::Done => ("done", "good"),
-                TaskStatus::Failed => ("failed", "bad"),
-            };
+            let (word, class) = (member.status.word(), tone_text(member.status.tone()));
             let role = member.role.clone().unwrap_or_else(|| "general".into());
             view! {
                 <div class="ov-row">
