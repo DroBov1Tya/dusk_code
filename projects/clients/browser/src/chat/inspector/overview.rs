@@ -36,6 +36,14 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
     let more = RwSignal::new(false);
     let asked_at = StoredValue::new(f64::MIN);
     let waiting = StoredValue::new(false);
+    let form = BudgetForm::new();
+    // The plan's tasks and the token report as memos: the chat changes with every
+    // streamed event, and only these parts of it are drawn here.
+    let tasks = Memo::new(move |_| {
+        app.chat(&id.get_value())
+            .map(|chat| chat.with(|c| c.tasks.clone()))
+            .unwrap_or_default()
+    });
 
     let fetch = move || {
         asked_at.set_value(js_sys::Date::now());
@@ -80,10 +88,10 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
         chat.map(|chat| chat.with(|data| data.moved));
         refresh();
     });
-    let usage = move || {
+    let usage = Memo::new(move |_| {
         app.chat(&id.get_value())
             .and_then(|chat| chat.with(|data| data.usage))
-    };
+    });
     let load_older = move |_| {
         let thread = id.get_value();
         let oldest = older.with_untracked(|lines| lines.last().map(|line| line.at));
@@ -117,15 +125,11 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
                 Some(a) => {
                     let narrow = !wide.get();
                     view! {
-                        {progress(a.plan, a.team.as_ref(), id.get_value())}
+                        {progress(a.plan, a.team.as_ref(), id.get_value(), form)}
                         {a.team.as_ref().and_then(|team| {
-                            let tasks = app
-                                .chat(&id.get_value())
-                                .map(|chat| chat.with(|c| c.tasks.clone()))
-                                .unwrap_or_default();
-                            members(team, &tasks, id.get_value())
+                            tasks.with(|tasks| members(team, tasks, id.get_value()))
                         })}
-                        {usage().and_then(|usage| tokens(usage, a.plan))}
+                        {usage.get().and_then(|usage| tokens(usage, a.plan))}
                         <section class="ov-sec">
                             <Head title="Context" aside=String::new() />
                             {super::context::report_view(a.context.clone())}
@@ -155,7 +159,31 @@ fn figure(value: String, label: &'static str) -> impl IntoView {
     view! { <div class="ov-stat"><b>{value}</b><span>{label}</span></div> }
 }
 
-fn progress(counts: PlanCounts, team: Option<&Team>, thread: String) -> Option<AnyView> {
+/// The budget form's state. It lives as long as the Overview, not the section drawn
+/// around it, which the core's answers and the chat's events draw again and again.
+#[derive(Clone, Copy)]
+struct BudgetForm {
+    editing: RwSignal<bool>,
+    error: RwSignal<Option<String>>,
+    fields: [RwSignal<String>; 4],
+}
+
+impl BudgetForm {
+    fn new() -> Self {
+        Self {
+            editing: RwSignal::new(false),
+            error: RwSignal::new(None),
+            fields: std::array::from_fn(|_| RwSignal::new(String::new())),
+        }
+    }
+}
+
+fn progress(
+    counts: PlanCounts,
+    team: Option<&Team>,
+    thread: String,
+    form: BudgetForm,
+) -> Option<AnyView> {
     let running = counts.at_work();
     let all = counts.total();
     if all == 0 {
@@ -174,7 +202,7 @@ fn progress(counts: PlanCounts, team: Option<&Team>, thread: String) -> Option<A
         let controls = team
             .ended()
             .is_none()
-            .then(|| view! { <TeamControls thread budget=team.budget /> });
+            .then(|| view! { <TeamControls thread budget=team.budget form /> });
         view! {
             {team.budget_parts().into_iter().map(budget_row).collect_view()}
             {controls}
@@ -200,11 +228,13 @@ fn progress(counts: PlanCounts, team: Option<&Team>, thread: String) -> Option<A
 /// Stop team and the budget of a running team, under its Progress. Stopping asks first;
 /// the budget opens as four fields in place, read back with the protocol's own limits.
 #[component]
-fn TeamControls(thread: String, budget: TeamBudget) -> impl IntoView {
+fn TeamControls(thread: String, budget: TeamBudget, form: BudgetForm) -> impl IntoView {
     let thread = StoredValue::new(thread);
-    let editing = RwSignal::new(false);
-    let error = RwSignal::new(None::<String>);
-    let fields = budget.fields().map(RwSignal::new);
+    let BudgetForm {
+        editing,
+        error,
+        fields,
+    } = form;
     let stop = move |_| {
         let asked = "Stop the team? Members at work are stopped and their tasks go back to \
                      open. The plan and what is done stay.";
@@ -257,7 +287,15 @@ fn TeamControls(thread: String, budget: TeamBudget) -> impl IntoView {
     view! {
         <Show when=move || !editing.get()>
             <div class="ov-actions">
-                <button class="ghost" on:click=move |_| editing.set(true)>"Edit budget"</button>
+                <button class="ghost" on:click=move |_| {
+                    // The form opens on the budget as it is now, and keeps what is typed
+                    // while the Overview draws again around it.
+                    for (field, text) in fields.iter().zip(budget.fields()) {
+                        field.set(text);
+                    }
+                    error.set(None);
+                    editing.set(true);
+                }>"Edit budget"</button>
                 <button class="ghost danger" on:click=stop>"Stop team"</button>
             </div>
         </Show>
