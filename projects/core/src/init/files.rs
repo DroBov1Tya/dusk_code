@@ -158,3 +158,15 @@ pub fn new_private_file(path: &Path) -> Result<File> {
         .open(path)
         .with_context(|| format!("create private file {}", path.display()))
 }
+
+/// Removes the folders above `file` while they are empty, from the nearest up, and stops at
+/// the first one `keep` names or that still holds anything.
+pub fn remove_empty_parents(file: &Path, keep: impl Fn(&Path) -> bool) {
+    let mut folder = file.parent();
+    while let Some(parent) = folder {
+        if keep(parent) || fs::remove_dir(parent).is_err() {
+            break;
+        }
+        folder = parent.parent();
+    }
+}

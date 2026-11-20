@@ -604,10 +604,7 @@ fn bare_env() -> Vec<(OsString, OsString)> {
                 .is_some_and(|key| KEPT_ENV.contains(&key) || key.starts_with("LC_"))
         })
         .collect();
-    let path = platform::login_path::get()
-        .cloned()
-        .or_else(|| std::env::var_os("PATH"));
-    if let Some(path) = path {
+    if let Some(path) = platform::login_path::effective() {
         env.push(("PATH".into(), path));
     }
     if !env.iter().any(|(key, _)| key == "TMPDIR") {
@@ -622,10 +619,7 @@ fn locate(program: &str) -> Vec<PathBuf> {
     let candidate = if program.contains('/') {
         Some(PathBuf::from(program))
     } else {
-        let path = platform::login_path::get()
-            .cloned()
-            .or_else(|| std::env::var_os("PATH"))
-            .unwrap_or_default();
+        let path = platform::login_path::effective().unwrap_or_default();
         std::env::split_paths(&path)
             .map(|folder| folder.join(program))
             .find(|file| file.is_file())

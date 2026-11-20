@@ -12,7 +12,10 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::text::sha256_hex;
 
-use crate::{init::paths::Paths, release::resources};
+use crate::{
+    init::{files::remove_empty_parents, paths::Paths},
+    release::resources,
+};
 
 /// Far above any skill or agent file.
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
@@ -79,7 +82,11 @@ pub fn write_wanted(
             == record.get(&relative)
             && fs::remove_file(&target).is_ok()
         {
-            remove_empty_parents(&root, &target);
+            // Folders left empty under `skills/` or `agents/` go; those two stay.
+            remove_empty_parents(&target, |parent| {
+                let part = parent.strip_prefix(&root).ok();
+                part.is_none_or(|part| part.components().count() < 2)
+            });
         }
         record.remove(&relative);
     }
@@ -87,19 +94,6 @@ pub fn write_wanted(
         return Ok(());
     }
     write_record(record_file, &record)
-}
-
-/// Folders left empty under `skills/` or `agents/`; one that holds anything stays.
-fn remove_empty_parents(root: &Path, file: &Path) {
-    let mut folder = file.parent();
-    while let Some(parent) = folder {
-        let part = parent.strip_prefix(root).ok();
-        if part.is_none_or(|part| part.components().count() < 2) || fs::remove_dir(parent).is_err()
-        {
-            break;
-        }
-        folder = parent.parent();
-    }
 }
 
 /// Beside the plugins, so it goes when the user removes the folder of plugins whole.

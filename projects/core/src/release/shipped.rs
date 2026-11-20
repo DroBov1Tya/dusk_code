@@ -17,7 +17,7 @@ use dusk_protocol::text::sha256_hex;
 use crate::{
     init::{
         create_private_dir,
-        files::{write_private, write_private_program},
+        files::{remove_empty_parents, write_private, write_private_program},
         paths::Paths,
     },
     release::resources,
@@ -322,13 +322,7 @@ impl Synced {
                         .into_owned(),
                 );
                 // A folder that still holds anything stays.
-                let mut folder = file.parent();
-                while let Some(parent) = folder.filter(|parent| *parent != root) {
-                    if fs::remove_dir(parent).is_err() {
-                        break;
-                    }
-                    folder = parent.parent();
-                }
+                remove_empty_parents(&file, |parent| parent == root);
             }
         }
         Ok(())
