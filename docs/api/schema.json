@@ -4011,7 +4011,7 @@
         },
         "short_name": {
           "default": "",
-          "description": "The tool's own name on its server, to show; `name` holds it changed to fit a model.\nEmpty from a core older than protocol 37.",
+          "description": "The tool's own name on its server, made a plain line by the core, to show; `name`\nholds it changed to fit a model.\nEmpty from a core older than protocol 37.",
           "type": "string"
         }
       },

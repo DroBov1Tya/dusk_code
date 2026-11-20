@@ -42,7 +42,8 @@ pub struct McpInfo {
 pub struct McpToolInfo {
     /// `server__tool`, the name its switch goes by.
     pub name: String,
-    /// The tool's own name on its server, to show; `name` holds it changed to fit a model.
+    /// The tool's own name on its server, made a plain line by the core, to show; `name`
+    /// holds it changed to fit a model.
     /// Empty from a core older than protocol 37.
     #[serde(default)]
     pub short_name: String,

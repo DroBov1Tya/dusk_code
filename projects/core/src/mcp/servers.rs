@@ -10,6 +10,7 @@ use tracing::{info, warn};
 
 use crate::{
     config::{Config, McpServerConfig},
+    plugins::contract::untrusted,
     tools::{ToolKind, mcp::McpTool},
 };
 
@@ -215,7 +216,7 @@ impl McpServers {
                 Some(McpToolInfo {
                     enabled: config.mode_tool_enabled(config.mode(), &name, ToolKind::Mcp),
                     name,
-                    short_name: tool.name.clone(),
+                    short_name: shown_name(&tool.name),
                     description: tool.description.clone(),
                 })
             })
@@ -276,4 +277,34 @@ async fn connect(
         client,
         tools,
     })
+}
+
+/// The characters of a tool's own name a client shows.
+const MAX_SHOWN_NAME: usize = 64;
+
+/// A tool's name as its server gave it, made a plain line: the server is not trusted, and
+/// a client draws this beside the tool's switch.
+fn shown_name(remote: &str) -> String {
+    untrusted::line(remote.trim(), MAX_SHOWN_NAME)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_shown_tool_name_holds_no_escape_or_bidi_character() {
+        assert_eq!(shown_name("read_file"), "read_file");
+        let shown = shown_name("read\u{1b}]0;owned\u{7}_file\u{202e}fdp.exe\u{2066}");
+        assert!(
+            !shown
+                .chars()
+                .any(|c| c.is_control() || dusk_protocol::text::is_hidden(c))
+        );
+        assert_eq!(shown, "read]0;owned_filefdp.exe");
+        assert_eq!(
+            shown_name(&"x".repeat(100)).chars().count(),
+            MAX_SHOWN_NAME + 3
+        );
+    }
 }
