@@ -59,6 +59,7 @@ pub fn kind_word(kind: Kind) -> &'static str {
         Kind::Skill => "Skill",
         Kind::Pack => "Pack",
         Kind::Agent => "Agent",
+        Kind::Connector => "Connector",
     }
 }
 

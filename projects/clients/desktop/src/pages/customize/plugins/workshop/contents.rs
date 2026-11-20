@@ -334,5 +334,6 @@ impl Workspace {
 /// Whether a listing has files to show: it is here, or a package is offered for this
 /// machine.
 pub fn has_files(listing: &Listing) -> bool {
-    listing.installed.is_some() || listing.unfit.is_none()
+    listing.kind != dusk_protocol::plugin::Kind::Connector
+        && (listing.installed.is_some() || listing.unfit.is_none())
 }

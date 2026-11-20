@@ -23,14 +23,15 @@ use crate::{
 pub enum Confirm {
     /// The listing as the user saw it; its version is the one installed.
     Install(Box<Listing>),
-    Remove(String),
+    /// The name, and what it is, which says what goes.
+    Remove(String, Kind),
 }
 
 impl Confirm {
     pub fn title(&self) -> String {
         match self {
             Self::Install(listing) => format!("{} {}", verb(listing), listing.name),
-            Self::Remove(name) => format!("Remove {name}"),
+            Self::Remove(name, _) => format!("Remove {name}"),
         }
     }
 }
@@ -43,10 +44,12 @@ fn group(title: &'static str, cx: &App) -> Div {
         .child(title)
 }
 
-/// "Update" when the source has a newer version than the one here, "Install" otherwise.
+/// "Update" when the source has a newer version than the one here, "Add" for a
+/// connector, "Install" otherwise.
 pub fn verb(listing: &Listing) -> &'static str {
     match (&listing.installed, &listing.update) {
         (Some(_), Some(_)) => "Update",
+        _ if listing.kind == Kind::Connector => "Add",
         _ => "Install",
     }
 }
@@ -59,25 +62,30 @@ pub fn render(
 ) -> Div {
     let muted = cx.theme().muted_foreground;
     let (body, yes) = match confirm {
-        Confirm::Install(listing) if listing.tier == Tier::Unverified => {
+        Confirm::Install(listing) if super::workshop::reviewed_first(listing) => {
             (unverified(listing, review, cx), verb(listing))
         }
         Confirm::Install(listing) => (permissions(listing, cx), verb(listing)),
-        Confirm::Remove(_) => (
-            div().small().text_color(muted).child(
-                "Its folder is deleted from this machine. It can be installed again from the Workshop.",
-            ),
+        Confirm::Remove(_, kind) => (
+            div().small().text_color(muted).child(match kind {
+                Kind::Connector => {
+                    "Its server leaves your connectors, unless you changed it since. It can be added again from the Workshop."
+                }
+                _ => {
+                    "Its folder is deleted from this machine. It can be installed again from the Workshop."
+                }
+            }),
             "Remove",
         ),
     };
     // An Unverified install waits for the files it names to be shown.
-    let waiting = matches!(confirm, Confirm::Install(listing) if listing.tier == Tier::Unverified)
+    let waiting = matches!(confirm, Confirm::Install(listing) if super::workshop::reviewed_first(listing))
         && !matches!(review, Some(Reviewed::Read(review)) if review.refused.is_none());
     let button = Button::new("store-confirm").label(yes).disabled(waiting);
     let button = match confirm {
         Confirm::Install(_) => button.primary(),
         // Solid when the theme sets `button.danger.*`, the kit's pale tint otherwise.
-        Confirm::Remove(_) => button.danger(),
+        Confirm::Remove(..) => button.danger(),
     };
     div().flex().flex_col().gap_4().p_5().child(body).child(
         div()
@@ -120,7 +128,7 @@ fn permissions(listing: &Listing, cx: &App) -> Div {
         }))
         .collect();
     let reach = match listing.kind {
-        Kind::Plugin => listing.reach(),
+        Kind::Plugin | Kind::Connector => listing.reach(),
         _ => &listing.permissions[..],
     };
     if runs.is_empty() && reach.is_empty() && listing.skills.is_empty() {
@@ -137,7 +145,16 @@ fn permissions(listing: &Listing, cx: &App) -> Div {
         );
     }
     if !runs.is_empty() {
-        body = body.child(group("Runs on your machine", cx));
+        let remote = listing.programs.is_empty()
+            && listing
+                .connectors
+                .iter()
+                .all(|connector| matches!(connector.runs, dusk_protocol::plugin::Runs::Url(_)));
+        let title = match remote {
+            true => "Connects to",
+            false => "Runs on your machine",
+        };
+        body = body.child(group(title, cx));
         for (can, line) in runs {
             body = body.child(
                 div()
@@ -183,7 +200,20 @@ fn permissions(listing: &Listing, cx: &App) -> Div {
                 ),
         );
     }
-    if listing.kind != Kind::Plugin {
+    if let Some(server) = &listing.server {
+        if !server.secrets.is_empty() {
+            body = body.child(div().small().text_color(warning).child(format!(
+                "It is added switched off. Put your {} in its settings under Connectors, then switch it on.",
+                server.secrets.join(", ")
+            )));
+        }
+        if let Some(docs) = &server.docs {
+            body = body.child(div().meta().text_color(muted).child(format!(
+                "The service's page about it: {}",
+                super::workshop::clip(docs, 200)
+            )));
+        }
+    } else if listing.kind != Kind::Plugin {
         body =
             body.child(div().meta().text_color(muted).child(
                 "Its skills and agents are text every thread may read; they run no programs.",

@@ -3,7 +3,7 @@
 //! Install, Retry after a failure, Update (the one filled button: it waits on the user),
 //! a turning ring while at work, or "Installed"; Remove only where there is room for it.
 
-use dusk_protocol::plugin::Listing;
+use dusk_protocol::plugin::{Kind, Listing};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Icon, IconName,
@@ -37,8 +37,10 @@ pub fn slot(
         return busy(listing, doing).h(px(height)).into_any_element();
     }
     let failed = ws.workshop.failed.contains_key(&listing.name);
+    let connector = listing.kind == Kind::Connector;
     let button = match (&listing.installed, &listing.update) {
         (None, _) if failed => install(listing, "Retry".into(), false, cx),
+        (None, _) if connector => install(listing, "Add".into(), false, cx),
         (None, _) if listing.upstream.is_some() => {
             install(listing, "Install from source".into(), false, cx)
         }
@@ -51,6 +53,7 @@ pub fn slot(
             };
             install(listing, label, true, cx)
         }
+        (Some(_), None) if connector => return added(cx).into_any_element(),
         (Some(_), None) => return installed(cx).into_any_element(),
     };
     button.h(px(height)).into_any_element()
@@ -62,7 +65,7 @@ pub fn remove(listing: &Listing, ws: &Workspace, cx: &mut Context<Workspace>) ->
     if listing.installed.is_none() || ws.workshop.busy.contains_key(&listing.name) {
         return None;
     }
-    let name = listing.name.clone();
+    let (name, kind) = (listing.name.clone(), listing.kind);
     Some(
         Button::new(id("remove", listing))
             .danger()
@@ -71,7 +74,7 @@ pub fn remove(listing: &Listing, ws: &Workspace, cx: &mut Context<Workspace>) ->
             .label("Remove")
             .on_click(cx.listener(move |ws, _, window, cx| {
                 cx.stop_propagation();
-                ws.confirm_store(Confirm::Remove(name.clone()), window, cx)
+                ws.confirm_store(Confirm::Remove(name.clone(), kind), window, cx)
             })),
     )
 }
@@ -79,6 +82,11 @@ pub fn remove(listing: &Listing, ws: &Workspace, cx: &mut Context<Workspace>) ->
 /// "Installed" with its check, in the success colour: a state, not a button.
 pub fn installed(cx: &App) -> Div {
     state(IconName::Check, "Installed", cx.theme().success)
+}
+
+/// "Added" with its check: a connector among the connectors here.
+pub fn added(cx: &App) -> Div {
+    state(IconName::Check, "Added", cx.theme().success)
 }
 
 /// A glyph and a word in one colour: a state of a listing.

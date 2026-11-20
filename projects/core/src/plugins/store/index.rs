@@ -8,6 +8,10 @@
 //! who made each entry: `author`, `license`, `source`, `categories` and `badge`, all
 //! required; and for a plugin what it runs and adds, `mcp`, `programs` and `skills`,
 //! which its manifest must say exactly.
+//!
+//! A connector (`kind: connector`, formats 2 and 3) has no package: its `server` says
+//! where the MCP server is or which pinned package starts it. A duskcode before it leaves
+//! such an entry out, as any kind it does not know.
 
 use anyhow::{Context, Result, bail, ensure};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
@@ -145,6 +149,8 @@ pub struct Entry {
     /// Format 3, a skill, pack or agent: its files at a pinned commit of the author's
     /// repository, instead of `downloads`.
     pub upstream: Option<super::upstream::Upstream>,
+    /// A connector: its MCP server, instead of `downloads`.
+    pub server: Option<super::connector::Spec>,
     /// The list's format, which says what its manifest is checked against.
     #[serde(skip)]
     pub format: u32,
@@ -343,6 +349,10 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
             "fields of format 3 in a format {format} list"
         );
     }
+    if entry.kind == Kind::Connector {
+        return check_connector(entry);
+    }
+    ensure!(entry.server.is_none(), "only a connector names a server");
     match &entry.upstream {
         Some(upstream) => {
             ensure!(
@@ -423,6 +433,55 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
                 .all(|skill| crate::init::paths::is_plain_folder_name(skill)),
         "a pack's skills are not plain names"
     );
+    Ok(())
+}
+
+/// A connector: its server and how it is shown, nothing to download or unpack, and none
+/// of what a package brings. Its name is its MCP server's.
+fn check_connector(entry: &Entry) -> Result<()> {
+    let server = entry
+        .server
+        .as_ref()
+        .context("a connector names no server")?;
+    ensure!(
+        is_word(&entry.name, MAX_WORD),
+        "a connector's name is a word of a-z, 0-9 and -"
+    );
+    ensure!(
+        entry.downloads.is_empty()
+            && entry.upstream.is_none()
+            && entry.mcp.is_empty()
+            && entry.programs.is_empty()
+            && entry.skills.is_empty()
+            && entry.providers.is_empty()
+            && entry.permissions == Permissions::default(),
+        "a connector has no package, programs, skills, providers or permissions"
+    );
+    server.check()?;
+    if let Some(page) = &entry.homepage {
+        ensure!(page.starts_with("https://"), "the homepage is not https");
+    }
+    ensure!(
+        entry.category.is_empty() || is_word(&entry.category, MAX_WORD),
+        "the category is not a word of a-z, 0-9 and -"
+    );
+    ensure!(
+        entry.tags.len() <= MAX_TAGS && entry.tags.iter().all(|tag| is_word(tag, MAX_WORD)),
+        "up to {MAX_TAGS} tags of a-z, 0-9 and - are allowed"
+    );
+    if let Some(cover) = &entry.cover {
+        check_cover(cover)?;
+    }
+    ensure!(
+        entry.screenshots.len() <= MAX_SCREENSHOTS,
+        "up to {MAX_SCREENSHOTS} screenshots are allowed"
+    );
+    for screenshot in &entry.screenshots {
+        check_screenshot(screenshot)?;
+    }
+    for date in [&entry.created, &entry.updated].into_iter().flatten() {
+        DateTime::parse_from_rfc3339(date).context("a date is not RFC 3339")?;
+    }
     Ok(())
 }
 
@@ -550,7 +609,7 @@ fn check_picture(picture: &Cover, max: u64) -> Result<()> {
 /// Not empty, not padded, at most `max` characters, and none that is a control or one
 /// that turns the text around (bidi overrides and isolates), which could make a caption
 /// or a name read as something else.
-fn is_line(text: &str, max: usize) -> bool {
+pub fn is_line(text: &str, max: usize) -> bool {
     let bidi = |c: char| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
     !text.trim().is_empty()
         && text.trim() == text
@@ -600,6 +659,15 @@ impl Entry {
     /// What the user agrees to by installing it, one line each: first one per program,
     /// then one per MCP server, in their order, as `Listing::permissions` says.
     pub fn consent(&self) -> Vec<String> {
+        if let Some(server) = self
+            .server
+            .as_ref()
+            .filter(|_| self.kind == Kind::Connector)
+        {
+            let mut lines = brings(&[], &[server.server(&self.name)]);
+            lines.extend(server.consent(&self.name));
+            return lines;
+        }
         let mut lines = brings(&self.programs, &self.mcp);
         lines.extend(self.permissions.lines());
         for url in &self.providers {

@@ -25,9 +25,9 @@ use crate::{
 /// What is set up here, for the state of a plugin's connectors.
 #[derive(Debug, Default)]
 pub struct Here {
-    /// The MCP servers of the user's config, by name; a plugin's of the same name is
-    /// never used.
-    pub yours: BTreeSet<String>,
+    /// The MCP servers of the user's config, by name, with the command line or address
+    /// each has; a plugin's of the same name is never used.
+    pub yours: BTreeMap<String, String>,
     /// The plugins that are on.
     pub on: BTreeSet<String>,
 }
@@ -42,7 +42,7 @@ impl Here {
                     Some(url) => Runs::Url(url.clone()),
                     None => Runs::Command(server.line()),
                 },
-                state: if self.yours.contains(&server.name) {
+                state: if self.yours.contains_key(&server.name) {
                     ConnectorState::Yours
                 } else if installed && self.on.contains(plugin) {
                     ConnectorState::Added
@@ -54,6 +54,21 @@ impl Here {
     }
 }
 
+impl Here {
+    /// What every page of the store is listed against: `config`'s servers, and the
+    /// plugins switched on.
+    pub fn of(config: &crate::config::Config, on: BTreeSet<String>) -> Self {
+        Self {
+            yours: config
+                .mcp()
+                .iter()
+                .map(|(name, server)| (name.clone(), server.target()))
+                .collect(),
+            on,
+        }
+    }
+}
+
 pub fn listing(
     paths: &Paths,
     record: &Record,
@@ -61,25 +76,103 @@ pub fn listing(
     source: &Fetched,
     entry: &Entry,
 ) -> Listing {
+    if let Some(server) = entry
+        .server
+        .as_ref()
+        .filter(|_| entry.kind == Kind::Connector)
+    {
+        return connector(record, here, source, entry, server);
+    }
     let installed = record
         .installed_from(paths, source, &entry.name)
         .map(|item| item.version.clone());
+    let base = listing_of_kind(source, entry, tier(source, entry));
     Listing {
         connectors: here.connectors(&entry.name, installed.is_some(), &entry.mcp),
         programs: entry.programs.clone(),
-        name: entry.name.clone(),
-        version: entry.version.clone(),
-        description: entry.description.clone(),
-        platforms: entry.platforms.clone(),
-        clients: entry.clients.clone(),
         permissions: entry.consent(),
-        homepage: entry.homepage.clone(),
         update: installed
             .as_deref()
             .and_then(|installed| newer(&entry.version, installed)),
         installed,
         unfit: entry.download_here().err(),
-        tier: tier(source, entry),
+        skills: entry.skills.clone(),
+        origin: match source.tier {
+            // The list's `source` is only its claim; the pinned repository is not.
+            Tier::Unverified => entry.upstream.as_ref().map(|upstream| {
+                format!(
+                    "https://github.com/{}/tree/{}",
+                    upstream.repo, upstream.commit
+                )
+            }),
+            _ => entry.source.clone(),
+        },
+        upstream: entry.upstream.as_ref().map(super::upstream::Upstream::line),
+        ..base
+    }
+}
+
+/// A connector's listing: added when the store added it from this source and the config
+/// still has that server; a server of the user's under its name is theirs, and keeps the
+/// listing from being added.
+fn connector(
+    record: &Record,
+    here: &Here,
+    source: &Fetched,
+    entry: &Entry,
+    server: &super::connector::Spec,
+) -> Listing {
+    let name = &entry.name;
+    let target = server.config().target();
+    let added = record
+        .connectors
+        .get(name)
+        .filter(|added| added.is_from(source) && here.yours.get(name) == Some(&added.target));
+    let installed = added.map(|added| added.version.clone());
+    let state = match (added, here.yours.contains_key(name)) {
+        (Some(_), _) => ConnectorState::Added,
+        (None, true) => ConnectorState::Yours,
+        (None, false) => ConnectorState::NotAdded,
+    };
+    let tier = tier(source, entry);
+    let unfit = match state {
+        ConnectorState::Yours => Some(format!(
+            "a connector of yours is named {name}; rename or remove it to add this one"
+        )),
+        _ => server.unfit(tier),
+    };
+    let base = listing_of_kind(source, entry, tier);
+    Listing {
+        connectors: vec![Connector {
+            name: name.clone(),
+            runs: match &server.url {
+                Some(url) => Runs::Url(url.clone()),
+                None => Runs::Command(target),
+            },
+            state,
+        }],
+        permissions: entry.consent(),
+        update: installed
+            .as_deref()
+            .and_then(|installed| newer(&entry.version, installed)),
+        installed,
+        unfit,
+        server: Some(server.shown()),
+        origin: entry.source.clone(),
+        ..base
+    }
+}
+
+/// The fields every listing of a list's entry shows the same way.
+fn listing_of_kind(source: &Fetched, entry: &Entry, tier: Tier) -> Listing {
+    Listing {
+        name: entry.name.clone(),
+        version: entry.version.clone(),
+        description: entry.description.clone(),
+        platforms: entry.platforms.clone(),
+        clients: entry.clients.clone(),
+        homepage: entry.homepage.clone(),
+        tier,
         source: source.name.clone(),
         kind: entry.kind,
         category: entry.category.clone(),
@@ -102,22 +195,9 @@ pub fn listing(
         repo_stars: repo_stars(source.tier, entry),
         created: entry.created.clone(),
         updated: entry.updated.clone(),
-        skills: entry.skills.clone(),
         author: entry.author.clone().unwrap_or_default(),
         license: entry.license.clone().unwrap_or_default(),
-        origin: match source.tier {
-            // The list's `source` is only its claim; the pinned repository is not.
-            Tier::Unverified => entry.upstream.as_ref().map(|upstream| {
-                format!(
-                    "https://github.com/{}/tree/{}",
-                    upstream.repo, upstream.commit
-                )
-            }),
-            _ => entry.source.clone(),
-        },
-        upstream: entry.upstream.as_ref().map(super::upstream::Upstream::line),
         categories: entry.categories.clone(),
-        clash: false,
         from: (source.tier == Tier::Unverified)
             .then(|| {
                 reqwest::Url::parse(&source.url)
@@ -126,6 +206,7 @@ pub fn listing(
                     .map(str::to_owned)
             })
             .flatten(),
+        ..Listing::default()
     }
 }
 
@@ -159,6 +240,7 @@ pub fn taken(
         record
             .installed
             .iter()
+            .chain(&record.connectors)
             .filter(|(_, item)| item.source != source)
             .map(|(name, _)| name.clone()),
     );

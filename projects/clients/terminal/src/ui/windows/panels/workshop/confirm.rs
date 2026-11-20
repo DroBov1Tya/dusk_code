@@ -3,7 +3,7 @@
 
 use dusk_protocol::{
     catalog::DiffKind,
-    plugin::{Client, Kind, Tier},
+    plugin::{Client, Kind},
 };
 use ratatui::{
     style::Style,
@@ -58,7 +58,7 @@ pub fn confirm_box(confirm: &Confirm, width: usize) -> Vec<Line<'static>> {
         ));
     }
     lines.push(Line::default());
-    if listing.tier == Tier::Unverified
+    if crate::app::reviewed_first(listing)
         && (offered.contains(&Choice::Install) || offered.contains(&Choice::Update))
     {
         lines.extend(unverified(confirm, width));
@@ -78,7 +78,22 @@ pub fn confirm_box(confirm: &Confirm, width: usize) -> Vec<Line<'static>> {
                 }
             }
         }
-        if listing.kind != Kind::Plugin {
+        if let Some(server) = &listing.server {
+            if let Some(docs) = &server.docs {
+                lines.extend(paragraph(
+                    &format!("Its docs: {}", one_line(docs)),
+                    dim(),
+                    width,
+                ));
+            }
+            if !server.secrets.is_empty() {
+                lines.extend(paragraph(
+                    "It is added switched off; put the key in its settings, then switch it on.",
+                    dim(),
+                    width,
+                ));
+            }
+        } else if listing.kind != Kind::Plugin {
             lines.extend(paragraph(
                 "Its skills and agents are text every thread may read; they run no programs.",
                 dim(),
@@ -93,14 +108,18 @@ pub fn confirm_box(confirm: &Confirm, width: usize) -> Vec<Line<'static>> {
                 width,
             ));
         }
-        lines.extend(paragraph("Installing switches it on.", dim(), width));
+        let switch = match listing.kind {
+            Kind::Connector => "Installing adds its server to your connectors.",
+            _ => "Installing switches it on.",
+        };
+        lines.extend(paragraph(switch, dim(), width));
     }
     if offered.contains(&Choice::Remove) {
-        lines.extend(paragraph(
-            "Removing deletes its folder and everything in it.",
-            dim(),
-            width,
-        ));
+        let removing = match listing.kind {
+            Kind::Connector => "Removing takes its server out of your connectors.",
+            _ => "Removing deletes its folder and everything in it.",
+        };
+        lines.extend(paragraph(removing, dim(), width));
     }
     if let Some(stars) = &listing.repo_stars {
         lines.extend(paragraph(&one_line(&stars.label()), dim(), width));

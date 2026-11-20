@@ -125,7 +125,7 @@ fn a_users_connector_is_never_replaced_and_a_plugins_goes_with_it() {
     );
     let paths = crate::testing::temp_paths("store-brings-here");
     let here = Here {
-        yours: ["search".to_owned()].into(),
+        yours: [("search".to_owned(), "search-server".to_owned())].into(),
         on: ["bot".to_owned()].into(),
     };
     let shown = listing::listing(

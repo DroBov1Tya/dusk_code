@@ -15,12 +15,16 @@
 //! - `unpack` — a package into a folder;
 //! - `content`, `pack` — skills, packs and agents, which are plain files;
 //! - `contents` — the files of a listing, for a client to look through;
+//! - `connector` — an MCP server a listing adds to the connectors, with no files;
 //! - `guard` — what a source without a key may bring, and what names it may not take;
 //! - `review` — what an install would write and change, asked before an Unverified one.
 
 pub mod add;
 #[cfg(test)]
 mod brings_tests;
+pub mod connector;
+#[cfg(test)]
+mod connector_tests;
 mod content;
 #[cfg(test)]
 mod content_tests;
@@ -65,7 +69,8 @@ use super::{catalog, manifest::Manifest};
 use crate::{config::Mirror, init::paths::Paths};
 use fetch::Via;
 use index::Entry;
-use record::Installed;
+
+pub use record::Installed;
 pub(crate) use record::Record;
 use source::Fetched;
 
@@ -149,11 +154,22 @@ pub struct Agreed<'a> {
     pub sha256: Option<&'a str>,
 }
 
+/// What an install did: files put in place, or a connector's server for the caller to
+/// add to the config, as the settings add one, and then `connector::remember`.
+pub enum Placed {
+    Files(Kind),
+    Server {
+        config: crate::config::McpServerConfig,
+        added: Box<Installed>,
+    },
+}
+
 /// Installs or updates a plugin in the plugins folder, or a skill, pack or agent in the
 /// rules folder, when its listing is still the one
-/// the user agreed to: the same source and tier, version and permissions.
+/// the user agreed to: the same source and tier, version and permissions. A connector
+/// writes nothing here: its server comes back to be added.
 /// Answers with what it installed.
-pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> Result<Kind> {
+pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> Result<Placed> {
     let _busy = BUSY.lock().await;
     // Every source, since a mirror's tier depends on the official list.
     let (fetched, failed) = source::read(paths, mirrors).await;
@@ -168,7 +184,29 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
             anyhow::bail!(why);
         }
     }
-    put(paths, source, entry).await.map(|()| entry.kind)
+    if entry.kind == Kind::Connector {
+        let server = entry
+            .server
+            .as_ref()
+            .context("a connector names no server")?;
+        let tier = listing::tier(source, entry);
+        if let Some(why) = server.unfit(tier) {
+            anyhow::bail!("{} cannot be added: {why}", entry.name);
+        }
+        let config = server.config();
+        let mut added = Installed::new(source, &entry.version, "");
+        added.kind = Kind::Connector;
+        added.target = config.target();
+        added.author = entry.author.clone().unwrap_or_default();
+        added.origin = entry.source.clone().unwrap_or_default();
+        return Ok(Placed::Server {
+            config,
+            added: Box::new(added),
+        });
+    }
+    put(paths, source, entry)
+        .await
+        .map(|()| Placed::Files(entry.kind))
 }
 
 /// The source and entry the user agreed to, refused when anything they were shown has
@@ -197,8 +235,9 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
         "the listing of {name} changed since you saw it; look at the list again"
     );
     // Nothing signed an Unverified list, so the files the user looked at are what they
-    // agreed to, not the version: the list may name other files under the same one.
-    if tier == Tier::Unverified {
+    // agreed to, not the version: the list may name other files under the same one. A
+    // connector has no files; its address is in what they agreed to.
+    if tier == Tier::Unverified && entry.kind != Kind::Connector {
         let pinned = entry.upstream.as_ref().map(upstream::Upstream::digest);
         ensure!(
             agreed.sha256.is_some() && agreed.sha256 == pinned.as_deref(),

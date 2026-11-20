@@ -531,7 +531,7 @@ impl Workspace {
     pub fn confirm_store(&mut self, confirm: Confirm, window: &mut Window, cx: &mut Context<Self>) {
         self.workshop.review = None;
         if let Confirm::Install(listing) = &confirm
-            && listing.tier == Tier::Unverified
+            && reviewed_first(listing)
         {
             // Nobody signed its list: the files are shown before the yes, and the install
             // names the ones shown.
@@ -568,7 +568,7 @@ impl Workspace {
                     }
                     _ => None,
                 };
-                if listing.tier == Tier::Unverified && sha256.is_none() {
+                if reviewed_first(&listing) && sha256.is_none() {
                     return;
                 }
                 self.store_work(
@@ -580,7 +580,7 @@ impl Workspace {
                     },
                 );
             }
-            Confirm::Remove(name) => {
+            Confirm::Remove(name, _) => {
                 let removed = name.clone();
                 self.store_work(name, "Removing...", cx, move |client| async move {
                     client.plugins().remove(&removed).await
@@ -613,6 +613,12 @@ impl Workspace {
             ws.load_settings(cx);
         });
     }
+}
+
+/// Whether the files of `listing` are shown before the yes: an Unverified one's, since
+/// nobody signed its list. A connector has no files; its address is in the yes itself.
+pub fn reviewed_first(listing: &Listing) -> bool {
+    listing.tier == Tier::Unverified && listing.kind != Kind::Connector
 }
 
 /// The categories the listings name, each once, for the filter menu: the fixed ones in
@@ -648,6 +654,7 @@ pub fn kind_word(kind: Kind) -> &'static str {
         Kind::Skill => "Skill",
         Kind::Pack => "Pack",
         Kind::Agent => "Agent",
+        Kind::Connector => "Connector",
     }
 }
 

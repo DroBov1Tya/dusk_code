@@ -103,6 +103,10 @@ fn side(shop: Shop, listing: &Listing) -> impl IntoView {
         source => source.to_owned(),
     };
     let state = match (&listing.installed, &listing.update) {
+        (Some(_), None) if listing.kind == Kind::Connector => "Added to your connectors".to_owned(),
+        (None, _) if listing.kind == Kind::Connector => {
+            "Add it in the desktop app or the terminal".to_owned()
+        }
         (Some(_), Some(update)) => format!("Installed; update to {update} in the desktop app"),
         (Some(version), None) => format!("Installed, {version}"),
         (None, _) => "Install it in the desktop app or the terminal".to_owned(),
@@ -113,7 +117,7 @@ fn side(shop: Shop, listing: &Listing) -> impl IntoView {
             .then(|| "Another source offers the same name; check where it comes from.".to_owned()),
         listing.unfit.clone(),
     ];
-    let permissions = (listing.kind == Kind::Plugin).then(|| {
+    let permissions = matches!(listing.kind, Kind::Plugin | Kind::Connector).then(|| {
         let lines = if listing.permissions.is_empty() {
             vec!["Nothing beyond its own folder".to_owned()]
         } else {

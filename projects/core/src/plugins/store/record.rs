@@ -31,6 +31,10 @@ pub struct Record {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mirrors: BTreeMap<String, u64>,
     pub installed: BTreeMap<String, Installed>,
+    /// The connectors it added, by the name of their MCP server in the config; apart from
+    /// `installed`, so a duskcode that knows no connectors reads the record as before.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub connectors: BTreeMap<String, Installed>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +65,10 @@ pub struct Installed {
     pub license: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub origin: String,
+    /// For a connector: the command line or address it added, so a server the user
+    /// changed since is theirs, not the store's to remove.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target: String,
 }
 
 fn is_plugin(kind: &Kind) -> bool {
@@ -100,6 +108,7 @@ impl Installed {
             author: String::new(),
             license: String::new(),
             origin: String::new(),
+            target: String::new(),
         }
     }
 

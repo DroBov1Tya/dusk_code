@@ -50,16 +50,14 @@ impl Runtime {
                 category,
                 kinds,
             } => {
-                let here = store::Here {
-                    yours: self.config().current().mcp().keys().cloned().collect(),
-                    on: self
-                        .plugins
-                        .list()
-                        .into_iter()
-                        .filter(|plugin| plugin.enabled)
-                        .map(|plugin| plugin.name)
-                        .collect(),
-                };
+                let on = self
+                    .plugins
+                    .list()
+                    .into_iter()
+                    .filter(|plugin| plugin.enabled)
+                    .map(|plugin| plugin.name)
+                    .collect();
+                let here = store::Here::of(&self.config().current(), on);
                 let category = category.as_deref();
                 let list =
                     store::list(self.paths(), &mirrors, order, category, &kinds, &here).await?;
@@ -81,11 +79,21 @@ impl Runtime {
                     permissions: &agreed,
                     sha256: sha256.as_deref(),
                 };
-                let kind = store::install(self.paths(), &mirrors, &agreed).await?;
-                tracing::info!("{kind:?} {name} {version} installed from {source}");
-                if kind == Kind::Plugin {
-                    self.set_plugin_enabled(&name, true)?;
+                match store::install(self.paths(), &mirrors, &agreed).await? {
+                    store::Placed::Files(kind) => {
+                        tracing::info!("{kind:?} {name} {version} installed from {source}");
+                        if kind == Kind::Plugin {
+                            self.set_plugin_enabled(&name, true)?;
+                        }
+                    }
+                    store::Placed::Server { config, added } => {
+                        self.add_connector(&name, config, *added)?;
+                        tracing::info!("connector {name} {version} added from {source}");
+                    }
                 }
+            }
+            StoreRequest::Remove { name } if self.remove_connector(&name)? => {
+                tracing::info!("connector {name} removed");
             }
             StoreRequest::Remove { name } => {
                 let kind = store::check_removable(self.paths(), &name)?;
@@ -165,6 +173,54 @@ impl Runtime {
             }
         }
         Ok(Response::Done)
+    }
+
+    /// Adds a connector's server through the settings' own path. The same connector added
+    /// before is replaced, keeping the secrets the user filled in; a server of the user's
+    /// under its name is never touched.
+    fn add_connector(
+        &self,
+        name: &str,
+        mut server: crate::config::McpServerConfig,
+        added: crate::plugins::store::Installed,
+    ) -> Result<()> {
+        use crate::plugins::store::connector;
+        let config = self.config().current();
+        let old = match config.mcp().get(name) {
+            None => None,
+            Some(old) => {
+                let ours = connector::added(self.paths(), name)?
+                    .is_some_and(|before| before.target == old.target());
+                ensure!(
+                    ours,
+                    "a connector of yours is named {name}; rename or remove it to add this one"
+                );
+                connector::keep_secrets(&mut server, old);
+                Some(name)
+            }
+        };
+        self.put_mcp_server(old, name, server)?;
+        connector::remember(self.paths(), name, added)
+    }
+
+    /// Removes the connector the store added as `name`, when it added one: its server goes
+    /// unless the user changed it since, and the record of it goes either way. Answers
+    /// whether `name` was a connector.
+    fn remove_connector(&self, name: &str) -> Result<bool> {
+        use crate::plugins::store::connector;
+        let Some(added) = connector::added(self.paths(), name)? else {
+            return Ok(false);
+        };
+        let config = self.config().current();
+        if config
+            .mcp()
+            .get(name)
+            .is_some_and(|server| server.target() == added.target)
+        {
+            self.save_mcp_server(Some(name), "")?;
+        }
+        connector::forget(self.paths(), name)?;
+        Ok(true)
     }
 
     /// Switches a plugin on, allowing what its manifest asks for now, or off; it applies

@@ -116,6 +116,10 @@ pub struct Listing {
     /// come from.
     #[serde(default)]
     pub from: Option<String>,
+    /// For a connector: how its server is reached and what it asks of the user. Its one
+    /// entry in `connectors` says what it runs or reaches and whether it is added here.
+    #[serde(default)]
+    pub server: Option<ServerSpec>,
 }
 
 impl Listing {
@@ -134,6 +138,55 @@ pub struct Connector {
     pub name: String,
     pub runs: Runs,
     pub state: ConnectorState,
+}
+
+/// What a connector listing needs to become an MCP server here: never a secret's value,
+/// only the names the user fills in once it is added.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerSpec {
+    pub auth: Auth,
+    /// The headers (a remote server) or environment variables (a program) the user fills
+    /// in after adding it; the server stays off until they do.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+    /// An `https` page of the service's own about its server.
+    #[serde(default)]
+    pub docs: Option<String>,
+    pub run_by: RunBy,
+    /// What the agent can reach through it, one line, as its source says.
+    #[serde(default)]
+    pub reaches: String,
+    /// For a program: the package it fetches and where from, such as
+    /// `@playwright/mcp@0.0.86 from npm`.
+    #[serde(default)]
+    pub package: Option<String>,
+}
+
+/// How a connector's server knows the user.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Auth {
+    /// It answers anybody.
+    #[default]
+    None,
+    /// The user signs in in their browser once it is added; the token stays in the
+    /// config folder.
+    #[serde(rename = "oauth")]
+    OAuth,
+    /// A key or token the user puts in `secrets` themselves.
+    Key,
+}
+
+/// Who runs a connector's server: the service it reaches, or somebody else.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunBy {
+    #[default]
+    Vendor,
+    Community,
 }
 
 /// What an MCP server is: a program on this computer, or an address on the network.
@@ -176,7 +229,8 @@ pub enum Tier {
     /// From a mirror the user added.
     Community,
     /// From a source the user added without a key: nobody signed its list, so it may
-    /// bring only skills, packs and agents, and none of them is updated on its own.
+    /// bring only skills, packs, agents and connectors to a public `https` address, and
+    /// none of them is updated on its own.
     Unverified,
     /// Found in the plugins folder, not installed by any source: no key vouches for it.
     Local,
@@ -192,6 +246,9 @@ pub enum Kind {
     /// A set of skills.
     Pack,
     Agent,
+    /// An MCP server to add to the connectors: no files of its own, only where the server
+    /// is or the program it starts. A list read by an older duskcode leaves it out.
+    Connector,
 }
 
 /// The star count of a GitHub repository, as the publisher of a list counted it when
@@ -303,7 +360,8 @@ pub enum StoreRequest {
         #[serde(default)]
         kinds: Vec<Kind>,
     },
-    /// Installs or updates `name` at `version` from `source` and switches it on.
+    /// Installs or updates `name` at `version` from `source` and switches it on; a
+    /// connector's server is added to the connectors as the settings add one.
     /// `agreed` is the listing's `permissions` the user was shown; a listing that
     /// changed since is refused.
     /// `tier` is the one the user was shown; the install is refused when the source
@@ -319,7 +377,7 @@ pub enum StoreRequest {
         #[serde(default)]
         sha256: Option<String>,
     },
-    /// Removes a plugin installed from the store.
+    /// Removes a plugin, skill, pack, agent or connector installed from the store.
     Remove { name: String },
     /// Updates every installed plugin whose update asks for nothing more; answered with
     /// `Response::StoreUpdates`.

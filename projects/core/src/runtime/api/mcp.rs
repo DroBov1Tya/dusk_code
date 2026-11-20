@@ -2,7 +2,7 @@
 
 use crate::runtime::Runtime;
 use crate::{
-    config::{mcp_server_yaml, parse_mcp_server},
+    config::{McpServerConfig, mcp_server_yaml, parse_mcp_server},
     mcp::{McpInfo, McpStatus},
 };
 use anyhow::{Context, Result, ensure};
@@ -49,22 +49,34 @@ impl Runtime {
             return Ok(None);
         }
         let (name, server) = parse_mcp_server(text)?;
+        self.put_mcp_server(old, &name, server)?;
+        Ok(Some(name))
+    }
+
+    /// Writes `server` as `name` in place of `old` and starts it again: the one way an
+    /// MCP server gets into the config, from the settings or from a Workshop connector.
+    pub fn put_mcp_server(
+        &self,
+        old: Option<&str>,
+        name: &str,
+        server: McpServerConfig,
+    ) -> Result<()> {
         let config = self.launcher.config.current();
         ensure!(
-            old == Some(name.as_str()) || !config.mcp().contains_key(&name),
+            old == Some(name) || !config.mcp().contains_key(name),
             "MCP server {name} already exists"
         );
         self.launcher.config.update(|config| {
             if let Some(old) = old {
                 config.set_mcp_server(old, None);
             }
-            config.set_mcp_server(&name, Some(server.clone()));
+            config.set_mcp_server(name, Some(server.clone()));
         })?;
         if let Some(old) = old.filter(|old| *old != name) {
             self.launcher.mcp.restart(old, None);
         }
-        self.launcher.mcp.restart(&name, Some(server));
-        Ok(Some(name))
+        self.launcher.mcp.restart(name, Some(server));
+        Ok(())
     }
 
     pub fn set_mcp_enabled(&self, name: &str, enabled: bool) -> Result<()> {

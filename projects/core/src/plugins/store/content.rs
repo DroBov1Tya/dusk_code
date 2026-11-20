@@ -207,6 +207,7 @@ pub fn read(entry: &Entry, unpacked: &Path) -> Result<Files> {
         Kind::Agent => ("agents", "AGENT.md"),
         Kind::Pack => bail!("a pack has no pack.yml"),
         Kind::Plugin => bail!("a plugin is not placed as files"),
+        Kind::Connector => bail!("a connector has no files"),
     };
     ensure!(
         top.len() == 1 && top.contains(&entry.name),
