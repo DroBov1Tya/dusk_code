@@ -67,10 +67,8 @@ pub fn icon(name: impl Into<Icon>, color: Hsla) -> Icon {
         .text_color(color)
 }
 
-/// "1 file", "2 files": a count with its noun in the plural unless it is one.
-pub fn count(n: usize, noun: &str) -> String {
-    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
-}
+/// "1 file", "2 files", as every client says it.
+pub use dusk_protocol::thread::plural as count;
 
 /// A short label in a tinted pill, such as a chat's source.
 pub fn badge(text: impl Into<SharedString>, color: Hsla) -> Div {

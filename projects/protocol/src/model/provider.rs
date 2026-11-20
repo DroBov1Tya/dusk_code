@@ -139,6 +139,21 @@ pub struct PlanWindow {
     pub resets_in: Option<u64>,
 }
 
+impl PlanWindow {
+    /// The window's name from its length, as the clients title it: "5-hour limit",
+    /// "Weekly"; the provider gives no other.
+    pub fn name(&self) -> String {
+        match self.minutes {
+            Some(0) | None => "Plan limit".into(),
+            Some(300) => "5-hour limit".into(),
+            Some(10_080) => "Weekly".into(),
+            Some(m) if m.is_multiple_of(1440) => format!("{}-day limit", m / 1440),
+            Some(m) if m.is_multiple_of(60) => format!("{}-hour limit", m / 60),
+            Some(m) => format!("{m}-minute limit"),
+        }
+    }
+}
+
 /// One limit: how much the account may use in the provider's period, and what is left.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,8 +200,7 @@ impl RateLimits {
             .filter_map(|(window, _)| window.as_ref()?.resets_in)
             .max();
         if let Some(seconds) = resets_in {
-            let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
-            let wait = crate::thread::duration_words(ms);
+            let wait = crate::thread::duration_words_secs(seconds);
             parts.push(format!("resets in {wait}"));
         }
         for window in &self.plan {
@@ -196,11 +210,8 @@ impl RateLimits {
             );
             let mut part = format!("{}% of the {size} limit used", window.used_percent);
             if let Some(seconds) = window.resets_in {
-                let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
-                part.push_str(&format!(
-                    " (resets in {})",
-                    crate::thread::duration_words(ms)
-                ));
+                let wait = crate::thread::duration_words_secs(seconds);
+                part.push_str(&format!(" (resets in {wait})"));
             }
             parts.push(part);
         }
@@ -309,6 +320,37 @@ mod tests {
             "5% of the 5h plan limit used (resets in 2h 10m), 40% of the 7d plan limit used"
         );
         assert_eq!(plan.used(), Some(0.4));
+        let names: Vec<String> = [
+            Some(300),
+            Some(10_080),
+            Some(2_880),
+            Some(120),
+            Some(90),
+            None,
+            Some(0),
+        ]
+        .into_iter()
+        .map(|minutes| {
+            PlanWindow {
+                minutes,
+                used_percent: 0,
+                resets_in: None,
+            }
+            .name()
+        })
+        .collect();
+        assert_eq!(
+            names,
+            [
+                "5-hour limit",
+                "Weekly",
+                "2-day limit",
+                "2-hour limit",
+                "90-minute limit",
+                "Plan limit",
+                "Plan limit"
+            ]
+        );
         // A status saved by an older core has no limits.
         let old: ProviderStatus =
             serde_json::from_str(r#"{"name":"a","models":{"Ok":[]}}"#).unwrap();

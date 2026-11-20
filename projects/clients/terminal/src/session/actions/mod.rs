@@ -155,7 +155,7 @@ pub async fn apply(
 fn copy(app: &mut App, text: String) {
     let lines = text.lines().count().max(1);
     app.flash = Some(if crate::host::clipboard::copy(&text) {
-        format!("copied {lines} line{}", if lines == 1 { "" } else { "s" })
+        format!("copied {}", dusk_protocol::thread::plural(lines, "line"))
     } else {
         "cannot copy: no clipboard tool".into()
     });

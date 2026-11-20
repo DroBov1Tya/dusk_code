@@ -211,9 +211,9 @@ fn card(github: &str, pull: &PullStatus, cx: &App) -> Div {
             );
     }
     if let Some(created) = pull.created {
-        facts = facts
-            .child(dot())
-            .child(format!("{} ago", checks::ago(checks::now() - created)));
+        facts = facts.child(dot()).child(dusk_protocol::thread::ago_words(
+            (checks::now() - created).saturating_mul(1000),
+        ));
     }
     facts = facts
         .child(dot())

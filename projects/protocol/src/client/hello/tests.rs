@@ -1,5 +1,6 @@
-use super::proof::{hex, hmac_sha256};
+use super::proof::hmac_sha256;
 use super::*;
+use crate::text::hex;
 
 #[test]
 fn hmac_matches_rfc_4231_case_2() {
@@ -85,7 +86,8 @@ fn a_version_outside_the_range_is_refused() {
     for (protocol, expected) in [
         (35, Err(Refusal::Version)),
         (36, Ok(())),
-        (37, Err(Refusal::Version)),
+        (37, Ok(())),
+        (38, Err(Refusal::Version)),
     ] {
         hello.protocol = protocol;
         assert_eq!(hello.accepted(), expected, "protocol {protocol}");
@@ -109,7 +111,11 @@ fn a_name_with_a_newline_is_refused() {
 #[test]
 fn a_hello_without_auth_or_nonce_still_parses() {
     let hello: Hello = serde_json::from_str(r#"{"protocol":36,"client":"tui"}"#).unwrap();
-    assert_eq!(hello, Hello::new("tui"));
+    let expected = Hello {
+        protocol: 36,
+        ..Hello::new("tui")
+    };
+    assert_eq!(hello, expected);
 }
 
 /// These literals are the frozen wire format: two versions of duskcode say them to each
@@ -136,6 +142,7 @@ fn the_handshake_frames_are_pinned() {
         nonce: "cc".to_owned(),
     };
     let key = Hello {
+        protocol: 36,
         auth: Some(Claim::Key),
         ..Hello::new("tui")
     };

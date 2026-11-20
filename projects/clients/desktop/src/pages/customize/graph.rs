@@ -74,7 +74,7 @@ pub fn render(ws: &Workspace, tree: &AgentTree, cx: &mut Context<Workspace>) -> 
                             .small()
                             .text_color(muted)
                             .line_clamp(2)
-                            .child(focus.description.clone()),
+                            .child(focus.about()),
                     )
                 }),
         )
@@ -293,7 +293,7 @@ fn card(
                 .text_color(muted)
                 .line_clamp(2)
                 .text_ellipsis()
-                .child(node.description.clone()),
+                .child(node.about()),
         )
         .child(div().flex_1())
         .when(!links.is_empty(), |card| card.child(chips))
@@ -396,6 +396,7 @@ mod tests {
             enabled: true,
             links: links.iter().map(|link| link.to_string()).collect(),
             children,
+            source: None,
         }
     }
 

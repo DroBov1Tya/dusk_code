@@ -12,7 +12,7 @@ use crate::{
     tools::{Approvals, Progress},
 };
 use dusk_protocol::{
-    client::{ThreadRequest, WorkRequest},
+    client::{Busy, ThreadRequest, WorkRequest},
     thread::{ThreadEvent, TurnWait},
     tools::{Decision, Request as ToolRequest},
 };
@@ -93,6 +93,16 @@ async fn a_client_that_joins_a_waiting_turn_gets_the_wait_and_the_question() {
     assert_eq!(
         next_thread_event(&mut heard_second).await,
         ThreadEvent::Question(asked)
+    );
+
+    // The open chat with a turn waiting counts as running; neither client is the owner.
+    server.refresh_busy();
+    assert_eq!(
+        *server.busy().borrow(),
+        Busy {
+            clients: 2,
+            running: 1
+        }
     );
 }
 
@@ -273,6 +283,8 @@ async fn core_with_clients(
             client,
             source: "test".into(),
             scope,
+            transport: "in-process",
+            owner: false,
         };
         calls.send(attach).unwrap();
     }
@@ -533,4 +545,107 @@ fn the_kept_suggestion_follows_the_chats_events() {
     assert_eq!(hear(sent), None);
     hear(suggested("commit it"));
     assert_eq!(hear(ThreadEvent::Undone { text: "x".into() }), None);
+}
+
+/// The end of a turn marks a chat no client showed unread, and every client listing it
+/// hears so; the user's own message, progress, a subagent's turn and a turn the user
+/// stopped do not, and a limit that stopped one does. A client that
+/// shows the chat marks it read, and the others hear that too.
+#[tokio::test]
+async fn a_chat_turns_unread_for_the_user_and_read_once_seen() {
+    let root = temp_dir("serve_unread");
+    let paths = Paths::new(root.join("config"), root.join("work"));
+    let runtime = Runtime::start(paths, Some(root.join("state.db")))
+        .await
+        .unwrap();
+    let state = runtime.state();
+    state.create_thread("chat", "test").await.unwrap();
+    state.add_user_message("chat", "go", "go").await.unwrap();
+    let turn = state.start_turn("chat").await.unwrap().unwrap();
+    let subscribers = Subscribers::default();
+    let (queue, mut heard) = mpsc::unbounded_channel();
+    subscribers.lock().push(Subscriber {
+        client: 1,
+        scope: Scope::full(),
+        queue,
+    });
+    let (other, mut elsewhere) = mpsc::unbounded_channel();
+    subscribers.lock().push(Subscriber {
+        client: 2,
+        scope: Scope::threads(["another".to_owned()], &[crate::client::Area::ThreadRead]),
+        queue: other,
+    });
+    let (mut server, _) = Server::new(runtime, Arc::clone(&subscribers));
+    server
+        .clients
+        .insert(1, Attached::new("test".into(), Scope::full()));
+    server.caller = 1;
+    let unread = |server: &Server| {
+        let runtime = Arc::clone(&server.runtime);
+        async move {
+            let listed = runtime.list_threads().await.unwrap();
+            listed
+                .iter()
+                .any(|thread| thread.id == "chat" && thread.unread)
+        }
+    };
+
+    let not_for_the_user = [
+        ThreadEvent::Queued {
+            message_id: "m".into(),
+        },
+        ThreadEvent::TurnStarted(turn.clone()),
+        ThreadEvent::Subagent {
+            thread_id: "agent".into(),
+            event: Box::new(ThreadEvent::TurnFinished(turn.clone())),
+        },
+    ];
+    for event in &not_for_the_user {
+        super::unread::heard(&server.runtime, &subscribers, "chat", event).await;
+    }
+    assert!(!unread(&server).await);
+    assert!(heard.try_recv().is_err());
+
+    // A turn the user stopped: they did that themselves.
+    let mut stopped = turn.clone();
+    stopped.status = dusk_protocol::thread::TurnStatus::Interrupted;
+    let stopped = ThreadEvent::TurnFinished(stopped);
+    super::unread::heard(&server.runtime, &subscribers, "chat", &stopped).await;
+    assert!(!unread(&server).await, "a turn the user stopped");
+    assert!(heard.try_recv().is_err());
+
+    let mut finished = turn.clone();
+    finished.status = dusk_protocol::thread::TurnStatus::Completed;
+    let finished = ThreadEvent::TurnFinished(finished);
+    super::unread::heard(&server.runtime, &subscribers, "chat", &finished).await;
+    assert!(unread(&server).await);
+    assert_eq!(
+        next_thread_event(&mut heard).await,
+        ThreadEvent::Unread(true)
+    );
+    super::unread::heard(&server.runtime, &subscribers, "chat", &finished).await;
+    assert!(heard.try_recv().is_err(), "told once");
+
+    let seen = ThreadRequest::Seen {
+        thread_id: "chat".into(),
+    };
+    assert_eq!(server.thread(seen).await.unwrap(), Response::Done);
+    assert!(!unread(&server).await);
+    assert_eq!(
+        next_thread_event(&mut heard).await,
+        ThreadEvent::Unread(false)
+    );
+    assert!(
+        elsewhere.try_recv().is_err(),
+        "a client bound elsewhere hears nothing"
+    );
+
+    // A limit that stopped the turn is for the user, though the turn ends interrupted.
+    let limit = ThreadEvent::OutputLimitReached;
+    super::unread::heard(&server.runtime, &subscribers, "chat", &limit).await;
+    assert!(unread(&server).await, "stopped by a limit");
+    assert_eq!(
+        next_thread_event(&mut heard).await,
+        ThreadEvent::Unread(true)
+    );
 }

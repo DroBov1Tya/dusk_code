@@ -123,13 +123,10 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
                 .child(buttons.flex_none()),
         );
     }
-    if let Some(question) = chat.questions.front().filter(|question| buttons(question)) {
-        let (asked, total) = (
-            chat.answers.len() + 1,
-            chat.questions.len() + chat.answers.len(),
-        );
+    if let Some(question) = chat.questions.shown().filter(|question| buttons(question)) {
+        let (asked, total) = chat.questions.place();
         cards = cards.child(light_question(question, asked, total, cx));
-    } else if let Some(question) = chat.questions.front() {
+    } else if let Some(question) = chat.questions.shown() {
         let muted = cx.theme().muted_foreground;
         let (primary, hover) = (cx.theme().primary, muted.opacity(0.5));
         let mut options = div().flex().flex_col().gap_2();
@@ -185,12 +182,14 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
                 "Pick one. Or write your own answer below."
             }))
             // More wait behind this one; the answers go to the agent together.
-            .when(chat.questions.len() + chat.answers.len() > 1, |card| {
-                card.child(div().meta().text_color(muted).child(format!(
-                    "Question {} of {}",
-                    chat.answers.len() + 1,
-                    chat.questions.len() + chat.answers.len()
-                )))
+            .when(chat.questions.place().1 > 1, |card| {
+                let (number, total) = chat.questions.place();
+                card.child(
+                    div()
+                        .meta()
+                        .text_color(muted)
+                        .child(format!("Question {number} of {total}")),
+                )
             })
             .child(options);
         let mut actions = div().flex().flex_row().items_center().gap_2();
@@ -377,7 +376,7 @@ impl Workspace {
     fn pick(&mut self, index: usize, cx: &mut Context<Self>) {
         let multiple = self
             .shown_chat()
-            .and_then(|chat| chat.questions.front())
+            .and_then(|chat| chat.questions.shown())
             .is_some_and(|q| q.multiple);
         if !multiple {
             self.picked = vec![index];
@@ -463,18 +462,20 @@ mod tests {
     fn skipping_moves_on_and_the_last_skip_sends_every_answer() {
         let (first, second) = (question(&["a", "b"], false), question(&["c", "d"], true));
         let mut chat = Transcript::default();
-        chat.questions.extend([first.clone(), second.clone()]);
+        chat.questions.ask(first.clone());
+        chat.questions.ask(second.clone());
         assert_eq!(chat.skip(), None);
-        assert_eq!(chat.questions.front(), Some(&second));
-        assert_eq!(chat.answers, [first.skipped()]);
+        assert_eq!(chat.questions.shown(), Some(&second));
+        assert_eq!(chat.questions.place(), (2, 2));
         let sent = chat.answer(&[1], "").unwrap();
         assert_eq!(
             sent,
             [first.skipped(), second.answer(&[1], "")].join("\n\n")
         );
-        assert!(chat.answers.is_empty());
+        assert!(chat.questions.is_empty());
 
-        chat.questions.extend([first.clone(), second.clone()]);
+        chat.questions.ask(first.clone());
+        chat.questions.ask(second.clone());
         assert_eq!(chat.answer(&[0], ""), None);
         let sent = chat.skip().unwrap();
         assert_eq!(

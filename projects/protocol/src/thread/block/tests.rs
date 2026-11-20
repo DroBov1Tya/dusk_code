@@ -175,8 +175,22 @@ fn a_line_is_trimmed_plain_and_never_empty() {
         "a\u{1b}[31mb",
         "a\u{202e}b",
         "a\u{2028}b",
+        // Refused since the filter is shared: marks, zero width, the tag block.
+        "a\u{200e}b",
+        "a\u{061c}b",
+        "a\u{200b}b",
+        "a\u{feff}b",
+        "a\u{e0041}b",
     ] {
         assert!(Line::<40>::new(refused).is_err(), "{refused:?}");
+    }
+    // Joined emoji, a soft hyphen and a subdivision flag stay as they were accepted.
+    for kept in [
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} family",
+        "Sil\u{00AD}ben",
+        "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F} Scotland",
+    ] {
+        assert_eq!(Line::<40>::new(kept).unwrap().as_str(), kept);
     }
     let error = Line::<3>::new("abcd").unwrap_err().to_string();
     assert_eq!(error, "the text starting \"abcd\" is over 3 characters");

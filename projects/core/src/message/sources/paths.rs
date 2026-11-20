@@ -56,10 +56,7 @@ pub(super) fn file_paths(text: &str) -> Vec<(std::ops::Range<usize>, PathBuf)> {
 fn file_path(word: &str) -> Option<PathBuf> {
     let path = match word.strip_prefix("file://") {
         Some(url) => PathBuf::from(percent_decoded(url)?),
-        None => match word.strip_prefix("~/") {
-            Some(rest) => PathBuf::from(std::env::var_os("HOME")?).join(rest),
-            None => PathBuf::from(word),
-        },
+        None => crate::init::paths::home_path(word)?,
     };
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     let known = matches!(

@@ -12,24 +12,7 @@ const FALLBACK: &str = "/bin/sh";
 
 /// `$SHELL` when it names a program by its full path, else the system's own shell.
 pub fn login_shell() -> PathBuf {
-    std::env::var_os("SHELL")
-        .map(PathBuf::from)
-        .filter(|shell| is_program(shell))
-        .unwrap_or_else(|| PathBuf::from(FALLBACK))
-}
-
-fn is_program(path: &Path) -> bool {
-    let Ok(metadata) = std::fs::metadata(path) else {
-        return false;
-    };
-    #[cfg(unix)]
-    let runs = {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.permissions().mode() & 0o111 != 0
-    };
-    #[cfg(not(unix))]
-    let runs = true;
-    path.is_absolute() && metadata.is_file() && runs
+    crate::platform::login_path::user_shell().unwrap_or_else(|| PathBuf::from(FALLBACK))
 }
 
 /// `shell` as a login shell in `cwd`. It is interactive because it stands on a terminal;
@@ -41,19 +24,4 @@ pub fn command(shell: &Path, cwd: &Path) -> CommandBuilder {
     command.env("TERM", "xterm-256color");
     command.env("SHELL", shell);
     command
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_a_program_named_by_its_full_path_is_a_shell() {
-        assert!(is_program(Path::new("/bin/sh")));
-        assert!(!is_program(Path::new("sh")));
-        assert!(!is_program(Path::new("bin/sh")));
-        assert!(!is_program(Path::new("/bin")));
-        assert!(!is_program(Path::new("/etc/hosts")));
-        assert!(!is_program(Path::new("/bin/sh -c 'echo no'")));
-    }
 }

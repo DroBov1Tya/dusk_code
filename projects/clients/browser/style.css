@@ -119,6 +119,8 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .nav-item { text-align: left; background: none; border: 0; padding: 6px 10px; border-radius: 8px; color: var(--fg2); }
 .nav-item:hover, .nav-item.active { background: var(--raised); color: var(--fg); }
 .update { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 8px; padding: 6px 10px; font-weight: 600; }
+.unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; flex: none; margin: 0 8px 0 4px; }
+.chat-row.unread .chat-title { font-weight: 500; }
 .spinner { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; display: inline-block; animation: spin .9s linear infinite; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
@@ -565,6 +567,17 @@ a { text-underline-offset: 3px; }
 @keyframes act-caret { 50% { opacity: .25; } }
 .working-fields { display: flex; align-items: center; min-width: 0; white-space: nowrap; }
 .working-words { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The words of one kind of work give way to the next in a short swap: the old rise and
+   fade, the new come up, and the room they stand in eases to the new width so the counts
+   after it glide. The mark comes in with them. Reduced motion makes it a plain change. */
+.working-swap { position: relative; display: inline-flex; align-items: center; min-width: 0; max-width: 100%; overflow: hidden; transition: width .2s var(--ease); }
+.working-words.coming { animation: act-word-in .2s var(--ease) both; }
+.working-words.going { position: absolute; left: 0; top: 0; animation: act-word-out .09s ease-out both; }
+@keyframes act-word-in { 0%, 30% { opacity: 0; transform: translateY(3px); } }
+@keyframes act-word-out { to { opacity: 0; transform: translateY(-3px); } }
+.working-row .act-slot > *, .steps-title.coming { animation: act-mark-in .2s var(--ease) both; }
+@keyframes act-mark-in { from { opacity: 0; transform: scale(.8); } }
+.steps-title.coming { animation-name: act-word-in; }
 .working-dot::before { content: "\00B7"; margin: 0 8px; }
 .working-box { display: inline-block; min-width: 56px; }
 .working-box.tokens { min-width: 96px; }

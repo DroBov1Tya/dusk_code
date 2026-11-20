@@ -22,7 +22,7 @@ use tokio::{
 };
 
 use crate::{
-    init::{create_private_dir, paths::is_plain_folder_name},
+    init::{create_private_dir, files::write_private, paths::is_plain_folder_name},
     providers::is_loopback,
 };
 
@@ -64,24 +64,14 @@ impl TokenFile {
     fn write(&self, bytes: &[u8]) -> Result<()> {
         let folder = self.path.parent().context("token folder is missing")?;
         create_private_dir(folder)?;
-        let temporary = self.path.with_extension("json.tmp");
-        // A new file every time: create_new neither follows a link left there nor keeps
-        // the mode of an old file.
-        match std::fs::remove_file(&temporary) {
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
+        write_private(&self.path, bytes)?;
+        // The fixed staging file older versions could leave behind holds a token.
+        match std::fs::remove_file(self.path.with_extension("json.tmp")) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                tracing::warn!("cannot remove an old token staging file: {error}");
+            }
             _ => {}
         }
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&temporary)?;
-        std::io::Write::write_all(&mut file, bytes)?;
-        file.sync_all()?;
-        std::fs::rename(&temporary, &self.path)?;
         Ok(())
     }
 }

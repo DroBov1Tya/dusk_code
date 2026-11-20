@@ -12,12 +12,11 @@ use crate::init::paths::Paths;
 
 use super::{
     BACKUPS, MAX_ENTRIES, MAX_MANIFEST_BYTES, MAX_PAYLOAD_BYTES,
-    files::{
-        copy_hash, ensure_same_file, executable, open_regular_input, private_dir, private_file,
-    },
+    files::{copy_hash, ensure_same_file, executable, open_regular_input},
     manifest::{Entry, Kind, validate_path},
     verify::inspect_tree_path,
 };
+use crate::init::files::{new_private_dir, new_private_file};
 
 pub fn collect(
     source: &Path,
@@ -37,7 +36,7 @@ pub fn collect(
     );
     let target = data.join(name);
     if metadata.is_dir() {
-        private_dir(&target)?;
+        new_private_dir(&target)?;
         let entry = Entry {
             path: name.into(),
             kind: Kind::Directory,
@@ -102,7 +101,7 @@ pub fn collect_file(
         executable: executable(&before),
     };
     inventory.reserve(&entry)?;
-    let mut output = private_file(target)?;
+    let mut output = new_private_file(target)?;
     let (copied, hash) = copy_hash(&mut Read::by_ref(&mut input).take(size + 1), &mut output)?;
     ensure!(
         copied == size,

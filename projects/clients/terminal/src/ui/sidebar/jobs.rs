@@ -1,5 +1,6 @@
 //! The background jobs that run, each with its command and how long it has run.
 
+use dusk_protocol::thread::clock_words;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -13,7 +14,7 @@ use super::{
     section::{PAD, fill, ruled, section},
 };
 use crate::ui::{
-    text::format::{format_duration, one_line},
+    text::format::one_line,
     theme::{ACCENT, DEEP, ON, TEXT, TEXT_MUTED, TEXT_SOFT, fg},
 };
 use dusk_protocol::system::now_ms;
@@ -38,7 +39,7 @@ impl Sidebar<'_> {
             .iter()
             .take(MAX_JOB_ROWS)
             .map(|job| {
-                let time = format_duration(now.saturating_sub(job.started_at).max(0) as u64);
+                let time = clock_words(now.saturating_sub(job.started_at));
                 Line::from(vec![
                     Span::styled(format!("{ON} "), fg(ACCENT)),
                     Span::styled(

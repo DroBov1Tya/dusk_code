@@ -34,7 +34,7 @@ const BAR_EASE: std::time::Duration = std::time::Duration::from_millis(300);
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat()?;
     let counts = ws.dock.counts_of(ws.shown.as_deref());
-    let all = counts.map_or(0, PlanCounts::total);
+    let all = counts.map_or(0, |counts| counts.total());
     if chat.tasks.is_empty() && all == 0 {
         return None;
     }
@@ -77,7 +77,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                 .meta()
                 .text_color(color)
                 .truncate()
-                .child(team.status_line()),
+                .child(team.progress_note()),
         )
     });
     let current = ended.or_else(|| {
@@ -252,7 +252,7 @@ fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
         }
         false => word
             .text_color(color)
-            .child(task.status.word())
+            .child(task.status.name())
             .into_any_element(),
     };
     let owner = task.owner.as_ref().map(|owner| {

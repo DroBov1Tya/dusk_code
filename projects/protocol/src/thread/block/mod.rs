@@ -17,7 +17,6 @@ pub use flow::{
     Layer, MAX_CARDS, MAX_LAYERS, MIN_LAYERS,
 };
 pub use line::Line;
-pub(crate) use line::is_plain;
 
 use anyhow::bail;
 use schemars::JsonSchema;

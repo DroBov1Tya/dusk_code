@@ -2,7 +2,9 @@
 //! the same section draws in the column and on the page, only its frame differs.
 
 use crate::ui::elevation::{Elevation, Level};
-use dusk_protocol::thread::{LogEntry, LogKind, Overview, PlanCounts, Team, ThreadTokens};
+use dusk_protocol::thread::{
+    BudgetPart, LogEntry, LogKind, Overview, PlanCounts, Team, ThreadTokens,
+};
 use gpui_kit::{
     component::{
         ActiveTheme, Icon, IconName, Sizable,
@@ -27,8 +29,6 @@ pub enum Form {
 
 /// The log lines the column shows; the page shows all the Overview has.
 const NARROW_LOG: usize = 8;
-/// A budget part this used warns.
-const NEAR: f32 = 0.8;
 
 /// Every section the chat has something for, in order.
 pub fn all(ws: &Workspace, form: Form, cx: &mut Context<Workspace>) -> Vec<Div> {
@@ -120,15 +120,11 @@ fn progress(shown: &Shown, form: Form, cx: &mut Context<Workspace>) -> Option<Di
     let aside = shown
         .team
         .as_ref()
-        .map(|team| div().child(team.status_line()));
+        .map(|team| div().child(team.progress_note()));
     // A segment a status, as wide as its share, in the order done, at work, blocked, the
     // rest: the bar stays the same size whether the plan has 3 tasks or 300.
-    let parts = [
-        (counts.done, theme.success),
-        (running + counts.review, theme.primary),
-        (counts.blocked + counts.failed, theme.warning),
-        (counts.open, theme.border),
-    ];
+    let colors = [theme.success, theme.primary, theme.warning, theme.border];
+    let parts = counts.shares().into_iter().zip(colors);
     let segments = div()
         .flex()
         .flex_row()
@@ -136,19 +132,14 @@ fn progress(shown: &Shown, form: Form, cx: &mut Context<Workspace>) -> Option<Di
         .gap(px(2.))
         .my_3()
         .overflow_hidden()
-        .children(
-            parts
-                .into_iter()
-                .filter(|(count, _)| *count > 0)
-                .map(|(count, color)| {
-                    div()
-                        .w(relative(count as f32 / all as f32))
-                        .min_w(px(3.))
-                        .h(px(6.))
-                        .rounded_full()
-                        .bg(color)
-                }),
-        );
+        .children(parts.filter(|(count, _)| *count > 0).map(|(count, color)| {
+            div()
+                .w(relative(count as f32 / all as f32))
+                .min_w(px(3.))
+                .h(px(6.))
+                .rounded_full()
+                .bg(color)
+        }));
     let mut body = div()
         .flex()
         .flex_col()
@@ -159,23 +150,7 @@ fn progress(shown: &Shown, form: Form, cx: &mut Context<Workspace>) -> Option<Di
         ]))
         .child(segments);
     if let Some(team) = &shown.team {
-        let (budget, used) = (team.budget, team.used);
-        body = body
-            .child(budget_row(
-                "Steps",
-                used.steps.into(),
-                budget.steps().into(),
-                "",
-                cx,
-            ))
-            .child(budget_row("Tokens", used.tokens, budget.tokens(), "", cx))
-            .child(budget_row(
-                "Time",
-                used.minutes.into(),
-                budget.minutes().into(),
-                " min",
-                cx,
-            ));
+        body = body.children(team.budget_parts().map(|part| budget_row(part, cx)));
         // Only a running team can be stopped or given more.
         if team.ended().is_none() {
             body = body.child(steer(team, cx));
@@ -212,20 +187,12 @@ fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
 }
 
 /// One part of the team's budget: its name, a thin bar, and "used of all".
-fn budget_row(name: &'static str, used: u64, all: u64, unit: &str, cx: &App) -> Div {
+fn budget_row(part: BudgetPart, cx: &App) -> Div {
     let theme = cx.theme();
-    let share = (used as f32 / all.max(1) as f32).min(1.);
-    let fill = if share >= NEAR {
+    let fill = if part.near() {
         theme.warning
     } else {
         theme.muted_foreground
-    };
-    let amount = |value: u64| {
-        if unit.is_empty() {
-            widgets::short(value)
-        } else {
-            value.to_string()
-        }
     };
     div()
         .flex()
@@ -235,20 +202,22 @@ fn budget_row(name: &'static str, used: u64, all: u64, unit: &str, cx: &App) -> 
         .h(px(24.))
         .meta()
         .text_color(theme.muted_foreground)
-        .child(div().w(px(64.)).child(name))
+        .child(div().w(px(64.)).child(part.name))
         .child(
             div()
                 .flex_1()
                 .h(px(4.))
                 .rounded_full()
                 .bg(theme.border)
-                .child(div().h_full().w(relative(share)).rounded_full().bg(fill)),
+                .child(
+                    div()
+                        .h_full()
+                        .w(relative(part.share()))
+                        .rounded_full()
+                        .bg(fill),
+                ),
         )
-        .child(div().w(px(96.)).text_right().child(format!(
-            "{} of {}{unit}",
-            amount(used),
-            amount(all)
-        )))
+        .child(div().w(px(96.)).text_right().child(part.text()))
 }
 
 fn members(team: &Team, form: Form, cx: &App) -> Option<Div> {
@@ -260,7 +229,7 @@ fn members(team: &Team, form: Form, cx: &App) -> Option<Div> {
     let mut body = div().flex().flex_col();
     for member in &team.members {
         let (word, color) = (
-            member.status.word(),
+            member.status.member_word(),
             widgets::tone(member.status.tone(), cx),
         );
         body = body.child(
@@ -297,9 +266,9 @@ fn tokens(usage: &ThreadTokens, plan: Option<PlanCounts>, form: Form, cx: &App) 
     if usage.model_calls == 0 {
         return None;
     }
-    let spent = usage.spent.prompt_tokens + usage.spent.completion_tokens;
-    let cached = usage.spent.cached_prompt_tokens * 100 / usage.spent.prompt_tokens.max(1);
-    let calls = widgets::count(usage.model_calls as usize, "call");
+    let spent = usage.spent_tokens();
+    let cached = usage.cached_percent();
+    let calls = widgets::count(usage.model_calls, "call");
     let aside = match usage.cost() {
         Some(cost) => format!("{calls} \u{00B7} {cost}"),
         None => calls,
@@ -308,12 +277,8 @@ fn tokens(usage: &ThreadTokens, plan: Option<PlanCounts>, form: Form, cx: &App) 
         figure(widgets::short(spent), "spent", cx),
         figure(format!("{cached}%"), "from cache", cx),
     ];
-    if let Some(done) = plan.map(|plan| plan.done).filter(|done| *done > 0) {
-        items.push(figure(
-            widgets::short(spent / u64::from(done)),
-            "per task done",
-            cx,
-        ));
+    if let Some(per_task) = plan.and_then(|plan| usage.per_task(plan.done)) {
+        items.push(figure(widgets::short(per_task), "per task done", cx));
     }
     Some(frame(
         form,
@@ -341,7 +306,7 @@ fn changes(overview: &Overview, form: Form, cx: &App) -> Option<Div> {
         .flex()
         .flex_row()
         .gap_1()
-        .child(widgets::count(changes.files as usize, "file"))
+        .child(widgets::count(changes.files, "file"))
         .child(div().text_color(ok).child(format!("+{}", changes.added)))
         .child(
             div()
@@ -364,7 +329,7 @@ fn changes(overview: &Overview, form: Form, cx: &App) -> Option<Div> {
             ],
         ));
     }
-    let more = (changes.files as usize).saturating_sub(changes.newest.len());
+    let more = changes.more();
     if more > 0 {
         body = body.child(row(
             div()
@@ -383,11 +348,7 @@ fn activity(overview: &Overview, form: Form, cx: &App) -> Option<Div> {
         return None;
     }
     let muted = cx.theme().muted_foreground;
-    let aside = format!(
-        "{} \u{00B7} {} asked",
-        widgets::count(activity.tool_runs as usize, "tool run"),
-        widgets::count(activity.agents_asked as usize, "agent"),
-    );
+    let aside = activity.summary();
     let mut body = div().flex().flex_col();
     for tool in &activity.by_tool {
         body = body.child(row(

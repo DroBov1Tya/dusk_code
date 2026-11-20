@@ -14,9 +14,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use dusk_protocol::text::sha256_hex;
 use reqwest::Client;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
 use crate::{config::Config, init::paths::Paths};
@@ -30,6 +30,12 @@ const TARGET: &str = env!("DUSK_TARGET");
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Far above the size of a release archive, so a wrong file is not read without end.
 const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
+/// Far above GitHub's largest answer read (a comparison lists its files' changes, a
+/// repository tree is at most 7 MB),
+/// so a wrong answer is not read without end either.
+const MAX_ANSWER_BYTES: usize = 16 * 1024 * 1024;
+/// GitHub's error answers are a short JSON message.
+const MAX_ERROR_BYTES: usize = 64 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(120);
 
 /// The newest version on `channel`, and how far the running one is behind it.
@@ -147,19 +153,8 @@ pub(super) async fn newest_from(
     channel: Channel,
 ) -> Result<Option<Release>> {
     Ok(match channel {
-        Channel::Stable => Some(
-            response
-                .json::<Release>()
-                .await
-                .context("unexpected answer from GitHub")?,
-        ),
-        Channel::Dev => newest_with_build(
-            response
-                .json::<Vec<Release>>()
-                .await
-                .context("unexpected answer from GitHub")?,
-            build_name,
-        ),
+        Channel::Stable => Some(read_json::<Release>(response).await?),
+        Channel::Dev => newest_with_build(read_json::<Vec<Release>>(response).await?, build_name),
     })
 }
 
@@ -255,7 +250,7 @@ pub async fn install_with_progress(
     // Once started, this block finishes replacement and cleanup even if the caller exits.
     tokio::task::spawn_blocking(move || {
         ensure!(
-            hex(&Sha256::digest(&archive)) == expected,
+            sha256_hex(&archive) == expected,
             "the download does not match its checksum; nothing was changed"
         );
         progress.send_modify(|value| value.stage = InstallStage::Installing);
@@ -350,10 +345,6 @@ pub(super) fn asset_url(tag: &str, name: &str) -> String {
     format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}")
 }
 
-pub(super) fn sha256_hex(bytes: &[u8]) -> String {
-    hex(&Sha256::digest(bytes))
-}
-
 async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -> Result<T> {
     let url = format!("{API}/{REPOSITORY}/{path}");
     let response = client
@@ -365,10 +356,17 @@ async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -
     if !response.status().is_success() {
         return Err(refused(response).await);
     }
-    response
-        .json()
+    read_json(response).await
+}
+
+/// A successful answer of GitHub's API, read up to `MAX_ANSWER_BYTES`.
+pub(super) async fn read_json<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> Result<T> {
+    let bytes = crate::net::read_limited(response, MAX_ANSWER_BYTES)
         .await
-        .context("unexpected answer from GitHub")
+        .map_err(|error| error.about("GitHub's answer"))?;
+    serde_json::from_slice(&bytes).context("unexpected answer from GitHub")
 }
 
 /// Downloads `url`, reporting how far it got.
@@ -411,10 +409,10 @@ pub(super) async fn refused(response: reqwest::Response) -> anyhow::Error {
     };
     let limited = header("x-ratelimit-remaining") == Some(0);
     let reset = header("x-ratelimit-reset");
-    let message = response
-        .json::<serde_json::Value>()
+    let message = crate::net::read_limited(response, MAX_ERROR_BYTES)
         .await
         .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|body| body.get("message")?.as_str().map(str::to_owned))
         .map(|message| message.chars().take(MAX_MESSAGE).collect::<String>());
     let code = status.as_u16();
@@ -458,10 +456,6 @@ pub(super) fn version(tag: &str) -> Option<(u64, u64, u64)> {
     parts.next().is_none().then_some(version)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,7 +466,27 @@ mod tests {
         assert_eq!(version("v1.2"), None);
         assert_eq!(version("1.2.3"), None);
         assert_eq!(version("v1.2.3.4"), None);
-        assert_eq!(hex(&[0, 255, 16]), "00ff10");
+    }
+
+    /// An answer that says it is past the cap is refused before its body is read.
+    #[tokio::test]
+    async fn an_answer_past_the_cap_is_refused_unread() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 1024];
+            let _ = socket.read(&mut request).await;
+            let length = MAX_ANSWER_BYTES + 1;
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\n\r\n");
+            let _ = socket.write_all(head.as_bytes()).await;
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let response = client.get(&url).send().await.unwrap();
+        let error = read_json::<Release>(response).await.err().unwrap();
+        assert_eq!(error.to_string(), "GitHub's answer is too large");
     }
 
     fn release(tag: &str, assets: &[&str]) -> Release {

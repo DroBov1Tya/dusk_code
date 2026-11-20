@@ -4,12 +4,14 @@
 //! - `events`: what the core sends, folded into that state;
 //! - `render`: the window drawn from it;
 //! - `keys`: the shortcuts and what Escape closes;
+//! - `seen`: telling the core a chat was read while it is shown;
 //! - `toast`: short notes over any page that go away on their own.
 
 mod events;
 pub mod keys;
 mod new;
 mod render;
+mod seen;
 mod toast;
 
 use std::{

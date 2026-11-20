@@ -248,21 +248,6 @@ pub(super) fn switch_row(left: Vec<Span<'static>>, on: bool, width: usize) -> Ro
     }
 }
 
-/// Bytes in the largest unit that keeps the number at least 1.
-pub(super) fn bytes(count: u64) -> String {
-    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
-    if count < 1024 {
-        return format!("{count} B");
-    }
-    let mut value = count as f64 / 1024.0;
-    let mut unit = 0;
-    while value >= 1024.0 && unit + 1 < UNITS.len() {
-        value /= 1024.0;
-        unit += 1;
-    }
-    format!("{value:.1} {}", UNITS[unit])
-}
-
 pub(super) fn note(text: &str) -> Row {
     Row {
         lines: vec![Line::from(Span::styled(text.to_owned(), dim()))],

@@ -45,7 +45,7 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
                     } else {
                         "tone-warn"
                     };
-                    (team.status_line(), tone)
+                    (team.progress_note(), tone)
                 }
                 None => (
                     task_in_work(&c.tasks, c.team.as_ref())
@@ -137,7 +137,7 @@ fn row(number: usize, task: Task, thread_id: String) -> impl IntoView {
         }
         .into_any()
     } else {
-        view! { <span class=format!("plan-word {tone}")>{task.status.word()}</span> }.into_any()
+        view! { <span class=format!("plan-word {tone}")>{task.status.name()}</span> }.into_any()
     };
     view! {
         <span class="plan-number muted num">{number}</span>

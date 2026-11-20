@@ -354,11 +354,7 @@ fn bounded(mut content: String) -> String {
         return "(no output)".into();
     }
     if content.len() > MAX_RESULT_BYTES {
-        let mut end = MAX_RESULT_BYTES;
-        while !content.is_char_boundary(end) {
-            end -= 1;
-        }
-        content.truncate(end);
+        content.truncate(content.floor_char_boundary(MAX_RESULT_BYTES));
         content.push_str("\n[output truncated]");
     }
     content

@@ -5,6 +5,7 @@ use super::*;
 use dusk_protocol::{
     model::ModelEvent,
     thread::{MessageRole, Turn, TurnStatus},
+    tools::Question,
 };
 
 fn message(role: MessageRole, content: &str) -> Message {
@@ -54,10 +55,10 @@ fn a_second_question_waits_behind_the_first() {
     chat.apply(ThreadEvent::Question(question("one")));
     chat.apply(ThreadEvent::Question(question("two")));
     assert_eq!(
-        chat.question.as_ref().map(|q| q.question.as_str()),
+        chat.questions.shown().map(|q| q.question.as_str()),
         Some("one")
     );
-    assert_eq!(chat.questions_waiting.len(), 1);
+    assert_eq!(chat.questions.place(), (1, 2));
 }
 
 #[test]
@@ -98,16 +99,14 @@ fn skipping_moves_on_and_the_last_skip_sends_every_answer() {
         multiple: false,
     };
     let (first, second) = (ask("One?"), ask("Two?"));
-    let mut chat = ChatData {
-        question: Some(first.clone()),
-        questions_waiting: [second.clone()].into(),
-        ..ChatData::default()
-    };
-    assert_eq!(chat.record_answer(first.skipped()), None);
-    assert_eq!(chat.question, Some(second.clone()));
-    let sent = chat.record_answer(second.skipped()).unwrap();
+    let mut chat = ChatData::default();
+    chat.apply(ThreadEvent::Question(first.clone()));
+    chat.apply(ThreadEvent::Question(second.clone()));
+    assert_eq!(chat.answer_questions(QuestionQueue::skip), None);
+    assert_eq!(chat.questions.shown(), Some(&second));
+    let sent = chat.answer_questions(QuestionQueue::skip).unwrap();
     assert_eq!(sent, [first.skipped(), second.skipped()].join("\n\n"));
-    assert!(chat.question.is_none() && chat.answers.is_empty());
+    assert!(chat.questions.is_empty());
 }
 
 #[test]

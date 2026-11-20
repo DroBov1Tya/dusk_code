@@ -4,7 +4,7 @@ use anyhow::{Context, Result, ensure};
 use sqlx::Row;
 use uuid::Uuid;
 
-use super::{Message, State, timestamp_ms};
+use super::{Message, State, messages, timestamp_ms};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingMessage {
@@ -179,33 +179,42 @@ impl State {
 
     /// Moves a sent message into the thread, with its effect on the goal: another agent's
     /// message is new work, so the approved goal's proofs go stale; the user's message
-    /// answers a goal that waits on them; a job's result changes nothing. A crash between
-    /// the writes is safe: the request UID makes the next attempt return the stored
-    /// message, and the goal changes with the pending row's removal, so only once.
+    /// answers a goal that waits on them; a job's result changes nothing. One transaction
+    /// stores the message and removes the pending row, so no reader sees it both waiting
+    /// and read. Admitting it again returns the stored message, and the goal changes with
+    /// the pending row's removal, so only once.
     pub async fn admit_pending(
         &self,
         thread_id: &str,
         pending: &PendingMessage,
     ) -> Result<Message> {
-        let from = pending.from_thread_id.as_deref();
-        let message = match &pending.from_job_id {
-            Some(job) => self.admit_job(thread_id, job, &pending.content).await?,
-            None => {
-                self.add_message_from(thread_id, &pending.request_uid, &pending.content, from)
-                    .await?
-            }
-        };
         let mut transaction = self
             .pool
             .begin()
             .await
             .context("begin admitting a message")?;
+        // The write comes first, so the transaction holds the write lock before it reads.
         let removed = sqlx::query("DELETE FROM pending_messages WHERE pending_id = ?")
             .bind(pending.pending_id)
             .execute(&mut *transaction)
             .await
             .context("remove sent message")?
             .rows_affected();
+        let message = match &pending.from_job_id {
+            Some(job) => {
+                messages::job_message(&mut transaction, thread_id, job, &pending.content).await?
+            }
+            None => {
+                messages::message_from(
+                    &mut transaction,
+                    thread_id,
+                    &pending.request_uid,
+                    &pending.content,
+                    pending.from_thread_id.as_deref(),
+                )
+                .await?
+            }
+        };
         let goal = if removed == 0 || message.from_job_id.is_some() {
             None
         } else if message.from_thread_id.is_some() {

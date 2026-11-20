@@ -4,8 +4,10 @@
 //! it runs. A figure that works moves; one that is done rests. A click opens its chat.
 
 use crate::ui::press::Press;
-use dusk_protocol::thread::AgentState;
-use std::time::Duration;
+use dusk_protocol::{
+    system::now_ms,
+    thread::{AgentState, clock_words},
+};
 
 use gpui_kit::{
     component::{
@@ -270,7 +272,7 @@ fn figure(
                                 .meta()
                                 .flex_none()
                                 .text_color(muted)
-                                .child(clock(crate::pages::chat::transcript::run_time(agent))),
+                                .child(clock_words(agent.run_ms(now_ms()))),
                         ),
                 )
                 .children(progress.and_then(|p| p.said).map(|said| {
@@ -320,18 +322,4 @@ fn headline(task: &str) -> String {
         .find(|line| !line.is_empty())
         .unwrap_or_default()
         .to_owned()
-}
-
-/// `01:24`, or `1:02:03` past an hour.
-fn clock(time: Duration) -> String {
-    let seconds = time.as_secs();
-    match seconds {
-        0..3600 => format!("{:02}:{:02}", seconds / 60, seconds % 60),
-        _ => format!(
-            "{}:{:02}:{:02}",
-            seconds / 3600,
-            seconds / 60 % 60,
-            seconds % 60
-        ),
-    }
 }

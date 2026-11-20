@@ -6,13 +6,10 @@
 use dusk_protocol::{
     config::ApprovalPolicy,
     thread::{Applied, ChatLog, Message, Suggestion, ThreadEvent},
-    tools::Question,
+    tools::QuestionQueue,
 };
 use leptos::prelude::{ArcTrigger, Notify, Track};
-use std::{
-    collections::VecDeque,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 pub use dusk_protocol::thread::transcript::Item;
 
@@ -22,11 +19,8 @@ pub struct ChatData {
     /// Overview knows to ask again.
     pub moved: u64,
     pub access: Option<ApprovalPolicy>,
-    pub question: Option<Question>,
-    /// Questions asked while one was on the page, and the answers given so far: they go
-    /// to the agent together, after the last one.
-    pub questions_waiting: VecDeque<Question>,
-    pub answers: Vec<String>,
+    /// The question on the page, those asked while it was, and the answers given so far.
+    pub questions: QuestionQueue,
     /// Messages this page sent that the core has not taken into the chat yet.
     pub pending: Vec<String>,
     /// The stream broke or the thread ended; sending opens it again.
@@ -46,9 +40,7 @@ impl Default for ChatData {
             log: ChatLog::default(),
             moved: 0,
             access: None,
-            question: None,
-            questions_waiting: VecDeque::new(),
-            answers: Vec::new(),
+            questions: QuestionQueue::default(),
             pending: Vec::new(),
             ended: false,
             suggestion: Suggestion::default(),
@@ -73,17 +65,17 @@ impl DerefMut for ChatData {
 }
 
 impl ChatData {
-    /// Keeps the answer to the question shown and shows the next one. The message for
-    /// the agent once every question asked has its answer.
-    pub fn record_answer(&mut self, reply: String) -> Option<String> {
-        self.answers.push(reply);
-        self.question = self.questions_waiting.pop_front();
-        if self.question.is_none() {
+    /// Answers the questions through `act`: the message for the agent once every question
+    /// asked has its answer, and then the turn no longer waits on the user.
+    pub fn answer_questions(
+        &mut self,
+        act: impl FnOnce(&mut QuestionQueue) -> Option<String>,
+    ) -> Option<String> {
+        let sent = act(&mut self.questions);
+        if sent.is_some() {
             self.live.answered();
         }
-        self.question
-            .is_none()
-            .then(|| std::mem::take(&mut self.answers).join("\n\n"))
+        sent
     }
 
     pub fn from_history(history: &[Message]) -> Self {
@@ -114,10 +106,7 @@ impl ChatData {
             }
             // A second question waits behind the one on the page.
             ThreadEvent::Question(question) => {
-                match self.question {
-                    Some(_) => self.questions_waiting.push_back(question),
-                    None => self.question = Some(question),
-                }
+                self.questions.ask(question);
                 return Applied::Any;
             }
             _ => {}

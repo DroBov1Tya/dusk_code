@@ -351,12 +351,7 @@ pub async fn convert_unreleased(pool: &SqlitePool) -> Result<()> {
                 .fetch_optional(&mut *transaction)
                 .await
                 .context("read the migration record")?;
-        let hex = recorded.map(|bytes| {
-            bytes
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        });
+        let hex = recorded.map(|bytes| dusk_protocol::text::hex(&bytes));
         if hex.as_deref() != Some(checksum) {
             continue;
         }
@@ -566,6 +561,7 @@ mod tests {
              ALTER TABLE tasks DROP COLUMN checkpoint;
              ALTER TABLE tasks DROP COLUMN model;
              ALTER TABLE threads DROP COLUMN owner;
+             ALTER TABLE threads DROP COLUMN unread;
              ALTER TABLE threads DROP COLUMN mode;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
@@ -641,6 +637,7 @@ mod tests {
              ALTER TABLE tasks DROP COLUMN checkpoint;
              ALTER TABLE tasks DROP COLUMN model;
              ALTER TABLE threads DROP COLUMN owner;
+             ALTER TABLE threads DROP COLUMN unread;
              ALTER TABLE threads DROP COLUMN mode;
              DELETE FROM _sqlx_migrations WHERE version >= 13;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
@@ -738,7 +735,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

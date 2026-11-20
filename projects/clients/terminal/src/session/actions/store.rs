@@ -158,15 +158,7 @@ async fn read(client: &Client, app: &mut App) {
     match result {
         Ok(list) => {
             if all {
-                let mut categories: Vec<String> = list
-                    .listings
-                    .iter()
-                    .map(|listing| listing.category.clone())
-                    .filter(|category| !category.is_empty())
-                    .collect();
-                categories.sort();
-                categories.dedup();
-                view.categories = categories;
+                view.categories = dusk_protocol::plugin::categories(&list.listings);
             }
             let rows = list.listings.len();
             view.listings = Some(list.listings);

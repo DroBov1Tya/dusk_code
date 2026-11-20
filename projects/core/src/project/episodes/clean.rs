@@ -146,11 +146,7 @@ pub fn bounded(text: &str) -> &str {
     if text.len() <= MAX_INPUT_BYTES {
         return text;
     }
-    let mut end = MAX_INPUT_BYTES;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    let head = part(text, 0, end);
+    let head = part(text, 0, text.floor_char_boundary(MAX_INPUT_BYTES));
     match head.rfind(char::is_whitespace) {
         Some(space) => part(head, 0, space),
         None => "",

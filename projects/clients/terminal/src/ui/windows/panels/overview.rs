@@ -5,7 +5,7 @@
 use ratatui::text::{Line, Span};
 
 use dusk_protocol::thread::{
-    BUDGET_FIELDS, LogKind, PlanCounts, Team, TeamEnd, TeamMember, ThreadTokens,
+    BUDGET_FIELDS, LogKind, PlanCounts, Team, TeamEnd, TeamMember, ThreadTokens, plural,
 };
 
 use super::context::context;
@@ -25,19 +25,13 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
             if let Some(edit) = &view.budget {
                 lines.extend(budget_lines(edit));
             }
-            let (budget, used) = (team.budget, team.used);
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "   steps {} of {} {DOT} tokens {} of {} {DOT} time {} of {} min",
-                    used.steps,
-                    budget.steps(),
-                    compact_number(used.tokens),
-                    compact_number(budget.tokens()),
-                    used.minutes,
-                    budget.minutes()
-                ),
-                dim(),
-            )));
+            let parts: Vec<String> = team
+                .budget_parts()
+                .iter()
+                .map(|part| format!("{} {}", part.name.to_lowercase(), part.text()))
+                .collect();
+            let budget = format!("   {}", parts.join(&format!(" {DOT} ")));
+            lines.push(Line::from(Span::styled(budget, dim())));
         }
     }
     if let Some(team) = app.team.as_ref().filter(|team| !team.members.is_empty()) {
@@ -53,11 +47,7 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     lines.extend(context(&view.context));
     let changes = &view.overview.changes;
     if changes.files > 0 {
-        let sum = format!(
-            "{} files {DOT} +{} \u{2212}{}",
-            changes.files, changes.added, changes.removed
-        );
-        heading(&mut lines, "changes", sum);
+        heading(&mut lines, "changes", changes.summary());
         for path in &changes.newest {
             lines.push(Line::from(vec![
                 Span::raw(format!("   {}", printable(&path.path))),
@@ -68,11 +58,7 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
     }
     let activity = &view.overview.activity;
     if activity.tool_runs > 0 || activity.agents_asked > 0 {
-        let sum = format!(
-            "{} tool runs {DOT} {} agents asked",
-            activity.tool_runs, activity.agents_asked
-        );
-        heading(&mut lines, "activity", sum);
+        heading(&mut lines, "activity", activity.summary());
         for tool in &activity.by_tool {
             lines.push(Line::from(vec![
                 Span::raw(format!("   {}", printable(&tool.name))),
@@ -119,14 +105,14 @@ pub fn status_line(team: &Team, indent: &str) -> Line<'static> {
         Some(_) => WARNING,
     };
     Line::from(Span::styled(
-        format!("{indent}{}", team.status_line()),
+        format!("{indent}{}", team.progress_note()),
         fg(color),
     ))
 }
 
 /// `● Ember-0c coder running`, the dot in the colour of its task's state.
 pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
-    let (word, color) = (member.status.word(), tone_fg(member.status.tone()));
+    let (word, color) = (member.status.member_word(), tone_fg(member.status.tone()));
     let role = member.role.as_deref().unwrap_or("general");
     Line::from(vec![
         Span::styled(format!("{indent}{ON} "), fg(color)),
@@ -162,12 +148,11 @@ fn budget_lines(edit: &BudgetEdit) -> Vec<Line<'static>> {
 }
 
 fn tokens_line(tokens: &ThreadTokens) -> String {
-    let spent = tokens.spent.prompt_tokens + tokens.spent.completion_tokens;
-    let cached = tokens.spent.cached_prompt_tokens * 100 / tokens.spent.prompt_tokens.max(1);
     let mut line = format!(
-        "{} spent {DOT} {cached}% from cache {DOT} {} calls",
-        compact_number(spent),
-        tokens.model_calls
+        "{} spent {DOT} {}% from cache {DOT} {}",
+        compact_number(tokens.spent_tokens()),
+        tokens.cached_percent(),
+        plural(tokens.model_calls, "call")
     );
     if let Some(cost) = tokens.cost() {
         line.push_str(&format!(" {DOT} {cost}"));

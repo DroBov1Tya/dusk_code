@@ -2,7 +2,7 @@
 //! with the reason, a disclosure to the diff and Undo. The skill's text and the reason are
 //! data from a file: drawn as plain text, never as markup.
 
-use dusk_protocol::catalog::{DiffKind, SkillChange, SkillDiff, SkillSaveAction};
+use dusk_protocol::catalog::{DiffKind, SkillChange, SkillDiff};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, IconName, Sizable,
@@ -46,20 +46,9 @@ pub fn plain(text: &str, tabs: bool) -> String {
         .collect()
 }
 
-/// The words of the row.
+/// The words of the row, plain.
 pub fn label(change: &SkillChange) -> String {
-    let verb = match change.action {
-        SkillSaveAction::Created => "created",
-        SkillSaveAction::Updated => "improved",
-        SkillSaveAction::Deleted => "deleted",
-    };
-    let skill = plain(&change.skill, false);
-    let reason = plain(change.reason.lines().next().unwrap_or_default(), false);
-    if reason.trim().is_empty() {
-        format!("Skill {skill} {verb}")
-    } else {
-        format!("Skill {skill} {verb}: {}", reason.trim())
-    }
+    change.label(|text| plain(text, false))
 }
 
 /// The rows of the changes the step `call_id` made.
@@ -293,7 +282,8 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{SkillChange, SkillSaveAction, label, plain};
+    use super::{SkillChange, label, plain};
+    use dusk_protocol::catalog::SkillSaveAction;
 
     fn change(reason: &str) -> SkillChange {
         SkillChange {

@@ -223,8 +223,7 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
 
 /// The file without its front matter, which the rows above already show.
 fn body(text: &str) -> String {
-    text.strip_prefix("---")
-        .and_then(|rest| rest.split_once("\n---"))
+    dusk_protocol::catalog::split_front_matter(text)
         .map_or(text, |(_, body)| body)
         .trim_start()
         .to_owned()
