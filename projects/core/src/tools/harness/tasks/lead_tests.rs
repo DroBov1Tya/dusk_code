@@ -168,7 +168,8 @@ async fn the_plan_form_is_offered_only_to_a_chat_in_team_mode() {
 async fn the_plan_form_costs_what_the_design_says() {
     let f = fixture("plan_bytes").await;
     let plan = spec_bytes(&f.tasks, &f.context);
-    assert_eq!(plan, (5, 1126, 969));
+    // `tier` and `effort` per task: 263 bytes more than before them.
+    assert_eq!(plan, (5, 1233, 1125));
     let main = ToolContext {
         config: tool_context_with(&f.context.scope, "limits:\n  plan_graph: true\n").config,
         ..f.context.clone()
@@ -177,7 +178,7 @@ async fn the_plan_form_costs_what_the_design_says() {
     let growth = (plan.0 + plan.1 + plan.2) - (board.0 + board.1 + board.2);
     println!("board {board:?}, plan {plan:?}, growth {growth}");
     assert_eq!(board.0 + board.1 + board.2, 1274);
-    assert_eq!(growth, 826);
+    assert_eq!(growth, 1089);
 }
 
 fn seven() -> Value {

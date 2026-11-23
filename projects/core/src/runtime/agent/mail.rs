@@ -17,8 +17,9 @@ use crate::{
     BoxFuture,
     catalog::agents::GENERAL_AGENT,
     runtime::{
-        Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, model_choice::ModelChoice,
-        team,
+        Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner,
+        model_choice::{Choice, ModelChoice},
+        team, tiers,
     },
     state::{Thread, TurnStatus},
 };
@@ -245,8 +246,37 @@ impl Launcher {
             if let Some(choice) = team::member_model(self, thread).await? {
                 setup.model = Arc::new(ModelChoice::new(choice));
             }
+        } else if let Some(choice) = self.tier_model(&thread.id).await {
+            setup.model = Arc::new(ModelChoice::new(choice));
         }
         Ok(ThreadRunner::new(setup))
+    }
+
+    /// The model the asker picked for an agent by tier, when that is not the chat's. One
+    /// that cannot be asked now (its provider removed, switched off or down) leaves the
+    /// agent on the chat's model rather than failing its work.
+    async fn tier_model(&self, thread_id: &str) -> Option<Choice> {
+        let name = match self.state.agent_model(thread_id).await {
+            Ok(name) => name?,
+            Err(error) => {
+                warn!("thread {thread_id}: {error:#}");
+                return None;
+            }
+        };
+        let config = self.config.current();
+        let chat = self.model.current().map(|choice| choice.name());
+        if chat.as_deref() == Some(name.as_str()) || !tiers::connected(&config, &name) {
+            return None;
+        }
+        match Choice::pick(&config, Some(&name)).await {
+            Ok(choice) => Some(choice),
+            Err(error) => {
+                warn!(
+                    "thread {thread_id}: {name} cannot be asked, the chat's model answers: {error:#}"
+                );
+                None
+            }
+        }
     }
 
     /// Passes an agent's events on to the client of the thread that asked it, and its

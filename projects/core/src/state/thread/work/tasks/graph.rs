@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use dusk_protocol::{config::ModelTier, model::Effort};
 use sqlx::{Sqlite, Transaction};
 
 use crate::state::thread::threads::chat_of;
@@ -95,8 +96,8 @@ impl State {
             }
             sqlx::query(
                 "INSERT INTO tasks (task_id, thread_id, description, depends_on, role, phase,
-                     acceptance, brief, gate, files, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     acceptance, brief, gate, files, tier, effort, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(task_id)
             .bind(&root)
@@ -108,6 +109,8 @@ impl State {
             .bind(&task.brief)
             .bind(task.gate.as_ref().map(serde_json::to_string).transpose()?)
             .bind(serde_json::to_string(task.files.entries())?)
+            .bind(task.tier.map(ModelTier::name))
+            .bind(task.effort.map(Effort::name))
             .bind(now)
             .bind(now)
             .execute(&mut *transaction)
@@ -170,7 +173,8 @@ impl State {
         let gate = edit.gate.as_ref().unwrap_or(&found.gate);
         sqlx::query(
             "UPDATE tasks SET description = ?, depends_on = ?, role = ?, phase = ?,
-                 acceptance = ?, brief = ?, gate = ?, files = ?, updated_at = ?
+                 acceptance = ?, brief = ?, gate = ?, files = ?, tier = ?, effort = ?,
+                 updated_at = ?
              WHERE task_id = ? AND thread_id = ?",
         )
         .bind(
@@ -187,6 +191,8 @@ impl State {
         .bind(serde_json::to_string(
             edit.files.as_ref().unwrap_or(&found.files).entries(),
         )?)
+        .bind(edit.tier.or(found.tier).map(ModelTier::name))
+        .bind(edit.effort.or(found.effort).map(Effort::name))
         .bind(now)
         .bind(&task_id)
         .bind(&root)

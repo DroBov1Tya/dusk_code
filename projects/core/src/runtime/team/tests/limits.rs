@@ -174,6 +174,53 @@ async fn a_role_answers_on_its_own_model_and_one_that_cannot_answer_fails_the_ta
     assert_eq!(rig.members().await.len(), 1);
 }
 
+#[test]
+fn a_task_answers_on_its_tier_below_the_roles_own_model() {
+    use crate::config::Config;
+    use crate::runtime::tiers::Tier;
+    let config = Config::parse(
+        b"providers:\n  big:\n    base_url: https://127.0.0.1:1/v1\n\
+          models:\n  strong: big/fable\n  weak: gone/haiku\n\
+          team:\n  models:\n    code-reviewer: big/opus\n",
+    )
+    .unwrap();
+    let name = |role: &str, tier| super::super::member::model_name(&config, role, tier, None);
+    assert_eq!(
+        name("general", Some(Tier::Strong)).as_deref(),
+        Some("big/fable")
+    );
+    // The role's own model is the user's word for it, above any tier.
+    assert_eq!(
+        name("code-reviewer", Some(Tier::Strong)).as_deref(),
+        Some("big/opus")
+    );
+    // Unset, or set to a provider not connected: the chat's model, here none.
+    assert_eq!(name("general", Some(Tier::Default)), None);
+    assert_eq!(name("general", Some(Tier::Weak)), None);
+    assert_eq!(name("general", None), None);
+}
+
+#[tokio::test]
+async fn a_task_with_an_unset_tier_runs_on_the_chats_model_at_its_effort() {
+    use crate::config::Effort;
+    use crate::runtime::tiers::Tier;
+    let rig = Rig::with("team_tier_effort", "mode: TEAM\neffort: high\n", hang).await;
+    let ids = rig
+        .plan(&[NewTask {
+            tier: Some(Tier::Weak),
+            effort: Some(Effort::Low),
+            ..task("scout")
+        }])
+        .await;
+    rig.run().await;
+    let given = rig.task(&ids[0]).await;
+    assert_eq!(given.tier, Some(Tier::Weak));
+    assert_eq!(given.model.as_deref(), Some("fake/scripted"));
+    let members = rig.members().await;
+    let effort = rig.state().agent_effort(&members[0]).await.unwrap();
+    assert_eq!(effort, Some(Effort::Low));
+}
+
 #[tokio::test]
 async fn a_mode_switch_for_another_chat_does_not_pause_the_team() {
     let rig = Rig::new("team_mode_left", hang).await;

@@ -25,7 +25,10 @@ use crate::{
     catalog::skills,
     config::Effort,
     runtime::thread::start::{self, display_name, read_prompt, start_agent_thread},
-    runtime::{Launcher, ThreadEvent},
+    runtime::{
+        Launcher, ThreadEvent,
+        tiers::{self, Tier},
+    },
     state::Identity,
     state::Thread,
 };
@@ -59,8 +62,12 @@ struct AskAgentArguments {
     thread: Option<String>,
     /// How hard the agent reasons: low for lookups and plain edits, medium when left out,
     /// high or above for hard design, debugging or review. It keeps the level until
-    /// asked with another.
+    /// asked with another; a model that cannot reason ignores it.
     effort: Option<Effort>,
+    /// The model it answers on: strong for design, review and hard debugging, weak for
+    /// mechanical work and read-only scouting, default otherwise. A tier the user did not
+    /// set is this chat's model. It keeps the tier until asked with another.
+    tier: Option<Tier>,
 }
 
 impl AskAgent {
@@ -121,10 +128,20 @@ impl AskAgent {
         if let Some(effort) = arguments.effort {
             state.set_agent_effort(&thread_id, effort).await?;
         }
-        let effort = Effort::for_subagent(
-            self.launcher.config.current().effort(),
-            state.agent_effort(&thread_id).await?,
-        );
+        let chat = self.launcher.model.current().map(|choice| choice.name());
+        if arguments.tier.is_some() {
+            let config = self.launcher.config.current();
+            let model = tiers::model_for(arguments.tier, &config, chat.as_deref());
+            state.set_agent_model(&thread_id, model.as_deref()).await?;
+        }
+        // A tier whose provider was removed since is the chat's model, as the runner finds.
+        let config = self.launcher.config.current();
+        let model = state
+            .agent_model(&thread_id)
+            .await?
+            .filter(|name| tiers::connected(&config, name))
+            .or(chat);
+        let effort = Effort::for_subagent(config.effort(), state.agent_effort(&thread_id).await?);
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::SubagentStarted {
                 call_id: progress.call_id.to_owned(),
@@ -132,8 +149,7 @@ impl AskAgent {
                 agent: agent.clone(),
                 task: arguments.task.clone(),
                 effort,
-                // Subagents answer on the chat's model.
-                model: self.launcher.model.current().map(|choice| choice.name()),
+                model: model.clone(),
                 task_id: None,
             });
         }
@@ -142,11 +158,12 @@ impl AskAgent {
             .await?;
         drop(admitted);
         let effort = effort.map_or("the provider's default", Effort::name);
+        let model = model.as_deref().unwrap_or("no model");
         Ok(format!(
-            "{name} (agent {agent}, thread {thread_id}, effort {effort}) works on it in the \
-             background. Call it {name} when you talk about it. What it writes and its final \
-             answer will come to you as messages from {name}; to send it more, call \
-             ask_agent with thread {name}."
+            "{name} (agent {agent}, thread {thread_id}, model {model}, effort {effort}) works \
+             on it in the background. Call it {name} when you talk about it. What it writes \
+             and its final answer will come to you as messages from {name}; to send it more, \
+             call ask_agent with thread {name}."
         ))
     }
 
@@ -250,7 +267,10 @@ impl Tool for AskAgent {
              end your turn when there is nothing else to do until it answers. A brief \
              gives the goal, the relevant paths, what is already known and what to \
              report. Use agents for large searches, independent review and parts that \
-             would fill this context; do small things yourself.\nAgents:\n{}",
+             would fill this context; do small things yourself. Pick `tier` by the work: \
+             strong for design, review and hard debugging, weak for mechanical edits and \
+             read-only scouting, default otherwise; a tier the user left unset is this \
+             chat's model. Pick `effort` the same way.\nAgents:\n{}",
             agents.join("\n")
         )
     }
