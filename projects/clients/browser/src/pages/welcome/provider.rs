@@ -1,23 +1,15 @@
-//! The first screen of a clean install, as the desktop app has it: while the core has no
-//! provider, the chat page offers to connect one with a name, an address and a token. The
-//! core checks the server first, since only the check can say it is unreachable or
-//! refuses the token, then saves it and the first model it gave is chosen.
+//! The Model page: connect a provider with a name, an address and a token. The core
+//! checks the server first, since only the check can say it is unreachable or refuses the
+//! token, then saves it and picks its first model itself while none is chosen.
 
-use crate::{api, chat::Chat, state::state};
+use super::Welcome;
+use crate::{api, state::state};
 use dusk_protocol::{
-    client::{Answer, Command, ProviderTarget, Response, Secret, SettingsRequest},
+    client::{ProviderTarget, Response, Secret, SettingsRequest},
     config::ProviderKind,
     model::CheckFailure,
 };
 use leptos::{prelude::*, task::spawn_local};
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Step {
-    /// Not shown: providers are known, the core has not answered yet, or "Not now".
-    Hidden,
-    Intro,
-    Form,
-}
 
 /// Why the last attempt failed: the kind, when the core could tell it, and its words.
 #[derive(Clone)]
@@ -26,57 +18,46 @@ struct Failed {
     said: String,
 }
 
-/// Asks the core for its providers once the link is up (the first status says so); none
-/// means a clean install.
-pub fn ask(step: RwSignal<Step>) {
-    let asked = StoredValue::new(false);
-    Effect::new(move |_| {
-        if state().status.with(Option::is_none) || asked.get_value() {
-            return;
-        }
-        asked.set_value(true);
-        spawn_local(async move {
-            if let Ok(Answer::Providers { providers, .. }) =
-                api::command(Command::Provider { name: None }).await
-                && providers.is_empty()
-            {
-                step.set(Step::Intro);
-            }
-        });
-    });
+#[component]
+pub fn Provider(welcome: Welcome) -> impl IntoView {
+    view! {
+        <div class="welcome-page form">
+            <h2>"Connect a model"</h2>
+            <p class="muted">"Your own provider: any server with the OpenAI API, in the cloud or on this machine."</p>
+            {move || match welcome.connected.get() {
+                Some(name) => view! { <Connected name /> }.into_any(),
+                None => view! { <Form welcome /> }.into_any(),
+            }}
+        </div>
+    }
 }
 
-/// The chat page, or the welcome in its place.
+/// The provider is saved; the model is the one the core picked, once its status says so.
 #[component]
-pub fn ChatOrWelcome(id: Option<String>, step: RwSignal<Step>) -> impl IntoView {
-    move || {
-        match step.get() {
-        Step::Hidden => view! { <Chat id=id.clone() /> }.into_any(),
-        Step::Intro => view! {
-            <div class="welcome">
-                <img src="mark.png" alt="" width="56" height="56" />
-                <h1>"duskcode"</h1>
-                <p class="muted">"An agent that works in your projects, on the model you choose."</p>
-                <button class="welcome-connect" on:click=move |_| step.set(Step::Form)>
-                    <b>"I want to connect my own AI"</b>
-                    <span>"your own provider"</span>
-                </button>
-                <button class="link quiet" on:click=move |_| step.set(Step::Hidden)>"Not now"</button>
+fn Connected(name: String) -> impl IntoView {
+    let model = move || {
+        state()
+            .status
+            .with(|s| s.as_ref().and_then(|s| s.model.clone()))
+    };
+    view! {
+        <div class="welcome-connected" role="status">
+            <span class="welcome-tick" aria-hidden="true">"\u{2713}"</span>
+            <div>
+                <b>{format!("Connected to {name}")}</b>
+                <p class="muted small">{move || match model() {
+                    Some(model) => format!("Chats will use {model}. Change it any time from the model menu."),
+                    None => "Choosing its first model\u{2026}".to_owned(),
+                }}</p>
             </div>
-        }
-        .into_any(),
-        Step::Form => view! { <Form step /> }.into_any(),
-    }
+        </div>
     }
 }
 
 #[component]
-fn Form(step: RwSignal<Step>) -> impl IntoView {
-    let (name, address, token) = (
-        RwSignal::new(String::new()),
-        RwSignal::new(String::new()),
-        RwSignal::new(String::new()),
-    );
+fn Form(welcome: Welcome) -> impl IntoView {
+    let token = RwSignal::new(String::new());
+    let (name, address) = (welcome.name, welcome.address);
     let busy = RwSignal::new(false);
     let error = RwSignal::new(None::<Failed>);
     let connect = move || {
@@ -100,19 +81,18 @@ fn Form(step: RwSignal<Step>) -> impl IntoView {
             let result = connect_provider(name, base_url, api_key).await;
             busy.set(false);
             match result {
-                Ok(()) => step.set(Step::Hidden),
+                Ok(saved) => welcome.connected.set(Some(saved)),
                 Err(failed) => error.set(Some(failed)),
             }
         });
     };
-    let on_key = move |ev: leptos::ev::KeyboardEvent| match ev.key().as_str() {
-        "Enter" => connect(),
-        "Escape" => step.set(Step::Intro),
-        _ => {}
+    let on_key = move |ev: leptos::ev::KeyboardEvent| {
+        if ev.key() == "Enter" {
+            connect();
+        }
     };
     view! {
-        <div class="welcome form" on:keydown=on_key>
-            <h2>"Your own provider"</h2>
+        <div class="welcome-fields" on:keydown=on_key>
             <label class="field">
                 <span>"Name"<small class="muted">" how the model menu will call it"</small></span>
                 <input placeholder="Such as my-server" prop:value=move || name.get()
@@ -129,22 +109,19 @@ fn Form(step: RwSignal<Step>) -> impl IntoView {
                     prop:value=move || token.get() on:input=move |ev| token.set(event_target_value(&ev)) />
             </label>
             {move || error.get().map(failure)}
-            <div class="welcome-actions">
-                <button class="link quiet" on:click=move |_| { error.set(None); step.set(Step::Intro) }>"Back"</button>
-                <button class="primary" disabled=move || busy.get() on:click=move |_| connect()>
-                    {move || if busy.get() { "Connecting\u{2026}" } else { "Connect" }}
-                </button>
-            </div>
+            <button class="primary welcome-connect-button" disabled=move || busy.get() on:click=move |_| connect()>
+                {move || if busy.get() { "Connecting\u{2026}" } else { "Connect" }}
+            </button>
         </div>
     }
 }
 
-/// Checks the server, saves it, then chooses the first model it gave.
+/// Checks the server, then saves it; the answer is the name it was saved under.
 async fn connect_provider(
     name: Option<String>,
     base_url: String,
     api_key: Option<Secret>,
-) -> Result<(), Failed> {
+) -> Result<String, Failed> {
     let plain = |said: String| Failed { cause: None, said };
     let kind = ProviderKind::OpenAiCompatible;
     let target = ProviderTarget::New {
@@ -165,13 +142,10 @@ async fn connect_provider(
             )));
         }
     };
-    let first = match status.models {
-        Ok(models) => models.into_iter().next().map(|model| model.id),
-        Err(said) => {
-            let cause = status.failure;
-            return Err(Failed { cause, said });
-        }
-    };
+    if let Err(said) = status.models {
+        let cause = status.failure;
+        return Err(Failed { cause, said });
+    }
     let saved = api::connect_provider(SettingsRequest::Connect {
         kind,
         name,
@@ -180,12 +154,8 @@ async fn connect_provider(
     })
     .await
     .map_err(plain)?;
-    if let Some(model) = first {
-        let name = Some(format!("{saved}/{model}"));
-        api::command(Command::Model { name }).await.map_err(plain)?;
-    }
     state().refresh();
-    Ok(())
+    Ok(saved)
 }
 
 /// One plain line for the kind of failure, then the core's own words, quieter.

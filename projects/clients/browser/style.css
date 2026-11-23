@@ -934,21 +934,37 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .overview .grow { flex: 1; } .overview .cut { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .overview .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
 
-/* The welcome of a clean install: one large button, then three boxes. */
-.welcome { width: min(420px, 100% - 32px); margin: 14vh auto 0; display: flex; flex-direction: column; align-items: center; gap: var(--s4); text-align: center; }
-.welcome h1 { margin: 0; }
-.welcome.form { align-items: stretch; text-align: left; }
-.welcome.form h2 { margin: 0; }
+/* The welcome of a clean install: four pages walked sideways, dots and Back/Next below. */
+.welcome { position: relative; width: min(480px, 100% - 32px); min-height: 100%; margin: 0 auto; display: flex; flex-direction: column; padding: 12vh 0 var(--s6); overflow-x: hidden; }
+.welcome-skip { position: absolute; top: var(--s4); right: 0; font-size: 13px; text-decoration: none; }
+.welcome-slide { flex: 1; animation-duration: 180ms; animation-timing-function: var(--ease); animation-fill-mode: both; }
+.welcome-slide.from-right { animation-name: welcome-from-right; }
+.welcome-slide.from-left { animation-name: welcome-from-left; }
+@keyframes welcome-from-right { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+@keyframes welcome-from-left { from { opacity: 0; transform: translateX(-32px); } to { opacity: 1; transform: none; } }
+.welcome-page { display: flex; flex-direction: column; gap: var(--s3); }
+.welcome-page.center { align-items: center; text-align: center; gap: var(--s4); padding-top: 6vh; }
+.welcome-page h1, .welcome-page h2, .welcome-page p { margin: 0; }
+.welcome-page h2 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.welcome-page .small, .welcome .small { font-size: 12px; }
+.welcome-fields { display: flex; flex-direction: column; gap: var(--s4); margin-top: var(--s2); }
 .welcome .field { display: flex; flex-direction: column; gap: var(--s1); font-size: 13px; }
 .welcome .field small { font-size: 12px; }
-.welcome-connect { width: 100%; display: flex; flex-direction: column; align-items: center; gap: var(--s1); padding: var(--s4) var(--s6); border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); transition: filter var(--t-open) var(--ease); }
-.welcome-connect b { font-size: 18px; }
-.welcome-connect span { font-size: 13px; opacity: .8; }
-.welcome-connect:hover { filter: brightness(.92); }
-.welcome-connect:active { filter: brightness(.85); }
-.welcome-actions { display: flex; justify-content: space-between; align-items: center; padding-top: var(--s1); }
+.welcome-connect-button { align-self: flex-end; }
+.welcome-connected { display: flex; gap: var(--s3); align-items: flex-start; margin-top: var(--s2); padding: var(--s4); border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.welcome-connected p { margin-top: var(--s1); }
+.welcome-tick { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 13px; }
+.welcome-tools { margin-top: var(--s2); }
+.welcome-count { padding-left: var(--s1); }
+.welcome-links { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s3); }
+.welcome-link { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: 12px; background: none; color: var(--fg); text-align: left; font-size: 13px; transition: background var(--t-open) var(--ease); }
+.welcome-link:hover { background: var(--surface); }
 .welcome-error p { margin: 0; }
-.welcome-error .small { font-size: 12px; }
+.welcome-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--s4); margin-top: var(--s6); }
+.welcome-side.end { display: flex; justify-content: flex-end; }
+.welcome-dots { display: flex; gap: var(--s2); }
+.welcome-dot { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--fg) 18%, transparent); cursor: pointer; transition: width var(--t-open) var(--ease), background var(--t-open) var(--ease); }
+.welcome-dot.on { width: 20px; background: var(--accent); }
 button.link.quiet { color: var(--muted); }
 button.link.quiet:hover { color: var(--fg); }
 

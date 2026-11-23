@@ -1,0 +1,2 @@
+Changed
+The web client's welcome is now four pages walked sideways: hello, connect a model, the tools that stay off until you switch them on (computer use and the real pointer) with links to Voice and the Workshop, and ready. Dots, Back and Next and the arrow keys move between them; Escape (outside a field and any open drawer) or "Skip setup" in the corner finishes it, while "Skip for now" on the model page only goes on to the tools. It stays until you press Start or "Skip setup", even after a provider connects, and this browser remembers that it was finished.

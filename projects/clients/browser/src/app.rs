@@ -9,7 +9,7 @@ use crate::{
         customize::Customize,
         project::ProjectPage,
         settings::SettingsPage,
-        welcome::{self, ChatOrWelcome, Step},
+        welcome::{ChatOrWelcome, Welcome},
     },
     state::{AppState, View, state},
     ui::{IconDefinitions, theme},
@@ -101,13 +101,13 @@ fn Shell(auth: RwSignal<Auth>) -> impl IntoView {
     });
     Effect::new(move |_| theme::apply(&app.theme.get()));
     crate::chat::seen::watch(app);
-    let welcome = RwSignal::new(Step::Hidden);
-    welcome::ask(welcome);
+    let welcome = Welcome::new();
+    welcome.ask();
     view! {
         <IconDefinitions />
         <Workspace>
             <main class="main">{move || match state().view.get() {
-                View::Chat(id) => view! { <ChatOrWelcome id step=welcome /> }.into_any(),
+                View::Chat(id) => view! { <ChatOrWelcome id welcome /> }.into_any(),
                 View::Settings(page) => view! { <SettingsPage page /> }.into_any(),
                 View::Customize(tab) => view! { <Customize tab /> }.into_any(),
                 View::Artifacts => view! { <Artifacts /> }.into_any(),
