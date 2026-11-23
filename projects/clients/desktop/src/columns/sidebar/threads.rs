@@ -161,7 +161,7 @@ pub fn chat_row(
                 .when(thread.unread, |title| title.font_weight(FontWeight::MEDIUM))
                 .child(title),
         )
-        .children(pulls_badge(ws, thread, prefix, cx))
+        .children(super::pulls::badge(thread, prefix, cx))
         .when_some(place, |row, place| {
             row.child(
                 div()
@@ -193,57 +193,6 @@ pub fn chat_row(
         |row, delta| row.opacity(1. - delta),
     )
     .into_any_element()
-}
-
-/// A pull request icon and count when the chat's project branch has pull requests,
-/// tinted by their worst checks; its tooltip names them.
-fn pulls_badge(ws: &Workspace, thread: &Thread, prefix: &str, cx: &App) -> Option<Stateful<Div>> {
-    use crate::columns::inspector::pulls::{check_color, state_name};
-    let dir = thread.project.as_deref()?;
-    let project = ws
-        .projects
-        .iter()
-        .find(|project| project.dir.to_string_lossy() == dir)?;
-    let summary = ws.pulls.get(&project.id)?;
-    let muted = cx.theme().muted_foreground;
-    let color = summary.checks.map_or(muted, |state| check_color(state, cx));
-    let said = summary
-        .pulls
-        .iter()
-        .map(|pull| {
-            format!(
-                "#{} {} ({})",
-                pull.number,
-                pull.title,
-                state_name(pull.state)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    Some(
-        div()
-            .id(SharedString::from(format!("{prefix}-pulls-{}", thread.id)))
-            .flex()
-            .flex_row()
-            .flex_none()
-            .items_center()
-            .gap_0p5()
-            .child(
-                Icon::default()
-                    .path(crate::ui::icons::GIT_PULL)
-                    .size_3()
-                    .text_color(color),
-            )
-            .child(
-                div()
-                    .meta()
-                    .text_color(muted)
-                    .child(summary.pulls.len().to_string()),
-            )
-            .tooltip(move |window, cx| {
-                gpui_kit::component::tooltip::Tooltip::new(said.clone()).build(window, cx)
-            }),
-    )
 }
 
 impl Workspace {

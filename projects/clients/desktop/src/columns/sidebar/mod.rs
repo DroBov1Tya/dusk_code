@@ -4,6 +4,7 @@
 //! app are on the rail beside it.
 
 mod projects;
+mod pulls;
 mod recent;
 mod threads;
 

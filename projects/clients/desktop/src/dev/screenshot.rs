@@ -37,8 +37,10 @@
 //!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
 //! - `fake=team|team-ended`: after `fake=chat`, the chat leads a team of seven members on
 //!   eight tasks, one in each status, running or ended on its steps (see `dev::team`);
-//! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
-//!   icon, and a chat that links two of them, drawn as chips;
+//! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of
+//!   the chosen project in the sidebar with eight pull requests of its own (merged,
+//!   closed, draft, open, one not read yet) under its icon, and a chat that links two of
+//!   them, drawn as chips;
 //! - `fake=forge-signin|forge-unserved`: the quiet line in Changes when the forge asks to sign in,
 //!   or no plugin serves the host;
 //! - `fake=approval|approval-long|question`: put a request for approval (a long heredoc
@@ -1115,8 +1117,8 @@ fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 
 fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{
-        Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
-        RepositoryStatus,
+        Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, RepositoryStatus,
+        ThreadPull,
     };
     use dusk_protocol::project::{Forge, ForgeStatus};
     let Some(project) = ws.selected_project().cloned() else {
@@ -1206,14 +1208,57 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             checks(8, 0, 2, 0, 1, CheckState::Failing),
         ),
     ];
-    ws.pulls.insert(
-        project.id.clone(),
-        PullSummary {
-            project_id: project.id.clone(),
-            pulls: pulls[..2].to_vec(),
-            checks: Some(CheckState::Pending),
+    // The chat's own list, the first linked first: merged and closed ones stay, one with
+    // a long title, and the last not read yet.
+    let kept = |number, title: &str, state, checks: Checks| ThreadPull {
+        repository: "example/repo".to_owned(),
+        number,
+        pull: Some(pull(number, title, state, checks)),
+    };
+    let chat_pulls = vec![
+        kept(7, "Bump parking_lot", PullState::Closed, Checks::default()),
+        kept(
+            9,
+            "Split the forge",
+            PullState::Merged,
+            checks(3, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        kept(
+            14,
+            "Keep each chat's pull requests, merged ones too, through an undo",
+            PullState::Merged,
+            checks(3, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        kept(
+            16,
+            "Draft: a quieter sidebar",
+            PullState::Draft,
+            Checks::default(),
+        ),
+        kept(
+            18,
+            "Fix the theme",
+            PullState::Merged,
+            checks(3, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        kept(
+            12,
+            "Show pull requests and CI in Changes",
+            PullState::Open,
+            checks(2, 1, 0, 0, 0, CheckState::Pending),
+        ),
+        kept(
+            21,
+            "Chat pull requests in the sidebar",
+            PullState::Open,
+            checks(3, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        ThreadPull {
+            repository: "example/repo".to_owned(),
+            number: 23,
+            pull: None,
         },
-    );
+    ];
     ws.repository = Some(RepositoryStatus {
         repository: "dusk_code".to_owned(),
         branch: Some("pr-status".to_owned()),
@@ -1259,7 +1304,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             temporary: false,
             owner: None,
             unread: false,
-            pulls: Vec::new(),
+            pulls: chat_pulls,
         },
     );
     crate::pages::chat::pull_link::show(ws, cx);

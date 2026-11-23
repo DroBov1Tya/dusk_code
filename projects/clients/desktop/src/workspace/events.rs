@@ -60,6 +60,9 @@ impl Workspace {
                 if let dusk_protocol::thread::ThreadEvent::Unread(unread) = &*event {
                     seen::heard(self, &thread_id, *unread);
                 }
+                if let dusk_protocol::thread::ThreadEvent::Pulls(pulls) = &*event {
+                    self.pulls_heard(&thread_id, pulls);
+                }
                 let titled = matches!(
                     *event,
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }

@@ -22,7 +22,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `file=PATH[:LINE]` | opens a file in the viewer |
 | `fake=welcome`, `welcome=form`, `welcome=address:URL` | the first screen of a clean install, its form, an address typed in it (`key=enter` connects) |
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
-| `fake=pulls` | four pull requests in Changes, one of each state and checks (a click on a count opens its window of checks), a chat of the chosen project with their icon, and a chat whose links to two of them are drawn as chips (`hover=` on one shows its card); needs `right=all` before it, since reading the column again replaces the fake |
+| `fake=pulls` | four pull requests in Changes, one of each state and checks (a click on a count opens its window of checks), a chat of the chosen project with eight pull requests of its own under its icon (`hover=` on the icon shows their card), and a chat whose links to two of them are drawn as chips (`hover=` on one shows its card); needs `right=all` before it, since reading the column again replaces the fake |
 | `fake=unread` | three loose chats at the top of the sidebar: one unread, one read, one unread whose agent works again |
 | `fake=forge-signin`, `fake=forge-unserved` | the quiet line in Changes when the forge asks to sign in (its hint as a command to copy), or when no plugin serves the host |
 | `fake=plan-limits` | the ChatGPT plan's 5-hour and weekly windows in the limits ring |

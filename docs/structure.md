@@ -156,10 +156,10 @@ voice/  (15)
 ### clients/desktop
 
 ```
-columns/  (33)
+columns/  (34)
   inspector/  (18)
     overview/  (3)
-  sidebar/  (4)
+  sidebar/  (5)
   terminal/  (4)
   topbar/  (3)
 dev/  (6)
