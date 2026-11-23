@@ -6,6 +6,10 @@ branches after end-to-end testing. Entries of unreleased changes live in `change
 
 ## Unreleased
 
+### Changed
+
+- The Workshop's one agent pack `duskcode-agents` is four by theme: `duskcode-engineering-agents`, `duskcode-mobile-agents`, `duskcode-testing-agents` and `duskcode-security-agents`. The built-in agents that link to others name them by the new paths.
+
 ## 0.77.0 - 2026-11-20
 
 ### Added

@@ -7,5 +7,5 @@ own and share its MIT license, as do the agents in `agents/`. The front matter o
 
 The skills and agents earlier versions shipped, those from Anthropic and OpenAI among
 them, are now Workshop packs (`duskcode-engineering`, `duskcode-security`, `anthropic`,
-`openai`, `duskcode-agents`), each with its upstream's license and notice. A copy an
+`openai`, and the four `duskcode-*-agents` packs), each with its upstream's license and notice. A copy an
 earlier version wrote into `skills/` or `agents/` stays there as the user's own.
