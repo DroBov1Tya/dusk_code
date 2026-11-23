@@ -46,6 +46,11 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   passing tests, repeated lines folded, with a line saying how many were left out. Errors,
   warnings and `file:line` lines stay; piped or unknown commands are not shaped. The whole
   output stays stored and `read_history {"result": N}` returns it.
+- **Narrow re-run.** `limits.rerun_hint` (on): a failed `cargo test`, `pytest` or
+  `npm test` running jest gets one line naming the command that re-runs only what failed
+  (`cargo test -- --exact <names>`, the pytest node ids, `--runTestsByPath <files>`). The
+  line comes only when the command line and the output leave no doubt: no filter of the
+  line's own, every failure named and the names adding up to the runner's count.
 - **Failure ladder.** `limits.failure_ladder` (on): when the same error returns within a
   turn through calls that differ, the model is told to stop varying the call at the third
   time (`limits.failure_note_at`), asked for a different plan at the fifth

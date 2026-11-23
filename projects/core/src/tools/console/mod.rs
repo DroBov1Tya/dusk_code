@@ -4,6 +4,7 @@ pub(crate) mod command_line;
 mod file_changes;
 mod jobs;
 pub mod process;
+mod rerun;
 mod run_command;
 mod shape;
 
