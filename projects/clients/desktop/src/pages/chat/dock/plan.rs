@@ -45,33 +45,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         None => format!("{} min", team.used.minutes),
         Some(_) => team.progress_note(),
     });
-    let stop = running.then(|| {
-        div()
-            .id("plan-stop")
-            .flex_none()
-            .size(px(24.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_md()
-            .bg(theme.foreground.opacity(0.06))
-            .cursor_pointer()
-            .hover(|stop| stop.bg(cx.theme().foreground.opacity(0.12)))
-            .tooltip(|window, cx| {
-                gpui_kit::component::tooltip::Tooltip::new("Stop team").build(window, cx)
-            })
-            .child(
-                div()
-                    .size(px(8.))
-                    .rounded(px(2.))
-                    .bg(theme.foreground.opacity(0.7)),
-            )
-            .on_click(cx.listener(|ws, _, _, cx| {
-                // The head's own click folds the card; this one only asks to stop.
-                cx.stop_propagation();
-                ws.ask_stop_team(cx)
-            }))
-    });
+    let stop = running.then(|| crate::pages::team::module::stop("plan-stop", cx));
     let title = div()
         .flex()
         .flex_row()

@@ -45,6 +45,9 @@ pub struct TeamPage {
     pub unfold: bool,
     /// The page Back returns to.
     pub back: Option<Center>,
+    /// The right column's Team screen: its waves' folds, and its members unfolded.
+    pub waves: waves::Folds,
+    pub members_open: bool,
 }
 
 impl TeamPage {

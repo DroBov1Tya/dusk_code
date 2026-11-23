@@ -1,39 +1,241 @@
-//! The right column's Team module: the team in rows. How it stands and its steps, the
-//! lead, a row for each member still in play on a rail from the lead, a line for the
-//! rest, the plan's waves as columns of glyphs, and the way to the page.
+//! The right column's Team screen: how the team stands, who works now and what waits for
+//! the user, the plan in waves, and the members folded into one line of faces.
 
-use dusk_protocol::thread::{
-    Team, TeamEnd, Work, WorkKind,
-    team_layout::{self, EdgeTone, Ends, Lit, MemberNode, People, Pick, Related},
-};
+use dusk_protocol::thread::{TaskStatus, find_task};
 use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 
-use super::graph;
+use super::waves;
 use crate::{
-    pages::chat::activity,
     ui::{Type, widgets},
     workspace::Workspace,
 };
 
-const ROW_H: f32 = 42.;
-/// Where the rail runs, from the row's left edge.
-const RAIL_X: f32 = 10.;
+/// The faces the members' line shows before it says how many more.
+const FACES: usize = 6;
 
 /// Whether the module has something to show: the shown chat leads a team.
 pub fn has_content(ws: &Workspace) -> bool {
     ws.shown_chat().is_some_and(|chat| chat.team.is_some())
 }
 
-/// "2 of 6 at work" for the folded header.
+/// "2 running · 1 needs you" for the column's list; how it ended once it did.
 pub fn summary(ws: &Workspace) -> Option<String> {
-    let team = ws.shown_chat()?.team.as_ref()?;
-    Some(match team.ended() {
-        Some(_) => team.state_word().to_owned(),
-        None => format!("{} of {} at work", team.at_work(), team.members.len()),
+    let chat = ws.shown_chat()?;
+    let team = chat.team.as_ref()?;
+    if team.ended().is_some() {
+        return Some(team.progress_note());
+    }
+    let need = chat
+        .tasks
+        .iter()
+        .filter(|task| waves::for_user(task))
+        .count();
+    Some(match need {
+        0 => format!("{} of {} at work", team.at_work(), team.members.len()),
+        need => format!("{} running \u{00B7} {need} needs you", team.at_work()),
     })
 }
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let Some((chat_id, chat)) = ws.shown.as_deref().zip(ws.shown_chat()) else {
+        return div();
+    };
+    let Some(team) = &chat.team else {
+        return div();
+    };
+    let stop_button = team.ended().is_none().then(|| stop("team-stop-screen", cx));
+    let theme = cx.theme();
+    let muted = theme.muted_foreground;
+    let label = |text: &'static str| div().meta().text_color(muted).pb_1().child(text);
+    let running = team.ended().is_none();
+    // How it runs and the way to stop it, then one line of how the plan stands.
+    let head = div()
+        .flex()
+        .flex_col()
+        .gap_0p5()
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .body()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(widgets::capitalize(&team.progress_note())),
+                )
+                .children(stop_button),
+        )
+        .child(waves::summary(&chat.tasks, cx));
+    let mut now = Vec::new();
+    // One line a member at work: its name, its task's words, how long it has run.
+    for member in team
+        .members
+        .iter()
+        .filter(|member| running && member.status.at_work())
+    {
+        let task = find_task(&chat.tasks, &member.task_id).map(|(_, task)| task.title());
+        let since = chat.agents.get(&member.thread_id).map(waves::running_for);
+        let thread = member.thread_id.clone();
+        now.push(
+            now_line(
+                SharedString::from(format!("team-now-{}", member.thread_id)),
+                &member.name,
+                task.unwrap_or_default(),
+                true,
+                cx,
+            )
+            .children(since.map(|since| div().flex_none().meta().text_color(muted).child(since)))
+            .on_click(cx.listener(move |ws, _, _, cx| ws.open_agent_chat(&thread, cx))),
+        );
+    }
+    // One line for each task that waits for the user: Review unfolds it in the plan below.
+    for task in chat.tasks.iter().filter(|task| waves::for_user(task)) {
+        let number = find_task(&chat.tasks, &task.task_id).map_or(0, |(number, _)| number);
+        let who = task
+            .owner
+            .as_ref()
+            .map_or_else(|| "A member".to_owned(), |owner| owner.name.clone());
+        let (chat, id) = (chat_id.to_owned(), task.task_id.clone());
+        now.push(
+            now_line(
+                SharedString::from(format!("team-need-{}", task.task_id)),
+                &who,
+                format!("wants your confirm on #{number}"),
+                false,
+                cx,
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .small()
+                    .text_color(theme.primary)
+                    .child("Review"),
+            )
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                let tasks = ws
+                    .shown_chat()
+                    .map(|chat| chat.tasks.as_slice())
+                    .unwrap_or_default();
+                if let Some(wave) = waves::wave_of(tasks, &id) {
+                    ws.team_page.waves.show_task(&chat, wave, &id);
+                    cx.notify();
+                }
+            })),
+        );
+    }
+    let now = (!now.is_empty()).then(|| div().flex().flex_col().child(label("Now")).children(now));
+    let plan = (!chat.tasks.is_empty()).then(|| {
+        div()
+            .flex()
+            .flex_col()
+            .child(label("Plan").px_4())
+            .child(waves::render(
+                ws,
+                waves::View {
+                    key: "team",
+                    folds: &ws.team_page.waves,
+                    of: |ws| &mut ws.team_page.waves,
+                    came: None,
+                    inset: 40.,
+                },
+                cx,
+            ))
+    });
+    div()
+        .flex()
+        .flex_col()
+        .gap_6()
+        .pt_2()
+        .child(div().px_4().child(head))
+        .children(now.map(|now| now.px_4()))
+        .children(plan)
+        .child(div().px_4().child(members(ws, cx)))
+}
+
+/// A line of the Now block: a dot, the member's name and what it does, in one line.
+fn now_line(id: SharedString, name: &str, what: String, working: bool, cx: &App) -> Stateful<Div> {
+    let theme = cx.theme();
+    let (muted, hover) = (theme.muted_foreground, theme.list_hover);
+    let dot = div().flex_none().size(px(6.)).rounded_full();
+    let dot = match working {
+        true => dot.bg(theme.primary),
+        false => dot.border_1().border_color(theme.primary),
+    };
+    div()
+        .id(id)
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_3()
+        .h(px(30.))
+        .mx(px(-8.))
+        .px_2()
+        .rounded_md()
+        .cursor_pointer()
+        .hover(move |line| line.bg(hover))
+        .small()
+        .child(dot)
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_row()
+                .gap_1()
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(theme.foreground.opacity(0.85))
+                        .child(name.to_owned()),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(muted)
+                        .child(format!("\u{00B7} {what}")),
+                ),
+        )
+}
+
+/// The small square button that asks before the team is stopped.
+pub fn stop(id: &'static str, cx: &mut Context<Workspace>) -> Stateful<Div> {
+    let theme = cx.theme();
+    let (rest, over, mark) = (
+        theme.foreground.opacity(0.06),
+        theme.foreground.opacity(0.12),
+        theme.foreground.opacity(0.7),
+    );
+    div()
+        .id(id)
+        .flex_none()
+        .size(px(24.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_md()
+        .bg(rest)
+        .cursor_pointer()
+        .hover(move |stop| stop.bg(over))
+        .tooltip(|window, cx| {
+            gpui_kit::component::tooltip::Tooltip::new("Stop team").build(window, cx)
+        })
+        .child(div().size(px(8.)).rounded(px(2.)).bg(mark))
+        .on_click(cx.listener(|ws, _, _, cx| {
+            // A click on what holds it does something else; this one only asks to stop.
+            cx.stop_propagation();
+            ws.ask_stop_team(cx)
+        }))
+}
+
+/// The members as one line of faces and their count; unfolded, a row each with its role,
+/// model and state. A click on a member opens its chat.
+fn members(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(chat) = ws.shown_chat() else {
         return div();
     };
@@ -41,309 +243,108 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         return div();
     };
     let theme = cx.theme();
-    let (foreground, success, warning, border, muted) = (
-        theme.foreground,
-        theme.success,
-        theme.warning,
-        theme.border,
-        theme.muted_foreground,
-    );
-    let layout = team_layout::people(team, &chat.tasks, &chat.agents);
-    let related = Related::of(ws.team_page.pick(), Some(team), &chat.tasks);
-    let status = div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_1()
-        .h(px(22.))
-        .small()
-        .child(lead_mark(team, cx))
-        .child(
+    let (muted, hover, panel) = (theme.muted_foreground, theme.list_hover, theme.sidebar);
+    let open = ws.team_page.members_open;
+    let rows = team.member_rows(&chat.tasks);
+    let mut faces = div().flex().flex_row();
+    for (index, row) in rows.iter().take(FACES).enumerate() {
+        faces = faces.child(
             div()
-                .min_w_0()
-                .truncate()
-                .text_color(match team.ended() {
-                    None => foreground.opacity(0.8),
-                    Some(TeamEnd::Done) => success,
-                    Some(_) => warning,
-                })
-                .child(team.progress_note()),
+                .when(index > 0, |face| face.ml(px(-5.)))
+                .rounded_full()
+                .border_2()
+                .border_color(panel)
+                .child(waves::face(&row.name, 18., cx)),
         );
-    let [steps, ..] = team.budget_parts();
-    let fill = match steps.near() {
-        true => warning,
-        false => foreground.opacity(0.7),
-    };
-    let budget = div()
+    }
+    let line = div()
+        .id("team-members")
         .flex()
         .flex_row()
         .items_center()
-        .gap_2()
-        .h(px(20.))
-        .meta()
-        .text_color(muted)
-        .child("steps")
+        .gap_3()
+        .h(px(32.))
+        .mx(px(-8.))
+        .px_2()
+        .rounded_md()
+        .cursor_pointer()
+        .hover(move |line| line.bg(hover))
+        .child(faces)
         .child(
             div()
                 .flex_1()
-                .h(px(3.))
-                .rounded_full()
-                .bg(border)
-                .overflow_hidden()
-                .child(div().h_full().w(relative(steps.share())).bg(fill)),
-        )
-        .child(steps.text());
-    let lead = div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_1()
-        .h(px(26.))
-        .pl(px(2.))
-        .small()
-        .child(
-            div()
-                .flex_none()
-                .font_weight(FontWeight::MEDIUM)
-                .child("Lead"),
-        )
-        .child(
-            div()
-                .ml_auto()
-                .min_w_0()
-                .meta()
-                .text_color(muted)
-                .truncate()
-                .child(match team.ended() {
-                    Some(_) => layout.lead_tasks.clone(),
-                    None => layout.lead_line.clone(),
-                }),
-        );
-    let rows: Vec<&MemberNode> = layout.active().collect();
-    let count = rows.len();
-    let rows = rows
-        .into_iter()
-        .enumerate()
-        .map(|(index, member)| {
-            let lit = related
-                .as_ref()
-                .map(|related| related.member(&member.thread_id));
-            row(member, &layout, index + 1 == count, lit, cx)
-        })
-        .collect::<Vec<_>>();
-    let rest = layout
-        .rest()
-        .map(|rest| div().pl(px(4.)).pt_1().meta().text_color(muted).child(rest));
-    let done = chat
-        .tasks
-        .iter()
-        .filter(|task| task.status == dusk_protocol::thread::TaskStatus::Done)
-        .count();
-    let foot = div()
-        .pt_2()
-        .flex()
-        .flex_row()
-        .items_center()
-        .meta()
-        .text_color(muted)
-        .child(format!(
-            "{done} of {} tasks done \u{00B7} a column is a wave",
-            chat.tasks.len()
-        ))
-        .child(
-            div()
-                .id("team-module-open")
-                .ml_auto()
-                .text_color(foreground.opacity(0.8))
-                .cursor_pointer()
-                .hover(|open| open.text_color(cx.theme().foreground))
-                .child("Open \u{203A}")
-                .on_click(cx.listener(|ws, _, _, cx| ws.open_team(cx))),
-        );
-    div()
-        .px_4()
-        .flex()
-        .flex_col()
-        // A click anywhere else drops the pick; one inside an open window does not.
-        .on_mouse_down_out(cx.listener(|ws, _, _, cx| {
-            if ws.modal.is_none() {
-                ws.team_unpick(cx);
-            }
-        }))
-        .child(status)
-        .child(budget)
-        .child(lead)
-        .children(rows)
-        .children(rest)
-        .child(waves(&chat.tasks, related.as_ref(), cx))
-        .child(foot)
-}
-
-/// The lead's mark: the agents' dots while the team runs, how it ended after.
-fn lead_mark(team: &Team, cx: &App) -> Div {
-    match team.ended() {
-        None => activity::mark(
-            &Work {
-                kind: WorkKind::Agents {
-                    working: team.at_work() as u32,
-                    started: team.members.len() as u32,
-                },
-                label: String::new(),
-                stalled: false,
-            },
-            cx,
-        ),
-        Some(TeamEnd::Done) => graph::glyph(dusk_protocol::thread::TaskStatus::Done, cx),
-        Some(_) => graph::glyph(dusk_protocol::thread::TaskStatus::Blocked, cx),
-    }
-}
-
-/// A member on the rail: its mark, name, task number and word, and under them what it
-/// waits on, does or spent. A click opens its chat.
-fn row(
-    member: &MemberNode,
-    layout: &People,
-    last: bool,
-    lit: Option<Lit>,
-    cx: &mut Context<Workspace>,
-) -> Stateful<Div> {
-    let theme = cx.theme();
-    let (muted, hover, accent) = (theme.muted_foreground, theme.list_hover, theme.primary);
-    let tone = layout
-        .edges
-        .iter()
-        .find(|edge| edge.ends == Ends::Lead(member.thread_id.clone()))
-        .map_or(EdgeTone::Line, |edge| edge.tone);
-    let rail = match tone {
-        EdgeTone::Accent => accent,
-        EdgeTone::Warning => theme.warning,
-        EdgeTone::Danger => theme.danger.opacity(0.65),
-        EdgeTone::Line => theme.foreground.opacity(0.3),
-        EdgeTone::Faint => theme.foreground.opacity(0.11),
-    };
-    let word_color = widgets::tone(member.state.status().tone(), cx);
-    let pick = Pick::Member(member.thread_id.clone());
-    let (over, open) = (pick.clone(), pick);
-    div()
-        .id(SharedString::from(format!("team-row-{}", member.thread_id)))
-        .relative()
-        .h(px(ROW_H))
-        .pl(px(22.))
-        .flex()
-        .flex_col()
-        .justify_center()
-        .rounded_md()
-        .cursor_pointer()
-        .hover(move |row| row.bg(hover))
-        .when(lit == Some(Lit::Picked), |row| {
-            row.border_1().border_color(accent)
-        })
-        .when(lit == Some(Lit::Dim), |row| row.opacity(0.38))
-        // The rail from the lead: down the gutter, then across to this row.
-        .child(
-            div()
-                .absolute()
-                .left(px(RAIL_X))
-                .top(px(-4.))
-                .w(px(1.))
-                .h(px(if last { 16. } else { ROW_H + 4. }))
-                .bg(theme.foreground.opacity(0.3)),
-        )
-        .child(
-            div()
-                .absolute()
-                .left(px(RAIL_X))
-                .top(px(12.))
-                .w(px(9.))
-                .h(px(1.))
-                .bg(rail),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_1()
                 .small()
-                .child(graph::member_mark(&member.state, cx))
-                .child(
-                    div()
-                        .flex_none()
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(member.name.clone()),
-                )
-                .children(
-                    member
-                        .number
-                        .map(|n| div().meta().text_color(muted).child(format!("#{n}"))),
-                )
-                .child(
-                    div()
-                        .ml_auto()
-                        .meta()
-                        .text_color(word_color)
-                        .child(member.word),
-                ),
-        )
-        .child(
-            div()
-                .pl(px(24.))
-                .meta()
                 .text_color(muted)
-                .truncate()
-                .child(member.narrow.clone()),
+                .child(dusk_protocol::thread::plural(rows.len() as u32, "member")),
         )
-        .on_hover(
-            cx.listener(move |ws, inside: &bool, _, cx| ws.team_hover(over.clone(), *inside, cx)),
-        )
-        .on_click(cx.listener(move |ws, _, _, cx| ws.team_open(open.clone(), cx)))
-}
-
-/// The plan as columns of glyphs, a wave each; a click on one opens its task's card.
-fn waves(
-    tasks: &[dusk_protocol::thread::Task],
-    related: Option<&Related>,
-    cx: &mut Context<Workspace>,
-) -> Div {
-    let accent = cx.theme().primary;
-    let mut columns = div().pt_2().flex().flex_row().flex_wrap().gap_2();
-    for wave in team_layout::waves(tasks) {
-        let mut column = div().flex().flex_col().gap_px();
-        for at in wave {
-            let task = &tasks[at];
-            let lit = related.map(|related| related.task(&task.task_id));
-            let pick = Pick::Task(task.task_id.clone());
-            let (over, open) = (pick.clone(), pick);
-            column = column.child(
+        .child(widgets::icon(
+            if open {
+                gpui_kit::component::IconName::ChevronDown
+            } else {
+                gpui_kit::component::IconName::ChevronRight
+            },
+            muted,
+        ))
+        .on_click(cx.listener(|ws, _, _, cx| {
+            ws.team_page.members_open = !ws.team_page.members_open;
+            cx.notify();
+        }));
+    let mut block = div().flex().flex_col().child(line);
+    if open {
+        let ended = team.ended().is_some();
+        let mut list = div().flex().flex_col().pt_1();
+        for row in rows {
+            let role = [Some(row.role.clone()), row.model.clone()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" \u{00B7} ");
+            let state = match row.status {
+                // A team that ended has nobody at work, whatever a task last said.
+                status if ended && status.at_work() => "stopped",
+                TaskStatus::Running => "running",
+                status => status.member_word(),
+            };
+            let thread = row.thread_id.clone();
+            list = list.child(
                 div()
-                    .id(SharedString::from(format!("team-dot-{}", task.task_id)))
-                    .w(px(14.))
-                    .h(px(14.))
+                    .id(SharedString::from(format!("team-member-{}", row.thread_id)))
                     .flex()
+                    .flex_row()
                     .items_center()
-                    .justify_center()
-                    .rounded_sm()
+                    .gap_3()
+                    .py_1p5()
+                    .mx(px(-8.))
+                    .px_2()
+                    .rounded_md()
                     .cursor_pointer()
-                    .text_size(rems(0.66))
-                    .text_color(widgets::tone(task.status.tone(), cx))
-                    .when(lit == Some(Lit::Picked), |dot| {
-                        dot.border_1().border_color(accent)
-                    })
-                    .when(lit == Some(Lit::Dim), |dot| dot.opacity(0.38))
-                    .child(task.status.glyph())
-                    .on_hover(cx.listener(move |ws, inside: &bool, _, cx| {
-                        ws.team_hover(over.clone(), *inside, cx)
-                    }))
-                    .on_click(cx.listener(move |ws, _, _, cx| ws.team_open(open.clone(), cx))),
+                    .hover(move |row| row.bg(hover))
+                    .child(waves::face(&row.name, 18., cx))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .small()
+                                    .text_color(theme.foreground.opacity(0.85))
+                                    .child(row.name.clone()),
+                            )
+                            .child(div().meta().text_color(muted).truncate().child(role)),
+                    )
+                    .child(div().flex_none().meta().text_color(muted).child(state))
+                    .on_click(cx.listener(move |ws, _, _, cx| ws.open_agent_chat(&thread, cx))),
             );
         }
-        columns = columns.child(column);
+        block = block.child(widgets::unfold("team-members-list", list));
     }
-    columns
+    block
 }
 
-/// "Open ›" at the end of the plan strip of a chat that leads a team: the way to the
-/// page. The strip's own click folds it; this one only opens the page.
+/// "Team ›" at the end of the plan card's title of a chat that leads a team: the way to
+/// the page. The card's own click folds it; this one only opens the page.
 pub fn open_link(team: bool, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
     let theme = cx.theme();
     let (muted, foreground) = (theme.muted_foreground, theme.foreground);

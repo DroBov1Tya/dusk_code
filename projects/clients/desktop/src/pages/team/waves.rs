@@ -66,6 +66,13 @@ impl Folds {
         self.of(chat)
             .is_some_and(|folds| folds.task.as_deref() == Some(task_id))
     }
+
+    /// Unfolds `task` and its wave, as a click on what needs the user does.
+    pub fn show_task(&mut self, chat: &str, wave: usize, task_id: &str) {
+        let folds = self.mine(chat);
+        folds.waves.insert(wave, true);
+        folds.task = Some(task_id.to_owned());
+    }
 }
 
 /// The wave in work: the first that holds a task not done.
@@ -513,4 +520,17 @@ pub fn face(name: &str, size: f32, cx: &App) -> Div {
         .text_size(px(size * 0.52))
         .font_weight(FontWeight::BOLD)
         .child(avatar::letter(name))
+}
+
+/// The wave a task is in, for unfolding it from elsewhere.
+pub fn wave_of(tasks: &[Task], task_id: &str) -> Option<usize> {
+    let at = tasks.iter().position(|task| task.task_id == task_id)?;
+    team_layout::waves(tasks)
+        .iter()
+        .position(|wave| wave.contains(&at))
+}
+
+/// How long a member has run its task: "6m", "now".
+pub fn running_for(run: &Subagent) -> String {
+    dusk_protocol::thread::age_words(dusk_protocol::system::now_ms() - run.started_at)
 }
