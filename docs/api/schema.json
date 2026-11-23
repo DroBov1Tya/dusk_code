@@ -9949,6 +9949,15 @@
         "budget": {
           "$ref": "#/$defs/TeamBudget"
         },
+        "ended_at": {
+          "default": null,
+          "description": "When this run ended, in Unix milliseconds; none while it runs, and from cores\nbefore it was told.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "members": {
           "description": "Newest first, at most `MAX_TEAM_MEMBERS`.",
           "items": {

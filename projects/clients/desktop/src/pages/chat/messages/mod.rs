@@ -5,7 +5,8 @@
 //! a group of steps folded into one, `step` the agent's steps, and `command`, `picture` and `cost` the
 //! cards and notes beside them; `sent_picture` the pictures a user's message carries;
 //! `block` what the model showed with `show`; `working_row` the last row while a turn runs;
-//! `texts` the parsed words of the rows, kept while the chat is shown.
+//! `texts` the parsed words of the rows, kept while the chat is shown; `run_card` a team
+//! or subagents the chat started, where it started them.
 
 mod activity;
 mod block;
@@ -15,6 +16,7 @@ mod error_row;
 mod feedback;
 mod picture;
 mod row;
+mod run_card;
 mod sent_picture;
 mod skill_change;
 mod step;

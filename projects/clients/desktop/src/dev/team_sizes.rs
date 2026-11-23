@@ -330,6 +330,7 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     let team = Team {
         thread_id: lead.clone(),
         started_at: None,
+        ended_at: None,
         status: match ended {
             true => TeamStatus::Ended(TeamEnd::Steps),
             false => TeamStatus::Running,

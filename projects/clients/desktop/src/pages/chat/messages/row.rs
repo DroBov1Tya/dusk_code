@@ -278,6 +278,7 @@ impl Workspace {
                             self, &key, card, cx,
                         )
                     }
+                    Item::Run(_) => super::run_card::render(chat, &shown, &key, at, cx),
                     Item::Tool(_) => div().into_any_element(),
                 }
             }

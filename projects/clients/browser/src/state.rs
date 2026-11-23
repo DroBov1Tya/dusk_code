@@ -55,6 +55,8 @@ pub struct AppState {
     pub speaking: RwSignal<bool>,
     /// The last repository status the core sent, and the project it is of.
     pub repository: RwSignal<Option<(String, RepositoryStatus)>>,
+    /// The tab the chat's right column shows; a run's card in the chat opens its own.
+    pub inspector_tab: RwSignal<crate::chat::inspector::Tab>,
 }
 
 thread_local! {
@@ -93,6 +95,7 @@ impl AppState {
             subagent: RwSignal::new(None),
             speaking: RwSignal::new(false),
             repository: RwSignal::new(None),
+            inspector_tab: RwSignal::new(crate::chat::inspector::Tab::Tasks),
         }
     }
 

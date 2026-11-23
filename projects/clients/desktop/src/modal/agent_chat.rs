@@ -102,6 +102,15 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
             }
             // Only a chat shows Workshop cards; an agent has no user to show one to.
             Item::Tool(_) | Item::Suggestion(_) => div().into_any_element(),
+            // Agents an agent started read as one quiet line; their details are the chat's.
+            Item::Run(_) => div()
+                .meta()
+                .text_color(muted)
+                .children(
+                    chat.run_card(at, dusk_protocol::system::now_ms())
+                        .map(|card| format!("{} \u{00B7} {}", card.title, card.line())),
+                )
+                .into_any_element(),
             Item::Block(shown) => crate::pages::chat::messages::block(ws, agent, at, shown, cx),
             Item::Job(result) => {
                 crate::pages::chat::messages::job(ws, agent, at, result, cx).into_any_element()

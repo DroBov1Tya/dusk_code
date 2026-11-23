@@ -477,6 +477,7 @@ mod tests {
         Team {
             thread_id: "lead".into(),
             started_at: None,
+            ended_at: None,
             status,
             budget: TeamBudget::new(8, 400, 4_000_000, 120).unwrap(),
             used: TeamUsed::default(),

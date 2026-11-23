@@ -8,7 +8,7 @@ use crate::{
 use leptos::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Tab {
+pub enum Tab {
     Plan,
     Tasks,
     Agents,
@@ -29,7 +29,7 @@ const TABS: [(Tab, &str, IconName); 6] = [
 #[component]
 pub fn Inspector() -> impl IntoView {
     let app = state();
-    let tab = RwSignal::new(Tab::Tasks);
+    let tab = app.inspector_tab;
     // The Overview opened wide.
     let wide = RwSignal::new(false);
     // Only an open chat has anything to inspect.
