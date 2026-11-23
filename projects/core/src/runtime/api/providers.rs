@@ -8,7 +8,7 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::{client::ProviderTarget, model::ProviderStatus};
 
-use super::super::model_choice::check_provider;
+use super::super::{model_choice::check_provider, start::pick_if_empty};
 use std::sync::Arc;
 
 /// A provider's name is this long at most; it shows in `provider/model`.
@@ -126,8 +126,8 @@ impl Runtime {
     }
 
     /// Adds a provider to the private YAML config under `name`, or the next free
-    /// `provider-N`, and returns the name. A model is chosen separately through
-    /// `/model`; saving makes no network request.
+    /// `provider-N`, and returns the name. Saving makes no network request; when no model
+    /// is chosen yet, the first that answers is chosen in the background.
     pub fn connect_provider(
         &self,
         kind: ProviderKind,
@@ -162,6 +162,15 @@ impl Runtime {
         })?;
         let name = chosen?;
         self.launcher.model.replace_provider(&name, adapter);
+        // Asked off the request: picking waits on the network.
+        if self.launcher.model.current().is_none() {
+            let (config, model, mailboxes) = (
+                Arc::clone(&self.launcher.config),
+                Arc::clone(&self.launcher.model),
+                Arc::clone(&self.launcher.mailboxes),
+            );
+            tokio::spawn(async move { pick_if_empty(&config, &model, &mailboxes).await });
+        }
         Ok(name)
     }
 
@@ -306,6 +315,51 @@ mod tests {
             "{error}"
         );
         assert!(!error.contains("sk-wrong"), "{error}");
+    }
+
+    /// Waits for the runtime's model, which is picked in the background.
+    async fn model_after_connect(runtime: &Runtime) -> Option<String> {
+        for _ in 0..100 {
+            if let Some(choice) = runtime.model() {
+                return Some(choice.name());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        None
+    }
+
+    #[tokio::test]
+    async fn the_first_provider_connected_becomes_the_model_and_a_second_does_not() {
+        let root = crate::testing::temp_dir("connect-picks-model");
+        let paths = crate::init::paths::Paths::new(root.join("config"), root.join("work"));
+        let runtime = Runtime::start(paths, Some(root.join("state.db")))
+            .await
+            .unwrap();
+        assert!(runtime.model().is_none());
+
+        let first = serve("200 OK", r#"{"data":[{"id":"a"}]}"#).await;
+        let name = runtime
+            .connect_provider(
+                ProviderKind::OpenAiCompatible,
+                None,
+                first,
+                Some("k".into()),
+            )
+            .unwrap();
+        let chosen = model_after_connect(&runtime).await;
+        assert_eq!(chosen.as_deref(), Some(format!("{name}/a").as_str()));
+
+        let second = serve("200 OK", r#"{"data":[{"id":"b"}]}"#).await;
+        runtime
+            .connect_provider(
+                ProviderKind::OpenAiCompatible,
+                None,
+                second,
+                Some("k".into()),
+            )
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert_eq!(runtime.model().map(|choice| choice.name()), chosen);
     }
 
     #[tokio::test]
