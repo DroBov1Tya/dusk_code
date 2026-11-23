@@ -36,9 +36,10 @@ impl Config {
 
     /// A tool's switch in a mode: the user's, else the mode's default, else MAIN's.
     pub fn mode_tool_enabled(&self, mode: &str, name: &str, kind: ToolKind) -> bool {
-        // A mode's own default or switch cannot turn on what the user has not asked for.
-        if OFF_UNTIL_SWITCHED_ON.contains(&name) && self.tools.get(name) != Some(&true) {
-            return false;
+        // The user's one switch decides in every mode: a mode's default or switch can
+        // neither turn it on nor hide it once the user allows it.
+        if OFF_UNTIL_SWITCHED_ON.contains(&name) {
+            return self.tools.get(name) == Some(&true);
         }
         let main = || {
             self.tools

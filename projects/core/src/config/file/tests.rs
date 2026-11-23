@@ -297,6 +297,22 @@ fn the_graph_and_recall_tools_are_on_until_switched_off() {
     }
 }
 
+/// The physical input switch is the user's alone, so it reads the same in every mode.
+#[test]
+fn physical_input_follows_the_one_switch_in_every_mode() {
+    use crate::{catalog::modes, tools::ToolKind};
+    let (name, kind) = ("physical_input", ToolKind::Computer);
+    let mut config = parse(PROVIDERS).unwrap();
+    for on in [true, false] {
+        for mode in [modes::PLAN, modes::TEAM] {
+            config.set_mode_tool_enabled(mode, name, on);
+            for read in [modes::MAIN, modes::PLAN, modes::ORCHESTRATOR, modes::TEAM] {
+                assert_eq!(config.mode_tool_enabled(read, name, kind), on, "{read}");
+            }
+        }
+    }
+}
+
 #[test]
 fn the_kept_tail_is_on_and_stays_inside_its_bounds() {
     let plain = parse(PROVIDERS).unwrap().limits();
