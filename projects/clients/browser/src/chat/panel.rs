@@ -18,12 +18,14 @@ pub fn Panel() -> impl IntoView {
     let open = RwSignal::new(false);
     view! {
         <div class="composer-panel">
-            <button class="composer-tab" class:open=move || open.get()
-                aria-expanded=move || open.get().to_string()
-                aria-label=move || if open.get() { "Close the panel" } else { "Open the panel" }
-                on:click=move |_| open.update(|o| *o = !*o)>
-                <Icon name=IconName::ChevronDown />
-            </button>
+            <div class="composer-tab-slot">
+                <button class="composer-tab" class:open=move || open.get()
+                    aria-expanded=move || open.get().to_string()
+                    aria-label=move || if open.get() { "Close the panel" } else { "Open the panel" }
+                    on:click=move |_| open.update(|o| *o = !*o)>
+                    <Icon name=IconName::ChevronDown />
+                </button>
+            </div>
             <Show when=move || open.get()>
                 <div class="composer-band">
                     <Folder />
