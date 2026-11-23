@@ -1,7 +1,8 @@
 //! The pull requests of a chat beside its title: an icon and their count, tinted by the
 //! worst checks of the open ones, and under the pointer a card that lists them, the last
-//! linked first, merged and closed ones too. A row of the card opens the pull request's
-//! page. The core keeps the list (`Thread::pulls`); nothing is read here.
+//! linked first, merged and closed ones too. Only the ones the core has read are shown:
+//! one not read yet has nothing to say. A row of the card opens the pull request's page.
+//! The core keeps the list (`Thread::pulls`); nothing is read here.
 
 use std::time::Duration;
 
@@ -25,14 +26,23 @@ use crate::{
 /// The card stops growing here and scrolls.
 const CARD_HEIGHT: f32 = 360.;
 const CARD_WIDTH: f32 = 340.;
+/// The fade over the bottom of a card that scrolls on.
+const FADE_HEIGHT: f32 = 28.;
 
-/// The icon and count when the chat has pull requests; nothing when it has none.
+/// The icon and count when the chat has pull requests the core has read; else nothing.
 pub fn badge(thread: &Thread, prefix: &str, cx: &App) -> Option<AnyElement> {
-    if thread.pulls.is_empty() {
+    let pulls: Vec<ThreadPull> = thread
+        .pulls
+        .iter()
+        .rev()
+        .filter(|kept| kept.pull.is_some())
+        .cloned()
+        .collect();
+    if pulls.is_empty() {
         return None;
     }
     let muted = cx.theme().muted_foreground;
-    let color = worst_checks(&thread.pulls).map_or(muted, |state| check_color(state, cx));
+    let color = worst_checks(&pulls).map_or(muted, |state| check_color(state, cx));
     let trigger = div()
         .flex()
         .flex_row()
@@ -49,15 +59,15 @@ pub fn badge(thread: &Thread, prefix: &str, cx: &App) -> Option<AnyElement> {
             div()
                 .meta()
                 .text_color(muted)
-                .child(thread.pulls.len().to_string()),
+                .child(pulls.len().to_string()),
         );
-    let pulls: Vec<ThreadPull> = thread.pulls.iter().rev().cloned().collect();
+    let id = SharedString::from(format!("{prefix}-pulls-{}", thread.id));
     Some(
-        HoverCard::new(SharedString::from(format!("{prefix}-pulls-{}", thread.id)))
+        HoverCard::new(id.clone())
             .anchor(Anchor::TopLeft)
             .open_delay(Duration::from_millis(300))
             .trigger(trigger)
-            .content(move |_, _, cx| card(&pulls, cx))
+            .content(move |_, window, cx| card(&id, &pulls, window, cx))
             .into_any_element(),
     )
 }
@@ -77,17 +87,31 @@ fn worst_checks(pulls: &[ThreadPull]) -> Option<CheckState> {
         })
 }
 
-fn card(pulls: &[ThreadPull], cx: &App) -> Div {
+/// The list, faded at the bottom while more of it is below: the scroll is kept across
+/// frames, and the first frame asks for a second, once the list's height is known.
+fn card(id: &SharedString, pulls: &[ThreadPull], window: &mut Window, cx: &mut App) -> Div {
+    let scroll = window
+        .use_keyed_state(id.clone(), cx, |_, _| ScrollHandle::new())
+        .read(cx)
+        .clone();
+    if scroll.bounds().size.height <= px(0.) {
+        window.request_animation_frame();
+    }
+    let more_below = scroll.offset().y > -scroll.max_offset().y;
     let theme = cx.theme();
     let mut list = div()
         .id("chat-pulls-list")
+        .track_scroll(&scroll)
         .max_h(px(CARD_HEIGHT))
         .overflow_y_scroll()
         .flex()
         .flex_col()
         .gap_0p5();
-    for (index, kept) in pulls.iter().enumerate() {
-        list = list.child(row(index, kept, cx));
+    let read = pulls
+        .iter()
+        .filter_map(|kept| Some((&kept.repository, kept.pull.as_ref()?)));
+    for (index, (repository, pull)) in read.enumerate() {
+        list = list.child(row(index, repository, pull, cx));
     }
     div()
         .w(px(CARD_WIDTH))
@@ -104,53 +128,55 @@ fn card(pulls: &[ThreadPull], cx: &App) -> Div {
                 .text_color(theme.muted_foreground)
                 .child(widgets::count(pulls.len(), "pull request")),
         )
-        .child(list)
+        .child(div().relative().child(list).when(more_below, |wrap| {
+            wrap.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .h(px(FADE_HEIGHT))
+                    .bg(linear_gradient(
+                        0.,
+                        linear_color_stop(theme.popover, 0.),
+                        linear_color_stop(theme.popover.opacity(0.), 1.),
+                    )),
+            )
+        }))
 }
 
-/// The title over the state, the repository and number, and the size; a pull request
-/// the core has not read yet shows its number only and opens nothing.
-fn row(index: usize, kept: &ThreadPull, cx: &App) -> Stateful<Div> {
+/// The title over the state, the repository and number, and the size.
+fn row(index: usize, repository: &str, pull: &PullStatus, cx: &App) -> Stateful<Div> {
     let theme = cx.theme();
-    let muted = theme.muted_foreground;
-    let place = div()
-        .min_w_0()
-        .truncate()
-        .text_color(muted)
-        .child(format!("{} #{}", kept.repository, kept.number));
-    let mut facts = div().flex().flex_row().items_center().gap_1p5().meta();
-    let title = match &kept.pull {
-        Some(pull) => {
-            let color = state_color(pull.state, cx);
-            facts = facts
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .flex_none()
-                        .items_center()
-                        .gap_1()
-                        .text_color(color)
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(state_icon(pull.state).size_3().text_color(color))
-                        .child(state_word(pull.state)),
-                )
-                .child(place)
-                .child(div().flex_1())
-                .child(size(pull, cx));
-            div().child(pull.title.clone())
-        }
-        None => {
-            facts = facts.child(place);
+    let color = state_color(pull.state, cx);
+    let facts = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_1p5()
+        .meta()
+        .child(
             div()
-                .text_color(muted)
-                .child(format!("Pull request #{}", kept.number))
-        }
-    };
-    let url = kept
-        .pull
-        .as_ref()
-        .map(|pull| pull.url.clone())
-        .filter(|url| url.starts_with("https://"));
+                .flex()
+                .flex_row()
+                .flex_none()
+                .items_center()
+                .gap_1()
+                .text_color(color)
+                .font_weight(FontWeight::MEDIUM)
+                .child(state_icon(pull.state).size_3().text_color(color))
+                .child(state_word(pull.state)),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_color(theme.muted_foreground)
+                .child(format!("{repository} #{}", pull.number)),
+        )
+        .child(div().flex_1())
+        .child(size(pull, cx));
+    let url = Some(pull.url.clone()).filter(|url| url.starts_with("https://"));
     widgets::row(("chat-pull", index), false, cx)
         .mx_0()
         .h_auto()
@@ -158,7 +184,7 @@ fn row(index: usize, kept: &ThreadPull, cx: &App) -> Stateful<Div> {
         .flex_col()
         .items_stretch()
         .gap_0p5()
-        .child(title.small().truncate())
+        .child(div().child(pull.title.clone()).small().truncate())
         .child(facts)
         .when_none(&url, |row| row.cursor_default())
         .when_some(url, |row, url| {

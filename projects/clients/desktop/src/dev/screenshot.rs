@@ -39,7 +39,7 @@
 //!   eight tasks, one in each status, running or ended on its steps (see `dev::team`);
 //! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of
 //!   the chosen project in the sidebar with eight pull requests of its own (merged,
-//!   closed, draft, open, one not read yet) under its icon, and a chat that links two of
+//!   closed, draft, open, one not read yet, which is not shown) under its icon, and a chat that links two of
 //!   them, drawn as chips;
 //! - `fake=forge-signin|forge-unserved`: the quiet line in Changes when the forge asks to sign in,
 //!   or no plugin serves the host;
