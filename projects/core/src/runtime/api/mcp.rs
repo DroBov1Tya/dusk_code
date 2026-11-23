@@ -66,7 +66,11 @@ impl Runtime {
                 .config
                 .update(|config| config.set_mcp_server(old, None))?;
             self.launcher.mcp.restart(old, None);
+            let added = crate::plugins::store::connector::added(self.paths(), old)?.is_some();
             self.forget_connector(old, None)?;
+            if added {
+                self.tidy_connector(old);
+            }
             return Ok(None);
         }
         let (name, server) = parse_mcp_server(text)?;

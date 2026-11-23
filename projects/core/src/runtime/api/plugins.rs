@@ -90,7 +90,11 @@ impl Runtime {
                         }
                     }
                     store::Placed::Server { config, added } => {
-                        self.add_connector(&name, config, *added)?;
+                        let result = self.add_connector(&name, config, *added);
+                        // A release's program in place for a failed add, or the version
+                        // an update replaced, is not kept.
+                        self.tidy_connector(&name);
+                        result?;
                         tracing::info!("connector {name} {version} added from {source}");
                     }
                 }
@@ -210,9 +214,9 @@ impl Runtime {
                     ours,
                     "a connector of yours is named {name}; rename or remove it to add this one"
                 );
-                // Keys the user typed went to that address or program; one the listing
-                // moved elsewhere starts without them.
-                if connector::target(&server) == connector::target(old) {
+                // Keys the user typed went to that address or program, or another version
+                // of the same release; one the listing moved elsewhere starts without them.
+                if connector::same_program(self.paths(), name, &server, old) {
                     connector::keep_secrets(&mut server, old);
                 }
                 Some(name)
@@ -239,7 +243,18 @@ impl Runtime {
             self.save_mcp_server(Some(name), "")?;
         }
         connector::forget(self.paths(), name)?;
+        self.tidy_connector(name);
         Ok(true)
+    }
+
+    /// Keeps of a release connector's programs only the version the store's record of it
+    /// runs: none once it is removed.
+    pub(crate) fn tidy_connector(&self, name: &str) {
+        use crate::plugins::store::connector;
+        let keep = connector::kept_version(self.paths(), name);
+        if let Err(error) = connector::install::tidy(self.paths(), name, keep.as_deref()) {
+            tracing::warn!("connector {name}: {error:#}");
+        }
     }
 
     /// Switches a plugin on, allowing what its manifest asks for now, or off; it applies

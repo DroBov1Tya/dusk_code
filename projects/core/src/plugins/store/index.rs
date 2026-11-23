@@ -636,7 +636,7 @@ pub fn cover_mime(path: &str) -> Option<&'static str> {
     }
 }
 
-fn is_sha256(text: &str) -> bool {
+pub fn is_sha256(text: &str) -> bool {
     text.len() == 64
         && text
             .bytes()

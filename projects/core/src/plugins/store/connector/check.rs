@@ -128,12 +128,7 @@ pub fn check_command(command: &str, args: &[String]) -> Result<()> {
         RUNNERS.iter().any(|(name, ..)| *name == command),
         "a connector's command is npx or uvx"
     );
-    ensure!(args.len() <= MAX_ARGS, "up to {MAX_ARGS} arguments");
-    ensure!(
-        args.iter()
-            .all(|arg| crate::plugins::store::index::is_exact_line(arg, MAX_LINE)),
-        "an argument is not one plain line"
-    );
+    check_args(args)?;
     let flags = match command {
         "npx" => ["-y", "--yes"].as_slice(),
         _ => [].as_slice(),
@@ -156,6 +151,17 @@ pub fn check_command(command: &str, args: &[String]) -> Result<()> {
         "npx" => npm_package(&args[start]),
         _ => pypi_package(&args[start]),
     }
+}
+
+/// A program's arguments: a few, each one plain line.
+pub fn check_args(args: &[String]) -> Result<()> {
+    ensure!(args.len() <= MAX_ARGS, "up to {MAX_ARGS} arguments");
+    ensure!(
+        args.iter()
+            .all(|arg| crate::plugins::store::index::is_exact_line(arg, MAX_LINE)),
+        "an argument is not one plain line"
+    );
+    Ok(())
 }
 
 /// `name@1.2.3` or `@scope/name@1.2.3[-pre][+build]`: a registry name and one full

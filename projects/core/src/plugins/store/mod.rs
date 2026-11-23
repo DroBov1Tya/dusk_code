@@ -47,6 +47,8 @@ mod picture;
 mod picture_tests;
 mod record;
 #[cfg(test)]
+mod release_tests;
+#[cfg(test)]
 mod repositories_tests;
 pub mod review;
 mod source;
@@ -196,13 +198,16 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
             .as_ref()
             .context("a connector names no server")?;
         let tier = listing::tier(source, entry);
-        if let Some(why) = server.unfit(tier) {
+        if let Some(why) = server.unfit(&entry.name, tier, entry.badge) {
             anyhow::bail!("{} cannot be added: {why}", entry.name);
         }
         if let Some(url) = &server.url {
             connector::resolves_publicly(url).await?;
         }
-        let config = server.config();
+        if let Some(release) = &server.release {
+            connector::install::install(paths, &entry.name, release).await?;
+        }
+        let config = server.config(paths, &entry.name);
         let mut added = Installed::new(source, &entry.version, "");
         added.kind = Kind::Connector;
         added.target = connector::target(&config);

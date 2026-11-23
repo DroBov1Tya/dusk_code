@@ -62,6 +62,11 @@ impl Paths {
         self.data_root.join("voice")
     }
 
+    /// The programs the Workshop's release connectors run, one folder per connector.
+    pub fn connectors_root(&self) -> PathBuf {
+        self.data_root.join("connectors")
+    }
+
     pub fn rules_root(&self) -> PathBuf {
         self.config_root.join(RULES_DIR)
     }
