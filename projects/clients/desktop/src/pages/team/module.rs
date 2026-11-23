@@ -164,6 +164,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .px_4()
         .flex()
         .flex_col()
+        // A click anywhere else drops the pick; one inside an open window does not.
+        .on_mouse_down_out(cx.listener(|ws, _, _, cx| {
+            if ws.modal.is_none() {
+                ws.team_unpick(cx);
+            }
+        }))
         .child(status)
         .child(budget)
         .child(lead)

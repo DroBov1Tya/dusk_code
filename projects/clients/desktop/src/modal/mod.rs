@@ -438,6 +438,7 @@ impl Workspace {
             self.close_plugin_part(key, cx);
         }
         self.modal = None;
+        self.team_unpick(cx);
         cx.notify();
     }
 }

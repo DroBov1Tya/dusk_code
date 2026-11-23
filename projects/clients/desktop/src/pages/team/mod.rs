@@ -84,6 +84,14 @@ impl Workspace {
         cx.notify();
     }
 
+    /// The module's pick lasts only as long as what it opened; the page keeps its own
+    /// until it is opened again.
+    pub fn team_unpick(&mut self, cx: &mut Context<Self>) {
+        if self.center != Center::Team && self.team_page.picked.take().is_some() {
+            cx.notify();
+        }
+    }
+
     /// A click on a member opens its chat, a click on a task its card; both stay lit.
     fn team_open(&mut self, pick: Pick, cx: &mut Context<Self>) {
         match &pick {
