@@ -11,7 +11,7 @@ or browser. Chat history is stored locally, and you choose which model provider 
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh   # download and run the installer
 ```
 
 The installer asks what to install: the terminal client, the desktop client, or both.

@@ -5,11 +5,11 @@ agents better. Each task is a small project with a job to do and a script that c
 result, so a verdict is a command's exit code and not an opinion.
 
 ```bash
-cargo run -q -p dusk_evals -- --selfcheck
-cargo run -q -p dusk_evals -- --runs 3 --out projects/evals/results/shipped.json
-git show v0.69.1:resources/modes/MAIN.md > old.md
-cargo run -q -p dusk_evals -- --runs 3 --main-prompt old.md --out projects/evals/results/old.json
-cargo run -q -p dusk_evals -- --compare projects/evals/results/old.json projects/evals/results/shipped.json
+cargo run -q -p dusk_evals -- --selfcheck                                              # check the harness without calling a model
+cargo run -q -p dusk_evals -- --runs 3 --out projects/evals/results/shipped.json       # run every task 3 times with the shipped prompt
+git show v0.69.1:resources/modes/MAIN.md > old.md                                      # save the old MAIN prompt
+cargo run -q -p dusk_evals -- --runs 3 --main-prompt old.md --out projects/evals/results/old.json  # run again with the old prompt
+cargo run -q -p dusk_evals -- --compare projects/evals/results/old.json projects/evals/results/shipped.json  # compare the two runs
 ```
 
 `--selfcheck` needs no model: each check must fail on the untouched task and pass on its
@@ -62,10 +62,10 @@ Record the shipped engine first, then the same tasks with one mechanism changed,
 same model, runs and timeout, and compare:
 
 ```bash
-cargo run -q -p dusk_evals -- --runs 3 --timeout 600 --out projects/evals/results/baseline.json
+cargo run -q -p dusk_evals -- --runs 3 --timeout 600 --out projects/evals/results/baseline.json  # baseline run with a 600 s timeout
 cargo run -q -p dusk_evals -- --runs 3 --timeout 600 --set memory.enabled=false \
-    --out projects/evals/results/no-memory.json
-cargo run -q -p dusk_evals -- --compare projects/evals/results/baseline.json projects/evals/results/no-memory.json
+    --out projects/evals/results/no-memory.json  # same run with memory switched off
+cargo run -q -p dusk_evals -- --compare projects/evals/results/baseline.json projects/evals/results/no-memory.json  # compare the two runs
 ```
 
 The `hard-` tasks hide what the request does not spell out: randomized checks against a
@@ -100,8 +100,8 @@ it (`kill_on_drop`) where a crash would leave it running; blocking work still ru
 The report has `killed_after` per run; a run that ended before its point has none.
 
 ```bash
-cargo run -q -p dusk_evals -- --only team- --mode TEAM --runs 4 --out projects/evals/results/team.json
-cargo run -q -p dusk_evals -- --only team-chain-kill --runs 20 --seed 1 --out projects/evals/results/kill.json
+cargo run -q -p dusk_evals -- --only team- --mode TEAM --runs 4 --out projects/evals/results/team.json  # run the team- tasks in TEAM mode, 4 times each
+cargo run -q -p dusk_evals -- --only team-chain-kill --runs 20 --seed 1 --out projects/evals/results/kill.json  # repeat the kill task 20 times, fixed seed
 ```
 
 ## What is known so far
