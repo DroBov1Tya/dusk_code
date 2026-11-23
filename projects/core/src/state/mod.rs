@@ -38,9 +38,7 @@ pub use thread::{
 // The team's store. Its callers are the team's runtime (T1), serving (P1) and recovery
 // (R1); until they land only its tests use these.
 #[allow(unused_imports)]
-pub use thread::{
-    BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamCounts, TeamError, TeamRun,
-};
+pub use thread::{TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun};
 pub use usage::{ItemUsage, KIND_MCP_TOOL, KIND_SKILL};
 
 pub use db::timestamp_ms;

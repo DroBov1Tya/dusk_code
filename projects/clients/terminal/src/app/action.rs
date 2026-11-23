@@ -64,8 +64,8 @@ pub enum Action {
     Overview,
     /// Stop the chat's running team, after the second `s`.
     StopTeam,
-    /// Give the chat's running team this budget.
-    SetTeamBudget(dusk_protocol::thread::TeamBudget),
+    /// Let this many members of the chat's running team work at once.
+    SetTeamAtOnce(u32),
     /// `/files`: what this chat's commands changed in the project.
     ChangedFiles,
     /// `/diff`: the folder's changes line by line.

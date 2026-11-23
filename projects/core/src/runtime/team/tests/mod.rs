@@ -2,7 +2,6 @@
 //! a chat that leads, and members that answer what the test's script says. No test
 //! waits for the 30 s tick: a pass is run at the time the test names.
 
-mod budgets;
 mod ends;
 mod gates;
 mod limits;
@@ -20,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use dusk_protocol::thread::{TeamBudget, TeamEnd, TeamStatus};
+use dusk_protocol::thread::{TeamEnd, TeamStatus};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
@@ -32,7 +31,7 @@ use crate::{
         ChatMessage, ChatRequest, ChatStream, FinishReason, Model, ModelEvent, ModelProvider,
     },
     runtime::{Launcher, Runtime, ThreadEvent, ThreadInput, model_choice::Choice},
-    state::{NewTask, PlanStatus, PlanTask, State, TeamCeilings},
+    state::{NewTask, PlanStatus, PlanTask, State},
     testing::temp_dir,
     tools::TeamRunner,
 };
@@ -272,18 +271,13 @@ impl Rig {
             .collect()
     }
 
-    /// The lead's `run` with the budget the settings allow, or the parts given.
+    /// The lead's `run`: the tasks it gave out.
     pub async fn run(&self) -> usize {
-        self.run_with(|budget| budget).await.unwrap()
+        self.try_run().await.unwrap()
     }
 
-    pub async fn run_with(
-        &self,
-        change: impl FnOnce(TeamBudget) -> TeamBudget,
-    ) -> anyhow::Result<usize> {
-        let limits = self.launcher().config.current().limits();
-        let budget = change(TeamCeilings::from_limits(&limits)?.budget());
-        let started = self.runner().run(&self.lead, budget, None).await?;
+    pub async fn try_run(&self) -> anyhow::Result<usize> {
+        let started = self.runner().run(&self.lead, None).await?;
         Ok(started.given)
     }
 

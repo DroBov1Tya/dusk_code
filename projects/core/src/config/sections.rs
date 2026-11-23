@@ -154,15 +154,13 @@ pub struct Limits {
     /// Members of one team that work at once; never above `max_agents_at_work`.
     #[serde(default = "default_team_at_once")]
     pub team_at_once: usize,
-    /// The most model steps a team may spend before it ends.
-    #[serde(default = "default_team_max_steps")]
-    pub team_max_steps: u32,
-    /// The most tokens a team may spend, prompt and completion together.
-    #[serde(default = "default_team_max_tokens")]
-    pub team_max_tokens: u64,
-    /// The most minutes a team may run.
-    #[serde(default = "default_team_max_minutes")]
-    pub team_max_minutes: u32,
+    /// Older configs set a team's budget; teams have none now, so these are read and dropped.
+    #[serde(default, skip_serializing)]
+    team_max_steps: Option<u64>,
+    #[serde(default, skip_serializing)]
+    team_max_tokens: Option<u64>,
+    #[serde(default, skip_serializing)]
+    team_max_minutes: Option<u64>,
     /// The longest one gate command may run before it is killed and counts as failed.
     #[serde(default = "default_team_gate_seconds")]
     pub team_gate_seconds: u64,
@@ -208,9 +206,9 @@ impl Default for Limits {
             peer_messages: false,
             procedures: false,
             team_at_once: default_team_at_once(),
-            team_max_steps: default_team_max_steps(),
-            team_max_tokens: default_team_max_tokens(),
-            team_max_minutes: default_team_max_minutes(),
+            team_max_steps: None,
+            team_max_tokens: None,
+            team_max_minutes: None,
             team_gate_seconds: default_team_gate_seconds(),
             team_max_gate_runs: default_team_max_gate_runs(),
         }
@@ -308,16 +306,9 @@ fn default_compact_tail_tokens() -> u64 {
     16_000
 }
 
-/// A team's ceilings. The floors keep a plan able to finish one task; the tops keep a
-/// mistyped number from being an open-ended bill.
+/// Members of a team at work at once. The floor keeps a plan able to finish one task.
 pub const MIN_TEAM_AT_ONCE: usize = 1;
 pub const MAX_TEAM_AT_ONCE: usize = 8;
-pub const MIN_TEAM_MAX_STEPS: u32 = 10;
-pub const MAX_TEAM_MAX_STEPS: u32 = 5_000;
-pub const MIN_TEAM_MAX_TOKENS: u64 = 100_000;
-pub const MAX_TEAM_MAX_TOKENS: u64 = 100_000_000;
-pub const MIN_TEAM_MAX_MINUTES: u32 = 5;
-pub const MAX_TEAM_MAX_MINUTES: u32 = 1_440;
 /// A gate is a check such as a build and its tests; the top is a command's own longest.
 pub const MIN_TEAM_GATE_SECONDS: u64 = 10;
 pub const MAX_TEAM_GATE_SECONDS: u64 = 600;
@@ -326,18 +317,6 @@ pub const MAX_TEAM_MAX_GATE_RUNS: u32 = 1_000;
 
 fn default_team_at_once() -> usize {
     3
-}
-
-fn default_team_max_steps() -> u32 {
-    400
-}
-
-fn default_team_max_tokens() -> u64 {
-    4_000_000
-}
-
-fn default_team_max_minutes() -> u32 {
-    120
 }
 
 fn default_team_gate_seconds() -> u64 {

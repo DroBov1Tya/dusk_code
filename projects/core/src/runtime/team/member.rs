@@ -184,7 +184,7 @@ pub(super) async fn give(
     let model = model_name(&config, role, launcher.model.current().as_ref());
     let claim = Claim {
         owner: &member,
-        at_once: run.budget.at_once(),
+        at_once: run.at_once,
         model: model.as_deref(),
         now,
     };

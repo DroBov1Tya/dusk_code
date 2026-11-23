@@ -457,7 +457,7 @@ fn narrow_line(state: &MemberState, task: Option<&Task>, tasks: &[Task], team: &
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thread::{TaskOwner, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed};
+    use crate::thread::{TaskOwner, TeamEnd, TeamMember, TeamStatus, TeamUsed};
 
     fn task(number: usize, status: TaskStatus, owner: Option<&str>) -> Task {
         Task {
@@ -478,7 +478,7 @@ mod tests {
             thread_id: "lead".into(),
             started_at: None,
             status,
-            budget: TeamBudget::new(8, 400, 4_000_000, 120).unwrap(),
+            at_once: 8,
             used: TeamUsed::default(),
             members: members
                 .iter()

@@ -1,23 +1,21 @@
-//! The team's store: the budget rules, what a run used and the check, each end and
-//! scope, migration 0037 with its CHECKs. Here, what they share: two chats, tasks, calls.
+//! The team's store: members at once, what a run used and the check, each end and
+//! scope, migrations 0037 and 0046 with the CHECKs. Here, what they share: two chats, tasks, calls.
 
-mod budget;
+mod at_once;
 mod counts;
 mod migration;
 mod runs;
 
 use std::{borrow::Cow, time::Duration};
 
-use dusk_protocol::thread::{TeamBudget, TeamEnd, TeamStatus, TeamUsed};
+use dusk_protocol::thread::{TeamEnd, TeamStatus, TeamUsed};
 use sqlx::{
     ConnectOptions,
     migrate::Migrator,
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 
-use super::{
-    BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamError, TeamRun, used,
-};
+use super::{TeamAsk, TeamCheck, TeamError, TeamRun, used};
 use crate::{
     state::{Claim, NewTask, PlanStatus, State},
     testing::temp_dir,
@@ -27,16 +25,9 @@ pub(super) const LEAD: &str = "lead";
 pub(super) const START: i64 = 10_000_000;
 pub(super) const MINUTE: i64 = 60_000;
 
-pub(super) fn budget(at_once: u32, steps: u32, tokens: u64, minutes: u32) -> TeamBudget {
-    TeamBudget::new(at_once, steps, tokens, minutes).unwrap()
-}
-
-pub(super) fn plain() -> TeamBudget {
-    budget(3, 400, 4_000_000, 120)
-}
-
-pub(super) fn ceilings() -> TeamCeilings {
-    TeamCeilings::new(budget(4, 500, 5_000_000, 180))
+/// Members at once of a run the tests start.
+pub(super) fn plain() -> u32 {
+    3
 }
 
 /// A chat `lead` with members `m0`, `m1` and `sub` under `m0`; another chat `other` with

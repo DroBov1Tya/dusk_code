@@ -16,7 +16,7 @@ pub const DESCRIPTION: &str = "\
     left out), `files` (the paths only it may change), `accept` (how to tell it is \
     done), `gate` (a command that must exit 0; the core runs it) or `confirm` (the user \
     must confirm), `brief` (what the plan alone does not say), `phase`, `kind` (a \
-    procedure). A cycle is refused. `run` starts the team with a `budget`: the core \
+    procedure). A cycle is refused. `run` starts the team: the core \
     gives each task whose `after` are done to an agent with only what that task needs, \
     checks gates, and writes to you only when a task waits for you, fails or is blocked, \
     and when the team ends. End your turn and wait; never ask for status. `review` \
@@ -51,12 +51,6 @@ pub fn schema() -> Value {
                 "additionalProperties": false,
                 "required": ["text"]
             }},
-            "budget": {"type": "object", "properties": {
-                "at_once": {"type": "integer", "minimum": 1},
-                "steps": {"type": "integer", "minimum": 1},
-                "tokens": {"type": "integer", "minimum": 1},
-                "minutes": {"type": "integer", "minimum": 1}
-            }, "additionalProperties": false},
             "id": {"type": "string"},
             "ids": {"type": "array", "items": {"type": "string"}},
             "text": {"type": "string"}
@@ -130,7 +124,7 @@ pub struct Shown<'a> {
     pub member: Option<String>,
 }
 
-/// The plan as the lead reads it: a line of counts and the budget, then a line a task,
+/// The plan as the lead reads it: a line of counts and members at work, then a line a task,
 /// tasks not done first, at most `MAX_LINES` lines and `MAX_BYTES` bytes.
 pub fn plan(tasks: &[Shown<'_>], team: Option<&Team>) -> String {
     if tasks.is_empty() {
@@ -191,30 +185,12 @@ fn header(tasks: &[Shown<'_>], team: Option<&Team>) -> String {
     }
     text.push('.');
     if let Some(team) = team.filter(|team| team.status == TeamStatus::Running) {
-        let (budget, used) = (team.budget, team.used);
         text.push_str(&format!(
-            " Budget: {}/{} steps, {}/{} tokens, {}/{} min.",
-            used.steps,
-            budget.steps(),
-            amount(used.tokens),
-            amount(budget.tokens()),
-            used.minutes,
-            budget.minutes()
+            " At work: {} of {}.",
+            team.used.at_once, team.at_once
         ));
     }
     text
-}
-
-/// 1310000 as `1.31M`, 4000000 as `4M`, 2500 as `2.5k`.
-fn amount(n: u64) -> String {
-    let (value, unit) = match n {
-        1_000_000.. => (n as f64 / 1_000_000.0, "M"),
-        1_000.. => (n as f64 / 1_000.0, "k"),
-        _ => return n.to_string(),
-    };
-    let digits = format!("{value:.2}");
-    let digits = digits.trim_end_matches('0').trim_end_matches('.');
-    format!("{digits}{unit}")
 }
 
 fn mark(status: PlanStatus) -> &'static str {

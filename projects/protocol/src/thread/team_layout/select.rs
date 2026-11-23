@@ -108,7 +108,7 @@ impl Related {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thread::{TaskOwner, TeamBudget, TeamMember, TeamStatus, TeamUsed};
+    use crate::thread::{TaskOwner, TeamMember, TeamStatus, TeamUsed};
 
     fn task(id: &str, needs: &[&str], status: TaskStatus, owner: Option<&str>) -> Task {
         Task {
@@ -137,7 +137,7 @@ mod tests {
             thread_id: "lead".into(),
             started_at: None,
             status: TeamStatus::Running,
-            budget: TeamBudget::new(3, 10, 10, 10).unwrap(),
+            at_once: 3,
             used: TeamUsed::default(),
             members: ["m1", "m2", "m3"]
                 .iter()

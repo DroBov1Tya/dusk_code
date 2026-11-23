@@ -1,27 +1,26 @@
 //! A team: the core's run of the plan of a root thread, one row of `teams` per chat.
-//! Starting, reading and ending a run are here; `budget` says who may change the budget
-//! and how far, `used` counts what the run has used and what the plan holds.
+//! Starting, reading and ending a run are here; `at_once` changes how many members work
+//! at once, `used` counts what the run has used and what the plan holds.
 //!
 //! Every function finds the chat from the thread that asks, so a thread reaches the team
 //! of its own chat and no other. What a run used is never stored: it is counted from
 //! `model_usage` and the plan when asked.
 
-mod budget;
+mod at_once;
 mod error;
 mod used;
 
 #[cfg(test)]
 mod tests;
 
-use dusk_protocol::thread::{Team, TeamBudget, TeamEnd, TeamStatus};
+use dusk_protocol::thread::{MAX_TEAM_AT_ONCE, Team, TeamEnd, TeamStatus};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 
 use super::{PlanTask, State, tasks::root_of};
 use crate::state::MEMBER_SOURCE;
 
-pub use budget::{BudgetBy, TeamCeilings};
-pub use error::{BudgetPart, TeamError};
-pub use used::{Spent, TeamAsk, TeamCheck, TeamCounts};
+pub use error::TeamError;
+pub use used::{TeamAsk, TeamCheck, TeamCounts};
 
 use error::{end_name, parse_end};
 
@@ -35,11 +34,10 @@ pub struct TeamRun {
     /// The root thread, which leads it.
     pub thread_id: String,
     pub status: TeamStatus,
-    pub budget: TeamBudget,
+    /// Members at work at once.
+    pub at_once: u32,
     /// Unix ms; what the run used is counted from here.
     pub started_at: i64,
-    /// Unix ms after which nothing is given out: `started_at` and the budget's minutes.
-    pub deadline: i64,
     pub ended_at: Option<i64>,
     /// Members each work in a tree of their own; false shares the project folder.
     pub worktrees: bool,
@@ -49,19 +47,21 @@ pub struct TeamRun {
 // P1 serves `team` and `end_team`; T1 (the team's runtime) is the rest of the callers.
 #[allow(dead_code)]
 impl State {
-    /// Starts a run of the chat's plan at `now` with `budget`, which must be within
-    /// `ceilings`. A chat whose team ended runs again in the same row: one team per chat,
+    /// Starts a run of the chat's plan at `now` with `at_once` members at work at once
+    /// (the setting's). A chat whose team ended runs again in the same row: one team per chat,
     /// its counts start again from the new `started_at`, the plan goes on from where the
     /// last run left it.
     pub async fn start_team(
         &self,
         thread: &str,
-        budget: TeamBudget,
-        ceilings: TeamCeilings,
+        at_once: u32,
         now: i64,
     ) -> Result<TeamRun, TeamError> {
-        ceilings.admit(budget)?;
-        let deadline = deadline(now, budget)?;
+        if !(1..=MAX_TEAM_AT_ONCE).contains(&at_once) {
+            return Err(TeamError::PastCeiling {
+                ceiling: MAX_TEAM_AT_ONCE,
+            });
+        }
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         if let Some(run) = read_run(&mut transaction, &root).await?
@@ -74,20 +74,15 @@ impl State {
             return Err(TeamError::WorkLeft(at_work));
         }
         let started = sqlx::query(
-            "INSERT INTO teams (thread_id, status, at_once, max_steps, max_tokens, deadline,
-                 started_at)
-             VALUES (?1, 'running', ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO teams (thread_id, status, at_once, started_at)
+             VALUES (?1, 'running', ?2, ?3)
              ON CONFLICT (thread_id) DO UPDATE SET status = 'running', ended_why = NULL,
-                 ended_at = NULL, at_once = excluded.at_once, max_steps = excluded.max_steps,
-                 max_tokens = excluded.max_tokens, deadline = excluded.deadline,
-                 started_at = excluded.started_at, worktrees = 0, base_commit = NULL
+                 ended_at = NULL, at_once = excluded.at_once, started_at = excluded.started_at,
+                 worktrees = 0, base_commit = NULL
              WHERE teams.status = 'ended'",
         )
         .bind(&root)
-        .bind(i64::from(budget.at_once()))
-        .bind(i64::from(budget.steps()))
-        .bind(sql_count(budget.tokens())?)
-        .bind(deadline)
+        .bind(i64::from(at_once))
         .bind(now)
         .execute(&mut *transaction)
         .await?
@@ -138,8 +133,8 @@ impl State {
         read_run(&mut transaction, &root).await
     }
 
-    /// The chat's team as clients see it: its budget, what it used by `now` and its
-    /// members. `None` when none has run.
+    /// The chat's team as clients see it: its members at once, what it used by `now` and
+    /// its members. `None` when none has run.
     pub async fn team(&self, thread: &str, now: i64) -> Result<Option<Team>, TeamError> {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
@@ -151,7 +146,7 @@ impl State {
         Ok(Some(Team {
             thread_id: run.thread_id,
             status: run.status,
-            budget: run.budget,
+            at_once: run.at_once,
             used,
             members,
             started_at: Some(run.started_at),
@@ -204,8 +199,8 @@ impl State {
 /// The team row of a root thread.
 async fn read_run(transaction: &mut Tx<'_>, root: &str) -> Result<Option<TeamRun>, TeamError> {
     sqlx::query(
-        "SELECT thread_id, status, ended_why, at_once, max_steps, max_tokens, deadline,
-             worktrees, base_commit, started_at, ended_at
+        "SELECT thread_id, status, ended_why, at_once, worktrees, base_commit, started_at,
+             ended_at
          FROM teams WHERE thread_id = ?",
     )
     .bind(root)
@@ -226,27 +221,12 @@ fn decode(row: &SqliteRow) -> Result<TeamRun, TeamError> {
         ),
         _ => return Err(stored(format!("unknown team status {status}"))),
     };
-    let started_at: i64 = row.try_get("started_at")?;
-    let deadline: i64 = row.try_get("deadline")?;
-    let minutes = deadline
-        .checked_sub(started_at)
-        .map(|span| span / MINUTE_MS)
-        .and_then(|minutes| u32::try_from(minutes).ok())
-        .ok_or_else(|| stored("the team's deadline is out of range".to_owned()))?;
-    let budget = TeamBudget::new(
-        stored_count(row, "at_once")?,
-        stored_count(row, "max_steps")?,
-        stored_count(row, "max_tokens")?,
-        minutes,
-    )
-    .map_err(TeamError::Store)?;
     let worktrees: i64 = row.try_get("worktrees")?;
     Ok(TeamRun {
         thread_id: row.try_get("thread_id")?,
         status,
-        budget,
-        started_at,
-        deadline,
+        at_once: stored_count(row, "at_once")?,
+        started_at: row.try_get("started_at")?,
         ended_at: row.try_get("ended_at")?,
         worktrees: worktrees == 1,
         base_commit: row.try_get("base_commit")?,
@@ -261,16 +241,4 @@ fn stored_count<Count: TryFrom<i64>>(row: &SqliteRow, column: &str) -> Result<Co
 
 fn stored(why: String) -> TeamError {
     TeamError::Store(anyhow::anyhow!(why))
-}
-
-fn sql_count(count: u64) -> Result<i64, TeamError> {
-    i64::try_from(count).map_err(|_| stored(format!("{count} is past what SQLite holds")))
-}
-
-/// `now` and the budget's minutes, as a Unix ms.
-fn deadline(now: i64, budget: TeamBudget) -> Result<i64, TeamError> {
-    i64::from(budget.minutes())
-        .checked_mul(MINUTE_MS)
-        .and_then(|span| now.checked_add(span))
-        .ok_or_else(|| stored(format!("a deadline from {now} is out of range")))
 }

@@ -2,9 +2,9 @@
 //! a plan, read from the tables each time, so a pass after a restart goes on where the
 //! last one stopped. In order: the lead that went quiet ends the team; leases past their
 //! time are released; members whose card or rework note did not arrive get it; a gate
-//! that a stop cut off runs again; the
-//! budget is checked and ready tasks are given out, lowest phase label first and oldest
-//! first within it; then the end and the stall rule.
+//! that a stop cut off runs again; ready tasks are given out while members at once
+//! allow, lowest phase label first and oldest first within it; then the end and the
+//! stall rule.
 
 use std::path::{Path, PathBuf};
 
@@ -147,7 +147,7 @@ async fn wake_members(launcher: &Launcher, lead: &str, folder: &Path) -> Result<
     Ok(())
 }
 
-/// Gives out ready tasks while the budget and the members at once allow. `None` when
+/// Gives out ready tasks while the members at once allow. `None` when
 /// the team ended instead.
 async fn give_out(
     launcher: &Launcher,
@@ -161,13 +161,9 @@ async fn give_out(
     // Tasks this pass could not give out; the next pass tries them again.
     let mut passed_over: Vec<String> = Vec::new();
     loop {
-        match state.team_check(lead, TeamAsk::Claim, now).await? {
+        match state.team_check(lead, TeamAsk::Claim).await? {
             TeamCheck::Go => {}
             TeamCheck::Full => break,
-            TeamCheck::Spent(spent) => {
-                end::end(launcher, lead, spent.end(), now).await?;
-                return Ok(None);
-            }
             TeamCheck::Ended(_) => return Ok(None),
         }
         // The store orders them by phase label, then age.

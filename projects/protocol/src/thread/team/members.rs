@@ -81,7 +81,7 @@ pub fn short_model(model: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thread::{TeamBudget, TeamMember, TeamStatus, TeamUsed};
+    use crate::thread::{TeamMember, TeamStatus, TeamUsed};
 
     #[test]
     fn a_member_row_names_its_task_model_and_spend() {
@@ -112,7 +112,7 @@ mod tests {
         let team = Team {
             thread_id: "lead".into(),
             status: TeamStatus::Running,
-            budget: TeamBudget::new(2, 100, 1_000, 10).unwrap(),
+            at_once: 2,
             used: TeamUsed::default(),
             members: vec![
                 member("m2", "t2", Some("backend-engineer")),

@@ -5,7 +5,6 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use dusk_protocol::thread::TeamBudget;
 use serde::Deserialize;
 
 use super::{
@@ -15,7 +14,6 @@ use super::{
 };
 use crate::{
     catalog::agents::Agents,
-    config::Limits,
     state::{
         MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
         PlanTask, State, TaskEdit, short_task_id, timestamp_ms,
@@ -35,7 +33,6 @@ pub struct Lead {
 pub struct PlanArguments {
     action: PlanAction,
     tasks: Option<Vec<TaskArguments>>,
-    budget: Option<BudgetArguments>,
     id: Option<String>,
     ids: Option<Vec<String>>,
     text: Option<String>,
@@ -52,15 +49,6 @@ enum PlanAction {
     Fail,
     Reopen,
     Stop,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct BudgetArguments {
-    at_once: Option<u32>,
-    steps: Option<u32>,
-    tokens: Option<u64>,
-    minutes: Option<u32>,
 }
 
 /// What the lead is answered, and whether the plan changed, so clients are told.
@@ -94,12 +82,11 @@ impl PlanAction {
     fn fields(self) -> &'static [&'static str] {
         match self {
             Self::Add => &["tasks"],
-            Self::Run => &["budget"],
+            Self::Run | Self::Stop => &[],
             Self::Review => &["id", "ids", "text"],
             Self::Show | Self::Reopen => &["id"],
             Self::Edit => &["id", "tasks", "text"],
             Self::Fail => &["id", "text"],
-            Self::Stop => &[],
         }
     }
 }
@@ -109,7 +96,6 @@ impl PlanArguments {
     fn refuse_unused(&self) -> Result<()> {
         let given = [
             ("tasks", self.tasks.is_some()),
-            ("budget", self.budget.is_some()),
             ("id", self.id.is_some()),
             ("ids", self.ids.is_some()),
             ("text", self.text.is_some()),
@@ -146,7 +132,6 @@ impl Lead {
         let PlanArguments {
             action,
             tasks,
-            budget,
             id,
             ids,
             text,
@@ -168,7 +153,7 @@ impl Lead {
             PlanAction::Review => review(state, thread, id, ids, text).await,
             PlanAction::Fail => fail(state, thread, &needed(id, "id", name)?, text).await,
             PlanAction::Reopen => reopen(state, thread, &needed(id, "id", name)?).await,
-            PlanAction::Run => self.run(state, thread, budget, context).await,
+            PlanAction::Run => self.run(state, thread, context).await,
             PlanAction::Stop => {
                 self.team.stop(thread).await?;
                 Ok(changed("stopped".into()))
@@ -255,24 +240,14 @@ impl Lead {
         })
     }
 
-    async fn run(
-        &self,
-        state: &State,
-        thread: &str,
-        budget: Option<BudgetArguments>,
-        context: &ToolContext,
-    ) -> Result<Answer> {
-        let budget = team_budget(budget.unwrap_or_default(), &context.config.limits())?;
+    async fn run(&self, state: &State, thread: &str, context: &ToolContext) -> Result<Answer> {
         let plan = state.plan(thread).await.map_err(explain)?;
         ensure!(
             plan.iter()
                 .any(|task| !matches!(task.status, PlanStatus::Done | PlanStatus::Failed)),
             "the plan has nothing left to do; add tasks first, or reopen a failed one"
         );
-        let started = self
-            .team
-            .run(thread, budget, context.progress.clone())
-            .await?;
+        let started = self.team.run(thread, context.progress.clone()).await?;
         let gates = match started.gates {
             GatesYes::Refused => {
                 "; the user did not allow its gate commands, so a gated task waits for your \
@@ -507,43 +482,6 @@ async fn reopen(state: &State, thread: &str, id: &str) -> Result<Answer> {
         Err(error) => return Err(explain(error)),
     };
     Ok(changed(format!("reopened #{}", short_task_id(&task_id))))
-}
-
-/// The budget the lead asked for, each part held to its ceiling; a part left out is the
-/// ceiling. Asking above one is refused with it, never cut.
-fn team_budget(asked: BudgetArguments, limits: &Limits) -> Result<TeamBudget> {
-    let at_once_ceiling = u64::try_from(limits.team_members_at_once()).unwrap_or(u64::MAX);
-    let at_once = within("at_once", asked.at_once.map(u64::from), at_once_ceiling)?;
-    let steps = within(
-        "steps",
-        asked.steps.map(u64::from),
-        u64::from(limits.team_max_steps),
-    )?;
-    let tokens = within("tokens", asked.tokens, limits.team_max_tokens)?;
-    let minutes = within(
-        "minutes",
-        asked.minutes.map(u64::from),
-        u64::from(limits.team_max_minutes),
-    )?;
-    TeamBudget::new(
-        u32::try_from(at_once)?,
-        u32::try_from(steps)?,
-        tokens,
-        u32::try_from(minutes)?,
-    )
-}
-
-fn within(name: &str, asked: Option<u64>, ceiling: u64) -> Result<u64> {
-    let Some(asked) = asked else {
-        return Ok(ceiling);
-    };
-    ensure!(asked >= 1, "budget.{name} must be at least 1");
-    ensure!(
-        asked <= ceiling,
-        "budget.{name} {asked} is above the ceiling {ceiling}; give {ceiling} or less, or \
-         ask the user to raise it in the settings"
-    );
-    Ok(asked)
 }
 
 /// The store's refusal with the call that gets past it.

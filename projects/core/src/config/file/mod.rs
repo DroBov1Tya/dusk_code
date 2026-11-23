@@ -11,10 +11,9 @@ mod tests;
 use super::sections::{
     MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS,
     MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE, MAX_TEAM_GATE_SECONDS, MAX_TEAM_MAX_GATE_RUNS,
-    MAX_TEAM_MAX_MINUTES, MAX_TEAM_MAX_STEPS, MAX_TEAM_MAX_TOKENS, MIN_COMPACT_TAIL_TOKENS,
-    MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS,
-    MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS, MIN_TEAM_MAX_MINUTES,
-    MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, is_zero, yes,
+    MIN_COMPACT_TAIL_TOKENS, MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS,
+    MIN_STUB_MIN_TOKENS, MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS, is_zero,
+    yes,
 };
 use super::{
     Appearance, ApprovalPolicy, Arbiter, ContextPolicy, CoreSection, Effort, Limits, Logging,
@@ -363,20 +362,6 @@ impl Config {
         ensure!(
             (MIN_TEAM_AT_ONCE..=MAX_TEAM_AT_ONCE).contains(&limits.team_at_once),
             "limits.team_at_once must be between {MIN_TEAM_AT_ONCE} and {MAX_TEAM_AT_ONCE}"
-        );
-        ensure!(
-            (MIN_TEAM_MAX_STEPS..=MAX_TEAM_MAX_STEPS).contains(&limits.team_max_steps),
-            "limits.team_max_steps must be between {MIN_TEAM_MAX_STEPS} and {MAX_TEAM_MAX_STEPS}"
-        );
-        ensure!(
-            (MIN_TEAM_MAX_TOKENS..=MAX_TEAM_MAX_TOKENS).contains(&limits.team_max_tokens),
-            "limits.team_max_tokens must be between {MIN_TEAM_MAX_TOKENS} and \
-             {MAX_TEAM_MAX_TOKENS}"
-        );
-        ensure!(
-            (MIN_TEAM_MAX_MINUTES..=MAX_TEAM_MAX_MINUTES).contains(&limits.team_max_minutes),
-            "limits.team_max_minutes must be between {MIN_TEAM_MAX_MINUTES} and \
-             {MAX_TEAM_MAX_MINUTES}"
         );
         ensure!(
             (MIN_TEAM_GATE_SECONDS..=MAX_TEAM_GATE_SECONDS).contains(&limits.team_gate_seconds),

@@ -1,8 +1,8 @@
 //! The seam between the lead's `tasks` and the team that runs a plan. The team runtime
 //! implements `TeamRunner` and the launcher hands it to a chat's `tasks` with
-//! `Tasks::lead`; `run`, `stop` and the budget line of `show` reach the team only here.
+//! `Tasks::lead`; `run`, `stop` and the team line of `show` reach the team only here.
 
-use dusk_protocol::thread::{Team, TeamBudget};
+use dusk_protocol::thread::Team;
 
 use crate::{BoxFuture, tools::Progress};
 
@@ -24,16 +24,10 @@ pub enum GatesYes {
 
 /// What starts, stops and reports the team of a plan. `lead` is the chat's root thread.
 pub trait TeamRunner: Send + Sync {
-    /// Starts the team of the plan with `budget`, already held to the ceilings, or goes
-    /// on with the one running; a second call with a team running changes nothing, since
+    /// Starts the team of the plan, or goes on with the one running; a second call with a team running changes nothing, since
     /// a restart runs it again. In a mode that asks for each command, the user is asked
     /// once, through `progress`, to allow the plan's gate commands.
-    fn run<'a>(
-        &'a self,
-        lead: &'a str,
-        budget: TeamBudget,
-        progress: Option<Progress>,
-    ) -> BoxFuture<'a, Started>;
+    fn run<'a>(&'a self, lead: &'a str, progress: Option<Progress>) -> BoxFuture<'a, Started>;
 
     /// Ends the running team as stopped: members at work are cancelled and their tasks
     /// go back to open. A team that is not running is no error.
@@ -49,19 +43,14 @@ pub trait TeamRunner: Send + Sync {
     }
 }
 
-/// Until the team runtime lands: `run` and `stop` say so, `show` has no budget line.
+/// Until the team runtime lands: `run` and `stop` say so, `show` has no team line.
 pub struct NoTeam;
 
 const NOT_BUILT: &str = "the team runner is not built yet; the plan is kept, and \
                          ask_agent can do its tasks one by one meanwhile";
 
 impl TeamRunner for NoTeam {
-    fn run<'a>(
-        &'a self,
-        _lead: &'a str,
-        _budget: TeamBudget,
-        _progress: Option<Progress>,
-    ) -> BoxFuture<'a, Started> {
+    fn run<'a>(&'a self, _lead: &'a str, _progress: Option<Progress>) -> BoxFuture<'a, Started> {
         Box::pin(async { anyhow::bail!(NOT_BUILT) })
     }
 

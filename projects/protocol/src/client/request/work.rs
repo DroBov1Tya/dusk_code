@@ -2,8 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::thread::TeamBudget;
-
 /// The largest picture a client may send as bytes. A browser's frame carries the bytes
 /// as JSON numbers, about four characters each, so this keeps it under the web's frame cap.
 pub const MAX_PICTURE_UPLOAD: usize = 6 * 1024 * 1024;
@@ -113,9 +111,10 @@ pub enum WorkRequest {
     StopTeam {
         thread_id: String,
     },
-    /// Sets the running team's budget, within the ceilings of the settings.
-    SetTeamBudget {
+    /// Sets how many members of the running team work at once, 1 to the setting's
+    /// `team_at_once`.
+    SetTeamAtOnce {
         thread_id: String,
-        budget: TeamBudget,
+        at_once: u32,
     },
 }

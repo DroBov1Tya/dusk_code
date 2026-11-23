@@ -557,7 +557,7 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
     Team {
         thread_id: "t".into(),
         status: crate::thread::TeamStatus::Running,
-        budget: crate::thread::TeamBudget::new(2, 100, 1_000_000, 60).unwrap(),
+        at_once: 2,
         used: crate::thread::TeamUsed::default(),
         members: members
             .iter()

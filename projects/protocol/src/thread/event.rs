@@ -175,7 +175,7 @@ pub enum ThreadEvent {
     Tasks(Vec<Task>),
     /// One task of the plan this thread leads changed; `Tasks` stays for the board.
     TaskChanged(Task),
-    /// The team running this thread's plan changed its status, members or budget; at
+    /// The team running this thread's plan changed its status, members or members at once; at
     /// most one a second.
     Team(Team),
     /// An agent's phase changed, by its own `agent_state` call or the runtime's.

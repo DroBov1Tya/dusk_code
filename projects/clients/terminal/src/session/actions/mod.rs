@@ -91,7 +91,7 @@ pub async fn apply(
         Action::SaveSnippet(name, text) => files::save_snippet(client, app, name, text).await,
         Action::OpenPlan => work::open_plan(client, app).await,
         Action::StopTeam => work::stop_team(client, app).await,
-        Action::SetTeamBudget(budget) => work::set_team_budget(client, app, budget).await,
+        Action::SetTeamAtOnce(at_once) => work::set_team_at_once(client, app, at_once).await,
         Action::Overview => work::overview(client, app).await,
         Action::Diff => work::diff(client, app).await,
         Action::ChangedFiles => work::changed_files(client, app).await,

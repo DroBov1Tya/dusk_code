@@ -10,7 +10,7 @@ async fn every_end_is_kept_and_a_later_run_starts_again() {
         Err(TeamError::NoTeam)
     ));
     assert!(matches!(
-        state.team_check(LEAD, TeamAsk::Claim, START).await,
+        state.team_check(LEAD, TeamAsk::Claim).await,
         Err(TeamError::NoTeam)
     ));
     assert!(state.team(LEAD, START).await.unwrap().is_none());
@@ -25,16 +25,13 @@ async fn every_end_is_kept_and_a_later_run_starts_again() {
     ];
     for (index, why) in ends.into_iter().enumerate() {
         let at = START + i64::try_from(index).unwrap() * 10 * MINUTE;
-        let run = state
-            .start_team(LEAD, plain(), ceilings(), at)
-            .await
-            .unwrap();
+        let run = state.start_team(LEAD, plain(), at).await.unwrap();
         assert_eq!((run.status, run.started_at), (TeamStatus::Running, at));
         // Clients tell this run from the last one by when it started.
         let shown = state.team(LEAD, at).await.unwrap().unwrap();
         assert_eq!(shown.started_at, Some(at));
         assert!(matches!(
-            state.start_team("m0", plain(), ceilings(), at + 1).await,
+            state.start_team("m0", plain(), at + 1).await,
             Err(TeamError::Running)
         ));
         let (run, returned) = state.end_team(LEAD, why, at + 2).await.unwrap();
@@ -50,11 +47,11 @@ async fn every_end_is_kept_and_a_later_run_starts_again() {
             Err(TeamError::Ended(before)) if before == why
         ));
         assert!(matches!(
-            state.set_team_budget(LEAD, BudgetBy::User, plain(), ceilings()).await,
+            state.set_team_at_once(LEAD, plain(), 4).await,
             Err(TeamError::Ended(before)) if before == why
         ));
         assert_eq!(
-            state.team_check(LEAD, TeamAsk::Step, at + 3).await.unwrap(),
+            state.team_check(LEAD, TeamAsk::Step).await.unwrap(),
             TeamCheck::Ended(why)
         );
     }
@@ -69,10 +66,7 @@ async fn every_end_is_kept_and_a_later_run_starts_again() {
 async fn the_end_gives_work_back_and_a_run_waits_for_work_left() {
     let state = chats().await;
     let tasks = add(&state, 3).await;
-    state
-        .start_team(LEAD, plain(), ceilings(), START)
-        .await
-        .unwrap();
+    state.start_team(LEAD, plain(), START).await.unwrap();
     claim(&state, &tasks[0], "m0").await;
     claim(&state, &tasks[1], "m1").await;
     let turn_id = uuid::Uuid::now_v7().to_string();
@@ -105,10 +99,7 @@ async fn the_end_gives_work_back_and_a_run_waits_for_work_left() {
     assert_eq!(attempts, [1, 1, 0], "an end does not cost an attempt");
 
     // A crash after the end committed and before the work came back.
-    state
-        .start_team(LEAD, plain(), ceilings(), START + 2)
-        .await
-        .unwrap();
+    state.start_team(LEAD, plain(), START + 2).await.unwrap();
     claim(&state, &tasks[2], "m0").await;
     sqlx::raw_sql("UPDATE teams SET status = 'ended', ended_why = 'stopped', ended_at = 10000003")
         .execute(&state.pool)
@@ -116,24 +107,18 @@ async fn the_end_gives_work_back_and_a_run_waits_for_work_left() {
         .unwrap();
     assert_eq!(state.team_counts(LEAD).await.unwrap().at_work, 1);
     assert!(matches!(
-        state.start_team(LEAD, plain(), ceilings(), START + 4).await,
+        state.start_team(LEAD, plain(), START + 4).await,
         Err(TeamError::WorkLeft(1))
     ));
     state.return_work(LEAD).await.unwrap();
-    state
-        .start_team(LEAD, plain(), ceilings(), START + 5)
-        .await
-        .unwrap();
+    state.start_team(LEAD, plain(), START + 5).await.unwrap();
 }
 
 #[tokio::test]
 async fn a_chat_reaches_its_own_team_and_no_other() {
     let state = chats().await;
     let tasks = add(&state, 1).await;
-    state
-        .start_team(LEAD, plain(), ceilings(), START)
-        .await
-        .unwrap();
+    state.start_team(LEAD, plain(), START).await.unwrap();
     claim(&state, &tasks[0], "m0").await;
 
     for thread in ["other", "other-m"] {
@@ -146,13 +131,11 @@ async fn a_chat_reaches_its_own_team_and_no_other() {
             Err(TeamError::NoTeam)
         ));
         assert!(matches!(
-            state
-                .set_team_budget(thread, BudgetBy::User, plain(), ceilings())
-                .await,
+            state.set_team_at_once(thread, plain(), 4).await,
             Err(TeamError::NoTeam)
         ));
         assert!(matches!(
-            state.team_check(thread, TeamAsk::Claim, START).await,
+            state.team_check(thread, TeamAsk::Claim).await,
             Err(TeamError::NoTeam)
         ));
     }
@@ -166,17 +149,14 @@ async fn a_chat_reaches_its_own_team_and_no_other() {
     ));
 
     // The other chat's own team leaves this one as it is.
-    let other = state
-        .start_team("other-m", budget(1, 10, 100_000, 5), ceilings(), START)
-        .await
-        .unwrap();
+    let other = state.start_team("other-m", 1, START).await.unwrap();
     assert_eq!(other.thread_id, "other");
     state
         .end_team("other", TeamEnd::Stopped, START + 1)
         .await
         .unwrap();
     let lead = state.team_run(LEAD).await.unwrap().unwrap();
-    assert_eq!((lead.status, lead.budget), (TeamStatus::Running, plain()));
+    assert_eq!((lead.status, lead.at_once), (TeamStatus::Running, plain()));
     assert_eq!(state.team_counts(LEAD).await.unwrap().at_work, 1);
 
     // A deleted chat takes its team with it.

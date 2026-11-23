@@ -8,8 +8,8 @@ use dusk_protocol::{
     model::{ModelEvent, ToolCall},
     system::now_ms,
     thread::{
-        LogEntry, LogKind, Overview, PlanCounts, Task, TaskStatus, Team, TeamBudget, TeamEnd,
-        TeamMember, TeamStatus, TeamUsed, ThreadEvent, agent_name,
+        LogEntry, LogKind, Overview, PlanCounts, Task, TaskStatus, Team, TeamEnd, TeamMember,
+        TeamStatus, TeamUsed, ThreadEvent, agent_name,
     },
 };
 use gpui_kit::*;
@@ -174,7 +174,7 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
             },
         ),
         true => (
-            TeamStatus::Ended(TeamEnd::Steps),
+            TeamStatus::Ended(TeamEnd::Stalled),
             TeamUsed {
                 at_once: 0,
                 steps: 400,
@@ -186,7 +186,7 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
     Team {
         thread_id: lead.into(),
         status,
-        budget: TeamBudget::new(3, 400, 4_000_000, 120).expect("a budget within the ceilings"),
+        at_once: 3,
         used,
         members,
         started_at: Some(now_ms() - 23 * 60_000),

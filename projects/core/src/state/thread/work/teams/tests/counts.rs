@@ -6,10 +6,7 @@ use super::*;
 async fn used_counts_the_tree_since_the_start_and_until_the_end() {
     let state = chats().await;
     let tasks = add(&state, 2).await;
-    state
-        .start_team(LEAD, plain(), ceilings(), START)
-        .await
-        .unwrap();
+    state.start_team(LEAD, plain(), START).await.unwrap();
     claim(&state, &tasks[0], "m0").await;
     for (thread, purpose, tokens, at) in [
         (LEAD, "answer", (1, 1), START - 1),
@@ -64,69 +61,52 @@ async fn used_counts_the_tree_since_the_start_and_until_the_end() {
 
     // A second run counts from its own start.
     state
-        .start_team(LEAD, plain(), ceilings(), START + 8 * MINUTE)
+        .start_team(LEAD, plain(), START + 8 * MINUTE)
         .await
         .unwrap();
     let fresh = state.team_used(LEAD, START + 8 * MINUTE).await.unwrap();
     assert_eq!(fresh, TeamUsed::default());
 }
 
-/// A fresh chat whose team runs on `budget` from `START`, with one task to claim.
-async fn running(budget: TeamBudget) -> (State, String) {
+/// A fresh chat whose team runs `at_once` members at once from `START`, with one task.
+async fn running(at_once: u32) -> (State, String) {
     let state = chats().await;
     let task = add(&state, 1).await.remove(0);
-    state
-        .start_team(LEAD, budget, ceilings(), START)
-        .await
-        .unwrap();
+    state.start_team(LEAD, at_once, START).await.unwrap();
     (state, task)
 }
 
-async fn check(state: &State, now: i64) -> (TeamCheck, TeamCheck) {
+async fn check(state: &State) -> (TeamCheck, TeamCheck) {
     (
-        state.team_check("m0", TeamAsk::Claim, now).await.unwrap(),
-        state.team_check("m0", TeamAsk::Step, now).await.unwrap(),
+        state.team_check("m0", TeamAsk::Claim).await.unwrap(),
+        state.team_check("m0", TeamAsk::Step).await.unwrap(),
     )
 }
 
+/// Members at once are the only bound of a running team: what it spent never stops it.
 #[tokio::test]
-async fn the_check_names_the_budget_that_is_spent() {
+async fn the_check_counts_members_at_once_and_nothing_spent() {
     use TeamCheck::{Full, Go};
-    let small = budget(1, 2, 1_000, 5);
-
-    let (state, task) = running(small).await;
-    assert_eq!(check(&state, START).await, (Go, Go));
+    let (state, task) = running(1).await;
+    assert_eq!(check(&state).await, (Go, Go));
     claim(&state, &task, "m0").await;
-    assert_eq!(check(&state, START).await, (Full, Go), "members at once");
-    usage(&state, "m0", "answer", (1, 1), START + 1).await;
-    assert_eq!(check(&state, START + 2).await, (Full, Go));
-    usage(&state, "sub", "answer", (1, 1), START + 1).await;
-    let steps = TeamCheck::Spent(Spent::Steps);
-    assert_eq!(check(&state, START + 2).await, (steps, steps));
+    assert_eq!(check(&state).await, (Full, Go), "members at once");
+    for at in 0..50 {
+        usage(&state, "m0", "answer", (100_000, 100_000), START + at).await;
+    }
+    assert_eq!(
+        check(&state).await,
+        (Full, Go),
+        "steps and tokens bound nothing"
+    );
 
-    let (state, _) = running(small).await;
-    usage(&state, LEAD, "compact", (999, 1), START + 1).await;
-    let tokens = TeamCheck::Spent(Spent::Tokens);
-    assert_eq!(check(&state, START + 2).await, (tokens, tokens));
-
-    let (state, _) = running(small).await;
-    assert_eq!(check(&state, START + 5 * MINUTE - 1).await, (Go, Go));
-    let time = TeamCheck::Spent(Spent::Time);
-    assert_eq!(check(&state, START + 5 * MINUTE).await, (time, time));
-
-    let (state, _) = running(small).await;
+    let (state, _) = running(1).await;
     state
         .end_team(LEAD, TeamEnd::Quiet, START + 1)
         .await
         .unwrap();
     let ended = TeamCheck::Ended(TeamEnd::Quiet);
-    assert_eq!(check(&state, START + 2).await, (ended, ended));
-
-    let ends: Vec<TeamEnd> = [Spent::Steps, Spent::Tokens, Spent::Time]
-        .into_iter()
-        .map(Spent::end)
-        .collect();
-    assert_eq!(ends, [TeamEnd::Steps, TeamEnd::Tokens, TeamEnd::Time]);
+    assert_eq!(check(&state).await, (ended, ended));
 }
 
 #[tokio::test]
@@ -151,16 +131,15 @@ async fn parent_links_that_loop_end_every_walk() {
             Err(TeamError::NoSuchThread(_))
         ));
         assert!(matches!(
-            state.start_team("y", plain(), ceilings(), START).await,
+            state.start_team("y", plain(), START).await,
             Err(TeamError::NoSuchThread(_))
         ));
         // The downward walk from a thread in the loop ends too.
         let run = TeamRun {
             thread_id: "x".to_owned(),
             status: TeamStatus::Running,
-            budget: plain(),
+            at_once: plain(),
             started_at: START,
-            deadline: START + MINUTE,
             ended_at: None,
             worktrees: false,
             base_commit: None,

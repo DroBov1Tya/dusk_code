@@ -118,10 +118,12 @@ board too and no team runs.
 - **What is forwarded.** A line to the lead (400 bytes at most), a task's note, a gate's
   output and a card are made plain and cleared of the project's variables and of what is
   shaped like a key before they are stored or sent.
-- **Budgets and ends.** `limits.team_max_steps`, `team_max_tokens`, `team_max_minutes`
-  and `team_at_once` are the ceilings; a member takes no step once one is spent. The team
-  ends when all is done, a budget is spent, it is stopped, or nothing can start and the
-  lead changed nothing.
+- **No budget; ends.** A team has no step, token or time budget: what it used is shown,
+  never a limit. `limits.team_at_once` is the most members at work at once; the user may
+  lower it while the team runs. The team ends when all is done, it is stopped, the lead
+  went quiet at the cap of agent messages, or nothing can start and the lead changed
+  nothing. Older configs' `team_max_steps`, `team_max_tokens` and `team_max_minutes` are
+  read and dropped.
 - **Recovery.** When the chat is opened after a restart, an ended team's work goes back
   to open, a turn still running gets its lease again, a turn that completed is handed in,
   a lost one is released, and a gate that was cut off runs again.

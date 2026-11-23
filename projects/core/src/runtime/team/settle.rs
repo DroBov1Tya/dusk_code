@@ -11,7 +11,6 @@
 //! | a turn that completed, its task not handed in | handed in now, from that turn's answer |
 //! | a turn that failed or was stopped, its task not released | released: back to open, or failed at the third attempt |
 //! | a task in review for a command gate | nothing: the pass runs the gate again |
-//! | a team past its time or budget | nothing: the pass ends it |
 //!
 //! A member that a runner of this process serves is left alone: its own events move
 //! its task, and settling it here too could move a task twice. Every move is the

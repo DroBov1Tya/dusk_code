@@ -273,7 +273,7 @@ impl Tool for Tasks {
                 }
                 return Ok(answer.text);
             }
-            let plan_fields = ["tasks", "budget", "ids"];
+            let plan_fields = ["tasks", "ids"];
             if PLAN_ONLY.contains(&name.as_str())
                 || plan_fields
                     .iter()

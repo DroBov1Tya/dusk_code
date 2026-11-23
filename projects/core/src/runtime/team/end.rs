@@ -1,7 +1,6 @@
-//! How a team ends: every task is done, a budget is spent, the lead or the user stopped
-//! it, the lead went quiet at the cap of agent messages, or it stalled. Whatever the
-//! reason, the members at work are cancelled, their tasks go back to open, and the lead
-//! is told once.
+//! How a team ends: every task is done, the lead or the user stopped it, the lead went
+//! quiet at the cap of agent messages, or it stalled. Whatever the reason, the members
+//! at work are cancelled, their tasks go back to open, and the lead is told once.
 
 use dusk_protocol::thread::{TaskStatus, TeamEnd};
 use tracing::warn;
@@ -75,9 +74,8 @@ async fn tell(launcher: &Launcher, run: &TeamRun, why: TeamEnd, now: i64) {
     };
     let reason = match why {
         TeamEnd::Done => "done",
-        TeamEnd::Steps => "its steps are spent",
-        TeamEnd::Tokens => "its tokens are spent",
-        TeamEnd::Time => "its time is up",
+        // Only older cores ended a team on a budget.
+        TeamEnd::Steps | TeamEnd::Tokens | TeamEnd::Time => "its budget was spent",
         TeamEnd::Stalled => "stalled, nothing could start",
         TeamEnd::Stopped => "stopped",
         TeamEnd::Quiet => "quiet, you were written to 30 times without the user",
@@ -129,7 +127,8 @@ pub(super) async fn settle(launcher: &Launcher, run: &TeamRun, now: i64) -> Resu
     }
     // A task whose gate runs, or that waits for the user's confirmation, is no stall:
     // the gate ends by itself and the user was asked. The lead can do nothing about
-    // either, so it is not woken to end the team; the team's time bounds the wait.
+    // either, so it is not woken to end the team; a gate has its own time limit
+    // (`limits.team_gate_seconds`), and the user's Stop ends the wait for them.
     if counts.review > counts.for_lead {
         return Ok(());
     }

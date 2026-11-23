@@ -125,7 +125,7 @@ async fn a_chain_runs_to_done_and_wakes_the_lead_only_for_its_reviews() {
 }
 
 #[tokio::test]
-async fn no_more_members_work_at_once_than_the_budget_says() {
+async fn no_more_members_work_at_once_than_the_setting_says() {
     let settings = format!("{ON}  team_at_once: 2\n");
     let rig = Rig::with("team_at_once", &settings, hang).await;
     let tasks: Vec<NewTask> = (0..5).map(|n| task(&format!("task {n}"))).collect();
@@ -163,14 +163,6 @@ async fn the_lowest_phase_goes_first_and_run_twice_changes_nothing() {
     assert_eq!(rig.run().await, 0);
     assert_eq!(rig.state().team_run(&rig.lead).await.unwrap(), before);
     assert_eq!(rig.members().await.len(), 2);
-    // A run may lower a part of the budget, and a later one does not raise it again.
-    let fewer = |budget: TeamBudget| {
-        TeamBudget::new(budget.at_once(), 20, budget.tokens(), budget.minutes()).unwrap()
-    };
-    rig.run_with(fewer).await.unwrap();
-    rig.run().await;
-    let run = rig.state().team_run(&rig.lead).await.unwrap().unwrap();
-    assert_eq!(run.budget.steps(), 20);
 }
 
 #[tokio::test]

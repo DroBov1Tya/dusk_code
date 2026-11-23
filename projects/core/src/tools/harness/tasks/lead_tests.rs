@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use dusk_protocol::thread::{GoalCheck, Team, TeamBudget};
+use dusk_protocol::thread::{GoalCheck, Team};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 
@@ -168,7 +168,7 @@ async fn the_plan_form_is_offered_only_to_a_chat_in_team_mode() {
 async fn the_plan_form_costs_what_the_design_says() {
     let f = fixture("plan_bytes").await;
     let plan = spec_bytes(&f.tasks, &f.context);
-    assert_eq!(plan, (5, 1126, 969));
+    assert_eq!(plan, (5, 1110, 737));
     let main = ToolContext {
         config: tool_context_with(&f.context.scope, "limits:\n  plan_graph: true\n").config,
         ..f.context.clone()
@@ -177,7 +177,7 @@ async fn the_plan_form_costs_what_the_design_says() {
     let growth = (plan.0 + plan.1 + plan.2) - (board.0 + board.1 + board.2);
     println!("board {board:?}, plan {plan:?}, growth {growth}");
     assert_eq!(board.0 + board.1 + board.2, 1274);
-    assert_eq!(growth, 826);
+    assert_eq!(growth, 578);
 }
 
 fn seven() -> Value {
@@ -359,9 +359,8 @@ async fn text_over_its_cap_a_bad_gate_and_unknown_fields_are_refused() {
         json!({ "action": "add", "tasks": [{ "text": "one", "owner": "m0" }] }),
         json!({ "action": "add", "tasks": [{ "text": "one" }], "id": "x" }),
         json!({ "action": "add", "tasks": [] }),
-        json!({ "action": "run", "budget": { "steps": -1 } }),
-        json!({ "action": "run", "budget": { "steps": 1e30 } }),
-        json!({ "action": "run", "budget": { "steps": 0 } }),
+        // A team has no budget to name.
+        json!({ "action": "run", "budget": { "steps": 50 } }),
         json!({ "action": "review", "ids": [null] }),
         json!({ "action": "review", "ids": [] }),
         json!({ "action": "drop" }),
@@ -642,7 +641,7 @@ async fn the_board_works_as_before_and_leaves_given_out_tasks_alone() {
 /// A team runner that remembers what it was asked.
 #[derive(Default)]
 struct Recorder {
-    runs: Mutex<Vec<TeamBudget>>,
+    runs: Mutex<usize>,
     stops: Mutex<usize>,
 }
 
@@ -650,10 +649,9 @@ impl TeamRunner for Recorder {
     fn run<'a>(
         &'a self,
         _lead: &'a str,
-        budget: TeamBudget,
         _progress: Option<crate::tools::Progress>,
     ) -> BoxFuture<'a, super::team::Started> {
-        self.runs.lock().push(budget);
+        *self.runs.lock() += 1;
         Box::pin(async {
             Ok(super::team::Started {
                 given: 2,
@@ -698,26 +696,19 @@ async fn run_and_stop_reach_the_team_runner() {
     let tasks = Tasks::new(Arc::clone(&f.state), LEAD.into())
         .lead(Agents::new(f.root.join("agents"), Arc::clone(&f.state)))
         .with_team(Arc::clone(&recorder) as Arc<dyn TeamRunner>);
-    let run = json!({ "action": "run", "budget": { "steps": 50 } });
+    let run = json!({ "action": "run" });
     assert!(tasks.repeatable(&run));
     let answer = tasks.call(run, f.context.clone()).await.unwrap();
     assert_eq!(answer, "running: 2 given out");
-    assert_eq!(
-        recorder.runs.lock().as_slice(),
-        [TeamBudget::new(3, 50, 4_000_000, 120).unwrap()]
-    );
+    assert_eq!(*recorder.runs.lock(), 1);
     let refused = tasks
         .call(
-            json!({ "action": "run", "budget": { "steps": 401 } }),
+            json!({ "action": "run", "budget": { "steps": 50 } }),
             f.context.clone(),
         )
-        .await
-        .unwrap_err();
-    assert_eq!(
-        format!("{refused:#}"),
-        "budget.steps 401 is above the ceiling 400; give 400 or less, or ask the user to \
-         raise it in the settings"
-    );
+        .await;
+    assert!(refused.is_err(), "a budget is no field of run");
+    assert_eq!(*recorder.runs.lock(), 1);
     let answer = tasks
         .call(json!({ "action": "stop" }), f.context.clone())
         .await

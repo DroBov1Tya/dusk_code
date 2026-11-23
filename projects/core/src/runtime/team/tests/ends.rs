@@ -127,3 +127,41 @@ async fn a_lead_written_to_thirty_times_ends_the_team_as_quiet() {
     assert!(lines.last().unwrap().starts_with("Team ended: quiet"));
     assert!(rig.state().has_pending(&rig.lead).await.unwrap());
 }
+
+/// A quick task whose member answers when let through, and a slow one that never does.
+fn quick_and_slow(asked: &Asked) -> Out {
+    match (asked.lead, asked.user.contains("slow")) {
+        (true, _) => Out::Say("Noted.".into()),
+        (false, true) => Out::Hang,
+        (false, false) => Out::Held(DONE.into()),
+    }
+}
+
+#[tokio::test]
+async fn a_member_takes_no_step_once_its_team_has_ended() {
+    let rig = Rig::new("team_no_step", quick_and_slow).await;
+    let ids = rig.plan(&[task("quick"), task("slow")]).await;
+    assert_eq!(rig.run().await, 2);
+    until("both members work", || async {
+        rig.status(&ids[0]).await == PlanStatus::Running
+            && rig.status(&ids[1]).await == PlanStatus::Running
+    })
+    .await;
+    // An end the store alone made, with no runner stopped, as a stop cut short leaves it.
+    let now = crate::state::timestamp_ms().unwrap();
+    rig.state()
+        .end_team(&rig.lead, TeamEnd::Stopped, now)
+        .await
+        .unwrap();
+    let quick = rig.members().await.remove(0);
+    let config = rig.launcher().config.current();
+
+    let refused = super::super::may_step(rig.state(), &config, &quick, 1).await;
+
+    assert!(refused.unwrap_err().to_string().contains("holds no task"));
+    // The lead and an agent that is no member are never asked.
+    super::super::may_step(rig.state(), &config, &rig.lead, 0)
+        .await
+        .unwrap();
+    assert_eq!(rig.status(&ids[0]).await, PlanStatus::Open);
+}

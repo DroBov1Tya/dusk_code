@@ -1,8 +1,8 @@
 //! The team: the core's run of a chat's plan.
 //! No model call is made here. A change to the plan or the team, a member's turn and a
 //! 30 s tick each lead to one `dispatch::pass`, which reads the tables and does what they
-//! ask for: leases that ran out are released, budgets are checked, ready tasks are given
-//! to members, and the team ends when it is done, spent or stalled.
+//! ask for: leases that ran out are released, ready tasks are given to members as many
+//! at once as allowed, and the team ends when it is done, stopped, quiet or stalled.
 //!
 //! `member` makes a member's thread and fixes what it may do, `allow` is the user's one
 //! yes for the plan's gates, `card` writes its first message, `clean` takes secrets out
@@ -36,15 +36,16 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use dusk_protocol::thread::{Team, TeamBudget, TeamEnd, TeamStatus};
+use dusk_protocol::thread::{MAX_TEAM_AT_ONCE, Team, TeamEnd, TeamStatus};
 use tokio::task::JoinHandle;
 use tracing::warn;
 
 use crate::{
     BoxFuture,
     catalog::modes::{Modes, TEAM},
+    config::Limits,
     runtime::Launcher,
-    state::{BudgetBy, PlanTask, TeamCeilings, TeamError, timestamp_ms},
+    state::{PlanTask, TeamError, timestamp_ms},
     tools::{Progress, Started, TeamRunner},
 };
 
@@ -72,7 +73,7 @@ pub struct Teams {
     /// is empty and a gate that was cut off runs again: a gate is a check.
     gates: parking_lot::Mutex<HashMap<String, gate::Running>>,
     /// The gates each running team has run, against `limits.team_max_gate_runs`. After
-    /// a restart it counts again from nothing; the team's time still bounds it.
+    /// a restart it counts again from nothing, so a restart allows that many again.
     gate_runs: parking_lot::Mutex<HashMap<String, u32>>,
     /// The members a runner of this process has reported for. Recovery settles only
     /// the others: what a stopped process left.
@@ -113,36 +114,23 @@ impl Runner {
         Ok(())
     }
 
-    /// Starts the chat's team, or goes on with the one running: a part of its budget the
-    /// lead now names lower is lowered, none is raised.
-    async fn start(&self, lead: &str, budget: TeamBudget, now: i64) -> Result<()> {
+    /// Starts the chat's team with the setting's members at once, or goes on with the
+    /// one running as it is.
+    async fn start(&self, lead: &str, now: i64) -> Result<()> {
         let launcher = &self.launcher;
-        let config = launcher.config.current();
+        let at_once = at_once_setting(&launcher.config.current().limits());
         let state = &launcher.state;
-        let ceilings = || TeamCeilings::from_limits(&config.limits());
         let _one = launcher.team.pass.lock().await;
         match state.team_run(lead).await? {
-            Some(run) if run.status == TeamStatus::Running => {
-                let lower = TeamBudget::new(
-                    run.budget.at_once().min(budget.at_once()),
-                    run.budget.steps().min(budget.steps()),
-                    run.budget.tokens().min(budget.tokens()),
-                    run.budget.minutes().min(budget.minutes()),
-                )?;
-                if lower != run.budget {
-                    state
-                        .set_team_budget(lead, BudgetBy::Lead, lower, ceilings()?)
-                        .await?;
-                }
-            }
-            _ => match state.start_team(lead, budget, ceilings()?, now).await {
+            Some(run) if run.status == TeamStatus::Running => {}
+            _ => match state.start_team(lead, at_once, now).await {
                 Ok(_) => {}
                 // The last end was cut off before it gave its work back.
                 Err(TeamError::WorkLeft(_)) => {
                     for task in state.return_work(lead).await? {
                         events::task(launcher, lead, &task).await;
                     }
-                    state.start_team(lead, budget, ceilings()?, now).await?;
+                    state.start_team(lead, at_once, now).await?;
                 }
                 Err(error) => return Err(error.into()),
             },
@@ -151,19 +139,23 @@ impl Runner {
     }
 }
 
+/// Members of a team at work at once by the settings: `limits.team_at_once`, cut to
+/// `max_agents_at_work`. A new run starts with it; while it runs the user may set fewer,
+/// or more up to it again.
+pub(crate) fn at_once_setting(limits: &Limits) -> u32 {
+    u32::try_from(limits.team_members_at_once())
+        .unwrap_or(MAX_TEAM_AT_ONCE)
+        .clamp(1, MAX_TEAM_AT_ONCE)
+}
+
 impl TeamRunner for Runner {
-    fn run<'a>(
-        &'a self,
-        lead: &'a str,
-        budget: TeamBudget,
-        progress: Option<Progress>,
-    ) -> BoxFuture<'a, Started> {
+    fn run<'a>(&'a self, lead: &'a str, progress: Option<Progress>) -> BoxFuture<'a, Started> {
         Box::pin(async move {
             self.may_lead(lead).await?;
             // Before the start, so no member works before the user answered.
             let gates = allow::ask(&self.launcher, lead, progress).await?;
             let now = timestamp_ms()?;
-            self.start(lead, budget, now).await?;
+            self.start(lead, now).await?;
             events::team(&self.launcher, lead, now, true).await;
             let given = dispatch::pass(&self.launcher, lead, now).await?;
             Ok(Started { given, gates })

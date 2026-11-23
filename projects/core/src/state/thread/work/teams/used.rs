@@ -1,5 +1,5 @@
-//! What a run has used of its budget, counted when asked, the check before each claim and
-//! step, the members, and the plan's counts the stall rule reads.
+//! What a run has used, counted when asked and only shown, the check before each claim
+//! and step, the members, and the plan's counts the stall rule reads.
 
 use dusk_protocol::thread::{
     MAX_TEAM_MEMBERS, TaskStatus, TeamEnd, TeamMember, TeamStatus, TeamUsed,
@@ -18,22 +18,12 @@ pub enum TeamAsk {
     Step,
 }
 
-/// The budget a run has spent; the team ends with `end()`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Spent {
-    Steps,
-    Tokens,
-    Time,
-}
-
 /// What `team_check` answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TeamCheck {
     Go,
-    /// As many members are at work as the budget allows: wait for one, the team goes on.
+    /// As many members are at work as may be at once: wait for one, the team goes on.
     Full,
-    /// A budget is spent: the team ends.
-    Spent(Spent),
     /// The team is not running.
     Ended(TeamEnd),
 }
@@ -56,16 +46,6 @@ pub struct TeamCounts {
     pub done: u32,
 }
 
-impl Spent {
-    pub fn end(self) -> TeamEnd {
-        match self {
-            Self::Steps => TeamEnd::Steps,
-            Self::Tokens => TeamEnd::Tokens,
-            Self::Time => TeamEnd::Time,
-        }
-    }
-}
-
 // T1 (the dispatcher, the stall rule) and R1 (recovery) are the callers; nothing in the
 // tree is yet.
 #[allow(dead_code)]
@@ -81,14 +61,8 @@ impl State {
     }
 
     /// Whether the chat's team may give out another task, or let a member take another
-    /// step, at `now`; if not, which budget is spent. Time first, then steps, then tokens;
-    /// members at once count for a claim only.
-    pub async fn team_check(
-        &self,
-        thread: &str,
-        ask: TeamAsk,
-        now: i64,
-    ) -> Result<TeamCheck, TeamError> {
+    /// step. Members at once count for a claim only; nothing else bounds a running team.
+    pub async fn team_check(&self, thread: &str, ask: TeamAsk) -> Result<TeamCheck, TeamError> {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         let run = read_run(&mut transaction, &root)
@@ -97,19 +71,10 @@ impl State {
         if let TeamStatus::Ended(why) = run.status {
             return Ok(TeamCheck::Ended(why));
         }
-        if now >= run.deadline {
-            return Ok(TeamCheck::Spent(Spent::Time));
+        if ask == TeamAsk::Claim && at_work(&mut transaction, &root).await? >= run.at_once {
+            return Ok(TeamCheck::Full);
         }
-        let used = used(&mut transaction, &run, now).await?;
-        Ok(if used.steps >= run.budget.steps() {
-            TeamCheck::Spent(Spent::Steps)
-        } else if used.tokens >= run.budget.tokens() {
-            TeamCheck::Spent(Spent::Tokens)
-        } else if ask == TeamAsk::Claim && used.at_once >= run.budget.at_once() {
-            TeamCheck::Full
-        } else {
-            TeamCheck::Go
-        })
+        Ok(TeamCheck::Go)
     }
 
     /// The threads that hold a task of the chat's plan, newest first, each with the task
@@ -194,7 +159,7 @@ pub(super) async fn used(
         at_once: at_work(transaction, &run.thread_id).await?,
         steps: u32::try_from(steps).map_err(|_| stored(format!("{steps} steps")))?,
         tokens: u64::try_from(tokens).map_err(|_| stored(format!("{tokens} tokens")))?,
-        // A clock that went back counts as no time; past u32 minutes is past any budget.
+        // A clock that went back counts as no time; past u32 minutes shows as the most.
         minutes: u32::try_from(elapsed / MINUTE_MS).unwrap_or(u32::MAX),
     })
 }

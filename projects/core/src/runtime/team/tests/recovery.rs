@@ -14,10 +14,9 @@ use crate::{
 async fn stopped_after_the_thread(rig: &Rig) -> (String, String) {
     let ids = rig.plan(&[task("one")]).await;
     let now = timestamp_ms().unwrap();
-    let limits = rig.launcher().config.current().limits();
-    let ceilings = TeamCeilings::from_limits(&limits).unwrap();
+    let at_once = crate::runtime::team::at_once_setting(&rig.launcher().config.current().limits());
     rig.state()
-        .start_team(&rig.lead, ceilings.budget(), ceilings, now)
+        .start_team(&rig.lead, at_once, now)
         .await
         .unwrap();
     let paths = &rig.launcher().paths;

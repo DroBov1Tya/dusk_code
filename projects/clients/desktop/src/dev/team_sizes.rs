@@ -10,8 +10,8 @@ use dusk_protocol::{
     model::{ModelEvent, ToolCall},
     system::now_ms,
     thread::{
-        Task, TaskStatus, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed, ThreadEvent,
-        agent_name, team_call_id,
+        Task, TaskStatus, Team, TeamEnd, TeamMember, TeamStatus, TeamUsed, ThreadEvent, agent_name,
+        team_call_id,
     },
 };
 use gpui_kit::*;
@@ -331,10 +331,10 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         thread_id: lead.clone(),
         started_at: None,
         status: match ended {
-            true => TeamStatus::Ended(TeamEnd::Steps),
+            true => TeamStatus::Ended(TeamEnd::Stalled),
             false => TeamStatus::Running,
         },
-        budget: TeamBudget::new(8, 600, 8_000_000, 180).expect("a budget within the ceilings"),
+        at_once: 8,
         used: TeamUsed {
             at_once: if ended { 0 } else { at_work },
             steps: if ended {
