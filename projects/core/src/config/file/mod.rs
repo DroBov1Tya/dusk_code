@@ -333,6 +333,20 @@ impl Config {
              order, from {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
         );
         ensure!(
+            MIN_FAILURE_RUNG <= limits.cycle_note_at
+                && limits.cycle_note_at < limits.cycle_replan_at
+                && limits.cycle_replan_at <= MAX_FAILURE_RUNG,
+            "limits.cycle_note_at and cycle_replan_at must rise in this order, from \
+             {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.test_rerun_note_at
+                && limits.test_rerun_note_at < limits.test_rerun_replan_at
+                && limits.test_rerun_replan_at <= MAX_FAILURE_RUNG,
+            "limits.test_rerun_note_at and test_rerun_replan_at must rise in this order, from \
+             {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
             (MIN_RETRY_UNREACHABLE_SECONDS..=MAX_RETRY_UNREACHABLE_SECONDS)
                 .contains(&self.limits.retry_unreachable_seconds),
             "limits.retry_unreachable_seconds must be between {MIN_RETRY_UNREACHABLE_SECONDS} \

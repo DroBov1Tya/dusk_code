@@ -116,6 +116,17 @@ impl State {
         .context("list what the task's turns changed")
     }
 
+    /// How many changes the ledger holds for the thread. Rows are only added, so two
+    /// counts tell whether a project file changed between them.
+    pub async fn change_count(&self, thread_id: &str) -> Result<u64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM changes WHERE thread_id = ?")
+            .bind(thread_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("count the thread's changes")?;
+        u64::try_from(count).context("negative change count")
+    }
+
     /// The thread's own changes for a client, newest first, at most `MAX_FILE_CHANGES`.
     pub async fn thread_changes(&self, thread_id: &str) -> Result<Vec<FileChange>> {
         sqlx::query(select!(

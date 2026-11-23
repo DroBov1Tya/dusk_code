@@ -40,7 +40,14 @@ fn episodes_on() -> Limits {
 
 fn fail(repeats: &mut Repeats, text: &str, error: &str, limits: &Limits) {
     let result = exited(101, error);
-    repeats.note("t", &command(text), &result, &result.content, limits);
+    repeats.note(
+        "t",
+        &command(text),
+        &result,
+        &result.content,
+        &super::Facts::default(),
+        limits,
+    );
 }
 
 fn pass(repeats: &mut Repeats, text: &str) -> Option<Solved> {
@@ -139,6 +146,7 @@ fn a_turn_makes_three_episodes_at_most() {
         &command("cargo test"),
         &result,
         &result.content,
+        &super::Facts::default(),
         &limits,
     );
     repeats.note(
@@ -146,6 +154,7 @@ fn a_turn_makes_three_episodes_at_most() {
         &command("cargo test"),
         &result,
         &result.content,
+        &super::Facts::default(),
         &limits,
     );
     let ok = exited(0, "ok");
@@ -169,10 +178,19 @@ fn the_ladder_alone_counts_for_its_notes_as_before() {
     let mut repeats = Repeats::default();
     let mut ladder = Limits::default();
     ladder.failure_ladder = true;
+    // The test re-run note would win the second run; this is about the ladder's count.
+    ladder.test_reruns = false;
     let result = exited(101, UNKNOWN);
     let mut counts = Vec::new();
     for _ in 0..3 {
-        let notice = repeats.note("t", &command("cargo test"), &result, "x", &ladder);
+        let notice = repeats.note(
+            "t",
+            &command("cargo test"),
+            &result,
+            "x",
+            &super::Facts::default(),
+            &ladder,
+        );
         counts.push(notice.map(|notice| notice.count));
     }
     assert_eq!(counts, [None, None, Some(3)]);

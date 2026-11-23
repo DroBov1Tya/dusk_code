@@ -263,6 +263,7 @@ impl Agent {
         inbox: &mut Inbox,
     ) -> Result<Option<Stop>> {
         let together = config.limits().parallel_reads;
+        self.repeats.lock().step(&turn.turn_id);
         let mut stop = None;
         let mut surprised = false;
         let mut rest = calls;
@@ -565,11 +566,18 @@ impl Agent {
                 warn!("cannot count the MCP tool use: {error:#}");
             }
         }
-        let notice = finished.as_ref().and_then(|result| {
-            let limits = config.limits();
-            let mut repeats = self.repeats.lock();
-            repeats.note(&turn.turn_id, call, result, &content, &limits)
-        });
+        let notice = match &finished {
+            Some(result) => {
+                let limits = config.limits();
+                let facts = repeats::Facts {
+                    read_only: self.tools.read_only(&call.name, &call.arguments),
+                    ledger: self.ledger_count(call, &limits).await,
+                };
+                let mut repeats = self.repeats.lock();
+                repeats.note(&turn.turn_id, call, result, &content, &facts, &limits)
+            }
+            None => None,
+        };
         if let Some(notice) = &notice {
             content.push_str(&format!("\n\n{}", notice.note));
         }
@@ -633,6 +641,21 @@ impl Agent {
             });
         }
         Ok(outcome != "succeeded")
+    }
+
+    /// The change ledger's count for the thread, for a test run when the test re-run
+    /// rule reads it; None otherwise or when it cannot be read.
+    async fn ledger_count(&self, call: &ToolCall, limits: &Limits) -> Option<u64> {
+        if !(limits.test_reruns && limits.record_changes && repeats::is_test_run(call)) {
+            return None;
+        }
+        match self.state.change_count(&self.thread_id).await {
+            Ok(count) => Some(count),
+            Err(error) => {
+                warn!("cannot count the thread's changes: {error:#}");
+                None
+            }
+        }
     }
 
     /// Runs the plugins' hooks of `event` with what every hook is told about the thread.

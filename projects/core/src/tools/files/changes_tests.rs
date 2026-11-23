@@ -117,6 +117,12 @@ async fn a_command_records_its_changes_in_its_turn_and_call() {
             ("new.txt", ChangeKind::Added),
         ]
     );
+
+    // The count the test re-run rule compares: a command that changes nothing leaves it.
+    assert_eq!(state.change_count("t").await.unwrap(), 4);
+    run(&context(&scope, &state, "t", "c2"), "cat kept.txt").await;
+    assert_eq!(state.change_count("t").await.unwrap(), 4);
+    assert_eq!(state.change_count("other").await.unwrap(), 0);
 }
 
 #[tokio::test]

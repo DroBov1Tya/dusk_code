@@ -365,6 +365,29 @@ fn the_failure_ladder_is_on_and_its_rungs_rise() {
 }
 
 #[test]
+fn the_loop_guards_are_on_and_their_rungs_rise() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.loop_cycles && plain.test_reruns);
+    assert_eq!((plain.cycle_note_at, plain.cycle_replan_at), (3, 5));
+    assert_eq!(
+        (plain.test_rerun_note_at, plain.test_rerun_replan_at),
+        (2, 4)
+    );
+    let set = parse("limits:\n  loop_cycles: false\n  test_rerun_replan_at: 9\n").unwrap();
+    assert!(!set.limits().loop_cycles);
+    assert_eq!(set.limits().test_rerun_replan_at, 9);
+    for bad in [
+        "limits:\n  cycle_note_at: 1\n",
+        "limits:\n  cycle_replan_at: 3\n",
+        "limits:\n  cycle_replan_at: 51\n",
+        "limits:\n  test_rerun_note_at: 4\n",
+        "limits:\n  test_rerun_replan_at: 51\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
 fn the_team_parts_are_off_and_its_ceilings_have_defaults() {
     let plain = parse(PROVIDERS).unwrap().limits();
     // The team itself is chosen by the mode; `plan_graph` only switches it off.

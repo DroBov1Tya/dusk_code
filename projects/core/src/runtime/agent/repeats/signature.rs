@@ -111,6 +111,15 @@ pub fn program(command: &str) -> Option<String> {
 /// is not an option: `cargo +1.99.1 test -p core` is `cargo` and `+1.99.1`, `npm run
 /// build` is `npm` and `run`, `make -j4` is `make` and none.
 pub fn invocation(command: &str) -> Option<(String, Option<String>)> {
+    let (program, rest) = command_words(command)?;
+    let first = rest
+        .into_iter()
+        .find(|word| !word.is_empty() && !word.starts_with('-'));
+    Some((program, first))
+}
+
+/// The program a shell command runs, as `program` finds it, and the words after it.
+pub fn command_words(command: &str) -> Option<(String, Vec<String>)> {
     let split = split(head(command, COMMAND_HEAD_BYTES), Reading::Lenient)?;
     split.commands.iter().find_map(|words| {
         let (program, rest) = run_words(words)?;
@@ -118,10 +127,10 @@ pub fn invocation(command: &str) -> Option<(String, Option<String>)> {
         if SETUP.contains(&name) {
             return None;
         }
-        let first = rest
-            .into_iter()
-            .find(|word| !word.is_empty() && !word.starts_with('-'));
-        Some((name.to_owned(), first.map(str::to_owned)))
+        Some((
+            name.to_owned(),
+            rest.into_iter().map(str::to_owned).collect(),
+        ))
     })
 }
 
@@ -195,14 +204,35 @@ pub fn normalize(line: &str) -> String {
                 if part.contains(['/', '\\']) {
                     out.push_str("<path>");
                 } else {
-                    push_numbers(&mut out, part);
+                    push_numbers(&mut out, part, Numbers::All);
                 }
             }
         } else {
-            push_numbers(&mut out, word);
+            push_numbers(&mut out, word, Numbers::All);
         }
     }
     out
+}
+
+/// One line of a result with what changes from run to run made alike: ids, uuids,
+/// durations, dates and times, decimals, and numbers next to a `:` (a clock, a line and
+/// column). Case, paths and plain counts stay, so `3 failed` and `2 failed` differ.
+pub fn volatile(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    for word in line.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        push_numbers(&mut out, word, Numbers::Volatile);
+    }
+    out
+}
+
+/// Which numbers `push_numbers` makes `#`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Numbers {
+    All,
+    Volatile,
 }
 
 const QUOTES: [(char, char); 5] = [
@@ -263,7 +293,7 @@ fn replace_quotes(line: &str) -> String {
 
 /// Words are runs of letters, digits and `_`, with a `.` between digits kept in them
 /// so a version or a decimal is one word. A uuid is one `#` though it holds `-`.
-fn push_numbers(out: &mut String, text: &str) {
+fn push_numbers(out: &mut String, text: &str, numbers: Numbers) {
     let chars: Vec<char> = text.chars().collect();
     let mut index = 0;
     while let Some(&c) = chars.get(index) {
@@ -287,7 +317,13 @@ fn push_numbers(out: &mut String, text: &str) {
             }
             index += 1;
         }
-        push_word(out, &chars[start..index]);
+        let word = &chars[start..index];
+        let by_colon = (start > 0 && chars[start - 1] == ':') || chars.get(index) == Some(&':');
+        if numbers == Numbers::Volatile && !by_colon && word.iter().all(char::is_ascii_digit) {
+            out.extend(word);
+        } else {
+            push_word(out, word);
+        }
     }
 }
 

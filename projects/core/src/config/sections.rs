@@ -83,6 +83,29 @@ pub struct Limits {
     /// Times before the turn ends as failed.
     #[serde(default = "default_failure_stop_at")]
     pub failure_stop_at: u32,
+    /// Whether calls going in circles get a note and then a request for a different
+    /// plan: a short run of calls coming round with the same results, or a read giving
+    /// the same result with nothing changed between. Off, only the same call with the
+    /// same result three times in a row gets a note. Notes only: it never ends a turn.
+    #[serde(default = "yes")]
+    pub loop_cycles: bool,
+    /// Rounds of a cycle (or times a read came back the same) before the note.
+    #[serde(default = "default_cycle_note_at")]
+    pub cycle_note_at: u32,
+    /// Rounds before the model is asked for a different plan.
+    #[serde(default = "default_cycle_replan_at")]
+    pub cycle_replan_at: u32,
+    /// Whether a test run with no project file changed since the last run of its runner
+    /// gets a note with what that run found, and a run's failing test ids stand for its
+    /// error in the failure ladder. The command still runs. Notes only.
+    #[serde(default = "yes")]
+    pub test_reruns: bool,
+    /// Runs in a row with nothing changed between, the first included, before the note.
+    #[serde(default = "default_test_rerun_note_at")]
+    pub test_rerun_note_at: u32,
+    /// Runs before the model is asked for a different plan.
+    #[serde(default = "default_test_rerun_replan_at")]
+    pub test_rerun_replan_at: u32,
     /// Whether the files a command changes in the project are recorded, with a diff when
     /// the text before is known, so the agent and clients can ask what changed. Off, no
     /// command is watched and the chat's list of changed files stays empty too.
@@ -191,6 +214,12 @@ impl Default for Limits {
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),
             failure_stop_at: default_failure_stop_at(),
+            loop_cycles: true,
+            cycle_note_at: default_cycle_note_at(),
+            cycle_replan_at: default_cycle_replan_at(),
+            test_reruns: true,
+            test_rerun_note_at: default_test_rerun_note_at(),
+            test_rerun_replan_at: default_test_rerun_replan_at(),
             record_changes: true,
             stub_results: true,
             stub_keep_steps: default_stub_keep_steps(),
@@ -283,6 +312,25 @@ fn default_failure_replan_at() -> u32 {
 
 fn default_failure_stop_at() -> u32 {
     8
+}
+
+/// Three rounds, as the same call in a row always had; a cycle of four calls then
+/// spans twelve.
+fn default_cycle_note_at() -> u32 {
+    3
+}
+
+fn default_cycle_replan_at() -> u32 {
+    5
+}
+
+/// The first run again with nothing changed already tells nothing new.
+fn default_test_rerun_note_at() -> u32 {
+    2
+}
+
+fn default_test_rerun_replan_at() -> u32 {
+    4
 }
 
 /// Two steps at least, so the result the model is reading is never put away under it.

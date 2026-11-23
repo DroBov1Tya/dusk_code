@@ -1,18 +1,31 @@
 //! A model that is stuck repeats itself. With no cap on steps, this is what stops it from
-//! burning a turn: the result of a repeated call carries a note to change course. Two
-//! rules share the note: the same call with the same result in a row (`same_call`), and,
-//! when `limits.failure_ladder` is on, the same error through calls that differ
-//! (`ladder`, with `signature` saying when two errors are the same). The same count tells,
-//! with `limits.episodes` on, when a pass ended such an error (`solved`).
+//! burning a turn: the result of a repeated call carries a note to change course. The
+//! rules share the note:
+//!
+//! - calls going in circles (`cycles`): the same call with the same result in a row, a
+//!   short run of calls coming round again, or a read giving the same result with
+//!   nothing changed between; with `limits.loop_cycles` on they escalate to a re-plan;
+//! - tests run again with no project file changed (`test_runs`, `limits.test_reruns`);
+//! - when `limits.failure_ladder` is on, the same error through calls that differ
+//!   (`ladder`, with `signature` saying when two errors are the same, and a test run's
+//!   failing ids standing for its error). The same count tells, with `limits.episodes`
+//!   on, when a pass ended such an error (`solved`).
+//!
+//! Only the ladder ends a turn; the other rules add notes.
 
+mod cycles;
+#[cfg(test)]
+mod cycles_tests;
 mod ladder;
-mod same_call;
 mod signature;
 #[cfg(test)]
 mod signature_tests;
 mod solved;
 #[cfg(test)]
 mod solved_tests;
+mod test_runs;
+#[cfg(test)]
+mod test_runs_tests;
 #[cfg(test)]
 mod tests;
 
@@ -26,6 +39,7 @@ use dusk_protocol::thread::RepeatRung;
 use crate::{config::Limits, providers::ToolCall, tools::ToolResult};
 
 pub use solved::{Solved, lesson, lesson_note};
+pub use test_runs::is_test_run;
 
 /// What the model is told about a repeated call, and what clients and evals are told.
 pub struct Notice {
@@ -35,11 +49,24 @@ pub struct Notice {
     pub note: String,
 }
 
+/// What the caller knows of a call that the rules cannot see in it.
+#[derive(Default)]
+pub struct Facts {
+    /// The call only reads: it can change nothing.
+    pub read_only: bool,
+    /// The change ledger's count for the thread after the call; read only for a test run
+    /// (`is_test_run`) with `limits.test_reruns` and `limits.record_changes` on.
+    pub ledger: Option<u64>,
+}
+
 /// Kept per turn: a new turn starts every count over.
 #[derive(Default)]
 pub struct Repeats {
     turn: String,
-    same_call: same_call::SameCall,
+    /// Steps of the turn that called tools, the one running included.
+    steps: u32,
+    cycles: cycles::Cycles,
+    test_runs: test_runs::TestRuns,
     ladder: ladder::Ladder,
     /// Why the turn must end, once the ladder reached its top.
     stop: Option<String>,
@@ -48,41 +75,69 @@ pub struct Repeats {
 }
 
 impl Repeats {
+    /// Notes that a step of the turn starts running its calls.
+    pub fn step(&mut self, turn_id: &str) {
+        self.enter(turn_id);
+        self.steps = self.steps.saturating_add(1);
+    }
+
     /// Notes a call that ran; `content` is what the model will read of its result. When
-    /// both rules apply, the ladder's note says more and is the one given.
+    /// more than one rule applies, the one that asks for most is given: a stop, then a
+    /// re-plan, then a note, and of two notes the more specific.
     pub fn note(
         &mut self,
         turn_id: &str,
         call: &ToolCall,
         result: &ToolResult,
         content: &str,
+        facts: &Facts,
         limits: &Limits,
     ) -> Option<Notice> {
         self.enter(turn_id);
-        let same = self.same_call.note(&call.name, &call.arguments, content);
+        let call_hash = hash((&call.name, call.arguments.to_string()));
+        let cycle = self.cycles.note(
+            self.steps,
+            facts.read_only,
+            call_hash,
+            cycles::result_hash(content),
+            limits,
+        );
+        let tests = limits
+            .test_reruns
+            .then(|| test_runs::TestRun::of(call, result))
+            .flatten();
+        let signature = tests.as_ref().and_then(test_runs::TestRun::signature);
+        let rerun = match tests {
+            Some(run) => self.test_runs.run(self.steps, run, facts.ledger, limits),
+            None => {
+                self.test_runs.other(facts.read_only);
+                None
+            }
+        };
         // With both switches off, nothing of the count runs: no signature, no cost.
         let counting = limits.failure_ladder || limits.episodes;
         let counted = (counting && result.is_error)
-            .then(|| self.ladder.count(call, &result.content))
+            .then(|| match signature {
+                Some(signature) => self.ladder.count_signature(call, signature),
+                None => self.ladder.count(call, &result.content),
+            })
             .flatten();
         let climbed = counted
             .filter(|_| limits.failure_ladder)
             .and_then(|key| self.ladder.climb(key, limits));
+        let mut notices = Vec::new();
         if let Some(climbed) = climbed {
             if climbed.stop.is_some() {
                 self.stop = climbed.stop;
             }
-            return Some(Notice {
-                rung: climbed.rung,
-                count: climbed.count,
-                note: climbed.note,
-            });
+            notices.push((climbed.rung, climbed.count, climbed.note));
         }
-        same.map(|(count, note)| Notice {
-            rung: RepeatRung::SameCall,
-            count,
-            note,
-        })
+        notices.extend(rerun);
+        notices.extend(cycle);
+        notices
+            .into_iter()
+            .min_by_key(|(rung, ..)| weight(*rung))
+            .map(|(rung, count, note)| Notice { rung, count, note })
     }
 
     /// The loop a call that passed ended, for an episode. Only asked with
@@ -130,6 +185,20 @@ impl Repeats {
             return None;
         }
         self.stop.take()
+    }
+}
+
+/// Which notice wins when rules agree on a call: lower first.
+fn weight(rung: RepeatRung) -> u8 {
+    match rung {
+        RepeatRung::Stop | RepeatRung::JudgeStop => 0,
+        RepeatRung::Replan => 1,
+        RepeatRung::TestRerunReplan => 2,
+        RepeatRung::CycleReplan | RepeatRung::NoProgressReplan => 3,
+        RepeatRung::TestRerun => 4,
+        RepeatRung::SameError => 5,
+        RepeatRung::Cycle | RepeatRung::NoProgress | RepeatRung::JudgeRedirect => 6,
+        RepeatRung::SameCall => 7,
     }
 }
 

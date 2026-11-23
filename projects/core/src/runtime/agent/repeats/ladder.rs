@@ -10,7 +10,10 @@ use std::collections::HashMap;
 
 use dusk_protocol::thread::RepeatRung;
 
-use super::{hash, signature};
+use super::{
+    hash,
+    signature::{self, Signature},
+};
 use crate::{config::Limits, project::episodes, providers::ToolCall};
 
 /// Distinct failures a turn keeps count of; more are not counted, so a turn that
@@ -65,6 +68,12 @@ impl Ladder {
     /// output has nothing to recognize or the turn keeps count of too many.
     pub fn count(&mut self, call: &ToolCall, output: &str) -> Option<u64> {
         let signature = signature::of(&call.name, &call.arguments, output)?;
+        self.count_signature(call, signature)
+    }
+
+    /// Counts a failed call under a signature found another way, as a test run's
+    /// failing ids.
+    pub fn count_signature(&mut self, call: &ToolCall, signature: Signature) -> Option<u64> {
         let key = hash(&signature.key);
         if !self.seen.contains_key(&key) && self.seen.len() >= MAX_SIGNATURES {
             return None;
