@@ -2,7 +2,7 @@
 
 use dusk_protocol::{
     client::{COMMANDS, Command},
-    config::{ContextPolicy, ProviderKind},
+    config::{ContextPolicy, ModelTier, ProviderKind},
     tools::Decision,
 };
 
@@ -86,6 +86,8 @@ pub enum Action {
     Pin(PinAsk),
     /// `/access`: this chat's own approval mode, or the one it has now when none is named.
     Access(Option<String>),
+    /// `/tier`: shows the subagent tiers' models, or sets one; `None` unsets it.
+    Tier(Option<(ModelTier, Option<String>)>),
     SetMemoryChars(usize),
     SetWorkHistoryChars(usize),
     PinSource {
@@ -198,6 +200,10 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         (
             "/access",
             "this chat's access: ask, sandbox, auto, full or default",
+        ),
+        (
+            "/tier",
+            "subagent models: /tier strong provider/model, /tier weak unset",
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())
