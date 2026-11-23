@@ -3,7 +3,8 @@
 //! not on the whole suite. It is derived from the command line and the output alone, and
 //! only when both leave no doubt: the program is known, its own test filters are not in
 //! the way, every failing test is named and the names add up to the count the runner
-//! printed. Otherwise there is no line.
+//! printed. Otherwise there is no line; also when the output was cut in the middle, as a
+//! failing block cut out with its count would leave names and counts that still agree.
 
 mod cargo;
 mod jest;
@@ -12,15 +13,18 @@ mod pytest;
 mod tests;
 
 use super::command_line::{Reading, run_words, split};
+use super::process::is_cut_line;
 use super::shape::program::{Program, program};
 
 /// More failing tests than this make a line too long to be a narrow command.
 const MAX_TESTS: usize = 10;
+/// A failing test's name longer than this would make the line long too.
+const MAX_NAME: usize = 200;
 
 /// The line to add after the output of `command`, which failed; `None` when the narrow
 /// command is not certain.
 pub fn rerun(command: &str, output: &str) -> Option<String> {
-    if command.contains('\n') {
+    if command.contains('\n') || output.lines().any(is_cut_line) {
         return None;
     }
     let narrow = match program(command) {
@@ -108,15 +112,22 @@ fn quoted(word: &str) -> String {
     }
 }
 
-/// `names` with repeats dropped, first seen first; `None` when there are none or too many.
+/// `names` with repeats dropped, first seen first; `None` when there are none, too many
+/// or one too long.
 fn distinct(names: Vec<String>) -> Option<Vec<String>> {
     let mut seen: Vec<String> = Vec::new();
     for name in names {
+        if name.len() > MAX_NAME {
+            return None;
+        }
         if !seen.contains(&name) {
+            if seen.len() == MAX_TESTS {
+                return None;
+            }
             seen.push(name);
         }
     }
-    (!seen.is_empty() && seen.len() <= MAX_TESTS).then_some(seen)
+    (!seen.is_empty()).then_some(seen)
 }
 
 /// `12` from a count word.

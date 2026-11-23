@@ -94,6 +94,45 @@ fn cargo_test_gets_no_line_when_anything_is_unsure() {
     }
 }
 
+/// A cut that took a whole failing block, its count with it, leaves names and counts that
+/// still agree: the cut alone must keep the line out.
+#[test]
+fn output_cut_in_the_middle_gets_no_line() {
+    let whole = "running 2 tests\ntest a::fine ... ok\ntest b::bad ... FAILED\n\
+                 test result: FAILED. 1 passed; 1 failed; 0 ignored\n";
+    assert_eq!(
+        narrow("cargo test --workspace --no-fail-fast", whole).as_deref(),
+        Some("cargo test --workspace --no-fail-fast -- --exact b::bad")
+    );
+    let cut = whole.replace(
+        "test a::fine ... ok\n",
+        "test a::fine ... ok\n[40960 bytes cut]\n",
+    );
+    assert_eq!(rerun("cargo test --workspace --no-fail-fast", &cut), None);
+    let pytest = PYTEST.replacen('\n', "\n[512 bytes cut]\n", 1);
+    assert_eq!(rerun("pytest", &pytest), None);
+    // A test may print a line that only looks like the marker.
+    let printed = whole.replace(
+        "test a::fine ... ok\n",
+        "test a::fine ... ok\n[some bytes cut]\n",
+    );
+    assert!(rerun("cargo test", &printed).is_some());
+}
+
+#[test]
+fn a_long_test_name_or_too_many_get_no_line() {
+    let long = format!(
+        "test a::{} ... FAILED\ntest result: FAILED. 0 passed; 1 failed; 0 ignored\n",
+        "x".repeat(300)
+    );
+    assert_eq!(rerun("cargo test", &long), None);
+    let mut many: String = (0..11)
+        .map(|i| format!("test a::t{i} ... FAILED\n"))
+        .collect();
+    many.push_str("test result: FAILED. 0 passed; 11 failed; 0 ignored\n");
+    assert_eq!(rerun("cargo test", &many), None);
+}
+
 #[test]
 fn pytest_gets_the_failing_node_ids_in_place_of_the_paths() {
     for (command, output, expected) in [
@@ -148,6 +187,9 @@ fn pytest_gets_no_line_when_anything_is_unsure() {
         "pytest tests && pytest tests",
         "pytest -- tests",
         "python -c 'import pytest'",
+        // The line already runs exactly the failing tests.
+        "pytest tests/test_checkout.py::test_checkout_total \
+         tests/test_pricing.py::test_bulk_price",
     ] {
         assert_eq!(rerun(command, PYTEST), None, "{command}");
     }
@@ -176,6 +218,10 @@ fn npm_test_running_jest_gets_the_failing_files_by_path() {
             "npm test -- --runTestsByPath src/checkout.test.ts",
         ),
         (
+            "npm test -- --watchAll=false",
+            "npm test -- --watchAll=false --runTestsByPath src/checkout.test.ts",
+        ),
+        (
             "cd web && npm run test -- --ci",
             "cd web && npm run test -- --ci --runTestsByPath src/checkout.test.ts",
         ),
@@ -189,6 +235,8 @@ fn npm_test_gets_no_line_unless_the_script_is_plain_jest() {
     for command in [
         "npm test -- src/cart",
         "npm test -- --watch",
+        "npm test -- --shard=1/2",
+        "npm test -- --onlyFailures",
         "npm run build",
         "pnpm test",
         "yarn test",

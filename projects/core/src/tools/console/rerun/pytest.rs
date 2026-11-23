@@ -86,7 +86,9 @@ pub(super) fn narrow(line: &str, output: &str) -> Option<String> {
     let replaced = paths
         .iter()
         .all(|path| plain(path) && ids.iter().any(|id| holds(path, id)));
-    if !replaced || kept.last().is_some_and(|last| !alone(last)) {
+    // The line already names exactly the failing tests: it is as narrow as it gets.
+    let same = paths.len() == ids.len() && ids.iter().all(|id| paths.contains(&id.as_str()));
+    if !replaced || same || kept.last().is_some_and(|last| !alone(last)) {
         return None;
     }
     rewritten(line, &paths, &ids)

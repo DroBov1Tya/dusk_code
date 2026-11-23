@@ -6,9 +6,12 @@ use super::super::command_line::program_name;
 use super::{appended, distinct, last_words, number, plain, run_words};
 
 /// jest flags that choose which tests run by something other than the paths.
-const SELECTING: [&str; 10] = [
+const SELECTING: [&str; 13] = [
     "-o",
     "--onlyChanged",
+    "-f",
+    "--onlyFailures",
+    "--shard",
     "--changedSince",
     "--lastCommit",
     "--findRelatedTests",
@@ -71,10 +74,11 @@ fn passed_flags<'a>(rest: &[&'a str]) -> Option<Option<Vec<&'a str>>> {
     Some(None)
 }
 
-/// A flag with no separate value that does not choose tests.
+/// A flag with no separate value that does not choose tests. `--watchAll=false`, common
+/// in create-react-app setups, turns watching off.
 fn harmless(flag: &str) -> bool {
     let name = flag.split_once('=').map_or(flag, |(name, _)| name);
-    flag.starts_with('-') && !SELECTING.contains(&name)
+    flag.starts_with('-') && (!SELECTING.contains(&name) || flag == "--watchAll=false")
 }
 
 /// Whether npm echoed a `test` script that is jest with flags only.
