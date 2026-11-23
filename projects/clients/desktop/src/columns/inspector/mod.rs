@@ -45,9 +45,7 @@ pub fn heavy(module: Right) -> bool {
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (panel, border) = (theme.sidebar, theme.sidebar_border);
-    // A screen whose module has nothing to show for this chat gives way to the list.
-    let screen = ws.right_screen.filter(|module| ws.has_content(*module));
-    let shown = match screen {
+    let shown = match ws.right_screen_shown() {
         Some(module) => screen_view(ws, module, window, cx).into_any_element(),
         None => list(ws, window, cx).into_any_element(),
     };
@@ -454,6 +452,12 @@ impl Workspace {
         }
     }
 
+    /// The screen the column shows: one whose module has nothing for this chat gives way
+    /// to the list, and is kept to come back when it has.
+    pub fn right_screen_shown(&self) -> Option<Right> {
+        self.right_screen.filter(|module| self.has_content(*module))
+    }
+
     /// Opens a heavy module as the column's screen, over the list.
     pub fn open_right(&mut self, module: Right, cx: &mut Context<Self>) {
         self.right_screen = Some(module);
@@ -474,7 +478,7 @@ impl Workspace {
     /// unfolded in the list.
     pub fn module_shown(&self, module: Right) -> bool {
         match heavy(module) {
-            true => self.right_screen == Some(module),
+            true => self.right_screen_shown() == Some(module),
             false => !self.folded.contains(&module),
         }
     }

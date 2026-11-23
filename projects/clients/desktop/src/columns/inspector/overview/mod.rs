@@ -51,7 +51,7 @@ impl Shown {
 impl Workspace {
     /// Whether the Overview is drawn now, as the column's screen or the page.
     pub fn overview_open(&self) -> bool {
-        let module = !self.right_hidden && self.right_screen == Some(Right::Overview);
+        let module = !self.right_hidden && self.right_screen_shown() == Some(Right::Overview);
         module || self.center == Center::Overview
     }
 

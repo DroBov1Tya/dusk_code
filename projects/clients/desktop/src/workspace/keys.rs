@@ -202,7 +202,8 @@ impl Workspace {
         if std::mem::take(&mut self.navigator_open) {
             return true;
         }
-        if !self.right_hidden && self.right_screen.is_some() {
+        // A screen whose module has nothing to show is not seen, so Escape goes on past it.
+        if !self.right_hidden && self.right_screen_shown().is_some() {
             self.close_right(cx);
             return true;
         }
