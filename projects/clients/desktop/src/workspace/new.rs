@@ -192,6 +192,7 @@ impl Workspace {
             providers: Vec::new(),
             models_loading: false,
             models_pending: HashSet::new(),
+            models_round: 0,
             picker: None,
             picker_closed: None,
             picked: Vec::new(),

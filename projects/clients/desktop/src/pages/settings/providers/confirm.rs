@@ -51,7 +51,10 @@ impl Workspace {
             cx,
             |client| async move { client.settings().remove_all_providers().await },
             |ws, result, cx| match result {
-                Ok(()) => ws.load_models(cx),
+                Ok(()) => {
+                    ws.providers.clear();
+                    ws.reload_models(cx)
+                }
                 Err(error) => ws.fail(error, cx),
             },
         );

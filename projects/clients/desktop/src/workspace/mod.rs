@@ -293,6 +293,8 @@ pub struct Workspace {
     pub models_loading: bool,
     /// Providers whose models have not come yet; each answers on its own.
     pub models_pending: HashSet<String>,
+    /// Counts model loads, so answers from a load a newer one replaced are dropped.
+    pub models_round: u64,
     pub picker: Option<Picker>,
     pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.

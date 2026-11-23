@@ -159,11 +159,14 @@ impl Workspace {
             return;
         }
         self.models_loading = true;
+        self.models_round += 1;
+        let round = self.models_round;
         cx.notify();
         self.core.call(
             cx,
             |client| async move { client.command(Command::Provider { name: None }).await },
-            |ws, result, cx| match result {
+            move |ws, result, cx| match result {
+                _ if ws.models_round != round => {}
                 Ok(Answer::Providers { providers, .. }) => {
                     ws.ask_providers(providers.into_iter().map(|p| p.name).collect(), cx)
                 }
@@ -177,6 +180,14 @@ impl Workspace {
                 }
             },
         );
+    }
+
+    /// Loads the models even while a load runs, for after the providers changed: the
+    /// running load would show the list from before the change.
+    pub fn reload_models(&mut self, cx: &mut Context<Self>) {
+        self.models_loading = false;
+        self.models_pending.clear();
+        self.load_models(cx);
     }
 
     fn ask_providers(&mut self, names: Vec<String>, cx: &mut Context<Self>) {
@@ -200,6 +211,7 @@ impl Workspace {
             .collect();
         self.models_pending = names.iter().cloned().collect();
         self.models_loading = !names.is_empty();
+        let round = self.models_round;
         for name in names {
             let asked = name.clone();
             self.core.call(
@@ -210,6 +222,9 @@ impl Workspace {
                         .await
                 },
                 move |ws, result, cx| {
+                    if ws.models_round != round {
+                        return;
+                    }
                     ws.models_pending.remove(&name);
                     ws.models_loading = !ws.models_pending.is_empty();
                     let status = match result {

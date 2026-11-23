@@ -333,7 +333,7 @@ impl Workspace {
                     if matches!(ws.modal, Some(crate::modal::Modal::ConnectProvider)) {
                         ws.close_modal(cx);
                     }
-                    ws.load_models(cx)
+                    ws.reload_models(cx)
                 }
                 Err(error) => ws.fail(error, cx),
             },
