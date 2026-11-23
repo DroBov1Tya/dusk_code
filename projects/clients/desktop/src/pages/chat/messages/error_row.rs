@@ -58,7 +58,17 @@ pub fn error_row(
                 .flex_none()
                 .text_color(danger),
         )
-        .child(div().flex_1().min_w_0().small().child(text.to_owned()))
+        // Selectable: an error's code or path is often wanted without the rest.
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .small()
+                .child(gpui_kit::base::SelectableText::new(
+                    SharedString::from(format!("error-text-{key}")),
+                    text.to_owned(),
+                )),
+        )
         .child(widgets::copy(
             SharedString::from(format!("error-copy-{key}")),
             &group,

@@ -4,6 +4,7 @@
 
 use dusk_protocol::{catalog::NodeText, client::Switch as CoreSwitch, config::McpState};
 use gpui_kit::{
+    base::SelectableText,
     component::{ActiveTheme, Sizable, input::InputState, switch::Switch},
     *,
 };
@@ -62,9 +63,16 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                 McpState::Ready(_) => ("Ready".to_owned(), success),
                 McpState::Failed(error) => (format!("Failed: {error}"), danger),
             };
+            // Selectable, so an error or the command can be copied in part.
             let mut page = page
-                .child(div().small().text_color(color).child(state))
-                .child(div().meta().text_color(muted).child(server.target.clone()));
+                .child(div().small().text_color(color).child(SelectableText::new(
+                    SharedString::from(format!("detail-state-{name}")),
+                    state,
+                )))
+                .child(div().meta().text_color(muted).child(SelectableText::new(
+                    SharedString::from(format!("detail-target-{name}")),
+                    server.target.clone(),
+                )));
             if server.tools.is_empty() {
                 page = page
                     .child(widgets::muted("Its tools show once the server is ready.", cx).px_0());
@@ -250,12 +258,15 @@ fn row(name: &str, description: &str, control: impl IntoElement, cx: &App) -> Di
                 .flex_1()
                 .min_w_0()
                 .child(div().font_family("Menlo").small().child(name.to_owned()))
+                // Whole and selectable: this window is where a description is read.
                 .child(
                     div()
                         .meta()
                         .text_color(theme.muted_foreground)
-                        .line_clamp(3)
-                        .child(description.to_owned()),
+                        .child(SelectableText::new(
+                            SharedString::from(format!("detail-description-{name}")),
+                            description.to_owned(),
+                        )),
                 ),
         )
         .child(control)

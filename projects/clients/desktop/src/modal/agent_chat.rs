@@ -139,7 +139,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .bg(danger.opacity(0.1))
                 .small()
                 .text_color(danger)
-                .child(text.clone())
+                .child(selectable(format!("agent-error-{agent}-{at}"), text))
                 .into_any_element(),
         });
     }

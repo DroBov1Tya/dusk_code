@@ -3,7 +3,7 @@
 //! the window that asks before an install.
 
 use dusk_protocol::plugin::{Connector, ConnectorState, Listing, Runs};
-use gpui_kit::{component::ActiveTheme, *};
+use gpui_kit::{base::SelectableText, component::ActiveTheme, *};
 
 use super::capsule::clip;
 use crate::{
@@ -60,11 +60,15 @@ fn row(connector: &Connector, cx: &App) -> Div {
                         .child(clip(&connector.name, 64)),
                 )
                 .child(div().small().text_color(muted).child(can(&connector.runs)))
+                // Selectable, so the address or command can be copied to check it.
                 .child(
                     div()
                         .small()
                         .font_family(theme.mono_font_family.clone())
-                        .child(clip(target(&connector.runs), LINE_CHARS)),
+                        .child(SelectableText::new(
+                            SharedString::from(format!("connector-target-{}", connector.name)),
+                            clip(target(&connector.runs), LINE_CHARS),
+                        )),
                 )
                 .children((connector.state == ConnectorState::Yours).then(|| {
                     div().meta().text_color(muted).child(

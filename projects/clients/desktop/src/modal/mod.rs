@@ -331,6 +331,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     // A listing's gallery steps with Left and Right.
     let gallery = matches!(ws.modal, Some(Modal::Listing { .. }));
     let theme = cx.theme();
+    // A press inside is marked rather than stopped: the window's text selection hears
+    // presses only after every element, so a stopped one could not start a selection.
+    let inside = std::rc::Rc::new(std::cell::Cell::new(false));
+    let pressed = inside.clone();
     let panel = div()
         .id("modal-panel")
         // The window itself takes the keys, not its close button: a focused button
@@ -352,7 +356,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .rounded_xl()
         .elevation(Level::Floating, cx)
         // Clicks inside stay inside.
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_down(MouseButton::Left, move |_, _, _| pressed.set(true))
         .child(
             div()
                 .flex()
@@ -404,7 +408,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .occlude()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
+                cx.listener(move |ws, _, window, cx| {
+                    if !inside.replace(false) {
+                        ws.close_modal_from_window(window, cx);
+                    }
+                }),
             )
             .child(crate::ui::widgets::appear("modal-open", panel)),
     )

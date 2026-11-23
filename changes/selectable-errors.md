@@ -1,0 +1,2 @@
+Fixed
+In the desktop app the words of errors, of the error banner over a chat and of a connector's window (its state, a failure's message, its address or command and its tools' descriptions, now shown whole) can be selected, and so can a Workshop connector's address. The banner closes from its own button, so a drag to select no longer dismisses it. Text in any window over the app can be selected too.
