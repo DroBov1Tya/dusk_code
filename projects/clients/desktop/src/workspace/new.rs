@@ -106,7 +106,11 @@ impl Workspace {
             chats: HashMap::new(),
             shown: None,
             project: None,
-            collapsed: HashSet::new(),
+            collapsed: crate::ui::theme::prefs(cx)
+                .collapsed_projects
+                .iter()
+                .cloned()
+                .collect(),
             center: Center::Chat,
             shelf: Shelf::Connectors,
             shelf_search,

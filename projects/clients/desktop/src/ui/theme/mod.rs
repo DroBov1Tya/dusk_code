@@ -31,6 +31,8 @@ pub struct Prefs {
     pub pinned: Vec<String>,
     /// How the side panel lists the chats: under their projects, or all by last activity.
     pub chats_by: crate::columns::sidebar::Order,
+    /// The projects folded in the side panel, by ID.
+    pub collapsed_projects: Vec<String>,
     /// The right column's folded modules as the user left them; none before the first
     /// choice, so the first start folds the heavy ones.
     pub right_folded: Option<Vec<String>>,
@@ -67,6 +69,7 @@ impl Default for Prefs {
             mono_size: 13.,
             pinned: Vec::new(),
             chats_by: Default::default(),
+            collapsed_projects: Vec::new(),
             right_folded: None,
             right_order: Vec::new(),
             footer_open: false,
