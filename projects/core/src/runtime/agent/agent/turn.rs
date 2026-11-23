@@ -14,6 +14,10 @@ use tracing::{info, warn};
 /// Compactions a step that does not fit the model's context gets before the turn fails.
 const MAX_SHRINKS: u32 = 2;
 
+/// Steps taken again after a tool call written as text, so a model that keeps doing it
+/// cannot spend the turn.
+const MAX_STRANDED: u32 = 2;
+
 impl Agent {
     /// Starts a turn when something is queued and the context fits the input limit.
     pub async fn start_turn(&self) -> Result<Option<Turn>> {
@@ -98,13 +102,17 @@ impl Agent {
         let mut shrunk = 0;
         // The context the size check after the last step read, while nothing changed it.
         let mut loaded = None;
+        // Steps taken again for a call written as text, and the note for the next one.
+        let mut stranded = 0;
+        let mut note = None;
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
             let step = match first.take() {
                 Some(end) => Ok(end),
                 None => {
                     let waited = waiting_since.is_some();
-                    self.step(turn, inbox, waited, loaded.take()).await
+                    self.step(turn, inbox, waited, loaded.take(), note.clone())
+                        .await
                 }
             };
             let end = match step {
@@ -114,6 +122,10 @@ impl Agent {
                     break;
                 }
             };
+            // The note stays for a step taken again after a compaction.
+            if !matches!(end, StepEnd::TooLarge(_)) {
+                note = None;
+            }
             // A step that called tools had its answer, which ended the wait it followed.
             if matches!(end, StepEnd::CalledTools) {
                 waiting_since = None;
@@ -187,6 +199,20 @@ impl Agent {
                     }
                 }
                 StepEnd::TooLarge(failure) => outcome = TurnOutcome::Failed(failure),
+                StepEnd::Stranded(text, _) if stranded < MAX_STRANDED => {
+                    stranded += 1;
+                    // The step ended the provider wait it followed.
+                    waiting_since = None;
+                    note = Some(text);
+                    continue;
+                }
+                // An empty answer cannot be stored, and the call never ran.
+                StepEnd::Stranded(_, answer) if answer.content.trim().is_empty() => {
+                    outcome = TurnOutcome::failed(
+                        "the model kept writing tool calls as text that could not run",
+                    );
+                }
+                StepEnd::Stranded(_, answer) => outcome = TurnOutcome::Completed(answer),
                 StepEnd::Answered(answer) => outcome = answer,
                 StepEnd::Stopped(reason, partial) => {
                     stop = Some(reason);

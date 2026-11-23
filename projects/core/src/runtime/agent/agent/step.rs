@@ -20,9 +20,14 @@ use crate::{
 use anyhow::{Context, Result};
 use tracing::info;
 
+/// An answer this short may stand beside a call the model wrote in its reasoning
+/// ("Let me look."); a longer one is the answer, and its reasoning is left alone.
+const SHORT_ANSWER: usize = 200;
+
 impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     /// `waited` says the turn's provider wait is stored, to end once the model answers.
+    /// `note` goes to the model last, for this step only.
     #[tracing::instrument(name = "step", skip_all)]
     pub(super) async fn step(
         &self,
@@ -30,6 +35,7 @@ impl Agent {
         inbox: &mut Inbox,
         waited: bool,
         loaded: Option<Loaded>,
+        note: Option<String>,
     ) -> Result<StepEnd> {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config_now().await;
@@ -106,6 +112,9 @@ impl Agent {
         if let Some(note) = missing_tools(&messages, &tools) {
             messages.push(ChatMessage::System(note));
         }
+        if let Some(note) = note {
+            messages.push(ChatMessage::System(note));
+        }
         let choice = self.model.current().context("provider is unavailable")?;
         let set = self.effort(&config).await;
         let effort = self.pace.lock().effort(set);
@@ -178,19 +187,42 @@ impl Agent {
             }
             self.report_progress(&turn.turn_id).await;
         }
-        let reasoning = recorded_reasoning(&config, &output);
+        let mut reasoning = recorded_reasoning(&config, &output);
+        let mut stranded = None;
         let (content, generated) = match generated {
-            Ok(Ok(calls)) if calls.is_empty() => match text_calls::recover(&output.text, &tools) {
-                Some((content, calls)) => {
-                    info!(
-                        "thread {}: {} tool calls written as text",
-                        self.thread_id,
-                        calls.len()
-                    );
-                    (content, Ok(Ok(calls)))
+            Ok(Ok(calls)) if calls.is_empty() => {
+                // A call in the reasoning counts only beside little or no answer.
+                let short = output.text.trim().len() <= SHORT_ANSWER;
+                let in_reasoning = || {
+                    let (rest, calls) = text_calls::recover(&output.reasoning, &tools)?;
+                    Some((output.text.clone(), calls, Some(rest)))
+                };
+                let found = text_calls::recover(&output.text, &tools)
+                    .map(|(content, calls)| (content, calls, None))
+                    .or_else(|| short.then(in_reasoning).flatten());
+                match found {
+                    Some((content, calls, rest)) => {
+                        info!(
+                            "thread {}: {} tool calls written as text",
+                            self.thread_id,
+                            calls.len()
+                        );
+                        // The recorded reasoning keeps the thought, not the markup.
+                        if let Some(rest) = rest {
+                            reasoning = reasoning.and(Some(rest).filter(|r| !r.trim().is_empty()));
+                        }
+                        (content, Ok(Ok(calls)))
+                    }
+                    None => {
+                        stranded = text_calls::stranded(&output.text, &tools).or_else(|| {
+                            short
+                                .then(|| text_calls::stranded(&output.reasoning, &tools))
+                                .flatten()
+                        });
+                        (output.text, Ok(Ok(calls)))
+                    }
                 }
-                None => (output.text, Ok(Ok(calls))),
-            },
+            }
             generated => (output.text, generated),
         };
         let answer = TurnAnswer { reasoning, content };
@@ -258,7 +290,19 @@ impl Agent {
                 });
             }
             Ok(Ok(calls)) if calls.is_empty() => {
-                return Ok(StepEnd::Answered(TurnOutcome::Completed(answer)));
+                return Ok(match stranded {
+                    Some(note) => {
+                        info!(
+                            "thread {}: a tool call written as text did not run",
+                            self.thread_id
+                        );
+                        if waited {
+                            self.state.end_wait(&turn.turn_id).await?;
+                        }
+                        StepEnd::Stranded(note, answer)
+                    }
+                    None => StepEnd::Answered(TurnOutcome::Completed(answer)),
+                });
             }
             Ok(Ok(calls)) => calls,
         };
