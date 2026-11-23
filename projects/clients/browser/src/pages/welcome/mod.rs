@@ -1,7 +1,7 @@
 //! The first screen of a clean install, as the desktop app has it: four pages walked
 //! sideways in order (hello, a model, the tools, ready), with dots, Back and Next and
 //! the arrow keys. It shows while the core has no provider and the user has not finished
-//! it, and it stays until Start or Skip even once a provider connects in the middle.
+//! it, and it stays until Start or Skip setup even once a provider connects in the middle.
 //! "Finished" is this browser's own preference, kept in its storage.
 
 mod provider;
@@ -100,7 +100,7 @@ impl Welcome {
         }
     }
 
-    /// Start or Skip: the welcome is done for this browser.
+    /// Start or Skip setup: the welcome is done for this browser.
     fn finish(self) {
         self.page.set(None);
         if let Some(storage) = storage() {
@@ -133,9 +133,15 @@ pub fn ChatOrWelcome(id: Option<String>, welcome: Welcome) -> impl IntoView {
 fn Pages(welcome: Welcome) -> impl IntoView {
     // Arrows walk the pages and Escape finishes, but only for keys meant for the
     // welcome: not one a drawer or menu already took, not one pressed inside a drawer
-    // over it. Escape in a box only leaves the box; arrows there move the caret.
+    // over it, nor any while a drawer makes the welcome inert (focus on the body never
+    // reaches the drawer's own handler). Escape in a box only leaves the box; arrows
+    // there move the caret.
+    let root = NodeRef::<leptos::html::Div>::new();
     let keys = window_event_listener(ev::keydown, move |event| {
-        if event.default_prevented() {
+        let inert = root
+            .get_untracked()
+            .is_some_and(|root| root.closest("[inert]").ok().flatten().is_some());
+        if event.default_prevented() || inert {
             return;
         }
         let target = event
@@ -173,8 +179,8 @@ fn Pages(welcome: Welcome) -> impl IntoView {
         }
     };
     view! {
-        <div class="welcome">
-            <button class="link quiet welcome-skip" on:click=move |_| welcome.finish()>"Skip"</button>
+        <div class="welcome" node_ref=root>
+            <button class="link quiet welcome-skip" on:click=move |_| welcome.finish()>"Skip setup"</button>
             {move || {
                 let page = page();
                 let body = match page {
