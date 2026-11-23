@@ -76,14 +76,17 @@ pub fn show_draft(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Work
     let switched = ws
         .drafts
         .switch(ws.shown.as_deref(), || std::mem::take(&mut current));
-    let changed = edited || switched.is_some();
+    let switched_chat = switched.is_some();
     let draft = switched.unwrap_or(current);
     ws.attachments = draft.attachments;
     ws.pastes = draft.pastes;
-    if changed {
+    if switched_chat {
+        // Another chat's draft: Cmd+Z must not bring back the text of the chat just left.
         ws.composer.update(cx, |composer, cx| {
             composer.set_value(draft.text, window, cx)
         });
+    } else if edited {
+        ws.write_composer(&draft.text, window, cx);
     }
 }
 
@@ -318,6 +321,19 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
 }
 
 impl Workspace {
+    /// Puts `text` in the box as one edit Cmd+Z takes back, the caret after it;
+    /// `set_value` would wipe the box's history. Leaves the box alone when it has the text.
+    pub fn write_composer(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.composer.update(cx, |composer, cx| {
+            if composer.value() == text {
+                return;
+            }
+            let len = composer.value().len();
+            composer.set_selected_range(0..len, cx);
+            composer.replace(text.to_owned(), window, cx);
+        });
+    }
+
     pub fn edit_draft(
         &mut self,
         thread_id: Option<String>,

@@ -104,7 +104,14 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
     // After /undo the core hands the message back to edit.
     Effect::new(move |_| {
         if let Some(offered) = chat.with(|c| c.offered.clone()) {
-            text.update(|draft| restore_offered(draft, offered));
+            let draft = text.get_untracked();
+            let mut restored = draft.clone();
+            restore_offered(&mut restored, offered);
+            let before = &restored[..restored.len() - draft.len()];
+            match area.get_untracked() {
+                Some(area) if type_in(&area, before) => text.set(area.value()),
+                _ => text.set(restored),
+            }
             chat.update(|c: &mut ChatData| c.offered = None);
         }
     });
@@ -341,6 +348,20 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
             <super::controls::Context chat />
         </div>
     }
+}
+
+/// Types `before` in at the start of the box as the user would, so the browser's own undo
+/// takes it back; setting the value wipes that history. False where the browser cannot.
+fn type_in(area: &web_sys::HtmlTextAreaElement, before: &str) -> bool {
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return false;
+    };
+    let document: web_sys::HtmlDocument = document.unchecked_into();
+    let _ = area.focus();
+    let _ = area.set_selection_range(0, 0);
+    document
+        .exec_command_with_show_ui_and_value("insertText", false, before)
+        .unwrap_or(false)
 }
 
 /// Restore the undone message before any text already in the draft.

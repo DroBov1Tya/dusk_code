@@ -53,8 +53,7 @@ impl Workspace {
                 Some(answers) => text = answers,
                 // More questions wait: this answer is kept and the next one shows.
                 None => {
-                    self.composer
-                        .update(cx, |composer, cx| composer.set_value("", window, cx));
+                    self.write_composer("", window, cx);
                     cx.notify();
                     return;
                 }
@@ -64,8 +63,7 @@ impl Workspace {
             .filter(|id| self.chats.get(id).is_some_and(|chat| chat.working))
         {
             // The agent is busy: the text waits, editable, until the turn ends.
-            self.composer
-                .update(cx, |composer, cx| composer.set_value("", window, cx));
+            self.write_composer("", window, cx);
             self.queue(thread_id, text, window, cx);
             return;
         }
@@ -74,8 +72,7 @@ impl Workspace {
             self.selected_project()
                 .map_or_else(|| self.home.clone(), |project| project.dir.clone()),
         );
-        self.composer
-            .update(cx, |composer, cx| composer.set_value("", window, cx));
+        self.write_composer("", window, cx);
         let temporary = std::mem::take(&mut self.temporary_next);
         let origin = shown.clone();
         let generation = self.drafts.generation();

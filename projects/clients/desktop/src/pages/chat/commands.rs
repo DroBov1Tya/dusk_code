@@ -90,8 +90,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let text = format!("{name} ");
-        self.composer
-            .update(cx, |composer, cx| composer.set_value(text, window, cx));
+        self.write_composer(&text, window, cx);
         cx.notify();
     }
 
@@ -119,8 +118,7 @@ impl Workspace {
             self.fail(anyhow::anyhow!("open a chat to use this command"), cx);
             return true;
         }
-        self.composer
-            .update(cx, |composer, cx| composer.set_value("", window, cx));
+        self.write_composer("", window, cx);
         match command {
             Command::New => self.new_chat(None, window, cx),
             Command::Temporary => self.new_temporary_chat(window, cx),

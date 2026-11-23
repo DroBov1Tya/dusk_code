@@ -70,13 +70,7 @@ impl PasteEditor {
     fn of(target: EditorTarget, text: String) -> Self {
         Self {
             target,
-            text: Input {
-                command_cycle: None,
-                text: text.clone(),
-                cursor: 0,
-                pastes: Vec::new(),
-                anchor: None,
-            },
+            text: Input::holding(text.clone()),
             original: text,
             confirming: false,
             scroll: 0,
