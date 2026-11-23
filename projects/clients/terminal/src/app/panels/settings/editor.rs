@@ -57,13 +57,7 @@ impl FileEditor {
         Self {
             target,
             metadata,
-            text: Input {
-                command_cycle: None,
-                text: text.clone(),
-                cursor: 0,
-                pastes: Vec::new(),
-                anchor: None,
-            },
+            text: Input::holding(text.clone()),
             original: text,
             scroll: 0,
             error: None,

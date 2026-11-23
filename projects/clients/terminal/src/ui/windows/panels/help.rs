@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 44] = [
+pub const KEYS: [(&str, &str); 45] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -18,6 +18,10 @@ pub const KEYS: [(&str, &str); 44] = [
         "select typed text; Ctrl+A all, drag works too",
     ),
     ("Ctrl+C/X", "copy or cut the selected typed text"),
+    (
+        "Ctrl+Z / Ctrl+Y",
+        "undo or redo typing; Ctrl+Shift+Z redoes too",
+    ),
     ("Up / Down", "earlier messages you sent"),
     ("Tab", "switch the mode: main, plan, orchestrator"),
     ("Shift+Tab", "walk thinking, tools and summaries"),

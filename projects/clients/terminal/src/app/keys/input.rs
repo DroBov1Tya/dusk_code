@@ -54,6 +54,14 @@ impl App {
                 }
             }
             KeyCode::Char('a') if ctrl => self.input.select_all(),
+            // Raw mode leaves Ctrl+Z to us: it undoes here, it does not suspend.
+            KeyCode::Char('z') if ctrl && !shift => {
+                self.input.undo();
+            }
+            // Ctrl+Shift+Z reaches only terminals that tell Shift apart; Ctrl+Y works in all.
+            KeyCode::Char('z' | 'Z' | 'y') if ctrl => {
+                self.input.redo();
+            }
             KeyCode::Char('x') if ctrl => {
                 if let Some(text) = self.input.selected() {
                     self.input.delete_selection();
