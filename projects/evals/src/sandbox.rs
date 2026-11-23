@@ -173,4 +173,14 @@ mod tests {
         assert_eq!(tasks.len(), 4);
         selfcheck(&tasks).unwrap();
     }
+
+    /// The loop tasks have traps a lax check would let through: a flaky test that passes
+    /// most runs, a fake of the missing package. Their checks must still fail untouched work.
+    #[test]
+    fn the_loop_tasks_tell_work_from_no_work() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("tasks");
+        let tasks = crate::task::load(&folder, &["loop-".to_owned()]).unwrap();
+        assert_eq!(tasks.len(), 4);
+        selfcheck(&tasks).unwrap();
+    }
 }

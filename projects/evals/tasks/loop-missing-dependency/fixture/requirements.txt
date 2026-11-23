@@ -1,0 +1,2 @@
+--index-url https://pypi.internal.example/simple
+acme-geodesy==2.3.1

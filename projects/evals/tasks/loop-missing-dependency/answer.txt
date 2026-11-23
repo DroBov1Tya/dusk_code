@@ -1,0 +1,1 @@
+The tests cannot run: distance.py needs acme-geodesy 2.3.1, which is not installed and cannot be installed here, since its index pypi.internal.example is unreachable and the package is not on PyPI. Install it from the internal index and run the tests again.

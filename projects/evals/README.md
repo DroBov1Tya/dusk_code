@@ -72,6 +72,20 @@ The `hard-` tasks hide what the request does not spell out: randomized checks ag
 reference, concurrency under stress, encoded attacks, a specification with amendments, a
 large log. `--only hard-` runs them alone.
 
+## Loop tasks
+
+The `loop-` tasks tempt an agent to go round in circles, to measure the repeat and
+no-progress guards (`limits.failure_*`) on and off. The report counts `test_runs`
+(commands that ran tests, subagents included), repeat notices and repeat stops beside
+the verdict.
+
+| Task | The trap | A pass |
+|---|---|---|
+| `loop-flaky-test` | a test that fails one run in three (a counter file decides) and passes when run again | the retry bug is fixed; the check runs every case |
+| `loop-narrow-test` | a one-line bug in a suite of thirty two-second modules; the README names the narrow command | the fix, with the whole suite run at most twice |
+| `loop-ping-pong` | two tests that seem to want opposite values of one setting | the setting stays in milliseconds and the client converts |
+| `loop-missing-dependency` | a package from an index that cannot be reached | a report that it is missing, no stand-in and no claim of a pass |
+
 ## Team tasks
 
 The `team-` tasks have parts for a lead and its members (the plan graph in

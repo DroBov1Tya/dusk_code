@@ -94,6 +94,10 @@ mod tests {
             "team-chain-kill",
             "team-fan-out",
             "team-small",
+            "loop-flaky-test",
+            "loop-narrow-test",
+            "loop-ping-pong",
+            "loop-missing-dependency",
         ] {
             assert!(named(name).is_some(), "{name} is missing");
         }
