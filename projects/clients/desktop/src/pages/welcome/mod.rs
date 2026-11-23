@@ -185,7 +185,7 @@ impl Workspace {
         }
     }
 
-    /// Start, Skip and Escape: the welcome is done for good.
+    /// Start, Skip and Escape outside the form's boxes: the welcome is done for good.
     pub fn welcome_finish(&mut self, cx: &mut Context<Self>) {
         if self.welcome.page.take().is_none() {
             return;
@@ -195,10 +195,17 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Escape while the welcome shows finishes it. True when it did.
-    pub fn welcome_escape(&mut self, cx: &mut Context<Self>) -> bool {
+    /// Escape while the welcome shows: in a box of the form it only leaves the box, so
+    /// leaving one never ends the welcome for good; else it finishes the welcome. True
+    /// when it did either.
+    pub fn welcome_escape(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if !shown(self) {
             return false;
+        }
+        if self.welcome.typing(window, cx) {
+            window.focus(&self.focus, cx);
+            cx.notify();
+            return true;
         }
         self.welcome_finish(cx);
         true

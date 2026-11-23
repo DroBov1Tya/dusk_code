@@ -1,5 +1,6 @@
-//! The welcome drawn: the page in view in the middle, Skip in the corner, and under the
-//! page Back, a dot for each page and Next. The first and the last page are here; the
+//! The welcome drawn: the page in view in the middle, scrolling when the window is too
+//! short for it, Skip pinned in the corner above it, and pinned under it Back, a dot for each page and
+//! Next, so turning a page never moves them. The first and the last page are here; the
 //! Model and Tools pages have their own files.
 
 use gpui_kit::{
@@ -20,8 +21,6 @@ use crate::{
 
 /// Wide enough for an address and a tool's sentence, narrow enough to read as one thing.
 pub const WIDTH: f32 = 460.;
-/// Pages stand at least this tall, so the buttons under them stay where they are.
-const HEIGHT: f32 = 440.;
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let page = ws.welcome.page.unwrap_or(Page::Hello);
@@ -31,34 +30,62 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         Page::Tools => tools::render(ws, cx),
         Page::Ready => ready(ws, cx),
     };
-    let body = div()
-        .w_full()
-        .max_w(px(WIDTH))
-        .min_h(px(HEIGHT))
-        .flex()
-        .flex_col()
-        .justify_center()
-        .child(body);
+    let body = div().w_full().max_w(px(WIDTH)).child(body);
     let id = SharedString::from(format!("welcome-page-{page:?}"));
+    // Centred while it fits, scrolled when it does not; each page keeps its own place.
+    // Upright only, so a sideways swipe turns the page instead of scrolling it.
+    let scroll = div()
+        .id(SharedString::from(format!("welcome-scroll-{page:?}")))
+        .flex_1()
+        .min_h_0()
+        .w_full()
+        .overflow_y_scroll()
+        .restrict_scroll_to_axis()
+        .child(
+            div()
+                .w_full()
+                .min_h_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .px_6()
+                .py_4()
+                .child(motion::slide(id, body, ws.welcome.toward)),
+        );
+    // Skip has a row of its own above the page, so a page scrolled under it never meets it.
+    let top = div()
+        .flex_none()
+        .w_full()
+        .flex()
+        .justify_end()
+        .px_6()
+        .pt_4()
+        .child(skip(cx));
     div()
         .id("welcome")
-        .relative()
         .size_full()
         .flex()
         .flex_col()
-        .items_center()
-        .justify_center()
-        .gap_8()
-        .px_6()
         .on_scroll(cx.listener(|ws, event: &ScrollEvent, window, cx| {
             let step = ws.welcome.swipe.feed(event);
             if step != 0 {
                 ws.welcome_turn(step, window, cx);
             }
         }))
-        .child(skip(cx))
-        .child(motion::slide(id, body, ws.welcome.toward))
-        .child(nav(ws, page, cx))
+        .child(top)
+        .child(scroll)
+        .child(
+            div()
+                .flex_none()
+                .w_full()
+                .flex()
+                .justify_center()
+                .px_6()
+                .pt_4()
+                .pb_8()
+                .child(nav(ws, page, cx)),
+        )
 }
 
 /// Skip, quiet in the top corner: the whole welcome is done.
@@ -67,9 +94,6 @@ fn skip(cx: &mut Context<Workspace>) -> Stateful<Div> {
     let (muted, foreground) = (theme.muted_foreground, theme.foreground);
     div()
         .id("welcome-skip")
-        .absolute()
-        .top_4()
-        .right_6()
         .small()
         .text_color(muted)
         .hover(|link| link.text_color(foreground))
@@ -98,7 +122,8 @@ fn nav(ws: &Workspace, page: Page, cx: &mut Context<Workspace>) -> Div {
                 .on_click(cx.listener(move |ws, _, window, cx| ws.welcome_go(dot, window, cx)))
         }));
     let next = match page {
-        Page::Model if !connected => "Skip",
+        // Not "Skip": the corner's Skip ends the whole welcome, this one only a step.
+        Page::Model if !connected => "Not now",
         Page::Ready => "Start",
         _ => "Next",
     };
