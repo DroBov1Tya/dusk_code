@@ -24,12 +24,13 @@ pub struct Limits {
     max_input_tokens: Option<u64>,
     #[serde(default, skip_serializing)]
     max_output_tokens: Option<u64>,
+    /// Older configs capped a goal's rounds; a goal now runs until it is met or the user
+    /// bounds it in its own words.
+    #[serde(default, skip_serializing)]
+    max_goal_rounds: Option<u32>,
     /// Maximum number of subagents running across all threads.
     #[serde(default = "default_max_agents_at_work")]
     pub max_agents_at_work: usize,
-    /// Turns a goal may start by itself before it is paused for the user.
-    #[serde(default = "default_max_goal_rounds")]
-    pub max_goal_rounds: u32,
     /// Seconds a model call may stay silent before it is given up on. A reasoning model
     /// can think for a while, so the quiet counts, not the whole call.
     #[serde(default = "default_model_timeout_seconds")]
@@ -177,7 +178,7 @@ impl Default for Limits {
             max_input_tokens: None,
             max_output_tokens: None,
             max_agents_at_work: default_max_agents_at_work(),
-            max_goal_rounds: default_max_goal_rounds(),
+            max_goal_rounds: None,
             model_timeout_seconds: default_model_timeout_seconds(),
             max_attempts: default_max_attempts(),
             retry_unreachable_seconds: default_retry_unreachable_seconds(),
@@ -227,10 +228,6 @@ impl Limits {
 
 fn default_max_agents_at_work() -> usize {
     8
-}
-
-fn default_max_goal_rounds() -> u32 {
-    10
 }
 
 /// Long enough for a reasoning model's pauses, short enough not to hang a turn.

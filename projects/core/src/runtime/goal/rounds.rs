@@ -1,6 +1,7 @@
 //! A goal's rounds: after each turn of a chat with an active goal, the runner checks
 //! the work against the goal's criteria when the model asked for that, and otherwise
-//! queues the next round until the rounds run out.
+//! queues the next round. Rounds are counted for display only; a user who wants a bound
+//! writes it into the goal.
 
 use std::sync::Arc;
 
@@ -25,8 +26,7 @@ impl ThreadRunner {
                 }))
     }
 
-    /// Queues the next round of an active goal, or pauses it when the rounds are spent.
-    /// Returns whether a round was queued.
+    /// Queues the next round of an active goal. Returns whether a round was queued.
     pub async fn next_goal_round(&mut self) -> Result<bool> {
         let Some(goal) = self.agent.active_goal().await? else {
             self.goal_waiting = false;
@@ -86,19 +86,13 @@ impl ThreadRunner {
         if goal.verification == "needs_user" {
             return Ok(false);
         }
-        let rounds = self.agent.config.current().limits().max_goal_rounds;
-        if goal.rounds >= rounds {
-            self.pause_goal(&format!("all {rounds} rounds used"))
-                .await?;
-            return Ok(false);
-        }
         let state = &self.agent.state;
         let Some(goal) = state.count_goal_round(&self.agent.thread_id).await? else {
             return Ok(false);
         };
-        let kickoff = goal::kickoff(&goal, rounds);
+        let kickoff = goal::kickoff(&goal);
         state.add_pending(&self.agent.thread_id, &kickoff).await?;
-        let note = format!("goal round {} of {rounds}", goal.rounds);
+        let note = format!("goal round {}", goal.rounds);
         self.agent.emit(ThreadEvent::Goal {
             goal: Some(goal),
             note,

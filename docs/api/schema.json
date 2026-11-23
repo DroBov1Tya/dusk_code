@@ -8120,11 +8120,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "max_goal_rounds": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
         "mcp": {
           "items": {
             "$ref": "#/$defs/McpInfo"
@@ -8189,7 +8184,6 @@
       },
       "required": [
         "max_agents_at_work",
-        "max_goal_rounds",
         "model_timeout_seconds",
         "max_attempts",
         "idle_screen_minutes",
@@ -8255,20 +8249,6 @@
           },
           "required": [
             "IdleScreenMinutes"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "MaxGoalRounds": {
-              "format": "uint32",
-              "minimum": 0,
-              "type": "integer"
-            }
-          },
-          "required": [
-            "MaxGoalRounds"
           ],
           "type": "object"
         },
@@ -9097,11 +9077,6 @@
           "default": null,
           "description": "The rate limits of the current model's account, when its provider reports them."
         },
-        "max_goal_rounds": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
         "mcp": {
           "items": {
             "$ref": "#/$defs/McpStatus"
@@ -9167,7 +9142,6 @@
         "input_limit",
         "mode",
         "approvals",
-        "max_goal_rounds",
         "idle_screen_minutes",
         "notifications",
         "sound_notifications",

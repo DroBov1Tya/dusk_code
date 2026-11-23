@@ -212,7 +212,6 @@ fn settings(request: &Settings) -> Area {
         | Settings::ContextPolicy(_)
         | Settings::MaxAgentsAtWork(_)
         | Settings::IdleScreenMinutes(_)
-        | Settings::MaxGoalRounds(_)
         | Settings::ModelTimeout(_)
         | Settings::MaxAttempts(_)
         | Settings::MemoryChars(_)

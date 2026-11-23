@@ -161,8 +161,6 @@ pub struct App {
     pub update_available: Option<String>,
     /// The open thread's standing goal.
     pub goal: Option<Goal>,
-    /// Rounds a goal may run before it pauses, as the config says.
-    pub goal_rounds: u32,
     pub goal_hits: Vec<GoalHit>,
     /// The MCP servers of the config, as the core last reported them.
     pub mcp: Vec<McpStatus>,
@@ -268,7 +266,6 @@ impl App {
             update_available: None,
             undone: None,
             paths: None,
-            goal_rounds: status.max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
             suggestion: Default::default(),

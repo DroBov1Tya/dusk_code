@@ -487,3 +487,9 @@ fn a_config_file_is_read_bounded_and_never_through_a_link() {
     symlink(&path, &link).unwrap();
     assert!(Config::load_from(&link).is_err());
 }
+
+#[test]
+fn an_old_goal_round_cap_still_loads_and_is_not_written_back() {
+    let old = parse("limits:\n  max_goal_rounds: 10\n").unwrap();
+    assert!(!old.to_yaml().unwrap().contains("max_goal_rounds"));
+}

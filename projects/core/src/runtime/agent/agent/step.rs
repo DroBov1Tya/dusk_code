@@ -106,8 +106,7 @@ impl Agent {
         if let Some(goal) = standing.filter(|g| {
             g.status == GoalStatus::Active || (!g.approved && g.status != GoalStatus::Done)
         }) {
-            let rounds = config.limits().max_goal_rounds;
-            messages.push(ChatMessage::System(goal::reminder(&goal, rounds)));
+            messages.push(ChatMessage::System(goal::reminder(&goal)));
         }
         if let Some(note) = missing_tools(&messages, &tools) {
             messages.push(ChatMessage::System(note));

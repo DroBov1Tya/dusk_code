@@ -310,10 +310,6 @@ impl Config {
             "work_history.max_chars must be above zero"
         );
         ensure!(
-            self.limits.max_goal_rounds > 0,
-            "max_goal_rounds must be above zero"
-        );
-        ensure!(
             (MIN_MODEL_TIMEOUT_SECONDS..=MAX_MODEL_TIMEOUT_SECONDS)
                 .contains(&self.limits.model_timeout_seconds),
             "limits.model_timeout_seconds must be between {MIN_MODEL_TIMEOUT_SECONDS} and \

@@ -276,8 +276,7 @@ async fn an_agent_that_stops_ends_its_turn_as_failed() {
 #[tokio::test]
 async fn a_goal_pauses_after_the_stop_instead_of_another_round() {
     let state = thread_state("ladder_goal").await;
-    let settings = format!("{LADDER_ON}  max_goal_rounds: 3\n");
-    let config = Arc::new(temp_live_config_with("ladder_goal_config", &settings));
+    let config = Arc::new(temp_live_config_with("ladder_goal_config", LADDER_ON));
     let draft = state.set_goal("thread", "find it").await.unwrap();
     let criterion = crate::state::GoalCriterion {
         id: "result".into(),

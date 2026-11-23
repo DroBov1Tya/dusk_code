@@ -190,7 +190,7 @@ pub fn describe(goal: &Goal) -> String {
     line
 }
 
-pub fn reminder(goal: &Goal, max_rounds: u32) -> String {
+pub fn reminder(goal: &Goal) -> String {
     if !goal.approved {
         return format!(
             "Draft goal; execution is blocked until user approval. Propose 1-20 mandatory acceptance criteria using the goal tool. Each criterion needs id, description and check: {{kind: command, command: exact shell command}} or {{kind: user_confirmation}}. Semantic requirements need user_confirmation. Do not perform the goal yet. After proposing, end the turn with the criteria in a few lines: the user approves them or says what to change, and a message of theirs asks for a new proposal.\n{}",
@@ -198,13 +198,13 @@ pub fn reminder(goal: &Goal, max_rounds: u32) -> String {
         );
     }
     format!(
-        "Standing goal (round {} of {max_rounds}). Work to the immutable approved criteria below. You cannot approve, edit, clear, pause or complete the goal. To finish, use goal show to find saved result IDs, then request_verification with the current revision and one result per criterion. Runtime reviews typed results; semantic criteria require explicit user confirmation. Successful commands prove only their approved exit check. Report missing user input and end the turn.\n{}",
+        "Standing goal (round {}). Work to the immutable approved criteria below. You cannot approve, edit, clear, pause or complete the goal. To finish, use goal show to find saved result IDs, then request_verification with the current revision and one result per criterion. Runtime reviews typed results; semantic criteria require explicit user confirmation. Successful commands prove only their approved exit check. Report missing user input and end the turn.\n{}",
         goal.rounds,
         describe(goal)
     )
 }
 
-pub fn kickoff(goal: &Goal, max_rounds: u32) -> String {
+pub fn kickoff(goal: &Goal) -> String {
     if !goal.approved {
         return format!(
             "Propose acceptance criteria for the draft goal before doing its work: {}",
@@ -215,7 +215,7 @@ pub fn kickoff(goal: &Goal, max_rounds: u32) -> String {
         format!("Goal: {}", goal.text)
     } else {
         format!(
-            "Continue toward the goal (round {} of {max_rounds}): {}",
+            "Continue toward the goal (round {}): {}",
             goal.rounds, goal.text
         )
     }

@@ -1,0 +1,2 @@
+Changed
+A goal no longer stops after a set number of rounds: it goes on until it is met, paused or cleared, or a turn fails. To bound it, say so in the goal itself, such as "or stop after 20 turns". The "Goal rounds" setting is gone from the desktop, browser and terminal settings, the terminal goal bar shows "round N", and an old `limits.max_goal_rounds` in config.yml is ignored and dropped on the next save.

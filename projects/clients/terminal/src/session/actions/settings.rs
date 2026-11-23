@@ -192,19 +192,6 @@ pub async fn set_idle_minutes(client: &Client, app: &mut App, minutes: u32) {
     }
 }
 
-pub async fn set_goal_rounds(client: &Client, app: &mut App, rounds: u32) {
-    match client.settings().max_goal_rounds(rounds).await {
-        Ok(()) => {
-            if let Some(Panel::Settings(list)) = &mut app.panel {
-                list.max_goal_rounds = rounds;
-            }
-            app.goal_rounds = rounds;
-            app.flash = Some(format!("Goal rounds: {rounds}"));
-        }
-        Err(error) => app.error(format!("cannot save the goal rounds: {error:#}")),
-    }
-}
-
 pub async fn set_model_timeout(client: &Client, app: &mut App, seconds: u32) {
     match client.settings().model_timeout(seconds).await {
         Ok(()) => {

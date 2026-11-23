@@ -26,8 +26,7 @@ pub async fn run(agent: &Agent, argument: Option<&str>) {
                 .as_ref()
                 .filter(|goal| !goal.approved || goal.status == GoalStatus::Active)
         {
-            let rounds = agent.config.current().limits().max_goal_rounds;
-            let kickoff = goal::kickoff(goal, rounds);
+            let kickoff = goal::kickoff(goal);
             agent.state.add_pending(&agent.thread_id, &kickoff).await?;
             started = Some(kickoff);
         }

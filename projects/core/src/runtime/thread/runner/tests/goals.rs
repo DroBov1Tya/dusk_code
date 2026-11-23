@@ -2,13 +2,11 @@
 
 use super::*;
 
+/// No cap stops a goal: it goes on round after round, here until a turn fails.
 #[tokio::test]
-async fn a_goal_goes_on_round_after_round_until_they_run_out() {
+async fn a_goal_goes_on_round_after_round_without_a_cap() {
     let state = thread_state("goal_rounds").await;
-    let config = Arc::new(temp_live_config_with(
-        "goal_config",
-        "limits:\n  max_goal_rounds: 2\n",
-    ));
+    let config = live_config("goal_config");
     let draft = state.set_goal("thread", "build it").await.unwrap();
     let draft = state
         .propose_goal(
@@ -24,8 +22,10 @@ async fn a_goal_goes_on_round_after_round_until_they_run_out() {
         .unwrap();
     let approve = format!("/goal approve {}", draft.revision);
     let answer = vec![Step::Text("working"), Step::Done];
-    // One more for the title the thread gets after its first turn.
-    let provider = provider(vec![answer.clone(); 4]);
+    // The first turn, the title it gets after it, two rounds; the third round fails.
+    let mut scripts = vec![answer; 4];
+    scripts.push(vec![Step::Reject]);
+    let provider = provider(scripts);
     let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
     let client = async move {
         input.send(approve).await.unwrap();
@@ -42,8 +42,8 @@ async fn a_goal_goes_on_round_after_round_until_they_run_out() {
     };
 
     let (_, goal) = tokio::join!(runner.run(), client);
-    assert_eq!(goal.rounds, 2);
-    assert_eq!(goal.note.as_deref(), Some("all 2 rounds used"));
+    assert_eq!(goal.rounds, 3);
+    assert_eq!(goal.note.as_deref(), Some("the last turn failed"));
     let users: Vec<_> = transcript(&state)
         .await
         .into_iter()
@@ -54,8 +54,9 @@ async fn a_goal_goes_on_round_after_round_until_they_run_out() {
         users,
         [
             "Goal: build it",
-            "Continue toward the goal (round 1 of 2): build it",
-            "Continue toward the goal (round 2 of 2): build it",
+            "Continue toward the goal (round 1): build it",
+            "Continue toward the goal (round 2): build it",
+            "Continue toward the goal (round 3): build it",
         ]
     );
     let requests = provider.requests.lock().unwrap();

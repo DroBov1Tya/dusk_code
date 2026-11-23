@@ -46,10 +46,7 @@ impl InputView<'_> {
         } else {
             "draft"
         };
-        let head = format!(
-            "   \u{25CE} goal {name} [{state}]  {}/{}  ",
-            goal.rounds, self.app.goal_rounds
-        );
+        let head = format!("   \u{25CE} goal {name} [{state}]  round {}  ", goal.rounds);
         let offered = crate::app::goal_buttons(goal);
         let buttons: usize = offered
             .iter()

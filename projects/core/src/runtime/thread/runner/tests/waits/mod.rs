@@ -332,7 +332,7 @@ async fn with_waits_off_the_turn_fails_as_before() {
 #[tokio::test]
 async fn a_goal_does_not_count_a_waiting_turn_as_a_round() {
     let state = thread_state("wait_goal").await;
-    let config = config("wait_goal_config", "  max_goal_rounds: 2\n");
+    let config = config("wait_goal_config", "");
     let draft = state.set_goal("thread", "build it").await.unwrap();
     let criterion = crate::state::GoalCriterion {
         id: "result".into(),
@@ -351,6 +351,8 @@ async fn a_goal_does_not_count_a_waiting_turn_as_a_round() {
         working.clone(),
         working.clone(),
         working,
+        // The third round fails, which pauses the goal.
+        vec![Step::Reject],
     ]);
     let (runner, input, mut output) = super::runner(&state, &provider, &config, model(None));
     let client = async move {
@@ -369,7 +371,7 @@ async fn a_goal_does_not_count_a_waiting_turn_as_a_round() {
 
     let (_, (goal, waited)) = tokio::join!(runner.run(), client);
     assert!(waited);
-    assert_eq!(goal.rounds, 2);
+    assert_eq!(goal.rounds, 3);
     let users: Vec<_> = transcript(&state)
         .await
         .into_iter()
@@ -380,8 +382,9 @@ async fn a_goal_does_not_count_a_waiting_turn_as_a_round() {
         users,
         [
             "Goal: build it",
-            "Continue toward the goal (round 1 of 2): build it",
-            "Continue toward the goal (round 2 of 2): build it",
+            "Continue toward the goal (round 1): build it",
+            "Continue toward the goal (round 2): build it",
+            "Continue toward the goal (round 3): build it",
         ]
     );
 }

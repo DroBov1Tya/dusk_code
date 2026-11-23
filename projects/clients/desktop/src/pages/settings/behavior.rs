@@ -168,7 +168,6 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                 match ws.settings.clone() {
                     Some(settings) => {
                         let agents = settings.max_agents_at_work as u64;
-                        let rounds = u64::from(settings.max_goal_rounds);
                         let timeout = u64::from(settings.model_timeout_seconds);
                         let attempts = u64::from(settings.max_attempts);
                         let mut web = vec![web_line(ws, cx), web_global_line(ws, cx)];
@@ -197,19 +196,6 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                                 agents,
                                 (1, 32),
                                 Limit::Agents,
-                                cx,
-                            )),
-                            line(
-                                "Goal rounds",
-                                "How many rounds a goal may take before it stops",
-                                cx,
-                            )
-                            .child(stepper(
-                                ws,
-                                "rounds",
-                                rounds,
-                                (1, 200),
-                                Limit::Rounds,
                                 cx,
                             )),
                             line(
@@ -382,7 +368,6 @@ fn size_line(
 #[derive(Clone, Copy, PartialEq)]
 pub enum Limit {
     Agents,
-    Rounds,
     Timeout,
     Attempts,
 }
@@ -694,7 +679,6 @@ impl Workspace {
             move |client| async move {
                 match limit {
                     Limit::Agents => client.settings().max_agents_at_work(value as usize).await,
-                    Limit::Rounds => client.settings().max_goal_rounds(value as u32).await,
                     Limit::Timeout => client.settings().model_timeout(value as u32).await,
                     Limit::Attempts => client.settings().max_attempts(value as u32).await,
                 }
