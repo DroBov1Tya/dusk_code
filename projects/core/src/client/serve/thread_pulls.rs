@@ -92,7 +92,7 @@ async fn try_sync(
     let project = project::find(runtime.state(), id).await?;
     let dir = project.dir.to_string_lossy().into_owned();
     let (repository, prefix) = (&served.repository, &served.pull_prefix);
-    // What each number came to in this pass, and whether the forge was read for it.
+    // What each number came to in this pass, and whether the forge answered it has none.
     let mut read: HashMap<u64, (Option<PullStatus>, bool)> = HashMap::new();
     let mut reads = 0;
     for state in runtime.states() {
@@ -104,7 +104,7 @@ async fn try_sync(
                 Some(pull) => Some(pull.clone()),
                 None if kept.settled() => None,
                 None => {
-                    let (pull, forge_read) = match read.get(&kept.number) {
+                    let (pull, missed) = match read.get(&kept.number) {
                         Some(answer) => answer.clone(),
                         // A look-up may start a read, which must then be made: it is
                         // not begun once the reads of this pass are spent.
@@ -113,12 +113,23 @@ async fn try_sync(
                             let look = tracker.look_up(id, kept.number);
                             let forge_read = matches!(look, forge::Look::Read);
                             reads += usize::from(forge_read);
-                            let pull = fetch(look, runtime, tracker, id, kept.number, prefix).await;
-                            read.insert(kept.number, (pull.clone(), forge_read));
-                            (pull, forge_read)
+                            let fetched = fetch(look, runtime, tracker, id, kept.number, prefix);
+                            // Only the forge saying there is none is a miss: a read that
+                            // failed (signed out, rate limited, offline) says nothing.
+                            let answer = match fetched.await {
+                                Ok(pull) => {
+                                    let missed = forge_read && pull.is_none();
+                                    (pull, missed)
+                                }
+                                Err(error) => {
+                                    debug!("{error:#}");
+                                    (None, false)
+                                }
+                            };
+                            read.insert(kept.number, answer.clone());
+                            answer
                         }
                     };
-                    let missed = forge_read && pull.is_none();
                     state
                         .tried_thread_pull(&kept.thread_id, repository, kept.number, missed)
                         .await?;

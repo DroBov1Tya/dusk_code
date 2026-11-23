@@ -8,12 +8,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use anyhow::Context;
 use dusk_protocol::{
-    plugin::contract::forge::PullArgs,
+    plugin::contract::{ErrorKind, forge::PullArgs},
     project::{Project, PullStatus},
 };
 use tokio::sync::{Semaphore, oneshot};
-use tracing::debug;
 
 use super::{Forges, Remote, checked, status};
 
@@ -105,15 +105,18 @@ impl Lookups {
 }
 
 /// Reads pull request `number` of the project's own repository, waiting its turn; only
-/// a pull whose page is `prefix`, the one its last status named, and its number.
+/// a pull whose page is `prefix`, the one its last status named, and its number. `None`
+/// when the forge answered that there is no such pull; an error when it did not answer.
 pub async fn read(
     project: &Project,
     number: u64,
     forges: &Forges,
     prefix: &str,
-) -> Option<PullStatus> {
-    let _turn = READS.acquire().await.ok()?;
-    let remote = Remote::of(&project.dir).await?;
+) -> anyhow::Result<Option<PullStatus>> {
+    let _turn = READS.acquire().await?;
+    let remote = Remote::of(&project.dir)
+        .await
+        .context("the project has no remote")?;
     let Some(served) = forges.route(&remote.host) else {
         return status::read_one(project, number, prefix).await;
     };
@@ -124,11 +127,9 @@ pub async fn read(
     };
     let answer = forges.call(&served, "pull", &project.dir, &args).await;
     match answer.and_then(|ok| checked::pull(ok, prefix, &remote.host, Some(number))) {
-        Ok(pull) => pull,
-        Err(error) => {
-            debug!("pull request {number} not read: {}", error.message);
-            None
-        }
+        Ok(pull) => Ok(pull),
+        Err(error) if error.kind == ErrorKind::NotFound => Ok(None),
+        Err(error) => anyhow::bail!("pull request {number} not read: {}", error.message),
     }
 }
 
