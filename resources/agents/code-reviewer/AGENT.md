@@ -2,7 +2,7 @@
 name: code-reviewer
 description: Independent defect review with QA, performance and AppSec specialists for focused supporting evidence.
 entry: true
-links: [duskcode-agents/qa-engineer, duskcode-agents/performance-engineer, appsec-reviewer]
+links: [duskcode-testing-agents/qa-engineer, duskcode-engineering-agents/performance-engineer, appsec-reviewer]
 skills: [duskcode-engineering/systematic-debugging]
 tools: [read_file, search_files, run_command, jobs, load_skill, read_history, tasks, ask_agent]
 source: Dusk Code
