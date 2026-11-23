@@ -48,7 +48,9 @@ those: tool calls and errors, provider retries, and re-runs (tool calls with the
 arguments of an earlier call of the same agent). For context work: stub moves, the results
 they put away and the tokens they saved (`limits.stub_results`), command results sent
 shaped and the tokens that saved (`limits.shape_output`), retrievals (`read_history`
-calls that read one stored result back), and finished compactions.
+calls that read one stored result back), and finished compactions. For loop work: `test_runs`,
+an approximate count of commands that ran tests (see Loop tasks), and repeat notices and
+stops.
 
 The headline is the pass rate and tokens per solved task: every token of every run,
 failed and timed-out ones included, over the runs that passed; `n/a` when none did. A run
@@ -77,7 +79,8 @@ large log. `--only hard-` runs them alone.
 The `loop-` tasks tempt an agent to go round in circles, to measure the repeat and
 no-progress guards (`limits.failure_*`) on and off. The report counts `test_runs`
 (commands that ran tests, subagents included), repeat notices and repeat stops beside
-the verdict.
+the verdict. `test_runs` is approximate: it matches runner names and common test commands
+in a command line, so `pip show pytest` counts and a runner it does not know does not.
 
 `loop-missing-dependency` asks for `acme-geodesy` from an index that does not exist. The
 name is not on PyPI today, but nothing stops someone publishing it; an agent that drops the

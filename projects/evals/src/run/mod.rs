@@ -38,10 +38,11 @@ use crate::{
 const SETTLE: Duration = Duration::from_secs(20);
 static DELETES: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b(rm|rmtree|unlink|rmdir)\b").expect("a valid pattern"));
-/// A command that runs tests, for the count that shows an agent re-running its suite.
+/// A command that runs tests, for the count that shows an agent re-running its suite. It is
+/// approximate: a command that only names a runner (`pip show pytest`) counts too.
 static TEST_RUNS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"\b(pytest|unittest|nose2|tox|nox|jest|vitest|mocha|rspec|phpunit|ctest)\b|\b(cargo|go|npm|pnpm|yarn|bun|deno|mvn|gradle|dotnet|mix|swift) +(nextest|test)\b|\bnpm +run +test\b",
+        r"\b(pytest|unittest|nose2|tox|nox|jest|vitest|mocha|rspec|phpunit|ctest)\b|\b(cargo|go|npm|pnpm|yarn|bun|deno|mvn|gradle|dotnet|mix|swift) +(nextest|test)\b|\bnpm +run +test\b|\bmake +(test|check)\b|\bpython[\d.]* +\S*test_\w*\.py\b",
     )
     .expect("a valid pattern")
 });
@@ -460,6 +461,8 @@ mod tests {
             "cargo test -p dusk_core",
             "go test ./...",
             "npm run test",
+            "python3 tests/test_slug.py",
+            "make test",
         ];
         for command in tests {
             watch.see(run(command), None);
@@ -474,7 +477,7 @@ mod tests {
         for command in ["cargo build", "ls tests", "cat test_sync.py", "git diff"] {
             watch.see(run(command), None);
         }
-        assert_eq!(watch.test_runs, 6);
+        assert_eq!(watch.test_runs, 8);
     }
 
     #[test]
