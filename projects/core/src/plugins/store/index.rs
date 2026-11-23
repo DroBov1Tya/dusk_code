@@ -11,7 +11,8 @@
 //!
 //! A connector (`kind: connector`, formats 2 and 3) has no package: its `server` says
 //! where the MCP server is or which pinned package starts it. A duskcode before it leaves
-//! such an entry out, as any kind it does not know.
+//! such an entry out, as any kind it does not know. One that runs a program from a pinned
+//! GitHub release is listed as `kind: release-connector` and read as a connector.
 
 use anyhow::{Context, Result, bail, ensure};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
@@ -56,6 +57,8 @@ const MAX_LINE: usize = 200;
 /// The system and processor of a package of plain files, which runs nowhere.
 pub const ANY: &str = "any";
 const SYSTEMS: [&str; 4] = [ANY, "macos", "linux", "windows"];
+/// The kind a connector running a release's program is listed under; see `read_entry`.
+pub const RELEASE_CONNECTOR: &str = "release-connector";
 
 /// The list as written; entries are read one by one, so an entry of a kind this
 /// duskcode does not know is left out instead of failing the whole list.
@@ -308,7 +311,16 @@ pub fn parse(json: &[u8], now: DateTime<Utc>) -> Result<Index> {
 
 /// An entry, or none when it is of a kind this duskcode does not know: a newer list
 /// may offer more than it can install.
-fn read_entry(value: serde_json::Value) -> Result<Option<Entry>> {
+///
+/// A connector that runs a release's program is listed as `release-connector`, since a
+/// duskcode before it refuses the whole list over a `connector` whose server names a
+/// `release`, while it leaves an unknown kind out. It is read as a connector that must
+/// name one, and a plain `connector` must not, so the two cannot drift apart.
+fn read_entry(mut value: serde_json::Value) -> Result<Option<Entry>> {
+    let release = value.get("kind").and_then(|kind| kind.as_str()) == Some(RELEASE_CONNECTOR);
+    if release {
+        value["kind"] = serde_json::Value::from("connector");
+    }
     if let Some(kind) = value.get("kind") {
         let Some(text) = kind.as_str() else {
             bail!("an entry's kind is not a word");
@@ -323,9 +335,20 @@ fn read_entry(value: serde_json::Value) -> Result<Option<Entry>> {
             return Ok(None);
         }
     }
-    serde_json::from_value(value)
-        .map(Some)
-        .context("an entry of the list is not valid")
+    let entry: Entry =
+        serde_json::from_value(value).context("an entry of the list is not valid")?;
+    if entry.kind == Kind::Connector {
+        let names_release = entry
+            .server
+            .as_ref()
+            .is_some_and(|server| server.release.is_some());
+        ensure!(
+            names_release == release,
+            "the list's entry {}: a connector runs a release only as a {RELEASE_CONNECTOR}, and a {RELEASE_CONNECTOR} always does",
+            entry.name
+        );
+    }
+    Ok(Some(entry))
 }
 
 fn check(entry: &Entry, format: u32) -> Result<()> {

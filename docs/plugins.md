@@ -645,7 +645,10 @@ keys go to. The MCP list shows which source added a server and its tier; a serve
 user removes, renames or points elsewhere in the settings is theirs from then on. A
 duskcode before connectors leaves such entries out of a list and reads the rest.
 
-A local connector may instead be a program from a GitHub release: `server.release` names
+A local connector may instead be a program from a GitHub release, listed as `kind:
+release-connector` (a duskcode before it leaves that kind out, where it would refuse the
+whole list over a `connector` naming a `release`); it is read as a connector, a
+`release-connector` must name a `release` and a `connector` must not. `server.release` names
 the `repository` (`owner/name` on github.com), one exact `tag` (never `latest`) and, per
 Rust target triple, the archive's `file`, its `sha256`, the `binary`'s path inside it and
 optionally its `size`; `args`, `auth` and `secrets` are as for any local one. Only the

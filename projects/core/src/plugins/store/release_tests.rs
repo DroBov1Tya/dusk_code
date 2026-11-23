@@ -30,7 +30,7 @@ fn now() -> chrono::DateTime<chrono::Utc> {
 /// An entry of the official list with `server`, made by `author` under `badge`.
 fn entry(server: &str, author: &str, badge: &str) -> String {
     format!(
-        r#"{{"name": "pentacore", "version": "1.0.0", "kind": "connector", "description": "Memory.", "server": {server}, "author": "{author}", "license": "MIT", "source": "https://github.com/DroBov1Tya/PentaCore", "categories": ["productivity"], "badge": "{badge}"}}"#
+        r#"{{"name": "pentacore", "version": "1.0.0", "kind": "release-connector", "description": "Memory.", "server": {server}, "author": "{author}", "license": "MIT", "source": "https://github.com/DroBov1Tya/PentaCore", "categories": ["productivity"], "badge": "{badge}"}}"#
     )
 }
 
@@ -91,6 +91,18 @@ fn a_release_is_read_only_pinned_and_plain() {
     let index = parse(&list(&[entry(&good, "DroBov1Tya", "official")])).unwrap();
     let server = index.plugins[0].server.as_ref().unwrap();
     assert_eq!(server.release.as_ref().unwrap().tag, "v0.8.0");
+    assert_eq!(
+        index.plugins[0].kind,
+        dusk_protocol::plugin::Kind::Connector
+    );
+
+    // The two kinds cannot drift: a plain connector never runs a release, and a release
+    // connector always does.
+    let plain = entry(&good, "DroBov1Tya", "official")
+        .replace(r#""kind": "release-connector""#, r#""kind": "connector""#);
+    assert!(parse(&list(&[plain])).is_err());
+    let remote = r#"{"url": "https://mcp.example.com/mcp", "run_by": "vendor", "reaches": "x"}"#;
+    assert!(parse(&list(&[entry(remote, "DroBov1Tya", "official")])).is_err());
 
     let bad = [
         ("latest", good.replace("v0.8.0", "latest")),
@@ -393,8 +405,24 @@ fn the_program_goes_into_its_tag_folder_and_an_update_leaves_no_old_one() {
         release::tag_of(&paths, "pentacore", &program).as_deref(),
         Some("v0.8.0")
     );
-    // The same tag again replaces it.
+    // The same tag again replaces it, and nothing of the swap is left beside it.
     install::place(&paths, "pentacore", &release, asset, &archive).unwrap();
+    assert!(program.is_file());
+    let left: Vec<_> = fs::read_dir(release::folder(&paths, "pentacore"))
+        .unwrap()
+        .map(|item| item.unwrap().file_name())
+        .collect();
+    assert_eq!(left, ["v0.8.0"]);
+    // An archive refused on the same tag leaves the program in place.
+    let mut wrong = asset.clone();
+    wrong.sha256 = SHA.into();
+    let mut other = release.clone();
+    other
+        .assets
+        .values_mut()
+        .for_each(|a| a.sha256 = SHA.into());
+    assert!(install::place(&paths, "pentacore", &other, &wrong, &archive).is_err());
+    assert!(program.is_file());
 
     // The config starts it by that path.
     let index = parse(&list(&[entry_json_again()])).unwrap();
@@ -429,9 +457,18 @@ fn the_program_goes_into_its_tag_folder_and_an_update_leaves_no_old_one() {
 
     let old = release::folder(&paths, "pentacore").join("v0.7.1");
     fs::create_dir_all(&old).unwrap();
-    install::tidy(&paths, "pentacore", Some("v0.8.0")).unwrap();
+    install::tidy(&paths, "pentacore", &["v0.8.0".into()]).unwrap();
     assert!(!old.exists() && program.is_file());
-    install::tidy(&paths, "pentacore", None).unwrap();
+    // A version a server still starts, though the record forgot it, is kept.
+    fs::create_dir_all(&old).unwrap();
+    install::tidy(&paths, "pentacore", &["v0.8.0".into(), "v0.7.1".into()]).unwrap();
+    assert!(old.exists() && program.is_file());
+    assert_eq!(
+        release::owner_of(&paths, &program).as_deref(),
+        Some("pentacore")
+    );
+    assert_eq!(release::owner_of(&paths, Path::new("/usr/bin/env")), None);
+    install::tidy(&paths, "pentacore", &[]).unwrap();
     assert!(!release::folder(&paths, "pentacore").exists());
 }
 
@@ -512,7 +549,7 @@ async fn the_live_release_installs_and_answers() {
     assert_eq!(answer["id"], 1, "{line}");
     assert!(answer["result"]["serverInfo"].is_object(), "{line}");
     eprintln!("{line}");
-    install::tidy(&paths, "pentacore", None).unwrap();
+    install::tidy(&paths, "pentacore", &[]).unwrap();
     assert!(!release::folder(&paths, "pentacore").exists());
     let _ = fs::remove_dir_all(&home);
 }

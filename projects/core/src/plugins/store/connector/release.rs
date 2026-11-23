@@ -225,6 +225,14 @@ pub fn tag_of(paths: &Paths, name: &str, binary: &Path) -> Option<String> {
     (is_tag(tag) && is_plain(program)).then(|| (*tag).to_owned())
 }
 
+/// The connector whose folder holds `binary`, when it is a program the store put in
+/// place: `<connectors>/<name>/<tag>/<program>`.
+pub fn owner_of(paths: &Paths, binary: &Path) -> Option<String> {
+    let rest = binary.strip_prefix(paths.connectors_root()).ok()?;
+    let name = rest.components().next()?.as_os_str().to_str()?;
+    tag_of(paths, name, binary).map(|_| name.to_owned())
+}
+
 /// `owner/name` as GitHub allows them, nothing that reads as a path or another host.
 fn is_repository(text: &str) -> bool {
     let Some((owner, name)) = text.split_once('/') else {

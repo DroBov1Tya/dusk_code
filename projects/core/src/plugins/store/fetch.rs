@@ -28,6 +28,9 @@ use crate::{
 const TIMEOUT: Duration = Duration::from_secs(120);
 /// A list or a picture is small; a source that takes longer is reported, not waited on.
 const DIRECT_TIMEOUT: Duration = Duration::from_secs(20);
+/// The slowest a large package is still waited for, in bytes a second: a 128 MB
+/// program gets about eight minutes rather than `TIMEOUT`.
+const MIN_RATE: u64 = 256 * 1024;
 const MAX_REDIRECTS: usize = 3;
 /// Where GitHub keeps release assets; a package link to a release is redirected there.
 const PACKAGE_HOSTS: [&str; 3] = [
@@ -57,7 +60,7 @@ pub async fn fetch(url: &str, max: u64, via: Via) -> Result<Vec<u8>> {
     let client = client.as_ref().map_err(|error| anyhow!("{error}"))?;
     let timeout = match via {
         Via::Direct => DIRECT_TIMEOUT,
-        Via::Package => TIMEOUT,
+        Via::Package => TIMEOUT.max(Duration::from_secs(max / MIN_RATE)),
     };
     let response = client
         .get(url)

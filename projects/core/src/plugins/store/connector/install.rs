@@ -26,6 +26,8 @@ use crate::{
 /// Where an install in progress is put together, inside the connector's folder; the dot
 /// keeps it from reading as a tag.
 const STAGING: &str = ".staging";
+/// Where the same tag added again is moved while its new copy takes its place.
+const REPLACED: &str = ".replaced";
 
 /// Downloads, checks and places the program of `name`; answers where it is. Called under
 /// the store's lock.
@@ -62,9 +64,12 @@ pub fn place(
     let root = release::folder(paths, name);
     crate::init::create_private_dir(&root)?;
     let staging = root.join(STAGING);
+    let replaced = root.join(REPLACED);
     // Under the store's lock, so what is here was left by an install that stopped.
-    if fs::symlink_metadata(&staging).is_ok() {
-        fs::remove_dir_all(&staging)?;
+    for left in [&staging, &replaced] {
+        if fs::symlink_metadata(left).is_ok() {
+            fs::remove_dir_all(left)?;
+        }
     }
     crate::init::create_private_dir(&staging)?;
     let program = Release::program(asset);
@@ -72,19 +77,34 @@ pub fn place(
     let result = (|| {
         take_program(archive, &asset.binary, &staging.join(program))?;
         unquarantine(&staging.join(program))?;
-        // Ours: the same tag added again is replaced whole.
-        if fs::symlink_metadata(&target).is_ok() {
-            fs::remove_dir_all(&target)
-                .with_context(|| format!("cannot replace {}", target.display()))?;
-        }
-        fs::rename(&staging, &target)
-            .with_context(|| format!("cannot put the program in {}", target.display()))?;
+        swap_in(&staging, &target, &replaced)?;
         Ok(target.join(program))
     })();
-    if fs::symlink_metadata(&staging).is_ok() {
-        let _ = fs::remove_dir_all(&staging);
+    for left in [&staging, &replaced] {
+        if fs::symlink_metadata(left).is_ok() {
+            let _ = fs::remove_dir_all(left);
+        }
     }
     result
+}
+
+/// Moves `staging` to `target`. The same tag added again is moved aside to `replaced`
+/// first and put back when the move fails, so a program the config starts is never
+/// gone, whatever stops in between.
+fn swap_in(staging: &Path, target: &Path, replaced: &Path) -> Result<()> {
+    let had = fs::symlink_metadata(target).is_ok();
+    if had {
+        fs::rename(target, replaced)
+            .with_context(|| format!("cannot replace {}", target.display()))?;
+    }
+    if let Err(error) = fs::rename(staging, target) {
+        if had {
+            let _ = fs::rename(replaced, target);
+        }
+        return Err(error)
+            .with_context(|| format!("cannot put the program in {}", target.display()));
+    }
+    Ok(())
 }
 
 /// The archive is the one the listing names: its size when given, under the cap, and
@@ -170,10 +190,12 @@ pub fn unquarantine(_program: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Keeps of `name`'s folder only the version its recorded server runs, `keep`; with
-/// none, the whole folder goes. Called once a connector was added, failed to be added
-/// or was removed, so an update leaves no old version and a failed add no new one.
-pub fn tidy(paths: &Paths, name: &str, keep: Option<&str>) -> Result<()> {
+/// Keeps of `name`'s folder only the versions in `keep`, the one its recorded server
+/// runs and any a server in the config starts; with none, the whole folder goes. Called
+/// once a connector was added, failed to be added or was removed, so an update leaves
+/// no old version and a failed add no new one. An install in progress, a dot folder, is
+/// left to the install.
+pub fn tidy(paths: &Paths, name: &str, keep: &[String]) -> Result<()> {
     let root = release::folder(paths, name);
     let Ok(meta) = fs::symlink_metadata(&root) else {
         return Ok(());
@@ -183,13 +205,15 @@ pub fn tidy(paths: &Paths, name: &str, keep: Option<&str>) -> Result<()> {
         "{} is not a folder; remove it yourself",
         root.display()
     );
-    let Some(keep) = keep else {
+    if keep.is_empty() {
         return fs::remove_dir_all(&root)
             .with_context(|| format!("cannot remove {}", root.display()));
-    };
+    }
     for item in fs::read_dir(&root).with_context(|| format!("cannot read {}", root.display()))? {
         let item = item?;
-        if item.file_name() == keep {
+        let file = item.file_name();
+        if file.as_encoded_bytes().starts_with(b".") || keep.iter().any(|tag| file == tag.as_str())
+        {
             continue;
         }
         let path = item.path();

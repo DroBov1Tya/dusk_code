@@ -173,8 +173,14 @@ pub enum Placed {
 /// rules folder, when its listing is still the one
 /// the user agreed to: the same source and tier, version and permissions. A connector
 /// writes nothing here: its server comes back to be added.
-/// Answers with what it installed.
-pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> Result<Placed> {
+/// Answers with what it installed. `addable` says whether a connector may be added as
+/// its record would say, before its program is downloaded.
+pub async fn install(
+    paths: &Paths,
+    mirrors: &[Mirror],
+    agreed: &Agreed<'_>,
+    addable: impl FnOnce(&Installed) -> Result<()>,
+) -> Result<Placed> {
     let _busy = BUSY.lock().await;
     // Every source, since a mirror's tier depends on the official list.
     let (fetched, failed) = source::read(paths, mirrors).await;
@@ -204,9 +210,6 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
         if let Some(url) = &server.url {
             connector::resolves_publicly(url).await?;
         }
-        if let Some(release) = &server.release {
-            connector::install::install(paths, &entry.name, release).await?;
-        }
         let config = server.config(paths, &entry.name);
         let mut added = Installed::new(source, &entry.version, "");
         added.kind = Kind::Connector;
@@ -214,6 +217,12 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
         added.tier = Some(tier);
         added.author = entry.author.clone().unwrap_or_default();
         added.origin = entry.source.clone().unwrap_or_default();
+        // Before anything is downloaded, so a refused add never touches the folder of a
+        // program a server here still runs.
+        addable(&added)?;
+        if let Some(release) = &server.release {
+            connector::install::install(paths, &entry.name, release).await?;
+        }
         return Ok(Placed::Server {
             config,
             added: Box::new(added),
