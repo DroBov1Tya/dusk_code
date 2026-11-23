@@ -119,6 +119,8 @@ const METEOR_TAIL: f32 = 0.26;
 struct Meteor {
     /// Where it enters at the top, as a share of the width.
     from: f32,
+    /// A great one: -1 when it flies right from the left edge, 1 when it flies left.
+    dir: f32,
     /// A great one: how steeply it falls, in radians below level; shallow, so the trail
     /// is long. A small one: how far it leans off straight down, either way.
     angle: f32,
@@ -148,8 +150,10 @@ fn meteor() -> impl IntoElement {
             // The screenshot tool cannot wait for the sky: it names the moment itself.
             #[cfg(feature = "screenshot")]
             let (seed, at) = match std::env::var("DUSK_METEOR").map(|at| at.parse()) {
-                // A great one, or with `DUSK_METEOR_SMALL` a small one.
+                // A great one, or with `DUSK_METEOR_SMALL` a small one, or with
+                // `DUSK_METEOR_LEFT` a great one from the left.
                 Ok(Ok(at)) if std::env::var("DUSK_METEOR_SMALL").is_ok() => (3 * 4001, at),
+                Ok(Ok(at)) if std::env::var("DUSK_METEOR_LEFT").is_ok() => (6 * GREAT_ONE_IN, at),
                 Ok(Ok(at)) => (3 * GREAT_ONE_IN, at),
                 _ => (seed, at),
             };
@@ -165,8 +169,15 @@ fn meteor() -> impl IntoElement {
             }
             // It slows a little as it burns up.
             let gone = (at / flight).min(1.);
+            // A great one comes in from either edge, half the time each.
+            let from_left = great && !(seed / 11).is_multiple_of(2);
             let meteor = Meteor {
-                from: if great { 0.99 } else { 0.5 + unit(3) * 0.47 },
+                from: match (great, from_left) {
+                    (true, true) => 0.01,
+                    (true, false) => 0.99,
+                    _ => 0.5 + unit(3) * 0.47,
+                },
+                dir: if from_left { -1. } else { 1. },
                 // A small one leans either way off straight down, up to forty degrees.
                 angle: (if great { 4.5 } else { unit(3000) * 80. - 40. }).to_radians(),
                 run: if great { 0.95 } else { 0.45 + unit(7) * 0.5 },
@@ -241,7 +252,7 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
     let (left, top) = (bounds.origin.x.as_f32(), bounds.origin.y.as_f32());
     let start = (left + meteor.from * width, top + 2.);
     let head = (
-        start.0 - cos * run * meteor.flown,
+        start.0 - meteor.dir * cos * run * meteor.flown,
         start.1 + sin * run * meteor.flown,
     );
     // The trail reaches back to where it came in, then goes out from that end.
@@ -274,7 +285,7 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
         let at = |back: f32, side: f32| {
             let across = half(back) * side;
             point(
-                px(head.0 + cos * back + sin * across),
+                px(head.0 + meteor.dir * (cos * back + sin * across)),
                 px(head.1 - sin * back + cos * across),
             )
         };
