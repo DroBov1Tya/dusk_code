@@ -147,11 +147,13 @@ impl Render for Workspace {
                             .border_color(theme_border)
                             .bg(background)
                             // The page, and under it the terminal when it is open.
+                            // Clipped, so nothing in it paints over the sidebar.
                             .child(
                                 div()
                                     .flex_1()
                                     .min_w_0()
                                     .h_full()
+                                    .overflow_hidden()
                                     .flex()
                                     .flex_col()
                                     .child(crate::ui::motion::switch(
