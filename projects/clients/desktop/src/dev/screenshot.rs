@@ -15,7 +15,8 @@
 //! - with `DUSK_SWAP=MS` in the environment a change of the working row's words is held
 //!   that many milliseconds into its swap (`fake=activity-thinking`, then `-steps`);
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
-//!   the environment the sky holds a falling star that many milliseconds into its flight;
+//!   the environment the sky holds a falling star that many milliseconds into its flight
+//!   (`DUSK_METEOR_SMALL`: a small one, `DUSK_METEOR_LEFT`: a great one from the left);
 //! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
 //! - `fake=limits`: API rate limits; `fake=plan-limits|plan-unavailable`: ChatGPT plan usage;

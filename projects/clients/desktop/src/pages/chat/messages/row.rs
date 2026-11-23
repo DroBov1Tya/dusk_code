@@ -113,11 +113,10 @@ impl Workspace {
                                     })),
                             );
                         }
-                        div()
+                        let row = div()
                             .id(group.clone())
                             .group(group)
-                            .self_end()
-                            .max_w(px(600.))
+                            .max_w_full()
                             .flex()
                             .flex_col()
                             .items_end()
@@ -132,6 +131,7 @@ impl Workspace {
                                         // The user's words carry a breath of the accent, so the
                                         // two sides of the chat part at a glance without glare.
                                         div()
+                                            .max_w_full()
                                             .px_4()
                                             .py_2()
                                             .rounded_xl()
@@ -158,7 +158,18 @@ impl Workspace {
                                     cx,
                                 )
                             }))
-                            .child(tools)
+                            .child(tools);
+                        // A definite width up to 600: the bubble is capped by the lane
+                        // as well, so on a narrow column it wraps instead of spilling
+                        // left over the sidebar. The hover group stays on the bubble.
+                        div()
+                            .w_full()
+                            .max_w(px(600.))
+                            .self_end()
+                            .flex()
+                            .flex_col()
+                            .items_end()
+                            .child(row)
                             .into_any_element()
                     }
                     Item::Job(result) => {
