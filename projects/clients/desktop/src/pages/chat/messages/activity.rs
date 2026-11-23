@@ -234,7 +234,9 @@ pub fn agent_report(
         ),
         _ => None,
     };
-    activity_text(
+    // A report is often taken whole into another chat: its copy button is in sight on
+    // the folded row, not only under the pointer.
+    text_row(
         ws,
         shown,
         index,
@@ -245,6 +247,7 @@ pub fn agent_report(
                 links::markdown(key, text.to_owned(), links::Links::Paths).into_any_element()
             })
         },
+        true,
         cx,
     )
 }
@@ -253,9 +256,23 @@ pub fn activity_text(
     ws: &Workspace,
     shown: &str,
     index: usize,
+    heading: (&str, IconName),
+    text: &str,
+    body: impl FnOnce() -> AnyElement,
+    cx: &mut Context<Workspace>,
+) -> Div {
+    text_row(ws, shown, index, heading, text, body, false, cx)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn text_row(
+    ws: &Workspace,
+    shown: &str,
+    index: usize,
     (title, icon): (&str, IconName),
     text: &str,
     body: impl FnOnce() -> AnyElement,
+    copy_shown: bool,
     cx: &mut Context<Workspace>,
 ) -> Div {
     let open = ws.unfolded.contains(&(shown.to_owned(), index));
@@ -286,12 +303,14 @@ pub fn activity_text(
                     .child(div().flex_1().min_w_0().truncate().child(title.to_owned()))
                     // Inside the row, before its chevron, so the chevrons of a turn's
                     // rows stand in one column whether a row can be copied or not.
-                    .child(widgets::copy(
-                        SharedString::from(format!("activity-text-copy-{shown}-{index}")),
-                        &group,
-                        text,
-                        cx,
-                    ))
+                    .child({
+                        let id = SharedString::from(format!("activity-text-copy-{shown}-{index}"));
+                        if copy_shown {
+                            widgets::copy_shown(id, text, cx)
+                        } else {
+                            widgets::copy(id, &group, text, cx)
+                        }
+                    })
                     .child(disclosure_icon(open, muted))
                     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index, cx))),
                 ),

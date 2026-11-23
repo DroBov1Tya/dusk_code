@@ -187,26 +187,30 @@ pub fn labeled(label: &'static str, hint: &'static str, cx: &App) -> Div {
 /// A small button that copies `text`; it comes up while the pointer is over `group`.
 /// Every kind of message has one, the folded ones under their heading too.
 pub fn copy(id: SharedString, group: &SharedString, text: &str, cx: &App) -> Div {
+    copy_shown(id, text, cx)
+        .opacity(0.)
+        .group_hover(group.clone(), |button| button.opacity(1.))
+}
+
+/// The copy button always in sight, for a folded text that is read by copying it whole,
+/// such as an agent's report.
+pub fn copy_shown(id: SharedString, text: &str, cx: &App) -> Div {
     use gpui_kit::component::{
         Sizable,
         button::{Button, ButtonVariants},
     };
     let text = text.to_owned();
-    div()
-        .flex_none()
-        .opacity(0.)
-        .group_hover(group.clone(), |button| button.opacity(1.))
-        .child(
-            Button::new(id.clone())
-                .ghost()
-                .xsmall()
-                .icon(crate::ui::clipboard::icon(&id, cx))
-                .tooltip("Copy")
-                .on_click(move |_, _, cx| {
-                    cx.stop_propagation();
-                    crate::ui::clipboard::copy(&id, text.clone(), cx);
-                }),
-        )
+    div().flex_none().child(
+        Button::new(id.clone())
+            .ghost()
+            .xsmall()
+            .icon(crate::ui::clipboard::icon(&id, cx))
+            .tooltip("Copy")
+            .on_click(move |_, _, cx| {
+                cx.stop_propagation();
+                crate::ui::clipboard::copy(&id, text.clone(), cx);
+            }),
+    )
 }
 
 /// The text colour of a tone the protocol names, such as a task's status.
