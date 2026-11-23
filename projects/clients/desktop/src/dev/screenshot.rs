@@ -9,6 +9,8 @@
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
 //! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all|lower`: open a window; unfold the right column, or only its lower modules;
+//! - `screen=team|overview|git|files|plan`: open that module as the right column's screen
+//!   (`screen=` goes back to the list);
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - with `DUSK_MASCOT=MS` in the environment every subagent's mascot is held that many
 //!   milliseconds into its activity, so done and failed can be seen mid-motion;
@@ -540,6 +542,14 @@ fn act(
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
         }
+        // A heavy module of the right column opened as its screen, by its key.
+        "screen" => match crate::workspace::Right::ALL
+            .into_iter()
+            .find(|module| module.key() == value)
+        {
+            Some(module) => ws.open_right(module, cx),
+            None => ws.close_right(cx),
+        },
         // A board of 200 tasks in the Overview; the next real answer replaces it.
         "fake" if value == "overview" => {
             ws.overview.chat = ws.shown.clone();

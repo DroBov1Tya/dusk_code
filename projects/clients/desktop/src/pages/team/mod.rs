@@ -6,13 +6,16 @@
 //! - `page`: the page, its header, budget and the layers;
 //! - `graph`: what both layers draw with: a box at its place, the edges, a member's mark;
 //! - `people`, `plan`: the two layers;
-//! - `module`: the right column's Team module.
+//! - `module`: the right column's Team screen;
+//! - `waves`: the plan in waves with a square a task, shared by the chat's plan card and
+//!   the Team screen.
 
 mod graph;
 pub mod module;
 mod page;
 mod people;
 mod plan;
+pub mod waves;
 
 pub use page::render;
 
@@ -42,6 +45,9 @@ pub struct TeamPage {
     pub unfold: bool,
     /// The page Back returns to.
     pub back: Option<Center>,
+    /// The right column's Team screen: its waves' folds, and its members unfolded.
+    pub waves: waves::Folds,
+    pub members_open: bool,
 }
 
 impl TeamPage {

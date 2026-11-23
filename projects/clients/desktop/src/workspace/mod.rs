@@ -167,8 +167,14 @@ pub struct Workspace {
     pub shelf_search: Entity<InputState>,
     /// Where the Customize page is scrolled to; a shelf shown whole starts at its top.
     pub shelf_scroll: ScrollHandle,
-    /// The right column's modules that are folded.
+    /// The right column's light modules that are folded; a heavy one opens as a screen.
     pub folded: HashSet<Right>,
+    /// The heavy module open as the right column's screen, and how many times a screen
+    /// opened or closed, so each move slides once.
+    pub right_screen: Option<Right>,
+    pub right_moves: usize,
+    /// Where the right column's list is scrolled, kept while a screen covers it.
+    pub right_scroll: ScrollHandle,
     /// The right column's modules top to bottom, every one once.
     pub right_order: Vec<Right>,
     /// While a module's header is dragged: the module under the pointer, and whether the
