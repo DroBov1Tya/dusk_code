@@ -57,6 +57,8 @@ pub struct Prefs {
     /// Plugin parts pinned (true) or unpinned (false) by hand, keyed `plugin/part`; a
     /// part not here follows the default of `plugins::place`.
     pub plugin_pins: std::collections::BTreeMap<String, bool>,
+    /// The first run's welcome was finished or skipped, so it never shows again.
+    pub welcome_done: bool,
 }
 
 impl Default for Prefs {
@@ -80,6 +82,7 @@ impl Default for Prefs {
             fireflies: true,
             layout: Default::default(),
             plugin_pins: Default::default(),
+            welcome_done: false,
         }
     }
 }

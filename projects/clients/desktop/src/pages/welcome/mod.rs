@@ -1,12 +1,18 @@
 //! The first screen of a clean install: while the core has no provider, the chat page
-//! offers to connect one, with only a name, an address and a token. The connection is the
-//! Model page's own: the core checks the server, then saves it as OpenAI-compatible,
-//! with the token in the keychain. Dismissed, it stays away until the app starts again;
-//! once any provider is connected it does not come back.
-//! - `view`: the two screens drawn;
+//! shows four pages in order, turned sideways: hello, a model to connect, the tools that
+//! stay off until switched on, and ready. Once shown it stays until Start or Skip, even
+//! after a provider connects on the way; finishing is kept in the window's preferences,
+//! so it never comes back. People who already have a provider never see it.
+//! - `view`: the frame, the dots and buttons, the first and last pages;
+//! - `form`: the Model page, the connection the Model settings page makes;
+//! - `tools`: the Tools page and its switches;
+//! - `swipe`: a sideways trackpad swipe, from the scroll events;
 //! - `name`: the provider's name, taken from the address.
 
+mod form;
 mod name;
+mod swipe;
+mod tools;
 mod view;
 
 pub use view::render;
@@ -23,14 +29,27 @@ use gpui_kit::{
 
 use crate::workspace::{Center, Workspace};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Step {
-    /// Not shown: providers are known, the core has not answered yet, or "Not now".
-    Hidden,
-    /// The greeting and its one button.
-    Intro,
-    /// The name, the address and the token.
-    Form,
+/// The pages in the order they are turned.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Page {
+    Hello,
+    Model,
+    Tools,
+    Ready,
+}
+
+impl Page {
+    pub const ALL: [Page; 4] = [Page::Hello, Page::Model, Page::Tools, Page::Ready];
+
+    fn index(self) -> usize {
+        Self::ALL.iter().position(|page| *page == self).unwrap_or(0)
+    }
+
+    /// The page `step` places away, if there is one.
+    fn turned(self, step: isize) -> Option<Page> {
+        let index = self.index().checked_add_signed(step)?;
+        Self::ALL.get(index).copied()
+    }
 }
 
 /// Why the last attempt failed: the kind, when the core could tell it, and its words.
@@ -40,7 +59,10 @@ struct Failed {
 }
 
 pub struct Welcome {
-    pub step: Step,
+    /// The page in view; none when the welcome is not shown.
+    pub page: Option<Page>,
+    /// Which way the last turn went, so the new page slides in from that side.
+    toward: isize,
     /// What the provider is called in the model menu; empty takes the address's host.
     name: Entity<InputState>,
     address: Entity<InputState>,
@@ -48,8 +70,11 @@ pub struct Welcome {
     /// The core's answer to the last attempt, when it failed.
     error: Option<Failed>,
     busy: bool,
-    /// A connection went through: the next frame, which has the window, opens a new chat.
+    /// The provider connected here and the model it starts with, for the Model page.
+    joined: Option<(String, Option<String>)>,
+    /// A connection went through: once the welcome is finished, a new chat opens.
     connected: bool,
+    swipe: swipe::Swipe,
 }
 
 impl Welcome {
@@ -73,43 +98,56 @@ impl Welcome {
             .detach();
         }
         Self {
-            step: Step::Hidden,
+            page: None,
+            toward: 0,
             name,
             address,
             token,
             error: None,
             busy: false,
+            joined: None,
             connected: false,
+            swipe: swipe::Swipe::default(),
         }
+    }
+
+    /// Whether a box of the form has the keyboard, so the arrows stay the box's.
+    pub fn typing(&self, window: &Window, cx: &App) -> bool {
+        [&self.name, &self.address, &self.token]
+            .iter()
+            .any(|field| field.focus_handle(cx).is_focused(window))
     }
 }
 
 /// Whether the chat page shows the welcome in its place.
 pub fn shown(ws: &Workspace) -> bool {
-    ws.welcome.step != Step::Hidden && ws.center == Center::Chat && ws.providers.is_empty()
+    ws.welcome.page.is_some() && ws.center == Center::Chat
 }
 
-/// Before each frame: a provider connected anywhere ends the welcome for good, and a
-/// connection made here opens a new chat.
+/// Before each frame: once the welcome is finished, a connection made in it opens a new
+/// chat, which needs the window.
 pub fn settle(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
-    if !ws.providers.is_empty() {
-        ws.welcome.step = Step::Hidden;
-    }
-    if std::mem::take(&mut ws.welcome.connected) {
+    if ws.welcome.page.is_none() && std::mem::take(&mut ws.welcome.connected) {
         let project = ws.project.clone();
         ws.new_chat(project.as_deref(), window, cx);
     }
 }
 
 impl Workspace {
-    /// Asks the core for its providers once at start; none means a clean install.
+    /// Asks the core for its providers once at start; none, on a welcome never finished,
+    /// means a first run.
     pub fn ask_welcome(&mut self, cx: &mut Context<Self>) {
+        if crate::ui::theme::prefs(cx).welcome_done {
+            return;
+        }
         self.core.call(
             cx,
             |client| async move { client.command(Command::Provider { name: None }).await },
             |ws, result, cx| match result {
                 Ok(Answer::Providers { providers, .. }) if providers.is_empty() => {
-                    ws.welcome.step = Step::Intro;
+                    ws.welcome.page = Some(Page::Hello);
+                    // The Tools page lists the tools from the settings.
+                    ws.load_settings(cx);
                     cx.notify();
                 }
                 Ok(_) => {}
@@ -118,28 +156,52 @@ impl Workspace {
         );
     }
 
-    pub fn welcome_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.welcome.step = Step::Form;
-        self.welcome
-            .name
-            .update(cx, |field, cx| field.focus(window, cx));
+    /// Shows `page`, sliding in from the side it lies on.
+    pub fn welcome_go(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(from) = self.welcome.page else {
+            return;
+        };
+        if from == page {
+            return;
+        }
+        self.welcome.toward = if page.index() > from.index() { 1 } else { -1 };
+        self.welcome.page = Some(page);
+        // A box left behind would keep the arrows; the window takes them back.
+        if self.welcome.typing(window, cx) {
+            window.focus(&self.focus, cx);
+        }
         cx.notify();
     }
 
-    /// Escape on the form goes back to the greeting. True when it did.
-    pub fn welcome_back(&mut self, cx: &mut Context<Self>) -> bool {
-        if !shown(self) || self.welcome.step != Step::Form {
+    /// The next page (`1`) or the one before (`-1`); past the last page is Start.
+    pub fn welcome_turn(&mut self, step: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(page) = self.welcome.page else {
+            return;
+        };
+        match page.turned(step) {
+            Some(next) => self.welcome_go(next, window, cx),
+            None if step > 0 => self.welcome_finish(cx),
+            None => {}
+        }
+    }
+
+    /// Start, Skip and Escape: the welcome is done for good.
+    pub fn welcome_finish(&mut self, cx: &mut Context<Self>) {
+        if self.welcome.page.take().is_none() {
+            return;
+        }
+        self.welcome.error = None;
+        crate::ui::theme::change(cx, |prefs| prefs.welcome_done = true);
+        cx.notify();
+    }
+
+    /// Escape while the welcome shows finishes it. True when it did.
+    pub fn welcome_escape(&mut self, cx: &mut Context<Self>) -> bool {
+        if !shown(self) {
             return false;
         }
-        self.welcome.step = Step::Intro;
-        self.welcome.error = None;
-        cx.notify();
+        self.welcome_finish(cx);
         true
-    }
-
-    fn welcome_dismiss(&mut self, cx: &mut Context<Self>) {
-        self.welcome.step = Step::Hidden;
-        cx.notify();
     }
 
     /// Checks the server first, since saving makes no request and only the check can say
@@ -147,7 +209,7 @@ impl Workspace {
     /// once, as on the Model page, and goes to the core only.
     pub fn welcome_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let welcome = &mut self.welcome;
-        if welcome.busy || welcome.step != Step::Form {
+        if welcome.busy || welcome.page != Some(Page::Model) {
             return;
         }
         let address = welcome.address.read(cx).value().trim().to_owned();
@@ -192,12 +254,12 @@ impl Workspace {
                 ws.welcome.busy = false;
                 match result {
                     Ok(Ok((name, first))) => {
-                        ws.welcome.step = Step::Hidden;
                         ws.welcome.connected = true;
                         // The new chat can be used at once, as a first model is there.
-                        if let Some(model) = first {
+                        if let Some(model) = &first {
                             ws.choose_model(format!("{name}/{model}"), cx);
                         }
+                        ws.welcome.joined = Some((name, first));
                         ws.load_models(cx);
                     }
                     Ok(Err(failed)) => ws.welcome.error = Some(failed),
@@ -221,5 +283,11 @@ impl Workspace {
             field.set_value(address.to_owned(), window, cx)
         });
         cx.notify();
+    }
+
+    /// For pictures: the Model page as after a connection to `name`.
+    pub fn welcome_joined(&mut self, name: &str) {
+        let model = Some("llama-3.1-8b-instruct".to_owned());
+        self.welcome.joined = Some((name.to_owned(), model));
     }
 }

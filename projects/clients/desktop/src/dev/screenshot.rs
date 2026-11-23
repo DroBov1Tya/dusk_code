@@ -56,8 +56,9 @@
 //!   `up=X,Y`: press the left button there, move with it held, let it go, as a click
 //!   (`down` then `up`) or a drag (`down`, a few `move`, `up`) would;
 //!   `press=X,Y` is `down` alone, for the pressed look;
-//! - `fake=welcome`: no providers, so the chat page shows the welcome; `welcome=form`: its
-//!   form, as the button opens it; `welcome=address:URL`: type the address in it;
+//! - `fake=welcome`: no providers, so the chat page shows the welcome; `welcome=page:N`:
+//!   its Nth page; `welcome=form`: the Model page; `welcome=address:URL`: type the address
+//!   in it; `welcome=connected:NAME`: the Model page as after a connection;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
 //! - `terminal`: show or hide the terminal panel; `run=COMMAND`: type the command in its
 //!   shown shell, with Return; `select=ROW:FROM-TO`: cells of a row selected;
@@ -686,7 +687,8 @@ fn act(
         "fake" if value == "welcome" => {
             ws.providers.clear();
             ws.center = Center::Chat;
-            ws.welcome.step = crate::pages::welcome::Step::Intro;
+            ws.welcome.page = Some(crate::pages::welcome::Page::Hello);
+            ws.load_settings(cx);
             cx.notify();
         }
         // Two providers, to look at a row's switch and buttons.
@@ -1041,10 +1043,23 @@ fn act(
             };
             crate::ui::theme::change(cx, |prefs| prefs.chats_by = order);
         }
-        "welcome" => match value.split_once(':') {
-            Some(("address", address)) => ws.welcome_address(address, window, cx),
-            _ => ws.welcome_form(window, cx),
-        },
+        "welcome" => {
+            use crate::pages::welcome::Page;
+            match value.split_once(':') {
+                Some(("address", address)) => ws.welcome_address(address, window, cx),
+                Some(("page", n)) => {
+                    let page = n
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|n| Page::ALL.get(n.checked_sub(1)?));
+                    if let Some(page) = page {
+                        ws.welcome_go(*page, window, cx);
+                    }
+                }
+                Some(("connected", name)) => ws.welcome_joined(name),
+                _ => ws.welcome_go(Page::Model, window, cx),
+            }
+        }
         "file" => {
             let (path, line) = match value.rsplit_once(':') {
                 Some((path, line)) if line.parse::<u32>().is_ok() => (path, line.parse().ok()),

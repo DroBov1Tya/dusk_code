@@ -210,7 +210,7 @@ impl Workspace {
         if self.dismiss_suggestion(window, cx) {
             return true;
         }
-        if self.welcome_back(cx) {
+        if self.welcome_escape(cx) {
             return true;
         }
         if self.center == Center::Review {

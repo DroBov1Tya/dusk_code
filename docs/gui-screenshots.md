@@ -20,7 +20,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `center=chat\|review\|settings\|customize\|artifacts\|overview\|team` | switches the middle column (`connectors` still names Customize) (it does not load that page's data; use the click paths for that) |
 | `review` | opens the review page |
 | `file=PATH[:LINE]` | opens a file in the viewer |
-| `fake=welcome`, `welcome=form`, `welcome=address:URL` | the first screen of a clean install, its form, an address typed in it (`key=enter` connects) |
+| `fake=welcome`, `welcome=page:N`, `welcome=form`, `welcome=address:URL`, `welcome=connected:NAME` | the first run's welcome, its Nth page (1 Hello, 2 Model, 3 Tools, 4 Ready), the Model page, an address typed in it (`key=enter` connects), the Model page as after a connection to NAME |
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
 | `fake=pulls` | four pull requests in Changes, one of each state and checks (a click on a count opens its window of checks), a chat of the chosen project with their icon, and a chat whose links to two of them are drawn as chips (`hover=` on one shows its card); needs `right=all` before it, since reading the column again replaces the fake |
 | `fake=unread` | three loose chats at the top of the sidebar: one unread, one read, one unread whose agent works again |

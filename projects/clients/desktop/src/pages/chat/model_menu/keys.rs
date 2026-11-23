@@ -67,8 +67,8 @@ impl Workspace {
     }
 
     /// Keys of the page in the middle: on the review, Up and Down choose the file and
-    /// Escape goes back to the chat. Letters are left alone, so typing still reaches
-    /// the boxes.
+    /// Escape goes back to the chat; on the welcome, Left and Right turn the pages.
+    /// Letters are left alone, so typing still reaches the boxes.
     fn page_keys(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keys = &event.keystroke;
         if keys.modifiers.modified() {
@@ -84,6 +84,14 @@ impl Workspace {
                     }
                     window.focus(&self.focus, cx);
                 }
+            }
+            // The welcome's pages turn sideways, unless a box has the arrows.
+            "left" | "right"
+                if crate::pages::welcome::shown(self)
+                    && self.modal.is_none()
+                    && !self.welcome.typing(window, cx) =>
+            {
+                self.welcome_turn(if keys.key == "right" { 1 } else { -1 }, window, cx)
             }
             "down" | "up" if self.center == Center::Review && self.modal.is_none() => {
                 self.review.step(if keys.key == "down" { 1 } else { -1 })

@@ -1,0 +1,2 @@
+Changed
+The desktop welcome of a first run is four pages turned sideways: hello, connecting a model, the tools that stay off until switched on (using the screen and moving your real pointer, each with what it does and risks, plus the way to Voice and the Workshop), and ready. Back, Next, the dots, the arrow keys and a sideways trackpad swipe turn them; Skip or Escape finishes it. It stays until Start or Skip even after a model connects, and once finished it does not come back.
