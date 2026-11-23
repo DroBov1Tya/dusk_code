@@ -106,7 +106,11 @@ impl Workspace {
             chats: HashMap::new(),
             shown: None,
             project: None,
-            collapsed: HashSet::new(),
+            collapsed: crate::ui::theme::prefs(cx)
+                .collapsed_projects
+                .iter()
+                .cloned()
+                .collect(),
             center: Center::Chat,
             shelf: Shelf::Connectors,
             shelf_search,
@@ -153,6 +157,7 @@ impl Workspace {
             focus: cx.focus_handle(),
             agents_trigger_focus: cx.focus_handle(),
             modal_focus: cx.focus_handle(),
+            modal_scroll: ScrollHandle::new(),
             confirm_focus: cx.focus_handle(),
             file: crate::pages::file::FileView::new(),
             mcp_restarting: HashSet::new(),

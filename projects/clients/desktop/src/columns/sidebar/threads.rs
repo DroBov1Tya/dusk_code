@@ -263,6 +263,7 @@ impl Workspace {
         self.select_project(project_id, cx);
         self.drafts.new_chat();
         self.shown = None;
+        self.team_page.picked = None;
         self.temporary_next = false;
         self.center = Center::Chat;
         self.context = None;
@@ -404,6 +405,7 @@ impl Workspace {
     pub fn show(&mut self, thread_id: String, cx: &mut Context<Self>) {
         self.history.moved();
         self.shown = Some(thread_id);
+        self.team_page.picked = None;
         self.ensure_suggested(cx);
         self.center = Center::Chat;
         self.context = None;

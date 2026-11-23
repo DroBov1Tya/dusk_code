@@ -245,6 +245,7 @@ impl Workspace {
             agent: agent.to_owned(),
             name,
         });
+        self.modal_scroll.scroll_to_bottom();
         cx.notify();
         let known = self
             .shown_chat()
@@ -268,6 +269,10 @@ impl Workspace {
                         // Events that came while the history loaded stay on top of it.
                         read.append_live(live);
                         chat.agent_chats.insert(agent.clone(), read);
+                    }
+                    let open = matches!(&ws.modal, Some(Modal::AgentChat { agent: shown, .. }) if *shown == agent);
+                    if open {
+                        ws.modal_scroll.scroll_to_bottom();
                     }
                     cx.notify();
                 }

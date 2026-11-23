@@ -330,6 +330,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     .then(|| ws.modal_focus.clone());
     // A listing's gallery steps with Left and Right.
     let gallery = matches!(ws.modal, Some(Modal::Listing { .. }));
+    let agent_scroll =
+        matches!(ws.modal, Some(Modal::AgentChat { .. })).then(|| ws.modal_scroll.clone());
     let theme = cx.theme();
     // A press inside is marked rather than stopped: the window's text selection hears
     // presses only after every element, so a stopped one could not start a selection.
@@ -367,24 +369,35 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .py_3()
                 .border_b_1()
                 .border_color(theme.border)
+                // A long title is cut short instead of pushing past the panel.
                 .child(
                     div()
+                        .flex_1()
+                        .min_w_0()
                         .flex()
                         .flex_row()
                         .items_center()
                         .gap_2()
                         .children(back)
-                        .child(div().font_weight(FontWeight::SEMIBOLD).child(title)),
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(title),
+                        ),
                 )
                 .child(
-                    Button::new("modal-close")
-                        .ghost()
-                        .small()
-                        .icon(IconName::Close)
-                        .tooltip("Close")
-                        .on_click(
-                            cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
-                        ),
+                    div().flex_none().child(
+                        Button::new("modal-close")
+                            .ghost()
+                            .small()
+                            .icon(IconName::Close)
+                            .tooltip("Close")
+                            .on_click(cx.listener(|ws, _, window, cx| {
+                                ws.close_modal_from_window(window, cx)
+                            })),
+                    ),
                 ),
         )
         .child(
@@ -393,6 +406,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .when_some(agent_scroll, |body, scroll| body.track_scroll(&scroll))
                 .child(body),
         );
     Some(
@@ -435,6 +449,7 @@ impl Workspace {
             self.close_plugin_part(key, cx);
         }
         self.modal = None;
+        self.team_unpick(cx);
         cx.notify();
     }
 }

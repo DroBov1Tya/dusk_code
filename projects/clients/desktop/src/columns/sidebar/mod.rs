@@ -82,7 +82,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .min_h_0()
                 .overflow_y_scroll()
                 .pb_4()
-                .child(switch(cx))
+                .child(switch(ws, cx))
                 .children(pinned(ws, cx))
                 .child(match crate::ui::theme::prefs(cx).chats_by {
                     Order::Project => projects::render(ws, cx),
@@ -92,8 +92,25 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 }
 
 /// The words that choose the order, and beside them the way to add a project.
-fn switch(cx: &mut Context<Workspace>) -> Div {
+fn switch(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let order = crate::ui::theme::prefs(cx).chats_by;
+    // While chats stand under their projects, one click folds or opens them all.
+    let fold_all = (order == Order::Project && !ws.projects.is_empty()).then(|| {
+        let fold = ws
+            .projects
+            .iter()
+            .any(|project| !ws.collapsed.contains(&project.id));
+        Button::new("fold-projects")
+            .ghost()
+            .small()
+            .icon(IconName::ChevronsUpDown)
+            .tooltip(if fold {
+                "Collapse all projects"
+            } else {
+                "Expand all projects"
+            })
+            .on_click(cx.listener(move |ws, _, _, cx| ws.fold_all_projects(fold, cx)))
+    });
     let word = |id: &'static str, label: &'static str, to: Order, cx: &mut Context<Workspace>| {
         crate::ui::controls::text_choice(id, label, order == to, cx)
             .small()
@@ -122,12 +139,19 @@ fn switch(cx: &mut Context<Workspace>) -> Div {
                 .child(word("chats-by-recent", "Recent", Order::Recent, cx)),
         )
         .child(
-            Button::new("add-project")
-                .ghost()
-                .small()
-                .icon(IconName::Plus)
-                .tooltip("Add a project")
-                .on_click(cx.listener(|ws, _, window, cx| ws.open_form(None, window, cx))),
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .children(fold_all)
+                .child(
+                    Button::new("add-project")
+                        .ghost()
+                        .small()
+                        .icon(IconName::Plus)
+                        .tooltip("Add a project")
+                        .on_click(cx.listener(|ws, _, window, cx| ws.open_form(None, window, cx))),
+                ),
         )
 }
 

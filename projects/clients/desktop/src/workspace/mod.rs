@@ -227,6 +227,8 @@ pub struct Workspace {
     pub agents_trigger_focus: FocusHandle,
     /// The keys of a window that takes them: the subagents' list, a listing's gallery.
     pub modal_focus: FocusHandle,
+    /// The scroll of a subagent's chat window, so it opens at its latest message.
+    pub modal_scroll: ScrollHandle,
     /// The Workshop confirmation's Cancel button, where the keyboard starts.
     pub confirm_focus: FocusHandle,
     pub file: crate::pages::file::FileView,
