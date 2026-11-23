@@ -1,7 +1,7 @@
 //! The welcome drawn: the page in view in the middle, scrolling when the window is too
-//! short for it, Skip pinned in the corner above it, and pinned under it Back, a dot for each page and
-//! Next, so turning a page never moves them. The first and the last page are here; the
-//! Model and Tools pages have their own files.
+//! short for it, Skip setup pinned in the corner above it, and pinned under it Back, a
+//! dot for each page and Next, so turning a page never moves them. The first and the last
+//! page are here; the Model and Tools pages have their own files.
 
 use gpui_kit::{
     component::{
@@ -53,7 +53,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
                 .py_4()
                 .child(motion::slide(id, body, ws.welcome.toward)),
         );
-    // Skip has a row of its own above the page, so a page scrolled under it never meets it.
+    // Skip setup has a row of its own above the page, so a page scrolled under it never meets it.
     let top = div()
         .flex_none()
         .w_full()
@@ -88,7 +88,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         )
 }
 
-/// Skip, quiet in the top corner: the whole welcome is done.
+/// Skip setup, quiet in the top corner: the whole welcome is done.
 fn skip(cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, foreground) = (theme.muted_foreground, theme.foreground);
@@ -98,7 +98,7 @@ fn skip(cx: &mut Context<Workspace>) -> Stateful<Div> {
         .text_color(muted)
         .hover(|link| link.text_color(foreground))
         .cursor_pointer()
-        .child("Skip")
+        .child("Skip setup")
         .on_click(cx.listener(|ws, _, _, cx| ws.welcome_finish(cx)))
 }
 
@@ -122,8 +122,8 @@ fn nav(ws: &Workspace, page: Page, cx: &mut Context<Workspace>) -> Div {
                 .on_click(cx.listener(move |ws, _, window, cx| ws.welcome_go(dot, window, cx)))
         }));
     let next = match page {
-        // Not "Skip": the corner's Skip ends the whole welcome, this one only a step.
-        Page::Model if !connected => "Not now",
+        // "for now": the corner's "Skip setup" ends the whole welcome, this one only a step.
+        Page::Model if !connected => "Skip for now",
         Page::Ready => "Start",
         _ => "Next",
     };

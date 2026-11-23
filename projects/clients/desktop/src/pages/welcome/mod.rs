@@ -1,8 +1,8 @@
 //! The first screen of a clean install: while the core has no provider, the chat page
 //! shows four pages in order, turned sideways: hello, a model to connect, the tools that
-//! stay off until switched on, and ready. Once shown it stays until Start or Skip, even
-//! after a provider connects on the way; finishing is kept in the window's preferences,
-//! so it never comes back. People who already have a provider never see it.
+//! stay off until switched on, and ready. Once shown it stays until Start or Skip setup,
+//! even after a provider connects on the way; finishing is kept in the window's
+//! preferences, so it never comes back. People who already have a provider never see it.
 //! - `view`: the frame, the dots and buttons, the first and last pages;
 //! - `form`: the Model page, the connection the Model settings page makes;
 //! - `tools`: the Tools page and its switches;
@@ -185,7 +185,7 @@ impl Workspace {
         }
     }
 
-    /// Start, Skip and Escape outside the form's boxes: the welcome is done for good.
+    /// Start, Skip setup and Escape outside the form's boxes: the welcome is done for good.
     pub fn welcome_finish(&mut self, cx: &mut Context<Self>) {
         if self.welcome.page.take().is_none() {
             return;
