@@ -37,7 +37,8 @@
 //!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
 //! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
 //!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
-//!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
+//!   the composer's panel, the Todo's finished tasks; `fake=todo-short`: its board cut to
+//!   three open tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
 //! - `fake=team|team-ended`: after `fake=chat`, the chat leads a team of seven members on
 //!   eight tasks, one in each status, running or ended on its steps (see `dev::team`);
 //! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
@@ -563,6 +564,17 @@ fn act(
                 done: 50,
                 failed: 5,
             });
+            cx.notify();
+        }
+        // After `fake=chat`: its board cut to three open tasks, so the Todo unfolds in place.
+        "fake" if value == "todo-short" => {
+            if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
+                let mut open = 0;
+                for task in &mut chat.tasks {
+                    open += usize::from(!task.done);
+                    task.done |= open > 3;
+                }
+            }
             cx.notify();
         }
         "fake" if value == "pulls" => fake_pulls(ws, cx),

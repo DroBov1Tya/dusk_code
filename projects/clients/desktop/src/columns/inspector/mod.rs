@@ -34,12 +34,19 @@ pub const WIDTH: f32 = 300.;
 /// How long a screen takes to slide over the list, or the list back.
 const SLIDE: std::time::Duration = std::time::Duration::from_millis(180);
 
+/// The tallest a light module with a long body grows in the list before it scrolls
+/// inside, so the modules under it stay in reach.
+const TALL: f32 = 360.;
+
 /// A heavy module opens as a screen of the whole column; a light one unfolds in place.
-pub fn heavy(module: Right) -> bool {
-    matches!(
-        module,
-        Right::Overview | Right::Team | Right::Git | Right::Files | Right::Plan
-    )
+/// The Todo is light while its board is short, and a screen once its open cards would
+/// stack down the column.
+pub fn heavy(ws: &Workspace, module: Right) -> bool {
+    match module {
+        Right::Overview | Right::Team | Right::Plan => true,
+        Right::Todo => todo::open_count(ws) > todo::IN_PLACE,
+        _ => false,
+    }
 }
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
@@ -80,7 +87,7 @@ fn list(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) ->
         .collect();
     for module in shown {
         let title = title(module);
-        let screen = heavy(module);
+        let screen = heavy(ws, module);
         let open = !screen && !ws.folded.contains(&module);
         let group = SharedString::from(format!("module-head-{}", module.key()));
         let line = summary(ws, module);
@@ -157,8 +164,10 @@ fn list(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) ->
                 Right::Todo => todo::render(ws, cx),
                 Right::Jobs => jobs::render(ws, cx),
                 Right::Sources => sources::render(ws, cx),
+                Right::Git => tall(module, git::render(ws, cx)),
+                Right::Files => tall(module, files::render(ws, cx)),
                 // Heavy modules open as screens, never here.
-                Right::Overview | Right::Team | Right::Git | Right::Files | Right::Plan => div(),
+                Right::Overview | Right::Team | Right::Plan => div(),
             };
             section = section.child(widgets::unfold(
                 SharedString::from(format!("module-{}", module.key())),
@@ -197,6 +206,20 @@ fn list(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) ->
             )
             .into_any_element(),
     }
+}
+
+/// A long body in the list, scrolling inside past `TALL`.
+fn tall(module: Right, body: Div) -> Div {
+    div().child(
+        div()
+            .id(SharedString::from(format!(
+                "module-scroll-{}",
+                module.key()
+            )))
+            .max_h(px(TALL))
+            .overflow_y_scroll()
+            .child(body),
+    )
 }
 
 /// A heavy module as the column's screen: Back and its name on top, its body under them.
@@ -266,9 +289,8 @@ fn screen_view(
             cx,
         )),
         Right::Team => crate::pages::team::module::render(ws, cx),
-        Right::Git => git::render(ws, cx),
-        Right::Files => files::render(ws, cx),
         Right::Plan => plan::render(ws, window, cx),
+        Right::Todo => todo::render(ws, cx),
         _ => div(),
     };
     div()
@@ -452,10 +474,12 @@ impl Workspace {
         }
     }
 
-    /// The screen the column shows: one whose module has nothing for this chat gives way
-    /// to the list, and is kept to come back when it has.
+    /// The screen the column shows: one whose module has nothing for this chat, or has
+    /// turned light (a Todo down to a short board), gives way to the list, and is kept
+    /// to come back when it is a screen again.
     pub fn right_screen_shown(&self) -> Option<Right> {
-        self.right_screen.filter(|module| self.has_content(*module))
+        self.right_screen
+            .filter(|module| self.has_content(*module) && heavy(self, *module))
     }
 
     /// Opens a heavy module as the column's screen, over the list.
@@ -477,7 +501,7 @@ impl Workspace {
     /// Whether a module's body is drawn now: a heavy one as the open screen, a light one
     /// unfolded in the list.
     pub fn module_shown(&self, module: Right) -> bool {
-        match heavy(module) {
+        match heavy(self, module) {
             true => self.right_screen_shown() == Some(module),
             false => !self.folded.contains(&module),
         }
