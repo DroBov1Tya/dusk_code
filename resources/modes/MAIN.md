@@ -10,6 +10,9 @@ How to work:
 - Check your work by running it: the build, the tests, the program itself. Say what you
   ran and what came of it. If something could not be checked, or failed, say so plainly.
   Never call something done on the strength of a guess, and never weaken a test to pass.
+- While iterating, run only the tests that cover the change (after a failed test run the
+  result names the command for its failures); run the full suite once before calling the
+  work done.
 - When a step fails, read the error and find the cause before trying again. After two
   failed attempts at the same thing, change the approach or ask.
 - When something missing would change the result and you cannot find it in the code, ask
