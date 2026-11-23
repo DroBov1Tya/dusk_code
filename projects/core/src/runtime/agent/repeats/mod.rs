@@ -95,13 +95,14 @@ impl Repeats {
     ) -> Option<Notice> {
         self.enter(turn_id);
         let call_hash = hash((&call.name, call.arguments.to_string()));
-        let cycle = self.cycles.note(
-            self.steps,
-            facts.read_only,
-            call_hash,
-            cycles::result_hash(content),
-            limits,
-        );
+        let result_hash = if limits.loop_cycles {
+            cycles::result_hash(content)
+        } else {
+            hash(content)
+        };
+        let cycle = self
+            .cycles
+            .note(self.steps, facts.read_only, call_hash, result_hash, limits);
         let tests = limits
             .test_reruns
             .then(|| test_runs::TestRun::of(call, result))
@@ -110,7 +111,7 @@ impl Repeats {
         let rerun = match tests {
             Some(run) => self.test_runs.run(self.steps, run, facts.ledger, limits),
             None => {
-                self.test_runs.other(facts.read_only);
+                self.test_runs.other(call, result, facts.read_only);
                 None
             }
         };

@@ -77,7 +77,7 @@ fn other(repeats: &mut Repeats, text: &str, read_only: bool, limits: &Limits) {
 }
 
 #[test]
-fn a_test_run_with_nothing_changed_since_a_failing_one_is_noted() {
+fn a_test_run_repeating_one_with_nothing_changed_is_noted() {
     let mut repeats = Repeats::default();
     let limits = Limits::default();
     let failed = exited(
@@ -95,10 +95,14 @@ fn a_test_run_with_nothing_changed_since_a_failing_one_is_noted() {
         .is_none()
     );
     other(&mut repeats, "cat src/lib.rs", true, &limits);
-    // Another filter of the same runner, with no file changed.
-    let filtered = command("cargo test adds 2>&1 | tail -40");
+    // The same failures again under another filter, with no file changed.
+    let reshuffled = command("cargo test -- --test-threads=1 2>&1 | tail -40");
+    let again = exited(
+        101,
+        &cargo_output(&["tests::subtracts", "tests::adds"], "b"),
+    );
     let (rung, count, note) =
-        run(&mut repeats, &filtered, &failed, Some(4), &limits).expect("a note");
+        run(&mut repeats, &reshuffled, &again, Some(4), &limits).expect("a note");
     assert_eq!((rung, count), (RepeatRung::TestRerun, 2));
     assert!(note.contains("`cargo test` run at step 1"), "{note}");
     assert!(
@@ -106,14 +110,87 @@ fn a_test_run_with_nothing_changed_since_a_failing_one_is_noted() {
         "{note}"
     );
     // Two more in a row ask for a plan.
-    let third = run(&mut repeats, &filtered, &failed, Some(4), &limits);
+    let third = run(&mut repeats, &reshuffled, &again, Some(4), &limits);
     assert_eq!(
         third.map(|(rung, count, _)| (rung, count)),
         Some((RepeatRung::TestRerun, 3))
     );
-    let fourth = run(&mut repeats, &filtered, &failed, Some(4), &limits).expect("a plan");
+    let fourth = run(&mut repeats, &reshuffled, &again, Some(4), &limits).expect("a plan");
     assert_eq!((fourth.0, fourth.1), (RepeatRung::TestRerunReplan, 4));
     assert!(fourth.2.contains("different plan"), "{}", fourth.2);
+}
+
+#[test]
+fn narrower_runs_to_look_at_each_failure_are_not_repeats() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let all = ["tests::adds", "tests::subtracts", "tests::divides"];
+    let failed = exited(101, &cargo_output(&all, "a"));
+    let suite = command("cargo test");
+    assert!(run(&mut repeats, &suite, &failed, Some(4), &limits).is_none());
+    for name in all {
+        let focused = command(&format!("cargo test {name} -- --nocapture"));
+        let output = exited(101, &cargo_output(&[name], "b"));
+        let notice = run(&mut repeats, &focused, &output, Some(4), &limits);
+        assert!(notice.is_none(), "{name}: {notice:?}");
+    }
+    // The whole suite again, still with nothing changed, repeats the first run.
+    let (rung, _, note) = run(&mut repeats, &suite, &failed, Some(4), &limits).expect("a note");
+    assert_eq!(rung, RepeatRung::TestRerun);
+    assert!(note.contains("run at step 1"), "{note}");
+}
+
+#[test]
+fn writes_the_ledger_cannot_see_are_changes() {
+    let limits = Limits::default();
+    let failed = exited(101, &cargo_output(&["tests::adds"], "a"));
+    let test = command("cargo test");
+    let delegate = ToolCall {
+        id: "call".into(),
+        name: "ask_agent".into(),
+        arguments: json!({ "task": "fix tests::adds" }),
+    };
+    let start_job = ToolCall {
+        id: "call".into(),
+        name: "run_command".into(),
+        arguments: json!({ "command": "./regen.sh", "background": true }),
+    };
+    let wait_job = ToolCall {
+        id: "call".into(),
+        name: "jobs".into(),
+        arguments: json!({ "action": "wait" }),
+    };
+    for between in [
+        vec![(&delegate, false)],
+        vec![(&start_job, false)],
+        vec![(&wait_job, true)],
+    ] {
+        let mut repeats = Repeats::default();
+        // The ledger has seen this thread change a file: it is trusted.
+        assert!(run(&mut repeats, &test, &failed, Some(1), &limits).is_none());
+        if between[0].0.name == "jobs" {
+            repeats.step("t");
+            let started = ToolResult::text("background job started: job_id=1".into());
+            let facts = Facts::default();
+            repeats.note("t", &start_job, &started, &started.content, &facts, &limits);
+            assert!(run(&mut repeats, &test, &failed, Some(1), &limits).is_none());
+        }
+        for (call, read_only) in between {
+            repeats.step("t");
+            let result = ToolResult::text("done".into());
+            let facts = Facts {
+                read_only,
+                ledger: None,
+            };
+            repeats.note("t", call, &result, &result.content, &facts, &limits);
+        }
+        // The same failure may climb the ladder; the re-run rule says nothing.
+        let rung = run(&mut repeats, &test, &failed, Some(1), &limits).map(|notice| notice.0);
+        assert!(
+            matches!(rung, None | Some(RepeatRung::SameError)),
+            "{rung:?}"
+        );
+    }
 }
 
 #[test]

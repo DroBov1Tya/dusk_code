@@ -55,15 +55,18 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   the same result with nothing that may write between, gets a note at the third round
   (`limits.cycle_note_at`) and a request for a different plan at the fifth
   (`cycle_replan_at`). The reads of one step count as one; ids, times and durations in
-  results do not hide a repeat. Notes only. Off, the same call with the same result three
-  times in a row still gets a note.
+  results do not hide a repeat; a read again counts only within the steps whose results
+  are still sent whole (`stub_keep_steps`). Notes only. Off, the same call with the same
+  result three times in a row still gets a note, as before.
 - **Test re-runs.** `limits.test_reruns` (on): a test run (`cargo test`, `pytest`, `go
-  test`, `npm test`, `jest`, ...) with no project file changed since the last run of the
-  same runner, after that run failed or as the same command, gets a note with the step of
-  that run and its failing tests (`limits.test_rerun_note_at`, 2), and a request for a
-  different plan at the fourth such run (`test_rerun_replan_at`). Changes are read from
-  the change ledger once it has recorded one in the chat, else any call that may write
-  counts as one. The command still runs. The failing test ids also stand for a run's
+  test`, `npm test`, `jest`, ...) that repeats a run of the same runner with no project
+  file changed since, as the same command or with the same tests failing, gets a note
+  with the step of that run and its failing tests (`limits.test_rerun_note_at`, 2), and a
+  request for a different plan at the fourth such run (`test_rerun_replan_at`). A
+  narrower run to look at one failure is not a repeat. Changes are read from the change
+  ledger once it has recorded one in the chat, else any call that may write counts as
+  one; a write the ledger cannot see (a subagent, a background job, an MCP tool) always
+  counts. The command still runs. The failing test ids also stand for a run's
   error in the failure ladder, so the same failures under another filter climb it.
 
 ## Project knowledge

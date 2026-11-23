@@ -11,8 +11,13 @@
 //! step is still two. Results are compared with what changes
 //! from run to run (ids, times, durations) made alike, so a timestamp does not hide a
 //! repeat; a call or result that differs in anything else is new work and resets nothing
-//! it should not. With `limits.loop_cycles` off only the oldest rule stays: the third
-//! identical call with an identical result in a row gets a note.
+//! it should not. With `limits.loop_cycles` off only the oldest rule stays as it was:
+//! the third call in a row identical to the one before, with a result identical to the
+//! byte, gets a note; nothing is folded or made alike.
+//!
+//! A read seen again counts only the times within the steps whose results the model
+//! still has whole (`limits.stub_keep_steps` with `limits.stub_results` on): reading a
+//! file again because its result was put away is what the stub asks for.
 
 use std::collections::VecDeque;
 
@@ -54,6 +59,9 @@ impl Entry {
 pub struct Cycles {
     ring: VecDeque<Entry>,
     writes: u64,
+    /// The last call and its raw result, and how many times in a row, for the rule kept
+    /// with `limits.loop_cycles` off.
+    legacy: Option<((u64, u64), u32)>,
 }
 
 /// What came round: the same call in a row, a run of calls, or a read again.
@@ -65,8 +73,9 @@ enum Shape {
 }
 
 impl Cycles {
-    /// Notes a finished call by its hash and its result's (`result_hash`); the rung, count
-    /// and note when it goes in circles.
+    /// Notes a finished call by its hash and its result's (`result_hash` with
+    /// `limits.loop_cycles` on, the raw text's hash off); the rung, count and note when it
+    /// goes in circles.
     pub fn note(
         &mut self,
         step: u32,
@@ -75,13 +84,18 @@ impl Cycles {
         result: u64,
         limits: &Limits,
     ) -> Option<(RepeatRung, u32, String)> {
-        self.push(step, read_only, call, result);
         if !limits.loop_cycles {
-            let (shape, count) = self.period().filter(|(shape, _)| *shape == Shape::InARow)?;
+            let count = match self.legacy {
+                Some((last, count)) if last == (call, result) => count.saturating_add(1),
+                _ => 1,
+            };
+            self.legacy = Some(((call, result), count));
             return (count >= LEGACY_NOTE_AT)
-                .then(|| (RepeatRung::SameCall, count, note(shape, count)));
+                .then(|| (RepeatRung::SameCall, count, note(Shape::InARow, count)));
         }
-        let (shape, count) = match (self.period(), self.again()) {
+        self.push(step, read_only, call, result);
+        let kept = limits.stub_results.then_some(limits.stub_keep_steps);
+        let (shape, count) = match (self.period(), self.again(kept)) {
             (Some(period), Some(again)) if again.1 > period.1 => again,
             (Some(period), _) => period,
             (None, again) => again?,
@@ -156,13 +170,20 @@ impl Cycles {
     }
 
     /// How many times the newest read gave this same result since a call last could
-    /// have changed it, within the window; None for a call that may write.
-    fn again(&self) -> Option<(Shape, u32)> {
+    /// have changed it, within the window and the newest `kept` steps when results older
+    /// are put away; None for a call that may write.
+    fn again(&self, kept: Option<u32>) -> Option<(Shape, u32)> {
         let last = self.ring.back().filter(|last| last.read)?;
+        let oldest = kept.map_or(0, |kept| last.step.saturating_sub(kept.saturating_sub(1)));
         let count = self
             .ring
             .iter()
-            .filter(|entry| entry.read && entry.writes == last.writes && entry.same(last))
+            .filter(|entry| {
+                entry.read
+                    && entry.step >= oldest
+                    && entry.writes == last.writes
+                    && entry.same(last)
+            })
             .count();
         Some((Shape::Again, u32::try_from(count).unwrap_or(u32::MAX)))
     }
@@ -173,11 +194,8 @@ impl Cycles {
 pub fn result_hash(content: &str) -> u64 {
     let head = &content[..content.floor_char_boundary(RESULT_BYTES)];
     let tail_start = content.ceil_char_boundary(content.len().saturating_sub(RESULT_BYTES));
-    let tail = if tail_start < head.len() {
-        ""
-    } else {
-        &content[tail_start..]
-    };
+    // Windows that overlap leave the tail what the head did not read.
+    let tail = &content[tail_start.max(head.len())..];
     let lines: Vec<String> = head
         .lines()
         .chain(tail.lines())

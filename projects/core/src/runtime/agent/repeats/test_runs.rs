@@ -1,14 +1,17 @@
 //! Tests run again with nothing changed. On a large project a stuck model re-runs the
 //! suite, or a reshuffled slice of it, hoping for another answer. A test run is a
 //! command whose program and first word name a test runner (`cargo test`, `pytest`,
-//! `npm test`, ...); runs are kept per runner with the tests that failed and the change
-//! ledger's count at the time. A run with no project file changed since the last run of
-//! the same runner, after that run failed or as the same command, gets a note with what
-//! that run found. The command still runs: tests can be flaky, and a change outside the
+//! `npm test`, ...); the runs of each runner since a project file last changed are kept
+//! with the tests that failed and the change ledger's count at the time. A run that
+//! repeats one of them, as the same command or with the same tests failing, gets a note
+//! with what that run found. A narrower run to look at one failure fails fewer tests and
+//! is not a repeat. The command still runs: tests can be flaky, and a change outside the
 //! project (an env var, a service) is not seen.
 //!
 //! "Changed" reads the ledger when it can be trusted: recording is on and it has recorded
-//! a change in this thread before. Otherwise any call that may write, other than a test
+//! a change in this thread before. It sees only this thread's foreground commands, so a
+//! call that may write in a way it cannot see (a subagent, a background job, an MCP tool)
+//! is a change too. Without a ledger to trust, any call that may write, other than a test
 //! run, counts as a change, so a project too large to watch never gets a wrong note.
 //!
 //! The failing test ids are read from untrusted output: only its last `OUTPUT_BYTES`,
@@ -24,6 +27,8 @@ use crate::{
     tools::console::command_line::program_name,
 };
 
+/// The tool that reads and waits on background jobs.
+const JOBS: &str = "jobs";
 /// Failing tests are listed near the end; this bounds the work on any output.
 const OUTPUT_BYTES: usize = 1 << 20;
 /// Failing test ids kept per run.
@@ -31,8 +36,10 @@ const MAX_IDS: usize = 64;
 const MAX_ID_CHARS: usize = 200;
 /// Ids a note names.
 const SHOWN_IDS: usize = 5;
-/// Test runners a turn keeps the last run of.
+/// Test runners a turn keeps runs of.
 const MAX_RUNNERS: usize = 16;
+/// Runs kept per runner since a project file last changed.
+const MAX_RUNS: usize = 8;
 
 /// A finished test run.
 pub struct TestRun {
@@ -104,33 +111,58 @@ impl TestRun {
     }
 }
 
-/// The last run of one runner.
+/// A run of one runner, with what had changed by then.
 struct Last {
     run: TestRun,
     step: u32,
     ledger: Option<u64>,
     writes: u64,
-    /// Runs in a row, this one included, with nothing changed between.
+    unseen: u64,
+    /// Repeats in a row, this run included, with nothing changed between.
     streak: u32,
+}
+
+impl Last {
+    /// Whether `run` repeats this one: the same command, or the same tests failing.
+    fn repeated_by(&self, run: &TestRun) -> bool {
+        self.run.command == run.command
+            || (!self.run.failing.is_empty() && self.run.failing == run.failing)
+    }
 }
 
 #[derive(Default)]
 pub struct TestRuns {
-    last: HashMap<String, Last>,
+    /// Per runner, its runs since a project file last changed, oldest first.
+    runs: HashMap<String, Vec<Last>>,
     /// Calls that may write, test runs left out, so far in the turn.
     writes: u64,
+    /// Calls that may write where the ledger does not look, so far in the turn.
+    unseen: u64,
+    /// A background job was started in the turn: it may write while it runs.
+    jobs_started: bool,
 }
 
 impl TestRuns {
     /// Notes a call that is not a test run.
-    pub fn other(&mut self, read_only: bool) {
-        if !read_only {
-            self.writes += 1;
+    pub fn other(&mut self, call: &ToolCall, result: &ToolResult, read_only: bool) {
+        let job_call = call.name == JOBS && self.jobs_started;
+        if read_only && !job_call {
+            return;
+        }
+        self.writes += 1;
+        // The ledger records only what a foreground command of this thread changed. A
+        // look at the jobs is when a job's writes show.
+        let foreground = call.name == RUN_COMMAND
+            && call.arguments["background"].as_bool() != Some(true)
+            && result.exit_code.is_some();
+        if !foreground {
+            self.unseen += 1;
+            self.jobs_started |= call.name == RUN_COMMAND;
         }
     }
 
     /// Notes a test run at `step`, with the ledger's count after it; the rung, count and
-    /// note when nothing changed since the last run of its runner.
+    /// note when it repeats a run of its runner with nothing changed since.
     pub fn run(
         &mut self,
         step: u32,
@@ -138,57 +170,66 @@ impl TestRuns {
         ledger: Option<u64>,
         limits: &Limits,
     ) -> Option<(RepeatRung, u32, String)> {
-        let streak = match self.last.get(&run.runner) {
-            Some(last)
-                if !self.changed(last, ledger)
-                    && (last.run.exit_code != 0 || last.run.command == run.command) =>
-            {
-                last.streak.saturating_add(1)
-            }
-            _ => 1,
-        };
-        let found = (streak >= limits.test_rerun_note_at).then(|| {
-            let last = &self.last[&run.runner];
-            if streak >= limits.test_rerun_replan_at {
-                let note = format!(
-                    "[the tests ran {streak} times in a row with no project file changed \
+        if let Some(runs) = self.runs.get_mut(&run.runner)
+            && runs
+                .last()
+                .is_some_and(|newest| changed(newest, ledger, self.writes, self.unseen))
+        {
+            runs.clear();
+        }
+        let repeated = self
+            .runs
+            .get(&run.runner)
+            .and_then(|runs| runs.iter().rev().find(|last| last.repeated_by(&run)));
+        let streak = repeated.map_or(1, |last| last.streak.saturating_add(1));
+        let found = repeated
+            .filter(|_| streak >= limits.test_rerun_note_at)
+            .map(|last| {
+                if streak >= limits.test_rerun_replan_at {
+                    let note = format!(
+                        "[the tests ran {streak} times in a row with no project file changed \
                      between; the last run {}. Before your next call, write one sentence with \
                      a different plan, then follow it.]",
-                    last.run.outcome()
-                );
-                (RepeatRung::TestRerunReplan, streak, note)
-            } else {
-                let note = format!(
-                    "[no project file changed since the last `{}` run at step {}; it {}. \
+                        last.run.outcome()
+                    );
+                    (RepeatRung::TestRerunReplan, streak, note)
+                } else {
+                    let note = format!(
+                        "[no project file changed since the `{}` run at step {}; it {}. \
                      Running it again gives the same result unless a test is flaky: read that \
                      output, or change the code first.]",
-                    run.runner,
-                    last.step,
-                    last.run.outcome()
-                );
-                (RepeatRung::TestRerun, streak, note)
-            }
-        });
-        if self.last.len() < MAX_RUNNERS || self.last.contains_key(&run.runner) {
-            let runner = run.runner.clone();
+                        run.runner,
+                        last.step,
+                        last.run.outcome()
+                    );
+                    (RepeatRung::TestRerun, streak, note)
+                }
+            });
+        if self.runs.len() < MAX_RUNNERS || self.runs.contains_key(&run.runner) {
             let last = Last {
+                writes: self.writes,
+                unseen: self.unseen,
                 run,
                 step,
                 ledger,
-                writes: self.writes,
                 streak,
             };
-            self.last.insert(runner, last);
+            let runs = self.runs.entry(last.run.runner.clone()).or_default();
+            if runs.len() == MAX_RUNS {
+                runs.remove(0);
+            }
+            runs.push(last);
         }
         found
     }
+}
 
-    /// Whether a project file may have changed since `last`.
-    fn changed(&self, last: &Last, ledger: Option<u64>) -> bool {
-        let moved = matches!((last.ledger, ledger), (Some(before), Some(now)) if before != now);
-        let trusted = ledger.is_some_and(|now| now > 0);
-        moved || (!trusted && self.writes != last.writes)
-    }
+/// Whether a project file may have changed since `last`, with the ledger at `ledger` and
+/// the turn's counts of calls that may write at `writes` and `unseen` now.
+fn changed(last: &Last, ledger: Option<u64>, writes: u64, unseen: u64) -> bool {
+    let moved = matches!((last.ledger, ledger), (Some(before), Some(now)) if before != now);
+    let trusted = ledger.is_some_and(|now| now > 0);
+    moved || unseen != last.unseen || (!trusted && writes != last.writes)
 }
 
 /// Whether `call` runs tests, so the ledger is read for it.

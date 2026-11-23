@@ -95,8 +95,9 @@ pub struct Limits {
     /// Rounds before the model is asked for a different plan.
     #[serde(default = "default_cycle_replan_at")]
     pub cycle_replan_at: u32,
-    /// Whether a test run with no project file changed since the last run of its runner
-    /// gets a note with what that run found, and a run's failing test ids stand for its
+    /// Whether a test run repeating one of its runner (the same command, or the same
+    /// tests failing) with no project file changed since gets a note with what that run
+    /// found, and a run's failing test ids stand for its
     /// error in the failure ladder. The command still runs. Notes only.
     #[serde(default = "yes")]
     pub test_reruns: bool,

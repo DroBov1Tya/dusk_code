@@ -260,3 +260,38 @@ fn any_result_is_hashed_without_panic() {
         step(&mut repeats, &command("x"), output, false, &limits);
     }
 }
+
+#[test]
+fn mid_sized_results_that_differ_only_near_the_end_are_different() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let poll = call("jobs", json!({ "action": "output", "job_id": "1" }));
+    let log = "compiling crate\n".repeat(380);
+    for line in 0..6 {
+        let output = format!("{log}line {line} done\n");
+        assert_eq!(step(&mut repeats, &poll, &output, true, &limits), None);
+    }
+}
+
+#[test]
+fn a_read_again_after_its_result_was_put_away_is_not_counted() {
+    let mut repeats = Repeats::default();
+    let mut limits = Limits::default();
+    limits.stub_keep_steps = 2;
+    let main = read("src/main.rs");
+    for round in 0..4 {
+        assert_eq!(
+            step(&mut repeats, &main, "fn main() {}", true, &limits),
+            None,
+            "{round}"
+        );
+        let other = read(&format!("src/m{round}.rs"));
+        assert_eq!(step(&mut repeats, &other, "mod m;", true, &limits), None);
+    }
+    // With results sent whole, the same reads are noted.
+    limits.stub_results = false;
+    assert_eq!(
+        step(&mut repeats, &main, "fn main() {}", true, &limits),
+        Some((RepeatRung::CycleReplan, 5))
+    );
+}
