@@ -153,6 +153,7 @@ impl Workspace {
             focus: cx.focus_handle(),
             agents_trigger_focus: cx.focus_handle(),
             modal_focus: cx.focus_handle(),
+            modal_scroll: ScrollHandle::new(),
             confirm_focus: cx.focus_handle(),
             file: crate::pages::file::FileView::new(),
             mcp_restarting: HashSet::new(),

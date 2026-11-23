@@ -330,6 +330,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     .then(|| ws.modal_focus.clone());
     // A listing's gallery steps with Left and Right.
     let gallery = matches!(ws.modal, Some(Modal::Listing { .. }));
+    let agent_scroll =
+        matches!(ws.modal, Some(Modal::AgentChat { .. })).then(|| ws.modal_scroll.clone());
     let theme = cx.theme();
     let panel = div()
         .id("modal-panel")
@@ -400,6 +402,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .when_some(agent_scroll, |body, scroll| body.track_scroll(&scroll))
                 .child(body),
         );
     Some(
