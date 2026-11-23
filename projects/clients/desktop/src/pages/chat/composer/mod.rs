@@ -61,6 +61,11 @@ pub fn dock_lane(content: impl IntoElement) -> Div {
         .child(div().px(px(SIDE + crate::ui::size::GAP_S)).child(content))
 }
 
+/// How wide a card in the dock lane is, in a chat column `chat` wide.
+pub fn lane_width(chat: f32) -> f32 {
+    chat.min(WIDTH + 2. * SIDE) - 2. * (16. + SIDE + crate::ui::size::GAP_S)
+}
+
 /// Puts the shown chat's draft in the composer when another chat's is there. Called as the
 /// chat page is drawn: every way to another chat ends here, and here is the window.
 pub fn show_draft(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {

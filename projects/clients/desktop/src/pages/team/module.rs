@@ -6,7 +6,10 @@ use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 
 use super::waves;
 use crate::{
-    ui::{Type, widgets},
+    ui::{
+        Type,
+        widgets::{self, Focusable},
+    },
     workspace::Workspace,
 };
 
@@ -142,6 +145,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     of: |ws| &mut ws.team_page.waves,
                     came: None,
                     inset: 40.,
+                    lines: false,
                 },
                 cx,
             ))
@@ -163,8 +167,11 @@ fn now_line(id: SharedString, name: &str, what: String, working: bool, cx: &App)
     let (muted, hover) = (theme.muted_foreground, theme.list_hover);
     let dot = div().flex_none().size(px(6.)).rounded_full();
     let dot = match working {
-        true => dot.bg(theme.primary),
-        false => dot.border_1().border_color(theme.primary),
+        true => waves::breathe(dot.bg(theme.primary)).into_any_element(),
+        false => dot
+            .border_1()
+            .border_color(theme.primary)
+            .into_any_element(),
     };
     div()
         .id(id)
@@ -177,6 +184,7 @@ fn now_line(id: SharedString, name: &str, what: String, working: bool, cx: &App)
         .px_2()
         .rounded_md()
         .cursor_pointer()
+        .focusable_row(cx)
         .hover(move |line| line.bg(hover))
         .small()
         .child(dot)

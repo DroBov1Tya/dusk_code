@@ -95,7 +95,7 @@ pub fn render(
                 .children(to_bottom(ws, cx))
                 .children(pins::drawer(ws, cx)),
         )
-        .children(dock::plan_strip(ws, cx))
+        .children(dock::plan_strip(ws, window, cx))
         .child(composer::dock_lane(approval::render(ws, window, cx)))
         .child(composer::render(ws, window, cx))
         .child(div().h(px(12.)))

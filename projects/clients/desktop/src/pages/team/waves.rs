@@ -19,7 +19,11 @@ use gpui_kit::{
 
 use crate::{
     pages::chat::activity,
-    ui::{Type, avatar, widgets},
+    ui::{
+        Type, avatar,
+        looping::Loop,
+        widgets::{self, Focusable},
+    },
     workspace::Workspace,
 };
 
@@ -27,6 +31,8 @@ use crate::{
 const SQUARE: f32 = 9.;
 /// How long a square of a task that just came takes to fade in.
 pub const ARRIVE: std::time::Duration = std::time::Duration::from_millis(220);
+/// One breath of what runs, as the mockup's.
+const BREATH: std::time::Duration = std::time::Duration::from_millis(1800);
 
 /// What is unfolded, for one chat; another chat's folds read as the defaults.
 #[derive(Default)]
@@ -96,30 +102,45 @@ pub fn summary(tasks: &[Task], cx: &App) -> Div {
         .filter(|task| task.status == TaskStatus::Done)
         .count();
     let need = tasks.iter().filter(|task| for_user(task)).count();
+    // Each part whole, the dot that parts them leading the next: a narrow card wraps the
+    // line between parts rather than cutting one.
     let mut parts = Vec::new();
     if running > 0 {
-        parts.push(format!("{running} running"));
+        parts.push(div().child(format!("{running} running")));
     }
-    parts.push(format!("{done} of {} done", tasks.len()));
-    let need = (need > 0).then(|| {
-        div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap_1p5()
-            .text_color(theme.foreground.opacity(0.8))
-            .child(div().size(px(6.)).rounded_full().bg(theme.primary))
-            .child(format!("{need} needs you"))
-    });
-    div()
+    parts.push(div().child(format!("{done} done")));
+    if need > 0 {
+        parts.push(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1p5()
+                .text_color(theme.foreground.opacity(0.8))
+                .child(div().size(px(6.)).rounded_full().bg(theme.primary))
+                .child(format!("{need} needs you")),
+        );
+    }
+    let mut line = div()
         .flex()
         .flex_row()
+        .flex_wrap()
         .items_center()
-        .gap_1()
+        .gap_x_1()
         .small()
-        .text_color(theme.muted_foreground)
-        .child(parts.join(" \u{00B7} "))
-        .when_some(need, |line, need| line.child("\u{00B7}").child(need))
+        .text_color(theme.muted_foreground);
+    for (at, part) in parts.into_iter().enumerate() {
+        line = line.child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .when(at > 0, |part| part.child("\u{00B7}"))
+                .child(part),
+        );
+    }
+    line
 }
 
 /// A wave's tasks as small squares in a row, one each, coloured by state. A square of a
@@ -145,9 +166,20 @@ pub fn squares(
             square = square.opacity(t);
             moving = true;
         }
-        row = row.child(square);
+        row = match task.status == TaskStatus::Running && arriving.is_none() {
+            true => row.child(breathe(square)),
+            false => row.child(square),
+        };
     }
     row.when(moving, |row| row.child(activity::next_frame()))
+}
+
+/// What runs breathes, slowly: dimmer and back once every `BREATH`.
+pub fn breathe<E: IntoElement + Styled + 'static>(mark: E) -> impl IntoElement {
+    mark.looping(BREATH, |mark, phase| {
+        let deep = 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos();
+        mark.opacity(1. - 0.45 * deep)
+    })
 }
 
 /// Done is a quiet fill, running the accent; open is a hollow outline, waiting for a
@@ -175,6 +207,8 @@ pub struct View<'a> {
     pub of: FoldsOf,
     pub came: Option<&'a HashMap<String, Instant>>,
     pub inset: f32,
+    /// A hairline between waves, where the view has no other rhythm to part them.
+    pub lines: bool,
 }
 
 pub fn render(ws: &Workspace, view: View, cx: &mut Context<Workspace>) -> Div {
@@ -214,6 +248,7 @@ fn wave_block(
 ) -> Div {
     let theme = cx.theme();
     let (muted, hover) = (theme.muted_foreground, theme.list_hover);
+    let line = theme.foreground.opacity(0.05);
     let done = wave
         .iter()
         .filter(|&&at| tasks[at].status == TaskStatus::Done)
@@ -230,6 +265,7 @@ fn wave_block(
         .pr(px(view.inset - 12.))
         .rounded_md()
         .cursor_pointer()
+        .focusable_row(cx)
         .hover(move |head| head.bg(hover))
         .child(widgets::icon(
             if open {
@@ -263,7 +299,14 @@ fn wave_block(
         .pt_1()
         .pb_2()
         .child(squares(tasks, wave, view.came, cx));
-    let mut block = div().flex().flex_col().child(head).child(dots);
+    let mut block = div()
+        .flex()
+        .flex_col()
+        .when(view.lines && index > 0, |block| {
+            block.mt_1().pt_1().border_t_1().border_color(line)
+        })
+        .child(head)
+        .child(dots);
     if open {
         let mut rows = div().flex().flex_col().pb_2();
         for &at in wave {
@@ -338,12 +381,14 @@ fn task_block(
         .px_2()
         .rounded_md()
         .cursor_pointer()
+        .focusable_row(cx)
         .hover(move |row| row.bg(hover))
         .child(mark(task.status, cx))
         .child(
             div()
                 .flex_1()
-                .min_w_0()
+                // In a narrow card the word on the right gives way first.
+                .min_w(px(40.))
                 .small()
                 .truncate()
                 .text_color(match task.status {
@@ -352,7 +397,7 @@ fn task_block(
                 })
                 .child(task.title()),
         )
-        .children(right.map(|right| right.flex_none().meta()))
+        .children(right.map(|right| right.min_w_0().truncate().meta()))
         .on_click(cx.listener(move |ws, _, _, cx| {
             let folds = of(ws).mine(&chat);
             folds.task = match folds.task.as_deref() == Some(id.as_str()) {
@@ -386,7 +431,7 @@ fn mark(status: TaskStatus, cx: &App) -> Div {
         TaskStatus::Done => {
             slot.child(widgets::icon(IconName::Check, theme.muted_foreground).size(px(13.)))
         }
-        TaskStatus::Running => slot.child(dot.bg(theme.primary)),
+        TaskStatus::Running => slot.child(breathe(dot.bg(theme.primary))),
         TaskStatus::Failed => slot.child(dot.bg(theme.danger)),
         TaskStatus::Claimed | TaskStatus::Review => {
             slot.child(dot.border_1().border_color(theme.primary))

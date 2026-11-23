@@ -21,8 +21,12 @@ use crate::{
 
 /// The waves' tallest before they scroll, so a long plan leaves the chat in sight.
 const WAVES_MAX: f32 = 300.;
+/// Narrower than these, the card's head drops the link to the Team page, then the time,
+/// so the title keeps its room.
+const ROOM_FOR_LINK: f32 = 260.;
+const ROOM_FOR_TIME: f32 = 190.;
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat()?;
     let all = ws
         .dock
@@ -46,36 +50,48 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         Some(_) => team.progress_note(),
     });
     let stop = running.then(|| crate::pages::team::module::stop("plan-stop", cx));
+    let room = crate::pages::chat::composer::lane_width(ws.chat_width(window));
+    let tight = room < ROOM_FOR_TIME;
+    let elapsed = elapsed.filter(|_| !tight);
     let title = div()
         .flex()
         .flex_row()
         .items_center()
         .gap_3()
+        .when(tight, |title| title.gap_2())
         .child(
             div()
                 .flex_1()
-                .min_w_0()
+                .min_w(px(48.))
+                .truncate()
                 .body()
                 .font_weight(FontWeight::MEDIUM)
                 .child(crate::pages::chat::activity::plan_label(planning, cx)),
         )
         .children(elapsed.map(|elapsed| div().flex_none().small().text_color(muted).child(elapsed)))
-        .children(crate::pages::team::module::open_link(team.is_some(), cx))
+        .children(crate::pages::team::module::open_link(
+            team.is_some() && room >= ROOM_FOR_LINK,
+            cx,
+        ))
         .children(stop)
-        .child(widgets::icon(
-            if open {
-                IconName::ChevronDown
-            } else {
-                IconName::ChevronRight
-            },
-            muted,
-        ));
+        // The whole head folds the card, so a tight one does without the chevron.
+        .when(!tight, |title| {
+            title.child(widgets::icon(
+                if open {
+                    IconName::ChevronDown
+                } else {
+                    IconName::ChevronRight
+                },
+                muted,
+            ))
+        });
     let head = div()
         .id("plan-line")
         .flex()
         .flex_col()
         .gap_0p5()
         .px_5()
+        .when(tight, |head| head.px_3())
         .pt_4()
         .pb_3()
         .cursor_pointer()
@@ -102,6 +118,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                     of: |ws| &mut ws.dock.waves,
                     came,
                     inset: 44.,
+                    lines: true,
                 },
                 cx,
             ))
