@@ -106,6 +106,9 @@ enum StepEnd {
     /// The context does not fit the model: the turn compacts it and takes the step
     /// again, or fails as the failure says.
     TooLarge(TurnFailure),
+    /// The model wrote a tool call as text that could not be run: the turn takes the
+    /// step again with this note, or ends with the answer as it is.
+    Stranded(String, TurnAnswer),
 }
 
 /// What a stopped step keeps: the text written so far, if any.

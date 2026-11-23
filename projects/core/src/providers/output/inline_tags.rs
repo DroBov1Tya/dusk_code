@@ -228,6 +228,30 @@ mod tests {
         }
     }
 
+    /// A call written inside `<think>` stays reasoning here; the step reads it from there
+    /// with `text_calls`, as it does for a provider's own reasoning channel.
+    #[test]
+    fn a_call_inside_think_stays_reasoning_for_the_step() {
+        let call = "<tool_call>\n<function=read_history>\n<parameter=search>x\n</tool_call>";
+        for text in [
+            format!("<think>Search.\n{call}</think>"),
+            format!("<think>Search.\n{call}"),
+        ] {
+            let events = split(&[&text]).unwrap();
+            let [ModelEvent::Reasoning(reasoning)] = events.as_slice() else {
+                panic!("expected reasoning only, got {events:?}");
+            };
+            let tools = [crate::providers::ToolSpec {
+                name: "read_history".into(),
+                description: String::new(),
+                parameters: serde_json::json!({ "type": "object" }),
+            }];
+            let (rest, calls) = super::super::text_calls::recover(reasoning, &tools).unwrap();
+            assert_eq!(rest, "Search.");
+            assert_eq!(calls[0].arguments, serde_json::json!({ "search": "x" }));
+        }
+    }
+
     #[test]
     fn a_long_call_fed_in_small_pieces_is_read_whole() {
         let arguments = "x".repeat(200_000);

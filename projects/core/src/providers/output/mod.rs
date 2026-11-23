@@ -113,7 +113,11 @@ impl ModelOutput {
             })
             .collect::<Result<Vec<_>>>()?;
         // Some servers end a stream with nothing after a long think; asking again helps.
-        if self.text.trim().is_empty() && calls.is_empty() {
+        // A call written at the end of the reasoning is the step's to read instead.
+        if self.text.trim().is_empty()
+            && calls.is_empty()
+            && !text_calls::ends_in_call(&self.reasoning)
+        {
             let kind = ProviderErrorKind::Interrupted;
             return Err(ProviderError::new(kind, "model returned an empty answer").into());
         }
@@ -196,6 +200,15 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(calls[0].arguments, json!("{\"path\": \"cut"));
+    }
+
+    #[test]
+    fn reasoning_alone_is_empty_unless_it_ends_in_a_call() {
+        let done = ModelEvent::Finished(FinishReason::Stop);
+        let thought = ModelEvent::Reasoning("Let me think.".into());
+        assert!(assemble(&[thought, done.clone()]).is_err());
+        let call = ModelEvent::Reasoning("Search.\n<tool_call><function=x></tool_call>".into());
+        assert_eq!(assemble(&[call, done]).unwrap().1, []);
     }
 
     #[test]
