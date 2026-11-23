@@ -65,6 +65,10 @@ impl Server {
                 let (runtime, tracker) = (Arc::clone(&self.runtime), self.pulls.clone());
                 tokio::spawn(async move {
                     let pull = fetch(look, &runtime, &tracker, &id, number, &prefix).await;
+                    let pull = pull.unwrap_or_else(|error| {
+                        tracing::debug!("{error:#}");
+                        None
+                    });
                     let _ = reply.send(Response::PullStatus(pull.map(Box::new)));
                 });
             }
@@ -135,7 +139,8 @@ impl Server {
 }
 
 /// Pull request `number` of project `id` as `look` says to get it: at hand, from the
-/// read under way, or read now and handed to the tracker.
+/// read under way, or read now and handed to the tracker. An error only when this read
+/// of its own got no answer, so a missing pull is told from a forge that did not answer.
 pub(super) async fn fetch(
     look: forge::Look,
     runtime: &Runtime,
@@ -143,19 +148,18 @@ pub(super) async fn fetch(
     id: &str,
     number: u64,
     prefix: &str,
-) -> Option<PullStatus> {
+) -> Result<Option<PullStatus>> {
     match look {
-        forge::Look::Known(pull) => pull.map(|pull| *pull),
-        forge::Look::Wait(waiting) => waiting.await.ok().flatten(),
+        forge::Look::Known(pull) => Ok(pull.map(|pull| *pull)),
+        forge::Look::Wait(waiting) => Ok(waiting.await.ok().flatten()),
         forge::Look::Read => {
-            let pull = match project::find(runtime.state(), id).await {
-                Ok(project) => match forges(runtime, id).await {
-                    Ok(forges) => forge::read_pull(&project, number, &forges, prefix).await,
-                    Err(_) => None,
-                },
-                Err(_) => None,
-            };
-            tracker.looked_up(id, number, pull.clone());
+            let pull = async {
+                let project = project::find(runtime.state(), id).await?;
+                let forges = forges(runtime, id).await?;
+                forge::read_pull(&project, number, &forges, prefix).await
+            }
+            .await;
+            tracker.looked_up(id, number, pull.as_ref().ok().cloned().flatten());
             pull
         }
     }
