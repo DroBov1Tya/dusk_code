@@ -25,13 +25,15 @@ pub enum Confirm {
     Install(Box<Listing>),
     /// The name, and what it is, which says what goes.
     Remove(String, Kind),
+    /// An MCP server of the user's settings the Workshop did not add, by name.
+    RemoveServer(String),
 }
 
 impl Confirm {
     pub fn title(&self) -> String {
         match self {
             Self::Install(listing) => format!("{} {}", verb(listing), listing.name),
-            Self::Remove(name, _) => format!("Remove {name}"),
+            Self::Remove(name, _) | Self::RemoveServer(name) => format!("Remove {name}"),
         }
     }
 }
@@ -80,6 +82,12 @@ pub fn render(
             }),
             "Remove",
         ),
+        Confirm::RemoveServer(_) => (
+            div().small().text_color(muted).child(
+                "It leaves your connectors and its tools stop at once; its settings are deleted from the config.",
+            ),
+            "Remove",
+        ),
     };
     // An Unverified install waits for the files it names to be shown.
     let waiting = matches!(confirm, Confirm::Install(listing) if super::workshop::reviewed_first(listing))
@@ -88,7 +96,7 @@ pub fn render(
     let button = match confirm {
         Confirm::Install(_) => button.primary(),
         // Solid when the theme sets `button.danger.*`, the kit's pale tint otherwise.
-        Confirm::Remove(..) => button.danger(),
+        Confirm::Remove(..) | Confirm::RemoveServer(_) => button.danger(),
     };
     div().flex().flex_col().gap_4().p_5().child(body).child(
         div()

@@ -42,7 +42,7 @@ use gpui_kit::{
 
 use super::Confirm;
 use crate::{
-    modal::Modal,
+    modal::{Modal, detail::Detail},
     ui::{Type, controls, size, widgets},
     workspace::Workspace,
 };
@@ -570,26 +570,56 @@ impl Workspace {
                 self.store_work(
                     listing.name.clone(),
                     "Installing...",
+                    None,
                     cx,
                     move |client| async move {
                         client.plugins().install(&listing, sha256.as_deref()).await
                     },
                 );
             }
-            Confirm::Remove(name, _) => {
+            Confirm::Remove(name, kind) => {
+                let back = match kind {
+                    Kind::Plugin => Detail::Plugin(name.clone()),
+                    Kind::Skill => Detail::Skill {
+                        name: name.clone(),
+                        file: None,
+                    },
+                    _ => Detail::Mcp(name.clone()),
+                };
                 let removed = name.clone();
-                self.store_work(name, "Removing...", cx, move |client| async move {
-                    client.plugins().remove(&removed).await
-                });
+                self.store_work(
+                    name,
+                    "Removing...",
+                    Some(back),
+                    cx,
+                    move |client| async move { client.plugins().remove(&removed).await },
+                );
+            }
+            Confirm::RemoveServer(name) => {
+                self.workshop.failed.remove(&name);
+                let removed = name.clone();
+                self.core.call(
+                    cx,
+                    move |client| async move {
+                        client.catalog().save_mcp_server(Some(&removed), "").await
+                    },
+                    move |ws, result, cx| match result {
+                        Ok(_) => ws.load_settings(cx),
+                        Err(error) => ws.removal_failed(name.clone(), Detail::Mcp(name), error, cx),
+                    },
+                );
             }
         }
     }
 
     /// Runs one install or removal, shows it on the card, then reads the store again.
+    /// `back` is the detail window a removal started from, which shows a failure when no
+    /// card does.
     fn store_work<F, Fut>(
         &mut self,
         name: String,
         doing: &'static str,
+        back: Option<Detail>,
         cx: &mut Context<Self>,
         work: F,
     ) where
@@ -601,13 +631,37 @@ impl Workspace {
         self.core.call(cx, work, move |ws, result, cx| {
             ws.workshop.busy.remove(&name);
             if let Err(error) = result {
-                ws.workshop.failed.insert(name, format!("{error:#}"));
+                let carded =
+                    (ws.workshop.listings.iter().flatten()).any(|listing| listing.name == name);
+                match back {
+                    Some(back) if !carded => ws.removal_failed(name, back, error, cx),
+                    _ => {
+                        ws.workshop.failed.insert(name, format!("{error:#}"));
+                    }
+                }
             }
             ws.load_store(cx);
             ws.reload_suggested(cx);
             // A skill installed or removed shows on the Skills page at once.
             ws.load_settings(cx);
         });
+    }
+
+    /// A removal the core refused, shown in the detail window it started from: the yes
+    /// closed that window, and only a Workshop card or that window shows `failed`.
+    fn removal_failed(
+        &mut self,
+        name: String,
+        back: Detail,
+        error: anyhow::Error,
+        cx: &mut Context<Self>,
+    ) {
+        self.workshop.failed.insert(name, format!("{error:#}"));
+        if self.modal.is_none() {
+            self.open_detail(back, cx);
+        } else {
+            self.fail(error, cx);
+        }
     }
 }
 
