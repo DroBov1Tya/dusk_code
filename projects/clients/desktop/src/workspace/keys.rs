@@ -202,6 +202,10 @@ impl Workspace {
         if std::mem::take(&mut self.navigator_open) {
             return true;
         }
+        if !self.right_hidden && self.right_screen.is_some() {
+            self.close_right(cx);
+            return true;
+        }
         if self.dismiss_suggestion(window, cx) {
             return true;
         }

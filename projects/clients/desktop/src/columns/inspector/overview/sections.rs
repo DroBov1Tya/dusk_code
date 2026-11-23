@@ -10,6 +10,7 @@ use gpui_kit::{
         ActiveTheme, Icon, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -151,17 +152,20 @@ fn progress(shown: &Shown, form: Form, cx: &mut Context<Workspace>) -> Option<Di
         ]))
         .child(segments);
     if let Some(team) = &shown.team {
-        body = body.children(team.budget_parts().map(|part| budget_row(part, cx)));
+        // The column keeps to how the work stands; the budget is the page's.
+        if form == Form::Wide {
+            body = body.children(team.budget_parts().map(|part| budget_row(part, cx)));
+        }
         // Only a running team can be stopped or given more.
         if team.ended().is_none() {
-            body = body.child(steer(team, cx));
+            body = body.child(steer(team, form, cx));
         }
     }
     Some(frame(form, "Progress", aside, body, cx))
 }
 
-/// Edit budget and Stop team, under the budget they act on.
-fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
+/// Edit budget and Stop team, under the budget they act on; the column has Stop only.
+fn steer(team: &Team, form: Form, cx: &mut Context<Workspace>) -> Div {
     let team = team.clone();
     div()
         .flex()
@@ -169,15 +173,17 @@ fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
         .justify_end()
         .gap_2()
         .pt_2()
-        .child(
-            Button::new("team-budget")
-                .small()
-                .ghost()
-                .label("Edit budget")
-                .on_click(
-                    cx.listener(move |ws, _, window, cx| ws.ask_team_budget(&team, window, cx)),
-                ),
-        )
+        .when(form == Form::Wide, |row| {
+            row.child(
+                Button::new("team-budget")
+                    .small()
+                    .ghost()
+                    .label("Edit budget")
+                    .on_click(
+                        cx.listener(move |ws, _, window, cx| ws.ask_team_budget(&team, window, cx)),
+                    ),
+            )
+        })
         .child(
             Button::new("team-stop")
                 .small()

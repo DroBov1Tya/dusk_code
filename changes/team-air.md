@@ -1,2 +1,3 @@
 Changed
 The plan over the message box is a calmer card: its title, how long the team has run and a stop button, one line of how the plan stands, then a row a wave with a small square a task, coloured by its state. Only the wave in work is unfolded; a task unfolds to who holds it, its model and try, its last note, and Confirm, Open transcript and Details.
+The desktop's right column is a calm list, a row a module with one line of how it stands. Team, Overview, Changes, Files and Plan open as a screen of the whole column with only Back on top (Escape goes back, the list keeps its place); the light modules still unfold in place. The column's Overview no longer shows the team's budget bars or Edit budget; the Overview page still does.
