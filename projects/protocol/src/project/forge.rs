@@ -201,8 +201,13 @@ pub struct ThreadPull {
     pub pull: Option<PullStatus>,
 }
 
-/// The pull requests `text` links, each once, in the order first linked: links that are
-/// `prefix` (see `pull_number`) and digits, not followed by a letter or digit.
+/// The pull requests one text may link, at most: the first ones count, a pasted list no
+/// further.
+pub const MAX_PULL_LINKS: usize = 20;
+
+/// The pull requests `text` links, each once, in the order first linked, at most
+/// `MAX_PULL_LINKS`: links that are `prefix` (see `pull_number`) and digits, not followed
+/// by a letter or digit.
 pub fn pull_numbers(text: &str, prefix: &str) -> Vec<u64> {
     let mut numbers = Vec::new();
     if prefix.is_empty() {
@@ -211,7 +216,9 @@ pub fn pull_numbers(text: &str, prefix: &str) -> Vec<u64> {
     // ASCII lowering keeps every byte where it was, so an index in one is one in the other.
     let (lower, wanted) = (text.to_ascii_lowercase(), prefix.to_ascii_lowercase());
     let mut from = 0;
-    while let Some(found) = lower[from..].find(&wanted) {
+    while numbers.len() < MAX_PULL_LINKS
+        && let Some(found) = lower[from..].find(&wanted)
+    {
         let start = from + found;
         let after = start + prefix.len();
         let digits = text[after..].bytes().take_while(u8::is_ascii_digit).count();
@@ -254,7 +261,7 @@ pub fn pull_number(url: &str, prefix: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{pull_number, pull_numbers};
+    use super::{MAX_PULL_LINKS, pull_number, pull_numbers};
 
     #[test]
     fn a_text_links_only_the_repository_own_pulls() {
@@ -275,6 +282,9 @@ mod tests {
             .is_empty()
         );
         assert_eq!(pull_numbers("https://github.com/o/r/pull/1", prefix), [1]);
+        let many: String = (1..=100).map(|n| format!("{prefix}{n} ")).collect();
+        let first: Vec<u64> = (1..=MAX_PULL_LINKS as u64).collect();
+        assert_eq!(pull_numbers(&many, prefix), first);
     }
 
     #[test]

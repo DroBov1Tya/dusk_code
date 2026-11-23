@@ -33,7 +33,7 @@ impl Server {
         }
         self.pulls.begin(&id);
         let (runtime, tracker) = (Arc::clone(&self.runtime), self.pulls.clone());
-        let subscribers = Arc::clone(&self.subscribers);
+        let (subscribers, syncs) = (Arc::clone(&self.subscribers), self.chat_pulls.clone());
         tokio::spawn(async move {
             let read = refresh(&runtime, &tracker, &subscribers, &id).await;
             let response = match &read {
@@ -42,7 +42,7 @@ impl Server {
             };
             let _ = reply.send(response);
             if read.is_ok() {
-                thread_pulls::sync(&runtime, &tracker, &subscribers, &id).await;
+                thread_pulls::sync(&runtime, &tracker, &subscribers, &syncs, &id).await;
             }
         });
     }
@@ -115,10 +115,12 @@ impl Server {
     pub(super) fn track_repositories(&self) {
         for id in self.pulls.due() {
             let (runtime, tracker) = (Arc::clone(&self.runtime), self.pulls.clone());
-            let subscribers = Arc::clone(&self.subscribers);
+            let (subscribers, syncs) = (Arc::clone(&self.subscribers), self.chat_pulls.clone());
             tokio::spawn(async move {
                 match refresh(&runtime, &tracker, &subscribers, &id).await {
-                    Ok(_) => thread_pulls::sync(&runtime, &tracker, &subscribers, &id).await,
+                    Ok(_) => {
+                        thread_pulls::sync(&runtime, &tracker, &subscribers, &syncs, &id).await
+                    }
                     Err(error) => tracing::debug!("repository status of {id} not read: {error:#}"),
                 }
             });
@@ -159,8 +161,9 @@ pub(super) async fn fetch(
     }
 }
 
-/// Keeps a pull request made from chat `thread_id` as one of its own; the repository is
-/// the one the remote names, as a forge's status names it.
+/// Keeps a pull request made from chat `thread_id` as one of its own, when it is a chat
+/// of the project the pull request was made in; the repository is the one the remote
+/// names, as a forge's status names it.
 async fn keep_made(
     runtime: &Runtime,
     subscribers: &Subscribers,
@@ -173,6 +176,12 @@ async fn keep_made(
     };
     let state = runtime.state_of(&thread_id).await;
     let kept = async {
+        let chat = state.load_thread(&thread_id).await?;
+        let of_project = chat.is_some_and(|chat| {
+            chat.parent_thread_id.is_none()
+                && chat.project.as_deref() == Some(&*dir.to_string_lossy())
+        });
+        anyhow::ensure!(of_project, "not a chat of the project");
         if state
             .add_thread_pull(&thread_id, &remote.path, pull)
             .await?

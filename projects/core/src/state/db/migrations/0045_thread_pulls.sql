@@ -9,6 +9,12 @@ CREATE TABLE thread_pulls (
     status TEXT CHECK (status IS NULL OR json_valid(status)),
     -- When the chat first linked it, Unix milliseconds; the list is in this order.
     added_at INTEGER NOT NULL CHECK (added_at >= 0),
+    -- When the core last looked it up, Unix milliseconds; NULL when it never did. The
+    -- least lately tried is read first, so one that never answers holds no other back.
+    tried_at INTEGER CHECK (tried_at IS NULL OR tried_at >= 0),
+    -- Reads in a row that found nothing, back to 0 once one finds it; after a few, one
+    -- never found is read no more.
+    misses INTEGER NOT NULL DEFAULT 0 CHECK (misses >= 0),
     PRIMARY KEY (thread_id, repository, number)
 );
 

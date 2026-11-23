@@ -66,6 +66,9 @@ impl State {
                     (SELECT message_id FROM messages WHERE thread_id = ?1 AND sequence >= ?2))",
             "DELETE FROM compactions WHERE thread_id = ?1 AND through_sequence >= ?2",
             "DELETE FROM messages WHERE thread_id = ?1 AND sequence >= ?2",
+            // The numbers of the messages gone are given again: their successors are
+            // looked through for links to pull requests.
+            "UPDATE threads SET pulls_scanned = MIN(pulls_scanned, MAX(?2 - 1, 0)) WHERE id = ?1",
         ];
         for step in steps {
             sqlx::query(step)

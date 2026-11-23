@@ -22,20 +22,30 @@ macro_rules! pulls_json {
 }
 pub(crate) use pulls_json;
 
+/// The pull requests a chat keeps, at most: a message pasting a long list links no more.
+pub const MAX_CHAT_PULLS: i64 = 50;
+
+/// Reads in a row that find nothing before a pull request never found is read no more:
+/// a mistyped number, or one of another repository's.
+pub const MAX_MISSES: u32 = 5;
+
 /// One kept pull request of a chat.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeptPull {
     pub thread_id: String,
     pub number: u64,
     pub pull: Option<PullStatus>,
+    /// Reads in a row that found nothing.
+    pub misses: u32,
 }
 
 impl KeptPull {
-    /// Merged or closed: read no more unless the forge lists it again.
+    /// Merged or closed, or never found: read no more unless the forge lists it again.
     pub fn settled(&self) -> bool {
-        self.pull
-            .as_ref()
-            .is_some_and(|pull| matches!(pull.state, PullState::Merged | PullState::Closed))
+        match &self.pull {
+            Some(pull) => matches!(pull.state, PullState::Merged | PullState::Closed),
+            None => self.misses >= MAX_MISSES,
+        }
     }
 }
 
@@ -72,9 +82,18 @@ impl State {
         let now = timestamp_ms()?;
         let mut linked = Vec::new();
         for (thread_id, scanned, newest) in chats {
-            if newest <= scanned {
+            if newest == scanned {
                 continue;
             }
+            // Fewer messages than were looked through: some were taken back, and the
+            // numbers are given again. Looking through all again keeps nothing twice.
+            let scanned = if newest < scanned { 0 } else { scanned };
+            let mut kept: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM thread_pulls WHERE thread_id = ?")
+                    .bind(&thread_id)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .context("count the chat's pull requests")?;
             // SQLite's lower() lowers ASCII only, as `pull_numbers` compares.
             let texts: Vec<String> = sqlx::query_scalar(
                 "SELECT content FROM messages
@@ -91,6 +110,9 @@ impl State {
             .context("read the chat's new messages")?;
             let mut added = false;
             for number in texts.iter().flat_map(|text| pull_numbers(text, prefix)) {
+                if kept >= MAX_CHAT_PULLS {
+                    break;
+                }
                 let number = i64::try_from(number).context("pull request number is too large")?;
                 let rows = sqlx::query(
                     "INSERT OR IGNORE INTO thread_pulls
@@ -105,6 +127,7 @@ impl State {
                 .await
                 .context("keep a chat's pull request")?
                 .rows_affected();
+                kept += i64::try_from(rows).context("too many rows")?;
                 added |= rows == 1;
             }
             sqlx::query("UPDATE threads SET pulls_scanned = ? WHERE id = ?")
@@ -152,13 +175,15 @@ impl State {
         Ok(rows == 1)
     }
 
-    /// The kept pull requests of `repository` in the chats started in `dir`.
+    /// The kept pull requests of `repository` in the chats started in `dir`: those never
+    /// looked up first, then the least lately looked up, so each gets its turn to be read.
     pub async fn folder_pulls(&self, dir: &str, repository: &str) -> Result<Vec<KeptPull>> {
         let rows = sqlx::query(
-            "SELECT thread_pulls.thread_id, number, status
+            "SELECT thread_pulls.thread_id, number, status, misses
              FROM thread_pulls JOIN thread_projects
                 ON thread_projects.thread_id = thread_pulls.thread_id
-             WHERE thread_projects.dir = ? AND repository = ?",
+             WHERE thread_projects.dir = ? AND repository = ?
+             ORDER BY tried_at IS NOT NULL, tried_at, added_at DESC",
         )
         .bind(dir)
         .bind(repository)
@@ -168,7 +193,9 @@ impl State {
         rows.into_iter()
             .map(|row| {
                 let number: i64 = row.try_get("number")?;
+                let misses: i64 = row.try_get("misses")?;
                 Ok(KeptPull {
+                    misses: u32::try_from(misses).unwrap_or(u32::MAX),
                     thread_id: row.try_get("thread_id")?,
                     number: u64::try_from(number).context("negative pull request number")?,
                     pull: decode(row.try_get("status")?),
@@ -187,7 +214,7 @@ impl State {
         let status =
             serde_json::to_string(&slim_pull(pull.clone())).context("write the pull request")?;
         sqlx::query(
-            "UPDATE thread_pulls SET status = ?
+            "UPDATE thread_pulls SET status = ?, misses = 0
              WHERE thread_id = ? AND repository = ? AND number = ?",
         )
         .bind(status)
@@ -197,6 +224,30 @@ impl State {
         .execute(&self.pool)
         .await
         .context("store a chat's pull request")?;
+        Ok(())
+    }
+
+    /// Pull request `number` of the chat was looked up now; `missed` when the forge was
+    /// read and found nothing.
+    pub async fn tried_thread_pull(
+        &self,
+        thread_id: &str,
+        repository: &str,
+        number: u64,
+        missed: bool,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE thread_pulls SET tried_at = ?, misses = misses + ?
+             WHERE thread_id = ? AND repository = ? AND number = ?",
+        )
+        .bind(timestamp_ms()?)
+        .bind(i64::from(missed))
+        .bind(thread_id)
+        .bind(repository)
+        .bind(i64::try_from(number).context("pull request number is too large")?)
+        .execute(&self.pool)
+        .await
+        .context("note a look-up of a chat's pull request")?;
         Ok(())
     }
 
@@ -346,6 +397,71 @@ mod tests {
 
         state.delete_thread("chat").await.unwrap();
         assert!(state.folder_pulls("/p", "o/r").await.unwrap().is_empty());
+        state.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_link_after_an_undo_is_kept_and_a_chat_keeps_a_bounded_list() {
+        let state = State::open(&temp_dir("thread_pulls_undo").join("state.db"))
+            .await
+            .unwrap();
+        state.create_thread("chat", "test").await.unwrap();
+        state.set_thread_project("chat", "/p").await.unwrap();
+        let say = async |text: String| {
+            let mut transaction = state.pool.begin().await.unwrap();
+            let message = NewMessage::user(&text);
+            insert_message(&mut transaction, "chat", &message, None, 1)
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+        };
+        let numbers = async || {
+            let pulls = state.thread_pulls("chat").await.unwrap();
+            pulls.iter().map(|p| p.number).collect::<Vec<_>>()
+        };
+        say("hello".to_owned()).await;
+        say(format!("{PREFIX}1")).await;
+        state.find_pull_links("/p", "o/r", PREFIX).await.unwrap();
+        assert_eq!(numbers().await, [1]);
+
+        // The message is taken back and another sent in its place, under its number.
+        let points = state.undo_points("chat").await.unwrap();
+        state.undo_from("chat", points[1].sequence).await.unwrap();
+        say(format!("{PREFIX}2")).await;
+        state.find_pull_links("/p", "o/r", PREFIX).await.unwrap();
+        assert_eq!(numbers().await, [1, 2]);
+
+        // A pasted list adds no more than the chat keeps.
+        for chunk in 0..10 {
+            let links: String = (0..10)
+                .map(|n| format!("{PREFIX}{} ", 100 + chunk * 10 + n))
+                .collect();
+            say(links).await;
+        }
+        state.find_pull_links("/p", "o/r", PREFIX).await.unwrap();
+        assert_eq!(numbers().await.len(), MAX_CHAT_PULLS as usize);
+
+        // One never found is read no more after a few misses, and is not read first.
+        for _ in 0..MAX_MISSES {
+            let first = &state.folder_pulls("/p", "o/r").await.unwrap()[0];
+            assert!(!first.settled());
+            state
+                .tried_thread_pull("chat", "o/r", 1, true)
+                .await
+                .unwrap();
+        }
+        let kept = state.folder_pulls("/p", "o/r").await.unwrap();
+        let one = kept.iter().find(|k| k.number == 1).unwrap();
+        assert!(one.settled());
+        assert_eq!(kept.last().unwrap().number, 1);
+        // Found after all: it is read again until merged.
+        state
+            .set_thread_pull("chat", "o/r", &pull(1, PullState::Open))
+            .await
+            .unwrap();
+        let kept = state.folder_pulls("/p", "o/r").await.unwrap();
+        let one = kept.iter().find(|k| k.number == 1).unwrap();
+        assert!(!one.settled() && one.misses == 0);
         state.close().await;
     }
 }

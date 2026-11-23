@@ -266,7 +266,7 @@ impl Server {
         let suggested: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let suggestion = Arc::clone(&suggested);
         let runtime = Arc::clone(&self.runtime);
-        let tracker = self.pulls.clone();
+        let (tracker, syncs) = (self.pulls.clone(), self.chat_pulls.clone());
         let forward = tokio::spawn(async move {
             // A thread may say it is idle as it opens; it is done only once it has worked.
             let mut worked = false;
@@ -285,8 +285,10 @@ impl Server {
                 ) {
                     let (runtime, tracker) = (Arc::clone(&runtime), tracker.clone());
                     let (subscribers, id) = (Arc::clone(&subscribers), id.clone());
+                    let syncs = syncs.clone();
                     tokio::spawn(async move {
-                        thread_pulls::chat_spoke(&runtime, &tracker, &subscribers, &id).await;
+                        thread_pulls::chat_spoke(&runtime, &tracker, &subscribers, &syncs, &id)
+                            .await;
                     });
                 }
                 // The start, the waits and the end of a turn are kept and sent under the
