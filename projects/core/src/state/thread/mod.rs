@@ -10,6 +10,7 @@ mod conversation;
 mod files;
 mod goal;
 mod mode;
+mod pulls;
 mod threads;
 mod unread;
 mod work;
@@ -20,6 +21,7 @@ pub use conversation::{
     PendingMessage, ShapedResult, Source, Stub, UndoPoint, calls_of, estimate_tokens, saved_tokens,
 };
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
+pub use pulls::slim_pull;
 pub(crate) use threads::below;
 pub use threads::{MEMBER_SOURCE, Thread};
 pub use work::{

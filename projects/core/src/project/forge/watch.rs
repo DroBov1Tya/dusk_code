@@ -121,6 +121,19 @@ impl Tracker {
         Some(served.pull_prefix.clone()).filter(|prefix| !prefix.is_empty())
     }
 
+    /// The project's last forge answer, when it named the prefix of its pulls.
+    pub fn served(&self, project_id: &str) -> Option<ForgeStatus> {
+        let inner = self.0.lock();
+        let served = inner
+            .projects
+            .get(project_id)?
+            .status
+            .as_ref()?
+            .forge
+            .served()?;
+        (!served.pull_prefix.is_empty()).then(|| served.clone())
+    }
+
     /// The client is gone; what it watched is no longer read for it.
     pub fn forget(&self, client: u64) {
         self.0.lock().watchers.remove(&client);

@@ -1,9 +1,9 @@
 //! Requests about one thread: opening, sending, pinning, closing.
 
 use super::publish::{publish, send_to};
-use super::unread;
 use super::{CLOSE_TIMEOUT, OpenThread, Running, Server};
 use super::{ClientId, Shown};
+use super::{thread_pulls, unread};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
@@ -266,6 +266,7 @@ impl Server {
         let suggested: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let suggestion = Arc::clone(&suggested);
         let runtime = Arc::clone(&self.runtime);
+        let tracker = self.pulls.clone();
         let forward = tokio::spawn(async move {
             // A thread may say it is idle as it opens; it is done only once it has worked.
             let mut worked = false;
@@ -277,6 +278,17 @@ impl Server {
                     flag.store(false, Ordering::Relaxed);
                 }
                 unread::heard(&runtime, &subscribers, &id, &event).await;
+                // A message of the user or an answer may link a pull request.
+                if matches!(
+                    event,
+                    ThreadEvent::UserMessage(_) | ThreadEvent::TurnFinished(_)
+                ) {
+                    let (runtime, tracker) = (Arc::clone(&runtime), tracker.clone());
+                    let (subscribers, id) = (Arc::clone(&subscribers), id.clone());
+                    tokio::spawn(async move {
+                        thread_pulls::chat_spoke(&runtime, &tracker, &subscribers, &id).await;
+                    });
+                }
                 // The start, the waits and the end of a turn are kept and sent under the
                 // lock a joining client takes, so it hears of a running turn before its
                 // end. A question is kept while the turn waits for the user's decision:

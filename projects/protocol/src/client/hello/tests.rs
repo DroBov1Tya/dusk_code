@@ -87,7 +87,8 @@ fn a_version_outside_the_range_is_refused() {
         (35, Err(Refusal::Version)),
         (36, Ok(())),
         (37, Ok(())),
-        (38, Err(Refusal::Version)),
+        (38, Ok(())),
+        (39, Err(Refusal::Version)),
     ] {
         hello.protocol = protocol;
         assert_eq!(hello.accepted(), expected, "protocol {protocol}");

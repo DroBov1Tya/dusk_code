@@ -19,6 +19,7 @@ mod terminal;
 #[cfg(test)]
 mod tests;
 mod thread;
+mod thread_pulls;
 mod unread;
 mod user_runs;
 mod voice;
@@ -295,8 +296,8 @@ impl Server {
                             Request::Project(ProjectRequest::PullStatus { id, number }) => {
                                 self.pull_status(id, number, reply)
                             }
-                            Request::Project(ProjectRequest::CreatePull { id, title, body, base }) => {
-                                self.create_pull(id, title, body, base, self.error_view(client, area), reply)
+                            Request::Project(ProjectRequest::CreatePull { id, title, body, base, thread_id }) => {
+                                self.create_pull(id, title, body, base, thread_id, self.error_view(client, area), reply)
                             }
                             Request::Thread(ThreadRequest::RunCommand { thread_id, command, run }) => {
                                 self.run_command(client, thread_id, command, run, reply)

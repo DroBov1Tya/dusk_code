@@ -26,7 +26,7 @@ pub use thread::{
     ShapedResult, Source, Stub, Task, Thread, Turn, TurnAnswer, TurnFailure, TurnOutcome,
     TurnStatus, UndoPoint, Unfinished, calls_of, estimate_tokens, saved_tokens,
 };
-pub use thread::{MEMBER_SOURCE, short_task_id};
+pub use thread::{MEMBER_SOURCE, short_task_id, slim_pull};
 // The plan's store. Its callers are the team's runtime (T1) and the plan form of the
 // `tasks` tool (L1); until they land only its tests use these.
 #[allow(unused_imports)]

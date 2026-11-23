@@ -1103,6 +1103,7 @@ fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
                 temporary: false,
                 owner: None,
                 unread,
+                pulls: Vec::new(),
             },
         );
     }
@@ -1258,6 +1259,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             temporary: false,
             owner: None,
             unread: false,
+            pulls: Vec::new(),
         },
     );
     crate::pages::chat::pull_link::show(ws, cx);

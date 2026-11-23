@@ -11,7 +11,7 @@ use dusk_protocol::{
 };
 use tokio::sync::oneshot;
 
-use super::{ClientId, Server, Subscribers, publish};
+use super::{ClientId, Server, Subscribers, publish, thread_pulls};
 use crate::{
     project::{self, forge},
     runtime::Runtime,
@@ -35,11 +35,15 @@ impl Server {
         let (runtime, tracker) = (Arc::clone(&self.runtime), self.pulls.clone());
         let subscribers = Arc::clone(&self.subscribers);
         tokio::spawn(async move {
-            let response = match refresh(&runtime, &tracker, &subscribers, &id).await {
-                Ok(status) => Response::RepositoryStatus(Box::new(status)),
-                Err(error) => Response::Error(view.text(&error)),
+            let read = refresh(&runtime, &tracker, &subscribers, &id).await;
+            let response = match &read {
+                Ok(status) => Response::RepositoryStatus(Box::new(status.clone())),
+                Err(error) => Response::Error(view.text(error)),
             };
             let _ = reply.send(response);
+            if read.is_ok() {
+                thread_pulls::sync(&runtime, &tracker, &subscribers, &id).await;
+            }
         });
     }
 
@@ -48,7 +52,6 @@ impl Server {
     /// a forge named the prefix of its pulls: until then none, and the project is read,
     /// so the client hears of the status and asks again.
     pub(super) fn pull_status(&self, id: String, number: u64, reply: oneshot::Sender<Response>) {
-        let answer = |pull: Option<PullStatus>| Response::PullStatus(pull.map(Box::new));
         let Some(prefix) = self.pulls.prefix(&id) else {
             self.pulls.changed(&id);
             let _ = reply.send(Response::PullStatus(None));
@@ -58,25 +61,11 @@ impl Server {
             forge::Look::Known(pull) => {
                 let _ = reply.send(Response::PullStatus(pull));
             }
-            forge::Look::Wait(waiting) => {
-                tokio::spawn(async move {
-                    let _ = reply.send(answer(waiting.await.ok().flatten()));
-                });
-            }
-            forge::Look::Read => {
+            look => {
                 let (runtime, tracker) = (Arc::clone(&self.runtime), self.pulls.clone());
                 tokio::spawn(async move {
-                    let pull = match project::find(runtime.state(), &id).await {
-                        Ok(project) => match forges(&runtime, &id).await {
-                            Ok(forges) => {
-                                forge::read_pull(&project, number, &forges, &prefix).await
-                            }
-                            Err(_) => None,
-                        },
-                        Err(_) => None,
-                    };
-                    tracker.looked_up(&id, number, pull.clone());
-                    let _ = reply.send(answer(pull));
+                    let pull = fetch(look, &runtime, &tracker, &id, number, &prefix).await;
+                    let _ = reply.send(Response::PullStatus(pull.map(Box::new)));
                 });
             }
         }
@@ -84,13 +73,16 @@ impl Server {
 
     /// A pull request from the project's current branch, answered beside the loop since
     /// the forge may take a while. The repository is told changed either way: a failed
-    /// call can still have made the pull request.
+    /// call can still have made the pull request. One made from a chat is kept as one of
+    /// its pull requests.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn create_pull(
         &self,
         id: String,
         title: String,
         body: String,
         base: Option<String>,
+        thread_id: Option<String>,
         view: super::ErrorView,
         reply: oneshot::Sender<Response>,
     ) {
@@ -101,10 +93,16 @@ impl Server {
             let made = async {
                 let project = project::find(runtime.state(), &id).await?;
                 let forges = forges(&runtime, &id).await?;
-                forge::create(&project, &title, &body, base.as_deref(), &forges).await
+                let pull = forge::create(&project, &title, &body, base.as_deref(), &forges).await?;
+                anyhow::Ok((project, pull))
             };
             let response = match made.await {
-                Ok(pull) => Response::PullStatus(Some(Box::new(pull))),
+                Ok((project, pull)) => {
+                    if let Some(thread_id) = thread_id {
+                        keep_made(&runtime, &subscribers, &project.dir, thread_id, &pull).await;
+                    }
+                    Response::PullStatus(Some(Box::new(pull)))
+                }
                 Err(error) => Response::Error(view.text(&error)),
             };
             publish::git_changed(&subscribers, &id);
@@ -119,8 +117,9 @@ impl Server {
             let (runtime, tracker) = (Arc::clone(&self.runtime), self.pulls.clone());
             let subscribers = Arc::clone(&self.subscribers);
             tokio::spawn(async move {
-                if let Err(error) = refresh(&runtime, &tracker, &subscribers, &id).await {
-                    tracing::debug!("repository status of {id} not read: {error:#}");
+                match refresh(&runtime, &tracker, &subscribers, &id).await {
+                    Ok(_) => thread_pulls::sync(&runtime, &tracker, &subscribers, &id).await,
+                    Err(error) => tracing::debug!("repository status of {id} not read: {error:#}"),
                 }
             });
         }
@@ -130,6 +129,64 @@ impl Server {
         let projects = self.runtime.state().list_projects().await?;
         let ids: Vec<String> = projects.into_iter().map(|project| project.id).collect();
         Ok(Response::PullSummaries(self.pulls.summaries(&ids)))
+    }
+}
+
+/// Pull request `number` of project `id` as `look` says to get it: at hand, from the
+/// read under way, or read now and handed to the tracker.
+pub(super) async fn fetch(
+    look: forge::Look,
+    runtime: &Runtime,
+    tracker: &forge::Tracker,
+    id: &str,
+    number: u64,
+    prefix: &str,
+) -> Option<PullStatus> {
+    match look {
+        forge::Look::Known(pull) => pull.map(|pull| *pull),
+        forge::Look::Wait(waiting) => waiting.await.ok().flatten(),
+        forge::Look::Read => {
+            let pull = match project::find(runtime.state(), id).await {
+                Ok(project) => match forges(runtime, id).await {
+                    Ok(forges) => forge::read_pull(&project, number, &forges, prefix).await,
+                    Err(_) => None,
+                },
+                Err(_) => None,
+            };
+            tracker.looked_up(id, number, pull.clone());
+            pull
+        }
+    }
+}
+
+/// Keeps a pull request made from chat `thread_id` as one of its own; the repository is
+/// the one the remote names, as a forge's status names it.
+async fn keep_made(
+    runtime: &Runtime,
+    subscribers: &Subscribers,
+    dir: &std::path::Path,
+    thread_id: String,
+    pull: &PullStatus,
+) {
+    let Some(remote) = forge::Remote::of(dir).await else {
+        return;
+    };
+    let state = runtime.state_of(&thread_id).await;
+    let kept = async {
+        if state
+            .add_thread_pull(&thread_id, &remote.path, pull)
+            .await?
+        {
+            let pulls = state.thread_pulls(&thread_id).await?;
+            thread_pulls::tell(subscribers, thread_id.clone(), pulls);
+        }
+        anyhow::Ok(())
+    };
+    if let Err(error) = kept.await {
+        tracing::warn!(
+            "pull request {} not kept for {thread_id}: {error:#}",
+            pull.number
+        );
     }
 }
 

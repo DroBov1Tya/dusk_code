@@ -21,6 +21,11 @@ impl Runtime {
         &self.launcher.state
     }
 
+    /// The stored threads' database, then the one of this run's temporary chats.
+    pub fn states(&self) -> [&State; 2] {
+        [&self.launcher.state, &self.temporary.state]
+    }
+
     /// The database that holds `thread_id`, and where its files are.
     pub async fn state_of(&self, thread_id: &str) -> &State {
         &self.of(thread_id).await.state

@@ -11,15 +11,17 @@ pub use dusk_protocol::thread::Thread;
 /// The `source` of a thread a team made for a task.
 pub const MEMBER_SOURCE: &str = "member";
 
-/// Threads with their folder and when they were last active, then `$rest`. The last
-/// message is found by `messages_thread_time`, without reading any message.
+/// Threads with their folder, when they were last active and their pull requests, then
+/// `$rest`. The last message is found by `messages_thread_time`, without reading any.
 macro_rules! select_threads {
     ($rest:literal) => {
         concat!(
             "SELECT threads.*, thread_projects.dir AS project,
                 MAX(threads.created_at,
                 COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
-                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
+                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at, ",
+            crate::state::thread::pulls::pulls_json!("threads.id"),
+            " AS pulls
              FROM threads LEFT JOIN thread_projects ON thread_projects.thread_id = threads.id ",
             $rest
         )
@@ -495,6 +497,7 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         temporary: false,
         owner: row.try_get("owner")?,
         unread: row.try_get("unread")?,
+        pulls: super::pulls::decode_list(&row.try_get::<String, _>("pulls")?),
     })
 }
 
