@@ -147,7 +147,7 @@ pub fn turn_activity(
                         index,
                         ("Thinking", IconName::Asterisk),
                         reasoning,
-                        || reasoning.clone().into_any_element(),
+                        || selectable(format!("thought-{shown}-{index}"), reasoning),
                         cx,
                     ))
                 }
@@ -164,7 +164,7 @@ pub fn turn_activity(
                     index,
                     ("Background task result", IconName::SquareTerminal),
                     text,
-                    || text.clone().into_any_element(),
+                    || selectable(format!("background-{shown}-{index}"), text),
                     cx,
                 )),
                 _ => detail,
@@ -195,7 +195,11 @@ pub fn notice(key: &str, body: Div, text: &str, cx: &App) -> Div {
         .flex()
         .items_start()
         .gap_1()
-        .child(body.flex_1().min_w_0().child(text.to_owned()))
+        .child(
+            body.flex_1()
+                .min_w_0()
+                .child(selectable(format!("notice-text-{key}"), text)),
+        )
         .child(widgets::copy(
             SharedString::from(format!("notice-copy-{key}")),
             &group,
@@ -314,6 +318,11 @@ pub fn activity_text(
                 .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&foot_id, index, cx))),
             )
         })
+}
+
+/// A body that can be selected in part, not only copied whole from its button.
+pub fn selectable(id: String, text: &str) -> AnyElement {
+    gpui_kit::base::SelectableText::new(SharedString::from(id), text.to_owned()).into_any_element()
 }
 
 pub fn step_muted(cx: &App) -> Hsla {

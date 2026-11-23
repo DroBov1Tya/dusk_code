@@ -78,7 +78,10 @@ pub fn job(
             div()
                 .small()
                 .text_color(color)
-                .child(result.output.clone())
+                .child(super::activity::selectable(
+                    format!("job-{shown}-{index}"),
+                    &result.output,
+                ))
                 .into_any_element()
         },
         cx,

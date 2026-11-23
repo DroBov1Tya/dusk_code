@@ -15,7 +15,7 @@ use crate::{
     columns::inspector::mascot,
     pages::chat::{
         links,
-        messages::{activity_text, agent_report, notice, run, steps},
+        messages::{activity_text, agent_report, notice, run, selectable, steps},
         transcript::{Item, Log},
     },
     ui::{Type, widgets},
@@ -82,14 +82,13 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
             Item::Assistant { text, reasoning } => {
                 let mut said = div().flex().flex_col().gap_2();
                 if !reasoning.trim().is_empty() {
-                    let thought = reasoning.clone();
                     said = said.child(activity_text(
                         ws,
                         agent,
                         at,
                         ("Thinking", IconName::Asterisk),
                         reasoning,
-                        move || thought.into_any_element(),
+                        || selectable(format!("agent-thought-{agent}-{at}"), reasoning),
                         cx,
                     ));
                 }

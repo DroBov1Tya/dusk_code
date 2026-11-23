@@ -21,7 +21,7 @@ mod step;
 mod texts;
 mod working_row;
 
-pub use activity::{activity_text, agent_report, notice};
+pub use activity::{activity_text, agent_report, notice, selectable};
 pub use block::{Pick, pills, render as block};
 pub use feedback::{answered, job};
 pub use picture::picture_path;
