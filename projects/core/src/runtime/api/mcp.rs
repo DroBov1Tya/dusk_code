@@ -57,6 +57,11 @@ impl Runtime {
     pub fn save_mcp_server(&self, old: Option<&str>, text: &str) -> Result<Option<String>> {
         if text.trim().is_empty() {
             let old = old.context("write the server's YAML")?;
+            // Removing a plugin's server would only stop it until the plugin loads again.
+            ensure!(
+                self.launcher.config.current().mcp().contains_key(old),
+                "{old} is not in your settings; a plugin's server goes when the plugin is removed"
+            );
             self.launcher
                 .config
                 .update(|config| config.set_mcp_server(old, None))?;
