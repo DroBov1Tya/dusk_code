@@ -28,7 +28,8 @@ change the result.
 - Calls that do not depend on each other go in one step: reads of several files, a
   search and a test run, several commands.
 - Chain dependent shell commands with `&&` in one call instead of one call each.
-- Wait for long commands through their completion, never by polling with sleep.
+- Start a long command with `background: true` and go on; its result arrives by itself.
+  Never poll with `sleep`.
 
 ## Keep results short
 
