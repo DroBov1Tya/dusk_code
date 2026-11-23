@@ -363,24 +363,35 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .py_3()
                 .border_b_1()
                 .border_color(theme.border)
+                // A long title is cut short instead of pushing past the panel.
                 .child(
                     div()
+                        .flex_1()
+                        .min_w_0()
                         .flex()
                         .flex_row()
                         .items_center()
                         .gap_2()
                         .children(back)
-                        .child(div().font_weight(FontWeight::SEMIBOLD).child(title)),
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(title),
+                        ),
                 )
                 .child(
-                    Button::new("modal-close")
-                        .ghost()
-                        .small()
-                        .icon(IconName::Close)
-                        .tooltip("Close")
-                        .on_click(
-                            cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
-                        ),
+                    div().flex_none().child(
+                        Button::new("modal-close")
+                            .ghost()
+                            .small()
+                            .icon(IconName::Close)
+                            .tooltip("Close")
+                            .on_click(cx.listener(|ws, _, window, cx| {
+                                ws.close_modal_from_window(window, cx)
+                            })),
+                    ),
                 ),
         )
         .child(
