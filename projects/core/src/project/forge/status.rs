@@ -171,10 +171,17 @@ fn is_github(remote: &Remote) -> bool {
 }
 
 /// Pull request `number` of the project's own GitHub repository, asked of that
-/// repository by name; `None` when it has none such, its page is not `prefix` and its
-/// number, or GitHub cannot be asked.
-pub(super) async fn read_one(project: &Project, number: u64, prefix: &str) -> Option<PullStatus> {
-    let remote = Remote::of(&project.dir).await.filter(is_github)?;
+/// repository by name; `None` when it has none such, or its page is not `prefix` and its
+/// number; an error when GitHub cannot be asked or did not answer.
+pub(super) async fn read_one(
+    project: &Project,
+    number: u64,
+    prefix: &str,
+) -> Result<Option<PullStatus>> {
+    let remote = Remote::of(&project.dir)
+        .await
+        .filter(is_github)
+        .context("the project's remote is not on github.com")?;
     let slug = &remote.path;
     let number_arg = number.to_string();
     let repo = format!("--repo={slug}");
@@ -182,13 +189,18 @@ pub(super) async fn read_one(project: &Project, number: u64, prefix: &str) -> Op
     let args = ["pr", "view", &number_arg, &repo, &fields];
     let text = match gh(PROGRAM, &project.dir, &args).await {
         Ok(text) => text,
-        Err(error) => {
-            tracing::debug!("pull request {number} not read: {error:#}");
-            return None;
+        // GitHub's own words for a number that is no pull request of the repository.
+        Err(error)
+            if error
+                .to_string()
+                .contains("Could not resolve to a PullRequest") =>
+        {
+            return Ok(None);
         }
+        Err(error) => return Err(error.context(format!("pull request {number} not read"))),
     };
-    one(&text, &remote, number)
-        .filter(|pull| pull.url.eq_ignore_ascii_case(&format!("{prefix}{number}")))
+    Ok(one(&text, &remote, number)
+        .filter(|pull| pull.url.eq_ignore_ascii_case(&format!("{prefix}{number}"))))
 }
 
 /// The pull request of the current branch, as the forge has it; the newest when the

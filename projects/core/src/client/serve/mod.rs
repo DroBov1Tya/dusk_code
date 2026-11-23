@@ -19,6 +19,7 @@ mod terminal;
 #[cfg(test)]
 mod tests;
 mod thread;
+mod thread_pulls;
 mod unread;
 mod user_runs;
 mod voice;
@@ -185,6 +186,8 @@ pub struct Server {
     terminals: Terminals,
     /// The repository status of the projects clients watch.
     pulls: crate::project::forge::Tracker,
+    /// The passes under way over the pull requests of each project's chats.
+    chat_pulls: thread_pulls::Syncs,
     /// Commands users run from code blocks, under way.
     user_runs: user_runs::UserRuns,
 }
@@ -209,6 +212,7 @@ impl Server {
             threads: HashMap::new(),
             terminals: Terminals::new(crate::terminal::login_shell()),
             pulls: crate::project::forge::Tracker::default(),
+            chat_pulls: thread_pulls::Syncs::default(),
             user_runs: user_runs::UserRuns::default(),
         };
         (server, receiver)
@@ -295,8 +299,13 @@ impl Server {
                             Request::Project(ProjectRequest::PullStatus { id, number }) => {
                                 self.pull_status(id, number, reply)
                             }
-                            Request::Project(ProjectRequest::CreatePull { id, title, body, base }) => {
-                                self.create_pull(id, title, body, base, self.error_view(client, area), reply)
+                            Request::Project(ProjectRequest::CreatePull { id, title, body, base, thread_id }) => {
+                                // Only a chat the client sees takes the pull request.
+                                let covered = |thread: &String| {
+                                    self.clients.get(&client).is_some_and(|attached| attached.scope.covers(thread))
+                                };
+                                let thread_id = thread_id.filter(covered);
+                                self.create_pull(id, title, body, base, thread_id, self.error_view(client, area), reply)
                             }
                             Request::Thread(ThreadRequest::RunCommand { thread_id, command, run }) => {
                                 self.run_command(client, thread_id, command, run, reply)

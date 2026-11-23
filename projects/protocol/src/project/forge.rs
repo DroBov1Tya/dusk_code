@@ -190,6 +190,56 @@ pub struct PullSummary {
     pub checks: Option<CheckState>,
 }
 
+/// A pull request of a chat: one a message in it links. Kept once merged or closed.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadPull {
+    /// As the forge names it, such as `owner/repo`.
+    pub repository: String,
+    pub number: u64,
+    /// The pull request as the core last read it; `None` until the first read.
+    pub pull: Option<PullStatus>,
+}
+
+/// The pull requests one text may link, at most: the first ones count, a pasted list no
+/// further.
+pub const MAX_PULL_LINKS: usize = 20;
+
+/// The pull requests `text` links, each once, in the order first linked, at most
+/// `MAX_PULL_LINKS`: links that are `prefix` (see `pull_number`) and digits, not followed
+/// by a letter or digit.
+pub fn pull_numbers(text: &str, prefix: &str) -> Vec<u64> {
+    let mut numbers = Vec::new();
+    if prefix.is_empty() {
+        return numbers;
+    }
+    // ASCII lowering keeps every byte where it was, so an index in one is one in the other.
+    let (lower, wanted) = (text.to_ascii_lowercase(), prefix.to_ascii_lowercase());
+    let mut from = 0;
+    while numbers.len() < MAX_PULL_LINKS
+        && let Some(found) = lower[from..].find(&wanted)
+    {
+        let start = from + found;
+        let after = start + prefix.len();
+        let digits = text[after..].bytes().take_while(u8::is_ascii_digit).count();
+        let end = after + digits;
+        from = after;
+        if text[end..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric)
+        {
+            continue;
+        }
+        if let Some(number) = pull_number(&text[start..end], prefix)
+            && !numbers.contains(&number)
+        {
+            numbers.push(number);
+        }
+    }
+    numbers
+}
+
 /// The number of the pull request `url` points to when it starts with `prefix`, the
 /// pull link base the forge plugin gave (ends with `/`); `None` for any other link.
 pub fn pull_number(url: &str, prefix: &str) -> Option<u64> {
@@ -211,7 +261,31 @@ pub fn pull_number(url: &str, prefix: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::pull_number;
+    use super::{MAX_PULL_LINKS, pull_number, pull_numbers};
+
+    #[test]
+    fn a_text_links_only_the_repository_own_pulls() {
+        let prefix = "https://github.com/o/r/pull/";
+        let text = "Opened https://github.com/o/r/pull/12. See (https://GITHUB.com/o/r/pull/7/files), \
+            again https://github.com/o/r/pull/12 and [x](https://github.com/o/r/pull/9#a).\n\
+            Not https://github.com/o/r/pull/3a, https://github.com/o/r/pull/0, \
+            https://github.com/o/rr/pull/4, https://github.com/o/r/pull/, \
+            https://github.com/o/r/pull/99999999999999999999 or https://github.com/x/r/pull/5. \
+            é https://github.com/o/r/pull/8é";
+        assert_eq!(pull_numbers(text, prefix), [12, 7, 9]);
+        assert!(pull_numbers(text, "").is_empty());
+        assert!(
+            pull_numbers(
+                "https://github.com/o/r/pull/12",
+                "https://github.com/o/r/pull"
+            )
+            .is_empty()
+        );
+        assert_eq!(pull_numbers("https://github.com/o/r/pull/1", prefix), [1]);
+        let many: String = (1..=100).map(|n| format!("{prefix}{n} ")).collect();
+        let first: Vec<u64> = (1..=MAX_PULL_LINKS as u64).collect();
+        assert_eq!(pull_numbers(&many, prefix), first);
+    }
 
     #[test]
     fn only_a_link_under_the_prefix_has_a_number() {

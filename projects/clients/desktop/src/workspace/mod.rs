@@ -220,8 +220,6 @@ pub struct Workspace {
     pub git: Option<GitInfo>,
     /// The shown project's work tree and pull requests, kept fresh by the core.
     pub repository: Option<dusk_protocol::project::RepositoryStatus>,
-    /// The pull requests of each project's branch, by project ID, for the chat rows.
-    pub pulls: HashMap<String, dusk_protocol::project::PullSummary>,
     /// Which groups of a pull request's checks are unfolded, by its number and the
     /// group's name; a group not here has its default (Failed open, the rest closed).
     pub checks_open: HashMap<(u64, &'static str), bool>,

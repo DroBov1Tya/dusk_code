@@ -316,6 +316,7 @@ fn projects() -> Vec<P> {
             title: word(),
             body: word(),
             base: None,
+            thread_id: Some(word()),
         },
         P::PullSummaries,
         repository(G::CreateBranch {

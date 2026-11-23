@@ -153,7 +153,6 @@ impl Workspace {
             suggestion_taken: None,
             git: None,
             repository: None,
-            pulls: HashMap::new(),
             checks_open: HashMap::new(),
             touched: Vec::new(),
             review: crate::pages::review::Review::new(window, cx),

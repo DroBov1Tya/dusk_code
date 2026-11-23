@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 37,
+  "x-protocol": 38,
   "x-oldest": 36,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -5409,7 +5409,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "A pull request from the project's current branch (never a detached head), which\nmust be pushed first, into `base` or the repository's default branch; answered\nbeside the loop with `Response::PullStatus(Some(_))` as the forge now has it.",
+          "description": "A pull request from the project's current branch (never a detached head), which\nmust be pushed first, into `base` or the repository's default branch; answered\nbeside the loop with `Response::PullStatus(Some(_))` as the forge now has it.\nMade from chat `thread_id`, it is one of that chat's pull requests\n(`Thread::pulls`).",
           "properties": {
             "CreatePull": {
               "properties": {
@@ -5424,6 +5424,13 @@
                 },
                 "id": {
                   "type": "string"
+                },
+                "thread_id": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "title": {
                   "type": "string"
@@ -10335,6 +10342,14 @@
             "null"
           ]
         },
+        "pulls": {
+          "default": [],
+          "description": "The pull requests the chat linked, the first linked first; merged and closed ones\nstay. `ThreadEvent::Pulls` tells of a change. Empty for an agent's thread.",
+          "items": {
+            "$ref": "#/$defs/ThreadPull"
+          },
+          "type": "array"
+        },
         "source": {
           "description": "Who started the thread, such as `cli`.",
           "type": "string"
@@ -11319,6 +11334,22 @@
         },
         {
           "additionalProperties": false,
+          "description": "The chat's pull requests changed: one was linked, or the forge told a new state,\ntitle or size. All of them, as `Thread::pulls`. Every client listing the chat\nhears it.",
+          "properties": {
+            "Pulls": {
+              "items": {
+                "$ref": "#/$defs/ThreadPull"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "Pulls"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "A skill file changed by a tool call of this thread, or such a change was undone.",
           "properties": {
             "SkillChanged": {
@@ -11391,6 +11422,36 @@
           "type": "object"
         }
       ]
+    },
+    "ThreadPull": {
+      "description": "A pull request of a chat: one a message in it links. Kept once merged or closed.",
+      "properties": {
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pull": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PullStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The pull request as the core last read it; `None` until the first read."
+        },
+        "repository": {
+          "description": "As the forge names it, such as `owner/repo`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository",
+        "number"
+      ],
+      "type": "object"
     },
     "ThreadRequest": {
       "description": "Opening, feeding and closing threads. Events of an open thread arrive as\n`Event::Thread` until `Event::Ended`.",

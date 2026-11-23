@@ -220,6 +220,10 @@ pub enum ThreadEvent {
     /// Something for the user arrived in the chat (true), or a client showed it to them
     /// (false): its `Thread::unread` changed. Every client listing the chat hears it.
     Unread(bool),
+    /// The chat's pull requests changed: one was linked, or the forge told a new state,
+    /// title or size. All of them, as `Thread::pulls`. Every client listing the chat
+    /// hears it.
+    Pulls(Vec<crate::project::ThreadPull>),
     /// A skill file changed by a tool call of this thread, or such a change was undone.
     SkillChanged(crate::catalog::SkillChange),
     /// /fork wrote its summary; a client opens a new thread that starts from it.
