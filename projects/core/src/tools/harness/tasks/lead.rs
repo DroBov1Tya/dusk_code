@@ -21,6 +21,10 @@ use crate::{
     tools::ToolContext,
 };
 
+/// The answer to `stop`: the team winds down, it does not end at once.
+pub(super) const STOPPING: &str = "stopping: the members at work hand over first; you are \
+                                   told when the team ended";
+
 /// What a chat's `tasks` needs for the plan form, handed in by the launcher.
 pub struct Lead {
     pub(super) agents: Arc<Agents>,
@@ -166,7 +170,7 @@ impl Lead {
             }
             PlanAction::Stop => {
                 self.team.stop(thread).await?;
-                Ok(changed("stopped".into()))
+                Ok(changed(STOPPING.into()))
             }
         }
     }

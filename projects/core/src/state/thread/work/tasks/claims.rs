@@ -249,6 +249,50 @@ impl State {
         finish(transaction, &root, &task_id).await
     }
 
+    /// claimed or running back to open, the owner cleared, without counting the
+    /// attempt: what took the task away was not its member's doing (a restart, the
+    /// provider, a team that winds down). `owner` must hold it, which keeps a second
+    /// return or a claim that came between from being undone.
+    pub async fn return_task(
+        &self,
+        owner: &str,
+        task: &str,
+        note: &str,
+    ) -> Result<PlanTask, PlanError> {
+        capped("the note", note, MAX_NOTE)?;
+        let now = timestamp_ms()?;
+        let mut transaction = self.pool.begin().await?;
+        let root = root_of(&mut transaction, owner).await?;
+        let task_id = locate(&mut transaction, &root, task).await?;
+        // The claim counted the attempt; this takes it back.
+        let returned = sqlx::query(
+            "UPDATE tasks SET status = 'open', owner_thread_id = NULL, lease_until = NULL,
+                 attempts = MAX(attempts - 1, 0), note = ?, updated_at = ?
+             WHERE task_id = ? AND thread_id = ? AND owner_thread_id = ?
+               AND status IN ('claimed', 'running')",
+        )
+        .bind(note)
+        .bind(now)
+        .bind(&task_id)
+        .bind(&root)
+        .bind(owner)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+        if returned == 0 {
+            return Err(refusal(
+                &mut transaction,
+                &root,
+                &task_id,
+                Some(owner),
+                PlanStatus::Open,
+            )
+            .await);
+        }
+        settle_blocks(&mut transaction, &root, now).await?;
+        finish(transaction, &root, &task_id).await
+    }
+
     /// Releases every task of the plan whose lease ran out before `now`, as
     /// `release_task` does. Answers with them as they are afterwards.
     pub async fn release_expired(

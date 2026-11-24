@@ -82,7 +82,8 @@ pub(super) async fn at_work(state: &State, lead: &str, member: &str) -> Result<O
 
 /// Whether the thread may take another model step. Only a team's member is ever
 /// refused: when it holds no task at work (its task was taken back, or it was written
-/// to after it finished), and when its team ended. The refusal fails its turn.
+/// to after it finished), when its team ended, and when its team winds down and the
+/// grace for its hand-over ran out. The refusal fails its turn.
 pub(crate) async fn may_step(
     state: &State,
     config: &Config,
@@ -114,6 +115,12 @@ pub(crate) async fn may_step(
     }
     match state.team_check(lead, TeamAsk::Step).await? {
         TeamCheck::Go | TeamCheck::Full => Ok(()),
+        TeamCheck::Winding(since) => {
+            let grace = config.limits().team_wrap_seconds.saturating_mul(1000);
+            let until = since.saturating_add(i64::try_from(grace).unwrap_or(i64::MAX));
+            ensure!(timestamp_ms()? < until, "the team was stopped");
+            Ok(())
+        }
         TeamCheck::Ended(TeamEnd::Stopped) => bail!("the team was stopped"),
         TeamCheck::Ended(_) => bail!("the team ended"),
     }

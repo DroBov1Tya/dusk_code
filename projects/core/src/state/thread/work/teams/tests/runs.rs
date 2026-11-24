@@ -168,3 +168,69 @@ async fn a_chat_reaches_its_own_team_and_no_other() {
         .unwrap();
     assert_eq!(left, 0);
 }
+
+#[tokio::test]
+async fn a_run_winds_down_once_keeps_why_after_its_end_and_the_next_run_forgets_it() {
+    use super::super::{WindWhy, Winding};
+    let state = chats().await;
+    assert!(matches!(
+        state.wind_team(LEAD, WindWhy::Stopped, START).await,
+        Err(TeamError::NoTeam)
+    ));
+    state.start_team(LEAD, plain(), START).await.unwrap();
+
+    assert!(
+        state
+            .wind_team(LEAD, WindWhy::Provider, START + 1)
+            .await
+            .unwrap()
+    );
+    // The first reason and time stand.
+    assert!(
+        !state
+            .wind_team(LEAD, WindWhy::Stopped, START + 2)
+            .await
+            .unwrap()
+    );
+    let winding = Winding {
+        since: START + 1,
+        why: WindWhy::Provider,
+    };
+    assert_eq!(
+        state.team_run(LEAD).await.unwrap().unwrap().winding,
+        Some(winding)
+    );
+    for ask in [TeamAsk::Claim, TeamAsk::Step] {
+        assert_eq!(
+            state.team_check(LEAD, ask).await.unwrap(),
+            TeamCheck::Winding(START + 1)
+        );
+    }
+    let shown = state.team(LEAD, START + 3).await.unwrap().unwrap();
+    assert_eq!(shown.winding_since, Some(START + 1));
+
+    // Ended, it keeps why it wound down, and clients no longer see it winding.
+    let (run, _) = state
+        .end_team(LEAD, TeamEnd::Stopped, START + 4)
+        .await
+        .unwrap();
+    assert_eq!(run.winding, Some(winding));
+    let shown = state.team(LEAD, START + 5).await.unwrap().unwrap();
+    assert_eq!(shown.winding_since, None);
+    assert!(matches!(
+        state.wind_team(LEAD, WindWhy::Stopped, START + 5).await,
+        Err(TeamError::Ended(TeamEnd::Stopped))
+    ));
+    let again = state.start_team(LEAD, plain(), START + 6).await.unwrap();
+    assert_eq!(again.winding, None);
+
+    // The table refuses a time without a reason, or a reason it does not know.
+    for set in [
+        "UPDATE teams SET winding_since = 1 WHERE thread_id = ?",
+        "UPDATE teams SET winding_why = 'stopped' WHERE thread_id = ?",
+        "UPDATE teams SET winding_since = 1, winding_why = 'bored' WHERE thread_id = ?",
+    ] {
+        let wrote = sqlx::query(set).bind(LEAD).execute(&state.pool).await;
+        assert!(wrote.is_err(), "{set}");
+    }
+}

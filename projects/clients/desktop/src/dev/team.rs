@@ -226,6 +226,7 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
         used,
         members,
         started_at: Some(now_ms() - 23 * 60_000),
+        winding_since: None,
         goal: "Expired cache entries are gone on read and by the sweep; cargo test -p cache \
                passes"
             .into(),

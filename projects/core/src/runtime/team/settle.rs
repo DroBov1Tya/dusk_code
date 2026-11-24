@@ -9,7 +9,7 @@
 //! | a member's turn still marked running | its lease starts again; the member is woken with the chat's other agents and its turn goes on, or is stopped, and either is then its own event |
 //! | a member whose card or newest rework note no ended turn has read | nothing: the pass delivers it and starts the member |
 //! | a turn that completed, its task not handed in | handed in now, from that turn's answer |
-//! | a turn that failed or was stopped, its task not released | released: back to open, or failed at the third attempt |
+//! | a turn that failed or was stopped, its task not released | back to open, the attempt not counted |
 //! | a task in review for a command gate | nothing: the pass runs the gate again |
 //!
 //! A member that a runner of this process serves is left alone: its own events move
@@ -79,8 +79,9 @@ pub(super) async fn settle(launcher: &Launcher, lead: &str) -> Result<()> {
                 hand_in::completed(launcher, lead, &thread, &turn).await?;
             }
             _ => {
+                // The restart cut it off, not the member: the attempt is not counted.
                 let note = clean::note(launcher, lead, CUT_OFF).await;
-                let task = state.release_task(lead, &held.task_id, &note).await?;
+                let task = state.return_task(member, &held.task_id, &note).await?;
                 info!("task {} is released after a restart", held.task_id);
                 dispatch::released(launcher, lead, &task).await;
             }

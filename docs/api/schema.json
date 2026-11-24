@@ -10022,6 +10022,15 @@
         "used": {
           "$ref": "#/$defs/TeamUsed",
           "description": "What it has used; shown, never a limit."
+        },
+        "winding_since": {
+          "default": null,
+          "description": "Since when a running team winds down, in Unix milliseconds: it gives out nothing\nnew and waits for its members' hand-overs before it ends. None from older cores.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [

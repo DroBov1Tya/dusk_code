@@ -136,6 +136,7 @@ mod tests {
         let team = Team {
             thread_id: "lead".into(),
             started_at: None,
+            winding_since: None,
             goal: String::new(),
             status: TeamStatus::Running,
             at_once: 3,

@@ -49,7 +49,7 @@ async fn a_stop_between_the_thread_and_the_claim_leaves_a_thread_the_next_pass_t
     })
     .await;
     assert_eq!(rig.task(&id).await.owner_thread_id, Some(made.clone()));
-    assert_eq!(rig.uids(&made).await, [format!("card:{id}:1")]);
+    assert_eq!(rig.uids(&made).await, [format!("card:{id}:1:{made}")]);
 }
 
 #[tokio::test]
@@ -75,7 +75,7 @@ async fn a_stop_between_the_claim_and_the_card_delivers_the_card_once() {
     })
     .await;
     assert_eq!(rig.members().await, [made.as_str()], "no second member");
-    assert_eq!(rig.uids(&made).await, [format!("card:{id}:1")]);
+    assert_eq!(rig.uids(&made).await, [format!("card:{id}:1:{made}")]);
     assert_eq!(rig.turns(&made).await, (1, false), "the task ran once");
     assert_eq!(rig.task(&id).await.attempts, 1);
 }
@@ -110,7 +110,7 @@ async fn a_claimed_task_nobody_works_on_reopens_when_its_lease_runs_out() {
         (2, Some(made.clone()))
     );
     assert_eq!(rig.members().await, [made.as_str()]);
-    assert_eq!(rig.uids(&made).await, [format!("card:{id}:2")]);
+    assert_eq!(rig.uids(&made).await, [format!("card:{id}:2:{made}")]);
 }
 
 /// A member's task as a stop of the core leaves it right after its turn ended: the
@@ -145,9 +145,10 @@ async fn a_task_whose_turn_a_stop_cut_off_returns_to_the_pool_exactly_once() {
     fresh.team_settle(&rig.lead).await;
 
     // Released and given out again in the same breath, to a thread that has read
-    // nothing; the dead member's thread is not started again.
+    // nothing; the dead member's thread is not started again. The restart, not the
+    // member, cut the turn off: that attempt is not counted.
     let task = rig.task(&id).await;
-    assert_eq!(task.attempts, 2);
+    assert_eq!(task.attempts, 1);
     assert!(task.owner_thread_id.is_some() && task.owner_thread_id != Some(dead.clone()));
     assert_eq!(rig.turns(&dead).await, (1, false));
 
@@ -158,7 +159,7 @@ async fn a_task_whose_turn_a_stop_cut_off_returns_to_the_pool_exactly_once() {
     let again = rig.task(&id).await;
     assert_eq!(
         (again.attempts, again.owner_thread_id),
-        (2, task.owner_thread_id)
+        (1, task.owner_thread_id)
     );
     assert_eq!(rig.members().await.len(), 2);
 }

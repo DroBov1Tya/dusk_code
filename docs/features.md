@@ -121,12 +121,25 @@ board too and no team runs.
 - **No budget; ends.** A team has no step, token or time budget: what it used is shown,
   never a limit. `limits.team_at_once` is the most members at work at once; the user may
   change it while the team runs, from 1 up to that setting. The team ends when all is done, it is stopped, the lead
-  went quiet at the cap of agent messages, or nothing can start and the lead changed
-  nothing. Older configs' `team_max_steps`, `team_max_tokens` and `team_max_minutes` are
+  went quiet at the cap of agent messages, its provider keeps failing, or nothing can
+  start and the lead changed nothing. Older configs' `team_max_steps`, `team_max_tokens` and `team_max_minutes` are
   read and dropped.
+- **Wind-down.** The lead's `stop`, the Team page's Stop, the quiet cap and a provider
+  that keeps failing (a key or quota it refuses, or three member turns in a row lost to
+  it) do not cut members off: the team gives out nothing new, and the core (not the lead)
+  asks each member at work to stop and answer with its footer. A task it finished hands
+  in as usual (its gate runs with the next run); one it did not goes back to open with
+  the footer kept, and the next member's card starts with that hand-over. The team ends
+  once nobody is at work or `limits.team_wrap_seconds` (180) ran out; clients say
+  "wrapping up" meanwhile, and a second stop ends it at once. A stop of the chat or of a
+  member by the user still ends the team at once. A loss that is not the member's (a
+  restart, a provider failure, a turn cut off while winding down) is not counted against
+  the task's three attempts; a provider's end reads "stopped" with the reason in the
+  lead's line.
 - **Recovery.** When the chat is opened after a restart, an ended team's work goes back
   to open, a turn still running gets its lease again, a turn that completed is handed in,
-  a lost one is released, and a gate that was cut off runs again.
+  a lost one goes back to open without counting the attempt, and a gate that was cut off
+  runs again.
 
 Not built: a worktree per member, messages between members, procedures (their switches
 `limits.member_worktrees`, `peer_messages`, `procedures` do nothing yet; `task_packets`

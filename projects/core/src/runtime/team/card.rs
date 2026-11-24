@@ -23,6 +23,8 @@ const REQUEST_CHARS: usize = 1500;
 const MAX_BEFORE: usize = 4;
 /// Characters of a dependency's text on its row.
 const BEFORE_CHARS: usize = 120;
+/// Characters of the last attempt's report on the card of a task given out again.
+const HANDOVER_CHARS: usize = 600;
 
 /// What every member is told, whatever its role and its task.
 const RULES: &str = "\
@@ -108,6 +110,16 @@ pub fn card(task: &PlanTask, plan: &[PlanTask]) -> String {
         })
         .collect();
     lines.push(("Done before you", before.join("; ")));
+    // A task given out again keeps the last member's footer: where it stopped, what it
+    // checked, what is left. Its words, made plain: data like any other.
+    let handover: Vec<String> = task
+        .result
+        .lines()
+        .map(plain)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let handover: String = handover.join(" | ").chars().take(HANDOVER_CHARS).collect();
+    lines.push(("Before you (last attempt's hand-over)", handover));
     for (label, text) in lines {
         if !text.is_empty() {
             card.push_str(&format!("\n{label}: {text}"));
@@ -232,7 +244,14 @@ pub fn critic_card(row: &PlanTask, goal: &str, request: &str, plan: &[PlanTask])
 }
 
 /// The card's `request_uid`: one card for each time the task is given out, so a card
-/// delivered again after a stop is stored once.
+/// delivered again after a stop is stored once. The member is part of it: an attempt
+/// that did not count, or a reopened task, gives the same attempt number to a new
+/// member, and each gets a card of its own.
 pub fn uid(task: &PlanTask) -> String {
-    format!("card:{}:{}", task.task_id, task.attempts)
+    format!(
+        "card:{}:{}:{}",
+        task.task_id,
+        task.attempts,
+        task.owner_thread_id.as_deref().unwrap_or_default()
+    )
 }

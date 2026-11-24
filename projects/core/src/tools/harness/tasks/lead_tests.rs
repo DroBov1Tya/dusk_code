@@ -753,7 +753,7 @@ async fn run_and_stop_reach_the_team_runner() {
         .call(json!({ "action": "stop" }), f.context.clone())
         .await
         .unwrap();
-    assert_eq!(answer, "stopped");
+    assert_eq!(answer, super::lead::STOPPING);
     assert_eq!(*recorder.stops.lock(), 1);
 }
 

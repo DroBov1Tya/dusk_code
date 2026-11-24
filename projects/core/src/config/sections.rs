@@ -167,6 +167,10 @@ pub struct Limits {
     /// The most gate commands one team may run; past it a gated task waits for the lead.
     #[serde(default = "default_team_max_gate_runs")]
     pub team_max_gate_runs: u32,
+    /// How long members at work may take to hand over once their team winds down (it
+    /// was stopped, went quiet, or its provider keeps failing); then it ends.
+    #[serde(default = "default_team_wrap_seconds")]
+    pub team_wrap_seconds: u64,
     /// Whether a fresh reviewer checks each team task that changed files, with one round
     /// of fixes by its author, and a critic checks the results against the request at
     /// the end. Off, a task without a gate waits for the lead and the team ends when
@@ -217,6 +221,7 @@ impl Default for Limits {
             team_max_minutes: None,
             team_gate_seconds: default_team_gate_seconds(),
             team_max_gate_runs: default_team_max_gate_runs(),
+            team_wrap_seconds: default_team_wrap_seconds(),
             team_review: true,
         }
     }
@@ -321,6 +326,8 @@ pub const MIN_TEAM_GATE_SECONDS: u64 = 10;
 pub const MAX_TEAM_GATE_SECONDS: u64 = 600;
 pub const MIN_TEAM_MAX_GATE_RUNS: u32 = 1;
 pub const MAX_TEAM_MAX_GATE_RUNS: u32 = 1_000;
+pub const MIN_TEAM_WRAP_SECONDS: u64 = 10;
+pub const MAX_TEAM_WRAP_SECONDS: u64 = 1_800;
 
 fn default_team_at_once() -> usize {
     3
@@ -328,6 +335,11 @@ fn default_team_at_once() -> usize {
 
 fn default_team_gate_seconds() -> u64 {
     300
+}
+
+/// Three minutes: a member's next step or two, and its footer.
+fn default_team_wrap_seconds() -> u64 {
+    180
 }
 
 /// Two gate runs a task (its first and a rework) for a plan of 64 tasks, the most open.

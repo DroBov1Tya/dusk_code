@@ -35,6 +35,6 @@ pub use work::{
     PlanError, PlanStatus, PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, current_wave,
     overlaps, short_task_id, waves,
 };
-pub use work::{TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun};
+pub use work::{TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun, WindWhy, Winding};
 
 use super::{State, timestamp_ms};

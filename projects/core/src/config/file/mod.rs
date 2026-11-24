@@ -11,9 +11,9 @@ mod tests;
 use super::sections::{
     MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS,
     MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE, MAX_TEAM_GATE_SECONDS, MAX_TEAM_MAX_GATE_RUNS,
-    MIN_COMPACT_TAIL_TOKENS, MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS,
-    MIN_STUB_MIN_TOKENS, MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS, is_zero,
-    yes,
+    MAX_TEAM_WRAP_SECONDS, MIN_COMPACT_TAIL_TOKENS, MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS,
+    MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS, MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS,
+    MIN_TEAM_MAX_GATE_RUNS, MIN_TEAM_WRAP_SECONDS, is_zero, yes,
 };
 use super::{
     Appearance, ApprovalPolicy, Arbiter, ContextPolicy, CoreSection, Effort, Limits, Logging,
@@ -372,6 +372,11 @@ impl Config {
             (MIN_TEAM_MAX_GATE_RUNS..=MAX_TEAM_MAX_GATE_RUNS).contains(&limits.team_max_gate_runs),
             "limits.team_max_gate_runs must be between {MIN_TEAM_MAX_GATE_RUNS} and \
              {MAX_TEAM_MAX_GATE_RUNS}"
+        );
+        ensure!(
+            (MIN_TEAM_WRAP_SECONDS..=MAX_TEAM_WRAP_SECONDS).contains(&limits.team_wrap_seconds),
+            "limits.team_wrap_seconds must be between {MIN_TEAM_WRAP_SECONDS} and \
+             {MAX_TEAM_WRAP_SECONDS}"
         );
         self.team.validate()?;
         ensure!(

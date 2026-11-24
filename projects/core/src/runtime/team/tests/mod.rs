@@ -9,6 +9,7 @@ mod recovery;
 mod reviews;
 mod runs;
 mod text;
+mod winds;
 
 use std::{
     collections::VecDeque,
@@ -40,6 +41,9 @@ use crate::{
 /// What a member answers when the script has nothing else for it.
 pub(super) const DONE: &str = "Made the change.\n\nStatus: done\nResult: it works now\nChecked: \
                                not run\nNot checked: nothing\nOpen: nothing";
+/// Past the grace a team that winds down gives its members: `limits.team_wrap_seconds`
+/// as shipped, and a second.
+pub(super) const GRACE_MS: i64 = 181_000;
 /// The goal every test runs its team toward.
 pub(super) const GOAL: &str = "the plan is done; each task's accept holds";
 
@@ -49,6 +53,8 @@ pub(super) enum Out {
     Call(&'static str, Value),
     /// The call fails in a way not worth retrying, so the turn fails.
     Reject,
+    /// The provider fails the call for this reason.
+    Fail(crate::providers::ProviderErrorKind),
     /// The call never answers, like a member still at work.
     Hang,
     /// Answers `Say` once the test lets one member through (`Rig::let_through`).
@@ -158,6 +164,10 @@ impl ModelProvider for Scripted {
                 ]))
             }
             Out::Reject => return Box::pin(async { Err(anyhow::anyhow!("bad request")) }),
+            Out::Fail(kind) => {
+                let error = crate::providers::ProviderError::new(kind, "the provider failed");
+                return Box::pin(async move { Err(error.into()) });
+            }
         };
         Box::pin(async move { Ok(Box::new(stream) as Box<dyn ChatStream>) })
     }
@@ -292,7 +302,12 @@ impl Rig {
     }
 
     pub async fn pass(&self) -> usize {
-        let now = crate::state::timestamp_ms().unwrap();
+        self.pass_after(0).await
+    }
+
+    /// A pass `ms` from now, as the tick would run it then.
+    pub async fn pass_after(&self, ms: i64) -> usize {
+        let now = crate::state::timestamp_ms().unwrap() + ms;
         self.launcher().team_pass_at(&self.lead, now).await.unwrap()
     }
 

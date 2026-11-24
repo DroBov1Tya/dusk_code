@@ -24,6 +24,9 @@ pub enum TeamCheck {
     Go,
     /// As many members are at work as may be at once: wait for one, the team goes on.
     Full,
+    /// The team winds down since this Unix ms: nothing new is given out, and a member
+    /// at work may finish its hand-over within the grace.
+    Winding(i64),
     /// The team is not running.
     Ended(TeamEnd),
 }
@@ -63,7 +66,8 @@ impl State {
     }
 
     /// Whether the chat's team may give out another task, or let a member take another
-    /// step. Members at once count for a claim only; nothing else bounds a running team.
+    /// step. Members at once count for a claim only; a team that winds down gives
+    /// nothing out, and nothing else bounds a running team.
     pub async fn team_check(&self, thread: &str, ask: TeamAsk) -> Result<TeamCheck, TeamError> {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
@@ -72,6 +76,9 @@ impl State {
             .ok_or(TeamError::NoTeam)?;
         if let TeamStatus::Ended(why) = run.status {
             return Ok(TeamCheck::Ended(why));
+        }
+        if let Some(winding) = run.winding {
+            return Ok(TeamCheck::Winding(winding.since));
         }
         if ask == TeamAsk::Claim && at_work(&mut transaction, &root).await? >= run.at_once {
             return Ok(TeamCheck::Full);

@@ -119,6 +119,7 @@ mod tests {
                 member("m9", "gone", None),
             ],
             started_at: None,
+            winding_since: None,
             goal: String::new(),
         };
         let rows = team.member_rows(&tasks);

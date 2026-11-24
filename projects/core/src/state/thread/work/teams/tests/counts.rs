@@ -144,6 +144,7 @@ async fn parent_links_that_loop_end_every_walk() {
             worktrees: false,
             base_commit: None,
             goal: String::new(),
+            winding: None,
         };
         let mut transaction = state.pool.begin().await.unwrap();
         used::used(&mut transaction, &run, START).await.unwrap()

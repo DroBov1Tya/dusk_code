@@ -12,7 +12,11 @@ use anyhow::Result;
 use dusk_protocol::thread::{TaskDuty, TaskStatus};
 use tracing::warn;
 
-use super::{clean, dispatch, events, gate, lead_lines, lease, outside, review};
+use super::{
+    clean,
+    dispatch::{self, Loss},
+    events, gate, lead_lines, lease, outside, review,
+};
 use crate::{
     message::plain::plain,
     runtime::{Launcher, ThreadEvent},
@@ -142,7 +146,7 @@ pub(crate) async fn member_event(
                 "its runner stopped: {}",
                 lead_lines::quoted(error, MAX_NOTE)
             );
-            dispatch::lost(launcher, lead, &member.id, &note).await
+            dispatch::lost(launcher, lead, &member.id, &note, Loss::Infra(None)).await
         }
         _ => return,
     };
@@ -190,25 +194,32 @@ async fn finished(
         TurnStatus::Failed => {
             let error = turn.error_message.as_deref().unwrap_or("no reason given");
             let note = format!("its turn failed: {}", lead_lines::quoted(error, MAX_NOTE));
-            dispatch::lost(launcher, lead, &member.id, &note).await
+            // Why it failed is kept with the turn: the provider's fault is not the
+            // member's, and does not count against its task.
+            let failure = launcher.state.last_failure(&member.id).await?;
+            let kind = failure.and_then(|failure| failure.provider.map(|failed| failed.kind));
+            dispatch::lost(launcher, lead, &member.id, &note, Loss::of_failure(kind)).await
         }
         // The core is shutting down. The lease runs out and the next start goes on.
         TurnStatus::Interrupted if launcher.mailboxes.is_closed() => Ok(false),
         // Stopped from outside while it held its task: only the user does that, by
         // stopping the chat or this member. The core does not start again what the
-        // user stopped, so the team ends as stopped.
+        // user stopped, and the turns it would wind down are cut already, so the team
+        // ends as stopped at once.
         TurnStatus::Interrupted if announced => {
             if lease::at_work(&launcher.state, lead, &member.id)
                 .await?
                 .is_some()
             {
-                launcher.team_stop(lead).await?;
+                launcher.team_cancel(lead).await?;
             }
             Ok(false)
         }
-        // A restart found the turn cut off where it could not go on.
+        // A restart found the turn cut off where it could not go on: not the member's
+        // loss.
         TurnStatus::Interrupted => {
-            dispatch::lost(launcher, lead, &member.id, "a restart cut its turn off").await
+            let note = "a restart cut its turn off";
+            dispatch::lost(launcher, lead, &member.id, note, Loss::Cut).await
         }
     }
 }
@@ -237,6 +248,8 @@ pub(super) async fn completed(
                 .await?
         }
     }
+    // The provider answered: losses to it in a row start again.
+    dispatch::infra_passed(launcher, lead);
     let answer = launcher
         .answer(&member.id, turn.response_message_id.as_deref())
         .await;
@@ -251,6 +264,23 @@ pub(super) async fn completed(
     state
         .report_task(&member.id, &held.task_id, &footer)
         .await?;
+    // A team that winds down asked for this answer: a task its member did not finish
+    // goes back to open with the footer as its hand-over, which the next member's card
+    // shows. The attempt is not counted; the core stopped it.
+    let winding = state
+        .team_run(lead)
+        .await?
+        .is_some_and(|run| run.winding.is_some());
+    if winding && report.status != Status::Done {
+        let note = "handed over when the team stopped; its report says where it stands";
+        let task = match state.return_task(&member.id, &held.task_id, note).await {
+            Ok(task) => task,
+            Err(PlanError::NotOwner { .. } | PlanError::Illegal { .. }) => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        events::task(launcher, lead, &task).await;
+        return Ok(true);
+    }
     let moved = match &report.blocked {
         Some(note) => {
             let note = clean::note(launcher, lead, note).await;
@@ -297,6 +327,8 @@ pub(super) async fn completed(
             lead_lines::review(launcher, lead, &member.id, &task, &result, "no gate").await;
             task
         }
+        // A team that winds down runs no gate: the next run starts it (`gate::resume`).
+        (None, Some(GoalCheck::Command { .. })) if winding => task,
         (None, Some(GoalCheck::Command { .. })) => {
             gate::begin(launcher, lead, &member.id, &task, &result).await?
         }

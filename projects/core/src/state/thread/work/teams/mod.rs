@@ -9,6 +9,7 @@
 mod at_once;
 mod error;
 mod used;
+mod wind;
 
 #[cfg(test)]
 mod tests;
@@ -21,6 +22,7 @@ use crate::state::MEMBER_SOURCE;
 
 pub use error::TeamError;
 pub use used::{TeamAsk, TeamCheck, TeamCounts};
+pub use wind::{WindWhy, Winding};
 
 use error::{end_name, parse_end};
 
@@ -44,6 +46,8 @@ pub struct TeamRun {
     pub base_commit: Option<String>,
     /// What the lead ran it toward; empty before a lead named one.
     pub goal: String,
+    /// Set once it winds down; kept after it ended, so its end can say why.
+    pub winding: Option<Winding>,
 }
 
 // P1 serves `team` and `end_team`; T1 (the team's runtime) is the rest of the callers.
@@ -80,7 +84,7 @@ impl State {
              VALUES (?1, 'running', ?2, ?3)
              ON CONFLICT (thread_id) DO UPDATE SET status = 'running', ended_why = NULL,
                  ended_at = NULL, at_once = excluded.at_once, started_at = excluded.started_at,
-                 worktrees = 0, base_commit = NULL
+                 worktrees = 0, base_commit = NULL, winding_since = NULL, winding_why = NULL
              WHERE teams.status = 'ended'",
         )
         .bind(&root)
@@ -166,6 +170,10 @@ impl State {
             used,
             members,
             started_at: Some(run.started_at),
+            winding_since: run
+                .winding
+                .filter(|_| run.status == TeamStatus::Running)
+                .map(|winding| winding.since),
             goal: run.goal,
         }))
     }
@@ -217,7 +225,7 @@ impl State {
 async fn read_run(transaction: &mut Tx<'_>, root: &str) -> Result<Option<TeamRun>, TeamError> {
     sqlx::query(
         "SELECT thread_id, status, ended_why, at_once, worktrees, base_commit, started_at,
-             ended_at, goal
+             ended_at, goal, winding_since, winding_why
          FROM teams WHERE thread_id = ?",
     )
     .bind(root)
@@ -239,6 +247,15 @@ fn decode(row: &SqliteRow) -> Result<TeamRun, TeamError> {
         _ => return Err(stored(format!("unknown team status {status}"))),
     };
     let worktrees: i64 = row.try_get("worktrees")?;
+    let since: Option<i64> = row.try_get("winding_since")?;
+    let why: Option<String> = row.try_get("winding_why")?;
+    let winding = match (since, why.as_deref()) {
+        (Some(since), Some(why)) => Some(Winding {
+            since,
+            why: WindWhy::parse(why).ok_or_else(|| stored(format!("unknown winding {why}")))?,
+        }),
+        _ => None,
+    };
     Ok(TeamRun {
         thread_id: row.try_get("thread_id")?,
         status,
@@ -248,6 +265,7 @@ fn decode(row: &SqliteRow) -> Result<TeamRun, TeamError> {
         worktrees: worktrees == 1,
         base_commit: row.try_get("base_commit")?,
         goal: row.try_get("goal")?,
+        winding,
     })
 }
 

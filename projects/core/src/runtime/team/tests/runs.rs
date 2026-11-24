@@ -224,7 +224,7 @@ async fn a_task_lost_three_times_fails_and_the_lead_gets_one_line() {
     let members = rig.members().await;
     assert_eq!(members.len(), 3, "a new thread for each attempt");
     for (attempt, member) in members.iter().enumerate() {
-        let card = format!("card:{}:{}", ids[0], attempt + 1);
+        let card = format!("card:{}:{}:{member}", ids[0], attempt + 1);
         assert_eq!(rig.uids(member).await, [card]);
     }
     until("the lead read the line", || async {
@@ -296,7 +296,10 @@ async fn a_lease_that_runs_out_gives_the_task_to_a_new_member() {
     let members = rig.members().await;
     assert_eq!(members.len(), 2);
     assert_eq!(task.owner_thread_id.as_ref(), Some(&members[1]));
-    assert_eq!(rig.uids(&members[1]).await, [format!("card:{}:2", ids[0])]);
+    assert_eq!(
+        rig.uids(&members[1]).await,
+        [format!("card:{}:2:{}", ids[0], members[1])]
+    );
     // The member that lost the task was stopped, and its stop is not the user's.
     until("the first member stopped", || async {
         !rig.turns(&first).await.1
@@ -331,7 +334,10 @@ async fn a_card_delivered_again_is_dropped() {
         !rig.state().has_pending(&member).await.unwrap()
     })
     .await;
-    assert_eq!(rig.uids(&member).await, [format!("card:{}:1", ids[0])]);
+    assert_eq!(
+        rig.uids(&member).await,
+        [format!("card:{}:1:{member}", ids[0])]
+    );
     let messages = rig.state().list_messages(&member).await.unwrap();
     let cards: Vec<_> = messages
         .iter()
@@ -382,7 +388,10 @@ async fn a_task_the_lead_sends_back_wakes_the_same_member_once() {
     let uids = rig.uids(&member).await;
     assert_eq!(
         uids,
-        [format!("card:{}:1", ids[0]), format!("rework:{}:1", ids[0])]
+        [
+            format!("card:{}:1:{member}", ids[0]),
+            format!("rework:{}:1", ids[0])
+        ]
     );
     assert_eq!(
         rig.lines().await.iter().filter(|line| waits(line)).count(),

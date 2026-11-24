@@ -395,6 +395,7 @@ fn the_team_settings_accept_their_bounds_and_refuse_beyond() {
         ("team_at_once", 1, 8),
         ("team_gate_seconds", 10, 600),
         ("team_max_gate_runs", 1, 1_000),
+        ("team_wrap_seconds", 10, 1_800),
     ] {
         assert!(limit(key, low).is_ok(), "{key} {low}");
         assert!(limit(key, high).is_ok(), "{key} {high}");

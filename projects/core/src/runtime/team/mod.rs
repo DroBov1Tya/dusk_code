@@ -41,7 +41,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::thread::{MAX_TEAM_AT_ONCE, Team, TeamEnd, TeamStatus};
 use tokio::task::JoinHandle;
 use tracing::warn;
@@ -51,7 +51,7 @@ use crate::{
     catalog::modes::{Modes, TEAM},
     config::Limits,
     runtime::Launcher,
-    state::{PlanTask, TeamError, timestamp_ms},
+    state::{PlanTask, TeamError, WindWhy, timestamp_ms},
     tools::{Progress, Started, TeamRunner},
 };
 
@@ -84,6 +84,9 @@ pub struct Teams {
     /// The members a runner of this process has reported for. Recovery settles only
     /// the others: what a stopped process left.
     served: parking_lot::Mutex<HashSet<String>>,
+    /// Each team's member turns lost in a row to the provider or the runner. After a
+    /// restart it counts again from nothing.
+    infra_losses: parking_lot::Mutex<HashMap<String, u32>>,
 }
 
 /// The team behind a chat's `tasks`: what its `run`, `stop` and `show` reach.
@@ -121,13 +124,19 @@ impl Runner {
     }
 
     /// Starts the chat's team with the setting's members at once, or goes on with the
-    /// one running as it is.
+    /// one running as it is. One that winds down is refused: it was stopped.
     async fn start(&self, lead: &str, now: i64) -> Result<()> {
         let launcher = &self.launcher;
         let at_once = at_once_setting(&launcher.config.current().limits());
         let state = &launcher.state;
         let _one = launcher.team.pass.lock().await;
         match state.team_run(lead).await? {
+            Some(run) if run.status == TeamStatus::Running && run.winding.is_some() => {
+                bail!(
+                    "the team is stopping: its members at work hand over first; run again \
+                     once it ended"
+                )
+            }
             Some(run) if run.status == TeamStatus::Running => {}
             _ => match state.start_team(lead, at_once, now).await {
                 Ok(_) => {}
@@ -220,10 +229,22 @@ impl Launcher {
         self.team_changed(lead).await;
     }
 
-    /// Ends the chat's running team as stopped: its members at work are cancelled, their
-    /// tasks go back to open (answered here), and the lead reads of it with its next
-    /// request. A team that is not running is the store's refusal.
+    /// Stops the chat's running team, as the lead's `stop` and the Team page do: it
+    /// winds down, its members at work hand over, and it ends as stopped when they have
+    /// or `limits.team_wrap_seconds` ran out (`end::wind`). Stopped again while it winds
+    /// down, it ends at once. Answers the tasks that went back to open now; the lead
+    /// reads of it with its next request. A team that is not running is the store's
+    /// refusal.
     pub async fn team_stop(&self, lead: &str) -> Result<Vec<PlanTask>, TeamError> {
+        let now = timestamp_ms()?;
+        let _one = self.team.pass.lock().await;
+        end::wind(self, lead, WindWhy::Stopped, now).await
+    }
+
+    /// Ends the chat's running team as stopped at once: its members at work are
+    /// cancelled and their tasks go back to open. For a stop the user already made of
+    /// the members' turns themselves, which leaves nobody to hand over.
+    async fn team_cancel(&self, lead: &str) -> Result<Vec<PlanTask>, TeamError> {
         let now = timestamp_ms()?;
         let _one = self.team.pass.lock().await;
         end::end(self, lead, TeamEnd::Stopped, now).await

@@ -1,9 +1,10 @@
 //! How a team ends short of done: stopped by the lead or the user, stalled, or quiet.
+//! How a stop or the quiet cap winds a team down first is in `winds`.
 
 use super::*;
 
 #[tokio::test]
-async fn stop_cancels_the_members_and_does_not_wake_the_lead() {
+async fn stop_winds_down_then_cancels_the_members_and_does_not_wake_the_lead() {
     let rig = Rig::new("team_stop", hang).await;
     let ids = rig.plan(&[task("one"), task("two")]).await;
     assert_eq!(rig.run().await, 2);
@@ -15,6 +16,11 @@ async fn stop_cancels_the_members_and_does_not_wake_the_lead() {
 
     rig.runner().stop(&rig.lead).await.unwrap();
 
+    // It winds down: the members are asked to hand over, nothing is given out.
+    assert_eq!(rig.ended().await, None);
+    assert_eq!(rig.pass().await, 0);
+    // Members that never answer keep it waiting until the grace ran out.
+    rig.pass_after(GRACE_MS).await;
     assert_eq!(rig.ended().await, Some(TeamEnd::Stopped));
     for id in &ids {
         let task = rig.task(id).await;
@@ -33,8 +39,12 @@ async fn stop_cancels_the_members_and_does_not_wake_the_lead() {
     rig.runner().stop(&rig.lead).await.unwrap();
     assert_eq!(rig.pass().await, 0);
     let lines = rig.lines().await;
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    assert!(lines[0].starts_with("Team ended: stopped. 0 of 2 tasks;"));
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_eq!(
+        lines[0],
+        "Team winding down: 2 members are writing their hand-over."
+    );
+    assert!(lines[1].starts_with("Team ended: stopped. 0 of 2 tasks;"));
     assert_eq!(rig.state().count_turns(&rig.lead).await.unwrap(), 0);
     assert!(rig.state().has_pending(&rig.lead).await.unwrap());
 }
@@ -125,6 +135,15 @@ async fn a_lead_written_to_thirty_times_ends_the_team_as_quiet() {
 
     rig.pass().await;
 
+    // It winds down first: the member at work is asked to hand over.
+    assert_eq!(rig.ended().await, None);
+    assert!(
+        rig.uids(&member)
+            .await
+            .iter()
+            .any(|uid| uid.contains(":wrap:"))
+    );
+    rig.pass_after(GRACE_MS).await;
     assert_eq!(rig.ended().await, Some(TeamEnd::Quiet));
     assert_eq!(rig.status(&ids[0]).await, PlanStatus::Open);
     // The end waits for the user's next message; it does not wake the chat.

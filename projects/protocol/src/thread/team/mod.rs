@@ -49,6 +49,10 @@ pub struct Team {
     /// cores before it was asked for.
     #[serde(default)]
     pub goal: String,
+    /// Since when a running team winds down, in Unix milliseconds: it gives out nothing
+    /// new and waits for its members' hand-overs before it ends. None from older cores.
+    #[serde(default)]
+    pub winding_since: Option<i64>,
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -91,6 +95,7 @@ pub struct TeamUsed {
 impl Team {
     pub fn state_word(&self) -> &'static str {
         match self.status {
+            TeamStatus::Running if self.winding_since.is_some() => "wrapping up",
             TeamStatus::Running => "running",
             TeamStatus::Ended(_) => "ended",
         }
@@ -176,6 +181,7 @@ mod tests {
                     status: TaskStatus::Review,
                 }],
                 started_at: None,
+                winding_since: None,
                 goal: String::new(),
             };
             let text = serde_json::to_string(&team).unwrap();
@@ -210,6 +216,7 @@ mod tests {
                 })
                 .collect(),
             started_at: None,
+            winding_since: None,
             goal: String::new(),
         }
     }

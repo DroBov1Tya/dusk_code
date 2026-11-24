@@ -1,17 +1,32 @@
 //! How a team ends: every task is done, the lead or the user stopped it, the lead went
-//! quiet at the cap of agent messages, or it stalled. Whatever the reason, the members
-//! at work are cancelled, their tasks go back to open, and the lead is told once.
+//! quiet at the cap of agent messages, its provider kept failing, or it stalled. A stop,
+//! the quiet cap and the provider first wind it down (`wind`): nothing new is given out
+//! and the core, not the lead, asks each member at work to stop and hand over; the team
+//! ends once they have, or when `limits.team_wrap_seconds` ran out. At the end the
+//! members still at work are cancelled, their tasks go back to open, and the lead is
+//! told once.
 
-use dusk_protocol::thread::{TaskDuty, TaskStatus, TeamEnd};
+use std::path::Path;
+
+use dusk_protocol::thread::{TaskDuty, TaskStatus, TeamEnd, TeamMember, TeamStatus};
 use tracing::warn;
 
-use super::{allow, critic, events, gate, lead_lines};
+use super::{allow, critic, dispatch, events, gate, lead_lines};
 use crate::{
     runtime::{Launcher, agent::Input},
     state::{
-        Delivery, PlanStatus, PlanTask, TeamError, TeamRun, current_wave, short_task_id, waves,
+        Delivery, PlanStatus, PlanTask, TeamError, TeamRun, WindWhy, Winding, current_wave,
+        short_task_id, waves,
     },
 };
+
+/// What the core sends each member at work when its team winds down. The core's words,
+/// not the lead's: the lead may be the reason it stops.
+const WRAP: &str = "\
+[the team is stopping; from the core, not the lead]
+Stop now. Start no new change; leave the files compiling if you can. Answer with the footer:
+Status: done if the task is finished, else partial
+Result / Checked / Not checked / Open: what the next member needs to go on.";
 
 /// Ends the chat's running team with `why`; answers the tasks that went back to open.
 /// The caller holds the pass lock.
@@ -49,6 +64,127 @@ pub(super) async fn end(
     Ok(returned)
 }
 
+/// Winds the chat's running team down with `why`: nothing new is given out from now on,
+/// each member at work on a task of the lead's is asked to stop and hand over, and the
+/// team ends once they have (`wound`). A member that has not begun, and a review or the
+/// critic, has nothing to hand over: its task goes back to open at once, its attempt not
+/// counted. With nobody left at work, or when it already winds down, the team ends now:
+/// a second stop does not wait. The caller holds the pass lock. Answers the tasks that
+/// went back to open.
+pub(super) async fn wind(
+    launcher: &Launcher,
+    lead: &str,
+    why: WindWhy,
+    now: i64,
+) -> Result<Vec<PlanTask>, TeamError> {
+    let state = &launcher.state;
+    let run = state.team_run(lead).await?.ok_or(TeamError::NoTeam)?;
+    if let TeamStatus::Ended(before) = run.status {
+        return Err(TeamError::Ended(before));
+    }
+    if run.winding.is_some() {
+        return end(launcher, lead, why.end(), now).await;
+    }
+    let plan = state.plan(lead).await?;
+    let at_work: Vec<TeamMember> = state
+        .team_members(lead)
+        .await?
+        .into_iter()
+        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
+        .collect();
+    let hands_over = |member: &TeamMember| {
+        member.status == TaskStatus::Running
+            && plan
+                .iter()
+                .any(|task| task.task_id == member.task_id && task.duty == TaskDuty::Work)
+    };
+    let mut returned = Vec::new();
+    for member in at_work.iter().filter(|member| !hands_over(member)) {
+        // Stored first, so the cancelled turn finds its task gone and counts no loss.
+        let note = "the team stopped before it was done";
+        match state
+            .return_task(&member.thread_id, &member.task_id, note)
+            .await
+        {
+            Ok(task) => returned.push(task),
+            Err(error) => warn!("cannot return task {}: {error}", member.task_id),
+        }
+        cancel_member(launcher, &member.thread_id).await;
+    }
+    for task in &returned {
+        events::task(launcher, lead, task).await;
+    }
+    // Stored even when nobody is left to wait for: the end line says why it stopped.
+    state.wind_team(lead, why, now).await?;
+    let asked = at_work.iter().filter(|member| hands_over(member)).count();
+    if asked == 0 {
+        let mut ended = end(launcher, lead, why.end(), now).await?;
+        returned.append(&mut ended);
+        return Ok(returned);
+    }
+    let folder = dispatch::folder(launcher, lead).await?;
+    for member in at_work.iter().filter(|member| hands_over(member)) {
+        ask_to_wrap(launcher, &run, &member.thread_id, &folder).await;
+    }
+    events::team(launcher, lead, now, true).await;
+    let cause = match why {
+        WindWhy::Provider => "The provider keeps failing; the team is stopping",
+        WindWhy::Stopped | WindWhy::Quiet => "Team winding down",
+    };
+    let line = match asked {
+        1 => format!("{cause}: 1 member is writing its hand-over."),
+        _ => format!("{cause}: {asked} members are writing their hand-over."),
+    };
+    let uid = format!("team:{lead}:{}:winding", run.started_at);
+    lead_lines::tell(launcher, lead, lead, &uid, &line, false).await;
+    Ok(returned)
+}
+
+/// A pass over a team that winds down: it ends once no member is at work, or the grace
+/// ran out; until then each member at work is sure to have been asked, as after a
+/// restart that came between the winding and the messages. The caller holds the pass
+/// lock.
+pub(super) async fn wound(
+    launcher: &Launcher,
+    run: &TeamRun,
+    winding: Winding,
+    folder: &Path,
+    now: i64,
+) -> Result<(), TeamError> {
+    let lead = &run.thread_id;
+    let state = &launcher.state;
+    let grace = launcher.config.current().limits().team_wrap_seconds;
+    let until = winding
+        .since
+        .saturating_add(i64::try_from(grace.saturating_mul(1000)).unwrap_or(i64::MAX));
+    let at_work: Vec<TeamMember> = state
+        .team_members(lead)
+        .await?
+        .into_iter()
+        .filter(|member| matches!(member.status, TaskStatus::Claimed | TaskStatus::Running))
+        .collect();
+    if at_work.is_empty() || now >= until {
+        end(launcher, lead, winding.why.end(), now).await?;
+        return Ok(());
+    }
+    for member in &at_work {
+        ask_to_wrap(launcher, run, &member.thread_id, folder).await;
+    }
+    Ok(())
+}
+
+/// The core's message that asks `member` to hand over, once for each run of the team.
+async fn ask_to_wrap(launcher: &Launcher, run: &TeamRun, member: &str, folder: &Path) {
+    let lead = &run.thread_id;
+    let uid = format!("team:{lead}:{}:wrap:{member}", run.started_at);
+    if let Err(error) = launcher
+        .deliver_once(member, lead, &uid, WRAP, folder)
+        .await
+    {
+        warn!("cannot ask member {member} to hand over: {error:#}");
+    }
+}
+
 /// Stops a member's runner. One that waits for a free slot has no runner: its card is
 /// dropped instead, so it never starts on a task it no longer has.
 pub(super) async fn cancel_member(launcher: &Launcher, thread_id: &str) {
@@ -73,11 +209,13 @@ async fn tell(launcher: &Launcher, run: &TeamRun, why: TeamEnd, now: i64) {
     let (Ok(plan), Ok(Some(team))) = (state.plan(lead).await, state.team(lead, now).await) else {
         return warn!("cannot read the ended team of thread {lead}");
     };
+    let provider = run.winding.map(|winding| winding.why) == Some(WindWhy::Provider);
     let reason = match why {
         TeamEnd::Done => "done",
         // Only older cores ended a team on a budget.
         TeamEnd::Steps | TeamEnd::Tokens | TeamEnd::Time => "its budget was spent",
         TeamEnd::Stalled => "stalled, nothing could start",
+        TeamEnd::Stopped if provider => "stopped, the provider kept failing the members' turns",
         TeamEnd::Stopped => "stopped",
         TeamEnd::Quiet => "quiet, you were written to 30 times without the user",
     };

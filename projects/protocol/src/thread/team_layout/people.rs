@@ -477,6 +477,7 @@ mod tests {
         Team {
             thread_id: "lead".into(),
             started_at: None,
+            winding_since: None,
             goal: String::new(),
             status,
             at_once: 8,

@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use dusk_protocol::thread::TaskDuty;
+use dusk_protocol::thread::{TaskDuty, TeamStatus};
 use tracing::warn;
 
 use super::clean;
@@ -199,6 +199,13 @@ pub(super) async fn tell(
     wake: bool,
 ) {
     let state = &launcher.state;
+    // A team that winds down wakes its lead with nothing: it was stopped, and a woken
+    // lead could start the work again. The lines wait for its next request.
+    let winding = matches!(
+        state.team_run(lead).await,
+        Ok(Some(run)) if run.status == TeamStatus::Running && run.winding.is_some()
+    );
+    let wake = wake && !winding;
     // The one way a line reaches the lead: a member's or a program's words in it are
     // cleared of secrets here, whoever built the line.
     let cleaned = clean::text(launcher, lead, line).await;

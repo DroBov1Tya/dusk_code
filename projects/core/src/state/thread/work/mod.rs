@@ -21,7 +21,7 @@ pub use tasks::{
     PlanError, PlanStatus, PlanTask, Task, TaskEdit, TaskFiles, Unclaimable, WaitsOn, current_wave,
     overlaps, short_task_id, waves,
 };
-pub use teams::{TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun};
+pub use teams::{TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun, WindWhy, Winding};
 pub use tokens::{CallPurpose, LastPrompt, ModelCall};
 pub use turns::{Turn, TurnAnswer, TurnOutcome, TurnStatus};
 

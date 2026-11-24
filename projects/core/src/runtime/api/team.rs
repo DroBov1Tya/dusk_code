@@ -51,10 +51,9 @@ impl Runtime {
         Ok((chat, task))
     }
 
-    /// Ends the running team as stopped and gives its tasks at work back to open. Answers
-    /// with the team and those tasks.
-    ///
-    /// The members at work are cancelled with it (`Launcher::team_stop`).
+    /// Stops the running team: it winds down while its members at work hand over, then
+    /// ends as stopped; stopped again meanwhile, it ends at once (`Launcher::team_stop`).
+    /// Answers with the team and the tasks that went back to open now.
     pub async fn stop_team(&self, thread_id: &str) -> Result<(Team, Vec<Task>)> {
         let state = self.state_of(thread_id).await;
         let now = timestamp_ms()?;
