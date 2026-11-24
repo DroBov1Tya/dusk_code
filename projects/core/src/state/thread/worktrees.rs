@@ -76,6 +76,17 @@ impl State {
             .transpose()
     }
 
+    /// Every worktree a thread works in.
+    pub async fn thread_worktrees(&self) -> Result<Vec<ThreadWorktree>> {
+        sqlx::query("SELECT * FROM thread_worktrees ORDER BY created_at, dir")
+            .fetch_all(&self.pool)
+            .await
+            .context("read the threads' worktrees")?
+            .into_iter()
+            .map(decode)
+            .collect()
+    }
+
     /// The thread works in its own folder again.
     pub async fn remove_thread_worktree(&self, thread_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM thread_worktrees WHERE thread_id = ?")
