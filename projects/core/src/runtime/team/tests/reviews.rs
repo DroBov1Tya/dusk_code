@@ -250,6 +250,37 @@ async fn a_verdict_in_markdown_is_read_and_an_unclear_one_is_not() {
     }
 }
 
+/// A critic's gaps written in markdown are counted from what its row keeps, and so are
+/// the labels a stored answer is read by later.
+#[tokio::test]
+async fn stored_answers_are_read_by_their_labels_in_markdown() {
+    use super::super::review::{Verdict, gaps, kept, result_line};
+
+    let critic = "Compared the request with the results.\n\n- **Missing:** the docs\n\
+                  - **Unverified:** the Windows build\n* missing: a changelog entry\n\n\
+                  **Status:** done\n**Result:** most of it\n**Checked:** read the diff\n\
+                  **Not checked:** nothing\n**Open:** nothing";
+    assert_eq!(gaps(&kept(critic)), (2, 1));
+    assert_eq!(gaps(&kept("Status: done\nResult: all\nChecked: x")), (0, 0));
+    assert_eq!(
+        result_line("- **Result:** most of it\nStatus: done"),
+        "most of it"
+    );
+    assert_eq!(result_line("first line\nmore"), "first line");
+    // A long list of findings loses its first lines, never the verdict under them.
+    let mut long = String::new();
+    for i in 0..80 {
+        long.push_str(&format!(
+            "Problem: low | src/{i}.rs | a long finding of some words | fix it\n"
+        ));
+    }
+    long.push_str("Verdict: fix\nChecked: ran the tests\nNot checked: nothing");
+    let stored = kept(&long);
+    assert!(stored.chars().count() <= crate::state::MAX_RESULT);
+    assert!(stored.starts_with("Problem: low"), "{stored}");
+    assert!(Verdict::of(&stored).expect("the verdict was cut").fix);
+}
+
 #[tokio::test]
 async fn a_failed_critic_still_ends_the_team_as_done() {
     let rig = checked("team_critic_fails", |asked| match asked.lead {

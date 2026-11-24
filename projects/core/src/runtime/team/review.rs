@@ -141,7 +141,34 @@ pub(super) fn kept(answer: &str) -> String {
         }
     };
     let kept: Vec<String> = lines.iter().map(|line| plain(line)).collect();
-    kept.join("\n").chars().take(MAX_RESULT).collect()
+    tail(&kept.join("\n"))
+}
+
+/// The end of `text` that a row's result holds: whole lines from the end, so a long list
+/// of findings loses its first ones and never the labels under them.
+pub(super) fn tail(text: &str) -> String {
+    let length = text.chars().count();
+    if length <= MAX_RESULT {
+        return text.to_owned();
+    }
+    let cut: String = text.chars().skip(length - MAX_RESULT).collect();
+    match cut.split_once('\n') {
+        Some((_, rest)) if !rest.is_empty() => rest.to_owned(),
+        _ => cut,
+    }
+}
+
+/// The gaps a critic's stored answer names: its `Missing:` and its `Unverified:` lines.
+pub(super) fn gaps(result: &str) -> (usize, usize) {
+    let mut gaps = (0, 0);
+    for line in result.lines() {
+        match footer::label_of(line, &ITEMS) {
+            Some(("Missing:", _)) => gaps.0 += 1,
+            Some(("Unverified:", _)) => gaps.1 += 1,
+            _ => {}
+        }
+    }
+    gaps
 }
 
 /// Whether `task`, which its member just handed in, is reviewed before it passes: review
@@ -320,7 +347,7 @@ async fn hold(
 pub(super) fn result_line(report: &str) -> String {
     let line = report
         .lines()
-        .find_map(|line| line.strip_prefix("Result:"))
+        .find_map(|line| footer::label_of(line, &["Result:"]).map(|(_, value)| value))
         .or(report.lines().next())
         .unwrap_or("see its thread");
     line.trim().to_owned()
@@ -386,7 +413,7 @@ pub(super) fn findings(task: &PlanTask, plan: &[PlanTask]) -> String {
         .map(|row| {
             row.result
                 .lines()
-                .filter(|line| !line.starts_with("Verdict:"))
+                .filter(|line| footer::label_of(line, &["Verdict:"]).is_none())
                 .collect()
         })
         .unwrap_or_default();

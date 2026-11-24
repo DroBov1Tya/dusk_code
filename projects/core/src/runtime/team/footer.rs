@@ -166,8 +166,33 @@ fn unlisted(line: &str) -> &str {
     }
 }
 
+/// The label of `line` among `labels` and its value, for a line read alone, such as a
+/// stored footer's: markdown is read as `read` reads it.
+pub(super) fn label_of<'a>(
+    line: &'a str,
+    labels: &[&'static str],
+) -> Option<(&'static str, &'a str)> {
+    labelled(line.trim(), labels)
+}
+
 /// A value as one word: without markdown around it or a full stop after it, lowercase.
+/// Words after it set apart by a bracket, a dash, a colon or a full stop are a remark
+/// (`done (all tests pass)`, `done - tests pass`); any other words make it no one word
+/// (`done or blocked`).
 fn word(value: &str) -> String {
+    let value = value.trim().trim_matches(['*', '_', '`']).trim();
+    let cut = value
+        .find(|c: char| c.is_whitespace() || matches!(c, '(' | ':'))
+        .unwrap_or(value.len());
+    let (head, rest) = value.split_at(cut);
+    let remark = rest
+        .trim_start()
+        .starts_with(['(', '-', '\u{2013}', '\u{2014}', ':'])
+        || head.trim_end_matches(['*', '_', '`']).ends_with('.');
+    let value = match !head.is_empty() && remark {
+        true => head,
+        false => value,
+    };
     value
         .trim()
         .trim_matches(['*', '_', '`'])
@@ -202,6 +227,37 @@ mod tests {
             assert_eq!(
                 footer.text("Checked:").as_deref(),
                 Some("ran it"),
+                "{answer}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_remark_after_the_word_is_left_out() {
+        for answer in [
+            "Status: done (all tests pass)",
+            "Status: done - tests pass",
+            "Status: **done** \u{2014} tests pass",
+            "Status: done: tests pass",
+            "Status: Done. All tests pass.",
+        ] {
+            let footer = read(answer, &LABELS, &[]);
+            assert_eq!(
+                footer.word("Status:", &["done", "blocked"]).as_deref(),
+                Some("done"),
+                "{answer}"
+            );
+        }
+        // A second word that is no remark is no answer, nor is a word with more to it.
+        for answer in [
+            "Status: done or blocked",
+            "Status: done-ish",
+            "Status: done, blocked",
+        ] {
+            let footer = read(answer, &LABELS, &[]);
+            assert_eq!(
+                footer.word("Status:", &["done", "blocked"]),
+                None,
                 "{answer}"
             );
         }

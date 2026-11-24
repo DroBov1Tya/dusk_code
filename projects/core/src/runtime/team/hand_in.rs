@@ -359,7 +359,7 @@ async fn duty_done(
     answer: &str,
 ) -> Result<bool> {
     let kept = clean::text(launcher, lead, &review::kept(answer)).await;
-    let kept: String = kept.chars().take(MAX_RESULT).collect();
+    let kept = review::tail(&kept);
     let closed = launcher
         .state
         .close_duty(&member.id, &row.task_id, &kept)
