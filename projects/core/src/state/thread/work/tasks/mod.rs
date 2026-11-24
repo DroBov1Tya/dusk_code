@@ -11,7 +11,9 @@
 //! board here knows two of the statuses, open and done, and leaves a task in any other
 //! to the plan.
 
+mod barrier;
 mod claims;
+mod duties;
 mod error;
 mod files;
 mod graph;
@@ -24,14 +26,17 @@ use uuid::Uuid;
 
 use super::{State, timestamp_ms};
 
+pub use barrier::{current_wave, waves};
 pub use claims::{Claim, PassedBy};
 pub use dusk_protocol::thread::Task;
+pub use duties::Duty;
 pub use error::{PlanError, Unclaimable, short_task_id};
 pub use files::{TaskFiles, overlaps};
 pub(super) use graph::root_of;
 pub use plan::{
-    BlockedOn, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_NOTE, MAX_OPEN_TASKS,
-    MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PlanStatus, PlanTask, TaskEdit, WaitsOn,
+    BlockedOn, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_GOAL, MAX_NOTE,
+    MAX_OPEN_TASKS, MAX_RESULT, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PlanStatus, PlanTask,
+    TaskEdit, WaitsOn,
 };
 use plan::{decode, select_tasks};
 

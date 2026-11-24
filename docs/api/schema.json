@@ -9842,6 +9842,10 @@
         "done": {
           "type": "boolean"
         },
+        "duty": {
+          "$ref": "#/$defs/TaskDuty",
+          "default": "work"
+        },
         "files": {
           "default": [],
           "items": {
@@ -9892,6 +9896,17 @@
           "default": "",
           "type": "string"
         },
+        "result": {
+          "default": "",
+          "type": "string"
+        },
+        "review_of": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "reworks": {
           "default": 0,
           "format": "uint32",
@@ -9904,6 +9919,10 @@
             "string",
             "null"
           ]
+        },
+        "skipped": {
+          "default": false,
+          "type": "boolean"
         },
         "status": {
           "anyOf": [
@@ -9956,6 +9975,26 @@
         "items"
       ],
       "type": "object"
+    },
+    "TaskDuty": {
+      "description": "What a task of a plan is for.",
+      "oneOf": [
+        {
+          "const": "work",
+          "description": "A task of the lead's plan.",
+          "type": "string"
+        },
+        {
+          "const": "review",
+          "description": "The core's independent review of a task that changed files.",
+          "type": "string"
+        },
+        {
+          "const": "critic",
+          "description": "The core's check at the end: what the request asked that no task did or verified.",
+          "type": "string"
+        }
+      ]
     },
     "TaskItem": {
       "properties": {
@@ -10049,8 +10088,11 @@
     },
     "Team": {
       "properties": {
-        "budget": {
-          "$ref": "#/$defs/TeamBudget"
+        "at_once": {
+          "description": "Members at work at once, 1 to the setting's `team_at_once`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "ended_at": {
           "default": null,
@@ -10060,6 +10102,11 @@
             "integer",
             "null"
           ]
+        },
+        "goal": {
+          "default": "",
+          "description": "What the lead ran this team toward: one sentence and how done is told. Empty from\ncores before it was asked for.",
+          "type": "string"
         },
         "members": {
           "description": "Newest first, at most `MAX_TEAM_MEMBERS`.",
@@ -10085,48 +10132,25 @@
           "type": "string"
         },
         "used": {
-          "$ref": "#/$defs/TeamUsed"
+          "$ref": "#/$defs/TeamUsed",
+          "description": "What it has used; shown, never a limit."
+        },
+        "winding_since": {
+          "default": null,
+          "description": "Since when a running team winds down, in Unix milliseconds: it gives out nothing\nnew and waits for its members' hand-overs before it ends. None from older cores.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
         "thread_id",
         "status",
-        "budget",
+        "at_once",
         "used",
         "members"
-      ],
-      "type": "object"
-    },
-    "TeamBudget": {
-      "additionalProperties": false,
-      "description": "How much a team may spend unasked. Built and read only through `new`, so a budget\nthat exists is above zero and within the largest ceilings.",
-      "properties": {
-        "at_once": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "minutes": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "steps": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "tokens": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "at_once",
-        "steps",
-        "tokens",
-        "minutes"
       ],
       "type": "object"
     },
@@ -10135,7 +10159,6 @@
       "oneOf": [
         {
           "enum": [
-            "steps",
             "tokens",
             "time"
           ],
@@ -10144,6 +10167,11 @@
         {
           "const": "done",
           "description": "Every task is done.",
+          "type": "string"
+        },
+        {
+          "const": "steps",
+          "description": "Older cores only: their team ran out of a budget part (steps, tokens or time).",
           "type": "string"
         },
         {
@@ -10187,6 +10215,11 @@
           "$ref": "#/$defs/TaskStatus",
           "description": "The status of its task."
         },
+        "summary": {
+          "default": "",
+          "description": "What it does, in a short line the core writes from its task: the start of the\ntask's text, `review of #77aa01bc` or `completeness check`. Model text, made\nplain. Shown where the plan does not hold its task. Empty from older cores.",
+          "type": "string"
+        },
         "task_id": {
           "type": "string"
         },
@@ -10225,7 +10258,7 @@
       ]
     },
     "TeamUsed": {
-      "description": "What a team has used of its budget, counted by the core; it may pass the budget by\nthe steps already under way.",
+      "description": "What a team has used, counted by the core and shown as is: nothing bounds it.",
       "properties": {
         "at_once": {
           "format": "uint32",
@@ -11216,7 +11249,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The team running this thread's plan changed its status, members or budget; at\nmost one a second.",
+          "description": "The team running this thread's plan changed its status, members or members at once; at\nmost one a second.",
           "properties": {
             "Team": {
               "$ref": "#/$defs/Team"
@@ -13345,6 +13378,19 @@
           "const": "lead",
           "description": "A task in review that the core held for the lead's decision.",
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A task in review that a reviewer row, by its id, checks now.",
+          "properties": {
+            "review": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "review"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -14119,12 +14165,14 @@
         },
         {
           "additionalProperties": false,
-          "description": "Sets the running team's budget, within the ceilings of the settings.",
+          "description": "Sets how many members of the running team work at once, 1 to the setting's\n`team_at_once`.",
           "properties": {
-            "SetTeamBudget": {
+            "SetTeamAtOnce": {
               "properties": {
-                "budget": {
-                  "$ref": "#/$defs/TeamBudget"
+                "at_once": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
                 },
                 "thread_id": {
                   "type": "string"
@@ -14132,13 +14180,13 @@
               },
               "required": [
                 "thread_id",
-                "budget"
+                "at_once"
               ],
               "type": "object"
             }
           },
           "required": [
-            "SetTeamBudget"
+            "SetTeamAtOnce"
           ],
           "type": "object"
         }

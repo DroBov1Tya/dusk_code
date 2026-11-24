@@ -90,8 +90,8 @@ impl Server {
                 self.announce(&chat, ThreadEvent::Team(team));
                 Response::Done
             }
-            WorkRequest::SetTeamBudget { thread_id, budget } => {
-                let team = runtime.set_team_budget(&thread_id, budget).await?;
+            WorkRequest::SetTeamAtOnce { thread_id, at_once } => {
+                let team = runtime.set_team_at_once(&thread_id, at_once).await?;
                 self.announce(&team.thread_id.clone(), ThreadEvent::Team(team));
                 Response::Done
             }

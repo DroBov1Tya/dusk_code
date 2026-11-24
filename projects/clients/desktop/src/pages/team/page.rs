@@ -1,8 +1,8 @@
-//! The Team page: Back, how the team stands and why, its budget and the buttons that
+//! The Team page: Back, how the team stands and why, what it used and the buttons that
 //! steer it, the switch of layers, and the layers themselves.
 
 use dusk_protocol::thread::{
-    BudgetPart, Team, TeamEnd,
+    Team, TeamEnd,
     team_layout::{self, Related},
 };
 use gpui_kit::{
@@ -10,7 +10,6 @@ use gpui_kit::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
-    prelude::FluentBuilder,
     *,
 };
 
@@ -100,62 +99,27 @@ fn header(ws: &Workspace, title: String, cx: &mut Context<Workspace>) -> Div {
         .children(actions)
 }
 
-/// Edit budget and Stop team while it runs. Once it ended short of done, Edit budget
-/// alone: the team runs again when the lead runs the plan again.
+/// Members at once and Stop team while it runs; nothing once it ended: the team runs
+/// again when the lead runs the plan again.
 fn steer(team: Team, cx: &mut Context<Workspace>) -> Div {
     let row = div().flex_none().flex().flex_row().gap_2();
-    if team.ended() == Some(TeamEnd::Done) {
+    if team.ended().is_some() {
         return row;
     }
-    let running = team.ended().is_none();
     row.child(
-        Button::new("team-page-budget")
+        Button::new("team-page-at-once")
             .outline()
             .small()
-            .label("Edit budget")
-            .on_click(cx.listener(move |ws, _, window, cx| ws.ask_team_budget(&team, window, cx))),
+            .label("Members at once")
+            .on_click(cx.listener(move |ws, _, _, cx| ws.ask_team_at_once(&team, cx))),
     )
-    .when(running, |row| {
-        row.child(
-            Button::new("team-page-stop")
-                .danger()
-                .small()
-                .label("Stop team")
-                .on_click(cx.listener(|ws, _, _, cx| ws.ask_stop_team(cx))),
-        )
-    })
-}
-
-/// One part of the budget: its name, a thin bar, and "used of all".
-fn meter(part: BudgetPart, cx: &App) -> Div {
-    let theme = cx.theme();
-    let fill = match part.share() {
-        share if share >= 1. => theme.danger,
-        _ if part.near() => theme.warning,
-        _ => theme.foreground.opacity(0.7),
-    };
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .meta()
-        .text_color(theme.muted_foreground)
-        .child(part.name)
-        .child(
-            div()
-                .w(px(96.))
-                .h(px(4.))
-                .rounded_full()
-                .bg(theme.border)
-                .overflow_hidden()
-                .child(div().h_full().w(px(96. * part.share())).bg(fill)),
-        )
-        .child(
-            div()
-                .text_color(theme.foreground.opacity(0.8))
-                .child(part.text()),
-        )
+    .child(
+        Button::new("team-page-stop")
+            .danger()
+            .small()
+            .label("Stop team")
+            .on_click(cx.listener(|ws, _, _, cx| ws.ask_stop_team(cx))),
+    )
 }
 
 fn team(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
@@ -173,7 +137,20 @@ fn team(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let related = Related::of(page.pick(), chat.team.as_ref(), &chat.tasks);
     let mut body = div().flex().flex_col();
     if let Some(team) = &chat.team {
-        let at_once = format!("{} of {} at once", team.used.at_once, team.budget.at_once());
+        // What the lead ran it toward: model text, one plain line.
+        let goal = team.goal.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !goal.is_empty() {
+            body = body.child(
+                div()
+                    .pb_1()
+                    .small()
+                    .text_color(foreground.opacity(0.85))
+                    .line_clamp(2)
+                    .child(format!("Goal: {goal}")),
+            );
+        }
+        // What it used, shown and never a limit; then how many work at once.
+        let at_once = format!("{} of {} at once", team.used.at_once, team.at_once);
         body = body.child(
             div()
                 .flex()
@@ -183,7 +160,7 @@ fn team(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .gap_x_6()
                 .gap_y_1()
                 .pb_2()
-                .children(team.budget_parts().map(|part| meter(part, cx)))
+                .child(div().meta().text_color(muted).child(team.used_line()))
                 .child(div().meta().text_color(muted).child(at_once)),
         );
     }

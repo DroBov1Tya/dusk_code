@@ -558,7 +558,7 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
     Team {
         thread_id: "t".into(),
         status: crate::thread::TeamStatus::Running,
-        budget: crate::thread::TeamBudget::new(2, 100, 1_000_000, 60).unwrap(),
+        at_once: 2,
         used: crate::thread::TeamUsed::default(),
         members: members
             .iter()
@@ -568,11 +568,14 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
                 role: Some("backend-engineer".into()),
                 model: None,
                 task_id: (*task_id).into(),
+                summary: String::new(),
                 status: *status,
             })
             .collect(),
         started_at: None,
         ended_at: None,
+        winding_since: None,
+        goal: String::new(),
     }
 }
 

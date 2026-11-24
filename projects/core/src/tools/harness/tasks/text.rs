@@ -3,28 +3,31 @@
 
 use dusk_protocol::{
     text::is_plain,
-    thread::{GoalCheck, Team, TeamStatus},
+    thread::{GoalCheck, TaskDuty, Team, TeamStatus},
 };
 use serde_json::{Value, json};
 
 use crate::state::{PlanStatus, PlanTask, WaitsOn, short_task_id};
 
 pub const DESCRIPTION: &str = "\
-    The plan of this work, shared with the agents you lead; the core runs it. `add` \
-    takes `tasks`: each has `text` and, as needed, `key` (your label for it in `after`), \
-    `after` (keys or ids it depends on), `role` (the agent that does it; general when \
-    left out), `files` (the paths only it may change), `accept` (how to tell it is \
-    done), `gate` (a command that must exit 0; the core runs it) or `confirm` (the user \
-    must confirm), `brief` (what the plan alone does not say), `phase`, `kind` (a \
-    procedure), `tier` (its model: strong to design, review or debug, weak for \
-    mechanical or read-only work) and `effort`. A cycle is refused. `run` starts the team with a `budget`: the core \
-    gives each task whose `after` are done to an agent with only what that task needs, \
-    checks gates, and writes to you only when a task waits for you, fails or is blocked, \
-    and when the team ends. End your turn and wait; never ask for status. `review` \
-    accepts `ids`, or rejects one `id` with `text` to redo. `show` prints the plan, or \
-    one task whole with `id`. `edit` changes a task not yet started. `fail`, `reopen` \
-    and `stop` do what they say. Use this instead of handing tasks out with ask_agent; \
-    keep ask_agent for finding out what is unknown before you plan.";
+    The plan of this work, shared with the agents you lead; the core runs it, and it is \
+    the only way work is handed out. `add` takes `tasks`: each has `text`, `accept` (how \
+    to tell it is done) and `files` (the paths only it may change; a scout task, role \
+    `scout`, has none and changes nothing), and as needed `key` (your label for it in \
+    `after`), `after` (keys or ids it depends on), `role` (the agent that does it; \
+    general when left out), `gate` (a command that must exit 0; the core runs it) or \
+    `confirm` (the user must confirm), `brief` (to a peer: goal, ruled out, files and \
+    why, how to check), `phase`, `tier` (its model: strong to design, review or debug, \
+    weak for mechanical or read-only work) and `effort`. Tasks of one add that share a file need an `after` \
+    between them; a cycle is refused. `run` takes `goal` (one sentence and how done is \
+    told) and starts the team: the core gives out one wave at a time (a wave starts \
+    when the one before is all done or skipped), runs gates, has every change reviewed \
+    by a fresh reviewer, and writes to you only when a task waits for you, fails or is \
+    blocked, and when the team ends. End your turn and wait; never ask for status. \
+    `review` accepts `ids`, or rejects one `id` with `text` to redo. `show` prints the \
+    plan, or one task whole with its report with `id`. `edit` changes a task not yet \
+    started. `skip` gives up a failed or blocked task (with `text`, why) so the next \
+    wave can start. `fail`, `reopen` and `stop` do what they say.";
 
 /// The schema the lead is offered. Calls are checked against the union of both forms
 /// (`checked_schema`) and parsed into `lead::PlanArguments`.
@@ -33,7 +36,7 @@ pub fn schema() -> Value {
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": [
-                "add", "run", "review", "show", "edit", "fail", "reopen", "stop"]},
+                "add", "run", "review", "show", "edit", "fail", "reopen", "skip", "stop"]},
             "tasks": {"type": "array", "maxItems": 32, "items": {
                 "type": "object",
                 "properties": {
@@ -55,15 +58,10 @@ pub fn schema() -> Value {
                 "additionalProperties": false,
                 "required": ["text"]
             }},
-            "budget": {"type": "object", "properties": {
-                "at_once": {"type": "integer", "minimum": 1},
-                "steps": {"type": "integer", "minimum": 1},
-                "tokens": {"type": "integer", "minimum": 1},
-                "minutes": {"type": "integer", "minimum": 1}
-            }, "additionalProperties": false},
             "id": {"type": "string"},
             "ids": {"type": "array", "items": {"type": "string"}},
-            "text": {"type": "string"}
+            "text": {"type": "string"},
+            "goal": {"type": "string"}
         },
         "additionalProperties": false,
         "required": ["action"]
@@ -134,7 +132,7 @@ pub struct Shown<'a> {
     pub member: Option<String>,
 }
 
-/// The plan as the lead reads it: a line of counts and the budget, then a line a task,
+/// The plan as the lead reads it: a line of counts and members at work, then a line a task,
 /// tasks not done first, at most `MAX_LINES` lines and `MAX_BYTES` bytes.
 pub fn plan(tasks: &[Shown<'_>], team: Option<&Team>) -> String {
     if tasks.is_empty() {
@@ -193,32 +191,21 @@ fn header(tasks: &[Shown<'_>], team: Option<&Team>) -> String {
             text.push_str(&format!(", {n} {word}"));
         }
     }
+    let skipped = tasks
+        .iter()
+        .filter(|shown| shown.task.skipped && shown.task.status != PlanStatus::Done)
+        .count();
+    if skipped > 0 {
+        text.push_str(&format!(" ({skipped} of them skipped)"));
+    }
     text.push('.');
     if let Some(team) = team.filter(|team| team.status == TeamStatus::Running) {
-        let (budget, used) = (team.budget, team.used);
         text.push_str(&format!(
-            " Budget: {}/{} steps, {}/{} tokens, {}/{} min.",
-            used.steps,
-            budget.steps(),
-            amount(used.tokens),
-            amount(budget.tokens()),
-            used.minutes,
-            budget.minutes()
+            " At work: {} of {}.",
+            team.used.at_once, team.at_once
         ));
     }
     text
-}
-
-/// 1310000 as `1.31M`, 4000000 as `4M`, 2500 as `2.5k`.
-fn amount(n: u64) -> String {
-    let (value, unit) = match n {
-        1_000_000.. => (n as f64 / 1_000_000.0, "M"),
-        1_000.. => (n as f64 / 1_000.0, "k"),
-        _ => return n.to_string(),
-    };
-    let digits = format!("{value:.2}");
-    let digits = digits.trim_end_matches('0').trim_end_matches('.');
-    format!("{digits}{unit}")
 }
 
 fn mark(status: PlanStatus) -> &'static str {
@@ -260,9 +247,23 @@ fn line(shown: &Shown<'_>) -> String {
 
 /// What the lead may need to know of a task beyond its mark.
 fn state_words(task: &PlanTask) -> String {
+    let mut words = match (task.duty, &task.review_of) {
+        (TaskDuty::Review, Some(of)) => format!(" review of {}", short_task_id(of)),
+        (TaskDuty::Critic, _) => " completeness check".to_owned(),
+        _ => String::new(),
+    };
+    if task.skipped && task.status != PlanStatus::Done {
+        words.push_str(" skipped");
+    }
+    words.push_str(&status_words(task));
+    words
+}
+
+fn status_words(task: &PlanTask) -> String {
     let note = || plain(&task.note, LINE_NOTE);
     match task.status {
         PlanStatus::Review => match (&task.waits_on, &task.gate) {
+            (Some(WaitsOn::Review(row)), _) => format!(" reviewed by {}", short_task_id(row)),
             (Some(WaitsOn::Lead), _) | (_, None) => " waits for you".into(),
             (_, Some(GoalCheck::UserConfirmation)) => " waits for the user".into(),
             (_, Some(GoalCheck::Command { .. })) => " gate runs".into(),
@@ -342,6 +343,24 @@ pub fn task(shown: &Shown<'_>, after: &[(String, Option<PlanStatus>)]) -> String
         if !field.is_empty() {
             text.push_str(&format!("\n{label}: {}", plain(field, usize::MAX)));
         }
+    }
+    if task.skipped {
+        text.push_str("\nSkipped: the next wave does not wait for it");
+    }
+    if let Some(of) = &task.review_of {
+        text.push_str(&format!("\nReviews: #{}", short_task_id(of)));
+    }
+    // The member's or the checker's own words: data, each line made plain.
+    if !task.result.is_empty() {
+        let lines: Vec<String> = task
+            .result
+            .lines()
+            .map(|line| plain(line, usize::MAX))
+            .collect();
+        text.push_str(&format!(
+            "\nReport (the member's words):\n{}",
+            lines.join("\n")
+        ));
     }
     text.push_str(&format!("\nId: {}", task.task_id));
     text

@@ -8,7 +8,9 @@ use crate::state::{GoalCheck, LEASE_MS, TaskFiles, WaitsOn, timestamp_ms};
 /// The id in `#1a2b3c4d waits for you`.
 fn waiting_id(line: &str) -> Option<&str> {
     let before = line.split(" waits for you").next()?;
-    let id = before.rsplit('#').next()?;
+    // `#77aa01bc (Ember-0c, general: first)`: who works on it follows the id.
+    let named = before.rsplit_once(" (").map_or(before, |(named, _)| named);
+    let id = named.rsplit('#').next()?;
     (before.len() < line.len() && id.len() == 8).then_some(id)
 }
 
@@ -17,7 +19,7 @@ fn waiting_id(line: &str) -> Option<&str> {
 fn chain_lead(asked: &Asked) -> Out {
     if let Some(result) = &asked.result {
         return match result.starts_with("added") {
-            true => Out::Call("tasks", json!({ "action": "run" })),
+            true => Out::Call("tasks", json!({ "action": "run", "goal": GOAL })),
             false => Out::Say("Waiting.".into()),
         };
     }
@@ -28,9 +30,10 @@ fn chain_lead(asked: &Asked) -> Out {
         return Out::Say("Noted.".into());
     }
     let tasks = json!([
-        { "text": "first", "key": "a" },
-        { "text": "second", "key": "b", "after": ["a"], "gate": "true" },
-        { "text": "third", "after": ["b"] },
+        { "text": "first", "key": "a", "accept": "it holds", "files": ["src/a.rs"] },
+        { "text": "second", "key": "b", "after": ["a"], "gate": "true", "accept": "it holds",
+          "files": ["src/b.rs"] },
+        { "text": "third", "after": ["b"], "accept": "it holds", "files": ["src/c.rs"] },
     ]);
     Out::Call("tasks", json!({ "action": "add", "tasks": tasks }))
 }
@@ -125,7 +128,7 @@ async fn a_chain_runs_to_done_and_wakes_the_lead_only_for_its_reviews() {
 }
 
 #[tokio::test]
-async fn no_more_members_work_at_once_than_the_budget_says() {
+async fn no_more_members_work_at_once_than_the_setting_says() {
     let settings = format!("{ON}  team_at_once: 2\n");
     let rig = Rig::with("team_at_once", &settings, hang).await;
     let tasks: Vec<NewTask> = (0..5).map(|n| task(&format!("task {n}"))).collect();
@@ -163,14 +166,6 @@ async fn the_lowest_phase_goes_first_and_run_twice_changes_nothing() {
     assert_eq!(rig.run().await, 0);
     assert_eq!(rig.state().team_run(&rig.lead).await.unwrap(), before);
     assert_eq!(rig.members().await.len(), 2);
-    // A run may lower a part of the budget, and a later one does not raise it again.
-    let fewer = |budget: TeamBudget| {
-        TeamBudget::new(budget.at_once(), 20, budget.tokens(), budget.minutes()).unwrap()
-    };
-    rig.run_with(fewer).await.unwrap();
-    rig.run().await;
-    let run = rig.state().team_run(&rig.lead).await.unwrap().unwrap();
-    assert_eq!(run.budget.steps(), 20);
 }
 
 #[tokio::test]
@@ -228,12 +223,21 @@ async fn a_task_lost_three_times_fails_and_the_lead_gets_one_line() {
     let behind = rig.task(&ids[1]).await;
     assert_eq!(behind.status, PlanStatus::Blocked);
     assert_eq!(behind.waits_on, Some(WaitsOn::Task(ids[0].clone())));
+    // The first member was given it back once, with its transcript; the third attempt
+    // went to a fresh member.
     let members = rig.members().await;
-    assert_eq!(members.len(), 3, "a new thread for each attempt");
-    for (attempt, member) in members.iter().enumerate() {
-        let card = format!("card:{}:{}", ids[0], attempt + 1);
-        assert_eq!(rig.uids(member).await, [card]);
-    }
+    assert_eq!(members.len(), 2, "one resume, then a fresh thread");
+    assert_eq!(
+        rig.uids(&members[0]).await,
+        [
+            format!("card:{}:1:{}", ids[0], members[0]),
+            format!("resume:{}:1", ids[0])
+        ]
+    );
+    assert_eq!(
+        rig.uids(&members[1]).await,
+        [format!("card:{}:3:{}", ids[0], members[1])]
+    );
     until("the lead read the line", || async {
         rig.turns(&rig.lead).await == (1, false)
     })
@@ -272,7 +276,7 @@ async fn a_member_that_says_blocked_blocks_its_task_with_its_note() {
     assert_eq!(lines.len(), 1, "{lines:?}");
     assert!(lines[0].ends_with(
         "blocked: needs the staging URL (and)  more. Answer by reopening it and editing its \
-         brief, or fail it."
+         brief, or skip it."
     ));
 }
 
@@ -303,7 +307,10 @@ async fn a_lease_that_runs_out_gives_the_task_to_a_new_member() {
     let members = rig.members().await;
     assert_eq!(members.len(), 2);
     assert_eq!(task.owner_thread_id.as_ref(), Some(&members[1]));
-    assert_eq!(rig.uids(&members[1]).await, [format!("card:{}:2", ids[0])]);
+    assert_eq!(
+        rig.uids(&members[1]).await,
+        [format!("card:{}:2:{}", ids[0], members[1])]
+    );
     // The member that lost the task was stopped, and its stop is not the user's.
     until("the first member stopped", || async {
         !rig.turns(&first).await.1
@@ -329,7 +336,7 @@ async fn a_card_delivered_again_is_dropped() {
     let member = rig.members().await.remove(0);
     let task = rig.task(&ids[0]).await;
     for _ in 0..2 {
-        super::super::member::deliver_card(rig.launcher(), &rig.lead, &member, &task, &rig.folder)
+        super::super::member::deliver_start(rig.launcher(), &rig.lead, &member, &task, &rig.folder)
             .await
             .unwrap();
         rig.pass().await;
@@ -338,7 +345,10 @@ async fn a_card_delivered_again_is_dropped() {
         !rig.state().has_pending(&member).await.unwrap()
     })
     .await;
-    assert_eq!(rig.uids(&member).await, [format!("card:{}:1", ids[0])]);
+    assert_eq!(
+        rig.uids(&member).await,
+        [format!("card:{}:1:{member}", ids[0])]
+    );
     let messages = rig.state().list_messages(&member).await.unwrap();
     let cards: Vec<_> = messages
         .iter()
@@ -389,10 +399,141 @@ async fn a_task_the_lead_sends_back_wakes_the_same_member_once() {
     let uids = rig.uids(&member).await;
     assert_eq!(
         uids,
-        [format!("card:{}:1", ids[0]), format!("rework:{}:1", ids[0])]
+        [
+            format!("card:{}:1:{member}", ids[0]),
+            format!("rework:{}:1", ids[0])
+        ]
     );
     assert_eq!(
         rig.lines().await.iter().filter(|line| waits(line)).count(),
         2
     );
+}
+
+#[tokio::test]
+async fn the_next_wave_waits_for_a_failed_task_until_the_lead_skips_it() {
+    // `one` fails at every attempt; `two` is done; `three` needs only `two`, but stands
+    // in the next wave, so it waits for `one` too.
+    // The lead reads nothing, so its one line stays unanswered and the team waits.
+    let rig = Rig::new("team_barrier", |asked| match asked.lead {
+        true => Out::Hang,
+        // Its card, and the note that gives it back to its member.
+        false if asked.user.contains(": one\n") || asked.user.contains("Your last turn on") => {
+            Out::Reject
+        }
+        false => Out::Say(DONE.into()),
+    })
+    .await;
+    // Gates pass what is done, so the lead is not asked.
+    rig.state()
+        .set_thread_approvals(&rig.lead, Some(crate::config::ApprovalPolicy::FullAccess))
+        .await
+        .unwrap();
+    let gate = Some(GoalCheck::Command {
+        command: "true".into(),
+    });
+    let ids = rig
+        .plan(&[
+            NewTask {
+                key: Some("one".into()),
+                ..task("one")
+            },
+            NewTask {
+                key: Some("two".into()),
+                gate: gate.clone(),
+                ..task("two")
+            },
+            NewTask {
+                after: vec!["two".into()],
+                gate,
+                ..task("three")
+            },
+        ])
+        .await;
+    rig.run().await;
+
+    until("one failed and two is done", || async {
+        rig.status(&ids[0]).await == PlanStatus::Failed
+            && rig.status(&ids[1]).await == PlanStatus::Done
+    })
+    .await;
+    for _ in 0..3 {
+        rig.pass().await;
+    }
+    assert_eq!(rig.status(&ids[2]).await, PlanStatus::Open, "wave 2 waits");
+    let counts = rig.state().team_counts(&rig.lead).await.unwrap();
+    assert_eq!((counts.ready, counts.at_work), (0, 0));
+    let one = crate::state::short_task_id(&ids[0]).to_owned();
+    until("the lead was told", || async {
+        rig.lines().await.iter().any(|line| {
+            line.contains(&format!("#{one} ("))
+                && line.contains(", general: one) failed: ")
+                && line.ends_with("Reopen it, edit it, skip it, or stop.")
+        })
+    })
+    .await;
+    assert_eq!(rig.ended().await, None);
+
+    // The lead gives it up, as its `skip` does: the next wave starts.
+    let skipped = rig
+        .state()
+        .skip_task(&rig.lead, &ids[0], "not needed")
+        .await;
+    assert_eq!(skipped.unwrap().len(), 1);
+    rig.launcher().team_changed(&rig.lead).await;
+
+    until("the team ended", || async { rig.ended().await.is_some() }).await;
+    assert_eq!(rig.ended().await, Some(TeamEnd::Done));
+    assert_eq!(rig.status(&ids[2]).await, PlanStatus::Done);
+    until("the lead read of the end", || async {
+        rig.lines()
+            .await
+            .iter()
+            .any(|line| line.starts_with("Team ended"))
+    })
+    .await;
+    let lines = rig.lines().await;
+    let end = lines
+        .iter()
+        .find(|line| line.starts_with("Team ended"))
+        .unwrap();
+    assert!(
+        end.starts_with("Team ended: done. 2 of 3 tasks, 1 skipped;"),
+        "{end}"
+    );
+}
+
+#[tokio::test]
+async fn a_skip_takes_what_stands_behind_and_a_reopen_brings_it_back() {
+    let rig = Rig::new("team_skip", silent).await;
+    let ids = rig
+        .plan(&[
+            NewTask {
+                key: Some("a".into()),
+                ..task("a")
+            },
+            NewTask {
+                key: Some("b".into()),
+                after: vec!["a".into()],
+                ..task("b")
+            },
+        ])
+        .await;
+    let state = rig.state();
+    // Only a failed or blocked task is given up.
+    assert!(state.skip_task(&rig.lead, &ids[0], "").await.is_err());
+    state.fail_task(&rig.lead, &ids[0], "no").await.unwrap();
+    let skipped = state.skip_task(&rig.lead, &ids[0], "later").await;
+    let skipped: Vec<String> = skipped.unwrap().into_iter().map(|t| t.task_id).collect();
+    assert!(skipped.contains(&ids[0]));
+    assert!(
+        rig.task(&ids[1]).await.skipped,
+        "what stands behind goes with it"
+    );
+    let counts = state.team_counts(&rig.lead).await.unwrap();
+    assert_eq!((counts.skipped, counts.failed, counts.ready), (2, 0, 0));
+    state.reopen_task(&rig.lead, &ids[0]).await.unwrap();
+    assert!(!rig.task(&ids[0]).await.skipped);
+    assert!(!rig.task(&ids[1]).await.skipped);
+    assert_eq!(state.ready_tasks(&rig.lead).await.unwrap().len(), 1);
 }

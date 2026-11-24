@@ -82,8 +82,8 @@ pub struct OverviewView {
     pub row: usize,
     /// `s` asked "Stop team? y/n": `y` stops it, any other key answers no.
     pub stopping: bool,
-    /// The running team's budget being changed.
-    pub budget: Option<BudgetEdit>,
+    /// How many members of the running team work at once, being changed.
+    pub at_once: Option<AtOnceEdit>,
     /// The member row chosen with tab, which enter opens.
     pub member: Option<usize>,
 }
@@ -95,16 +95,15 @@ impl OverviewView {
             context,
             row: 0,
             stopping: false,
-            budget: None,
+            at_once: None,
             member: None,
         }
     }
 }
 
-/// A team's budget as four fields of text, one chosen to type into.
-pub struct BudgetEdit {
-    pub fields: [String; 4],
-    pub selected: usize,
+/// How many members of a running team work at once, stepped with left and right.
+pub struct AtOnceEdit {
+    pub at_once: u32,
     /// Why the last save was refused.
     pub error: Option<String>,
 }

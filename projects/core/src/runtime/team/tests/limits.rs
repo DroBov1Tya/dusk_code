@@ -49,7 +49,16 @@ async fn a_member_has_only_the_tools_of_the_allowlist() {
     })
     .await;
     let lead = rig.offered(&rig.lead);
-    assert!(lead.contains(&"tasks".to_owned()) && lead.contains(&"ask_agent".to_owned()));
+    // It reads to plan, and hands work out through the plan alone.
+    let has = |name: &str| lead.iter().any(|offered| offered == name);
+    assert!(
+        has("tasks") && has("read_file") && has("search_files"),
+        "{lead:?}"
+    );
+    assert!(
+        !has("ask_agent") && !has("run_command") && !has("write_file"),
+        "{lead:?}"
+    );
     // An agent the lead asks is no member and keeps an agent's tools.
     let config = rig.launcher().config.current();
     let mut agent = rig.launcher().tools("t", None, 1);
@@ -117,7 +126,7 @@ async fn with_the_switch_off_nothing_runs_and_the_lead_has_the_board() {
     .await;
     let ids = rig.plan(&[task("one")]).await;
 
-    let refused = rig.run_with(|budget| budget).await;
+    let refused = rig.try_run().await;
 
     assert!(refused.unwrap_err().to_string().contains("switched off"));
     assert_eq!(rig.pass().await, 0);
@@ -267,14 +276,10 @@ async fn a_mode_switch_for_another_chat_does_not_pause_the_team() {
     config
         .update(|config| config.set_mode("MAIN".into()))
         .unwrap();
-    let one_at_once =
-        |budget: TeamBudget| TeamBudget::new(1, budget.steps(), budget.tokens(), budget.minutes());
-    assert_eq!(
-        rig.run_with(|budget| one_at_once(budget).unwrap())
-            .await
-            .unwrap(),
-        1
-    );
+    // One at once: the team starts so before the lead's `run` goes on with it.
+    let now = crate::state::timestamp_ms().unwrap();
+    rig.state().start_team(&rig.lead, 1, now).await.unwrap();
+    assert_eq!(rig.run().await, 1);
     // The member at work is gone and its task is back: a slot is free.
     let free_a_slot = || async {
         for task in rig.state().plan(&rig.lead).await.unwrap() {
@@ -304,7 +309,7 @@ async fn a_mode_switch_for_another_chat_does_not_pause_the_team() {
     })
     .await;
     assert_eq!(rig.pass().await, 0);
-    assert!(rig.run_with(|budget| budget).await.is_err());
+    assert!(rig.try_run().await.is_err());
     assert_eq!(rig.ended().await, None);
 
     config

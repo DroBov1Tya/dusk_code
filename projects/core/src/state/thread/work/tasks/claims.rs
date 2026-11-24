@@ -10,6 +10,7 @@ use dusk_protocol::thread::GoalCheck;
 
 use super::{
     State,
+    duties::mark_behind,
     error::{PlanError, Unclaimable},
     graph::{Tx, load, locate, root_of, settle_blocks},
     plan::{
@@ -41,6 +42,8 @@ pub enum PassedBy {
     Lead,
     /// The user's `ConfirmTask`, for a `user_confirmation` gate.
     User,
+    /// The core: a fresh reviewer approved it.
+    Review,
 }
 
 /// Two entries of `files` overlap. The same rule as `files::overlaps`.
@@ -69,7 +72,7 @@ impl State {
     /// open to claimed: gives the task to `claim.owner`, if it is open, everything it
     /// depends on is done, no task holds an overlapping file, fewer than `at_once` are at
     /// work and the owner has no unfinished task. One statement, so of two claims of one
-    /// task one wins. The budget is the caller's to check.
+    /// task one wins.
     pub async fn claim_task(
         &self,
         thread: &str,
@@ -88,8 +91,10 @@ impl State {
         }
         let claimed = sqlx::query(concat!(
             "UPDATE tasks AS t SET status = 'claimed', owner_thread_id = ?3, lease_until = ?4,
-                 attempts = attempts + 1, model = ?5, waits_on = NULL, updated_at = ?6
+                 attempts = attempts + 1, model = ?5, waits_on = NULL, updated_at = ?6,
+                 resumes = resumes + (t.last_owner_thread_id IS ?3)
              WHERE t.task_id = ?1 AND t.thread_id = ?2 AND t.status = 'open'
+               AND t.skipped = 0
                AND NOT EXISTS (
                    SELECT 1 FROM json_each(t.depends_on) d
                    LEFT JOIN tasks dep ON dep.task_id = d.value AND dep.thread_id = t.thread_id
@@ -224,8 +229,9 @@ impl State {
         Ok(())
     }
 
-    /// claimed or running back to open, the owner cleared: the member's turn failed or
-    /// was stopped. At 3 attempts the task fails instead and keeps its owner.
+    /// claimed or running back to open, the owner cleared and kept as the last owner: the
+    /// member's turn failed or was stopped. At 3 attempts the task fails instead and keeps
+    /// its owner.
     pub async fn release_task(
         &self,
         thread: &str,
@@ -237,12 +243,84 @@ impl State {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         let task_id = locate(&mut transaction, &root, task).await?;
-        let released = release(&mut transaction, &root, Some(&task_id), None, note, now).await?;
+        let released = release(
+            &mut transaction,
+            &root,
+            Some(&task_id),
+            None,
+            note,
+            now,
+            true,
+        )
+        .await?;
         if released.is_empty() {
             return Err(refusal(&mut transaction, &root, &task_id, None, PlanStatus::Open).await);
         }
         settle_blocks(&mut transaction, &root, now).await?;
         finish(transaction, &root, &task_id).await
+    }
+
+    /// claimed or running back to open, the owner cleared and kept as the last owner,
+    /// without counting the attempt: what took the task away was not its member's doing (a restart, the
+    /// provider, a team that winds down). `owner` must hold it, which keeps a second
+    /// return or a claim that came between from being undone.
+    pub async fn return_task(
+        &self,
+        owner: &str,
+        task: &str,
+        note: &str,
+    ) -> Result<PlanTask, PlanError> {
+        capped("the note", note, MAX_NOTE)?;
+        let now = timestamp_ms()?;
+        let mut transaction = self.pool.begin().await?;
+        let root = root_of(&mut transaction, owner).await?;
+        let task_id = locate(&mut transaction, &root, task).await?;
+        // The claim counted the attempt; this takes it back.
+        let returned = sqlx::query(
+            "UPDATE tasks SET status = 'open', owner_thread_id = NULL, lease_until = NULL,
+                 last_owner_thread_id = owner_thread_id,
+                 attempts = MAX(attempts - 1, 0), note = ?, updated_at = ?
+             WHERE task_id = ? AND thread_id = ? AND owner_thread_id = ?
+               AND status IN ('claimed', 'running')",
+        )
+        .bind(note)
+        .bind(now)
+        .bind(&task_id)
+        .bind(&root)
+        .bind(owner)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+        if returned == 0 {
+            return Err(refusal(
+                &mut transaction,
+                &root,
+                &task_id,
+                Some(owner),
+                PlanStatus::Open,
+            )
+            .await);
+        }
+        settle_blocks(&mut transaction, &root, now).await?;
+        finish(transaction, &root, &task_id).await
+    }
+
+    /// Forgets the member that lost `task`, which is open: the next claim gives it to a
+    /// fresh member, or to that thread as a spare, with a card.
+    pub async fn forget_last_owner(&self, thread: &str, task: &str) -> Result<(), PlanError> {
+        let mut transaction = self.pool.begin().await?;
+        let root = root_of(&mut transaction, thread).await?;
+        let task_id = locate(&mut transaction, &root, task).await?;
+        sqlx::query(
+            "UPDATE tasks SET last_owner_thread_id = NULL
+             WHERE task_id = ? AND thread_id = ? AND status = 'open'",
+        )
+        .bind(&task_id)
+        .bind(&root)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(())
     }
 
     /// Releases every task of the plan whose lease ran out before `now`, as
@@ -251,6 +329,22 @@ impl State {
         &self,
         thread: &str,
         now: i64,
+    ) -> Result<Vec<PlanTask>, PlanError> {
+        self.expired(thread, now, true).await
+    }
+
+    /// Returns every task of the plan whose lease ran out before `now` to open, as
+    /// `return_task` does: the attempt is not counted and none fails. For a team that
+    /// winds down, whose members the core told to stop.
+    pub async fn return_expired(&self, thread: &str, now: i64) -> Result<Vec<PlanTask>, PlanError> {
+        self.expired(thread, now, false).await
+    }
+
+    async fn expired(
+        &self,
+        thread: &str,
+        now: i64,
+        counted: bool,
     ) -> Result<Vec<PlanTask>, PlanError> {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
@@ -261,6 +355,7 @@ impl State {
             Some(now),
             "the lease ran out",
             now,
+            counted,
         )
         .await?;
         settle_blocks(&mut transaction, &root, now).await?;
@@ -268,14 +363,16 @@ impl State {
     }
 
     /// The team ended: tasks at work go back to open, whatever their attempts, and none
-    /// fails. `attempts` is left as it is.
+    /// fails. The attempt their claim counted is taken back: the end cut their members
+    /// off, which was not the members' doing.
     pub async fn return_work(&self, thread: &str) -> Result<Vec<PlanTask>, PlanError> {
         let now = timestamp_ms()?;
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         let returned: Vec<String> = sqlx::query_scalar(
             "UPDATE tasks SET status = 'open', owner_thread_id = NULL, lease_until = NULL,
-                 updated_at = ?
+                 last_owner_thread_id = owner_thread_id,
+                 attempts = MAX(attempts - 1, 0), updated_at = ?
              WHERE thread_id = ? AND status IN ('claimed', 'running') RETURNING task_id",
         )
         .bind(now)
@@ -451,7 +548,12 @@ impl State {
             });
         }
         let held = found.waits_on == Some(WaitsOn::Lead);
+        let reviewed = matches!(found.waits_on, Some(WaitsOn::Review(_)));
         let refused = match (by, &found.gate) {
+            (PassedBy::Review, _) if reviewed => None,
+            (PassedBy::Review, _) => Some("no review of it runs"),
+            // A gate run twice, as after a stop, does not pass what a reviewer checks.
+            (PassedBy::Gate, _) if reviewed => Some("a fresh review of it runs"),
             (PassedBy::Gate, Some(GoalCheck::Command { .. })) if !held => None,
             (PassedBy::Gate, Some(GoalCheck::Command { .. })) => {
                 Some("it changed more than its files; the lead decides")
@@ -555,7 +657,9 @@ impl State {
         finish(transaction, &root, &task_id).await
     }
 
-    /// The lead's `reopen`. failed to open: the owner is cleared, `attempts` and
+    /// The lead's `reopen`. Either way the last owner is forgotten: the lead tries again,
+    /// maybe with a new brief, and a fresh member reads it from its card.
+    /// failed to open: the owner is cleared, `attempts` and
     /// `reworks` start again, and tasks blocked behind it open. blocked to open, for a
     /// task whose member is stuck: the owner is cleared. A task blocked behind a failed
     /// one is refused: it opens when that one is reopened.
@@ -578,7 +682,7 @@ impl State {
                  attempts = CASE status WHEN 'failed' THEN 0 ELSE attempts END,
                  reworks = CASE status WHEN 'failed' THEN 0 ELSE reworks END,
                  status = 'open', owner_thread_id = NULL, waits_on = NULL, note = '',
-                 updated_at = ?
+                 last_owner_thread_id = NULL, skipped = 0, updated_at = ?
              WHERE task_id = ? AND thread_id = ? AND status IN ('failed', 'blocked')",
         )
         .bind(now)
@@ -590,12 +694,20 @@ impl State {
         if moved == 0 {
             return Err(refusal(&mut transaction, &root, &task_id, None, PlanStatus::Open).await);
         }
+        // What a skip of it gave up comes back with it.
+        if found.skipped {
+            mark_behind(&mut transaction, &root, &task_id, false, now).await?;
+        }
         settle_blocks(&mut transaction, &root, now).await?;
         finish(transaction, &root, &task_id).await
     }
 }
 
 /// Takes tasks at work back: one by id, or all whose lease ended before `expired`.
+/// claimed or running back to open, or to failed at `MAX_ATTEMPTS`.
+/// The owner is kept as the last owner, which may be given the task back, unless its
+/// lease ran out: a member that hung, which the core cuts off, is not. Not `counted`, the
+/// attempt the claim counted is taken back and none fails.
 async fn release(
     transaction: &mut Tx<'_>,
     root: &str,
@@ -603,11 +715,14 @@ async fn release(
     expired: Option<i64>,
     note: &str,
     now: i64,
+    counted: bool,
 ) -> Result<Vec<String>, PlanError> {
     Ok(sqlx::query_scalar(
         "UPDATE tasks SET
-             status = CASE WHEN attempts >= ?1 THEN 'failed' ELSE 'open' END,
-             owner_thread_id = CASE WHEN attempts >= ?1 THEN owner_thread_id END,
+             status = CASE WHEN ?7 AND attempts >= ?1 THEN 'failed' ELSE 'open' END,
+             owner_thread_id = CASE WHEN ?7 AND attempts >= ?1 THEN owner_thread_id END,
+             last_owner_thread_id = CASE WHEN ?6 IS NULL THEN owner_thread_id END,
+             attempts = CASE WHEN ?7 THEN attempts ELSE MAX(attempts - 1, 0) END,
              lease_until = NULL, note = ?2, updated_at = ?3
          WHERE thread_id = ?4 AND status IN ('claimed', 'running')
            AND (?5 IS NULL OR task_id = ?5) AND (?6 IS NULL OR lease_until < ?6)
@@ -619,6 +734,7 @@ async fn release(
     .bind(root)
     .bind(task_id)
     .bind(expired)
+    .bind(counted)
     .fetch_all(&mut **transaction)
     .await?)
 }

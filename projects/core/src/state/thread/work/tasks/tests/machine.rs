@@ -103,7 +103,8 @@ fn legal(from: From, mv: Move, task: &mut PlanTask) -> bool {
         }
         (From::Claimed | From::Running, Move::Release) => {
             task.status = Open;
-            task.owner_thread_id = None;
+            // The member that lost it is kept: the next claim may give it back.
+            task.last_owner_thread_id = task.owner_thread_id.take();
             task.lease_until = None;
             task.note = "stopped".to_owned();
         }
@@ -148,11 +149,13 @@ fn legal(from: From, mv: Move, task: &mut PlanTask) -> bool {
             }
             task.status = Open;
             task.owner_thread_id = None;
+            task.last_owner_thread_id = None;
             task.waits_on = None;
             task.note = String::new();
         }
         (From::Open | From::BlockedBehind, Move::Edit) => {
             task.description = "new words".to_owned();
+            task.last_owner_thread_id = None;
         }
         (From::Open, Move::BoardComplete) => task.status = Done,
         (From::Done, Move::BoardComplete) => {}

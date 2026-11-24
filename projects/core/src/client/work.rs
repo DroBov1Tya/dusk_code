@@ -5,7 +5,7 @@ use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, WorkRequest},
     project::{Change, FileChange, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanPage, Team, TeamBudget},
+    thread::{JobInfo, LogEntry, Overview, PlanPage, Team},
 };
 
 /// A thread's background jobs and sources.
@@ -154,13 +154,13 @@ impl Work<'_> {
             .await
     }
 
-    /// Gives the chat's running team `budget`, within the ceilings of the settings.
-    pub async fn set_team_budget(&self, thread_id: &str, budget: TeamBudget) -> Result<()> {
+    /// Sets how many members of the chat's running team work at once, 1 to the setting's.
+    pub async fn set_team_at_once(&self, thread_id: &str, at_once: u32) -> Result<()> {
         let thread_id = thread_id.to_owned();
         self.0
-            .done(Request::Work(WorkRequest::SetTeamBudget {
+            .done(Request::Work(WorkRequest::SetTeamAtOnce {
                 thread_id,
-                budget,
+                at_once,
             }))
             .await
     }

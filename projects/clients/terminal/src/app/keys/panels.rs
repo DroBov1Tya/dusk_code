@@ -3,11 +3,11 @@
 use super::EFFORTS;
 use crate::app::{
     Action, App, Panel,
-    panels::{BudgetEdit, Connection, ModelRow, Preset, SecretEntry, step},
+    panels::{AtOnceEdit, Connection, ModelRow, Preset, SecretEntry, step},
     schedule::ScheduleAction,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dusk_protocol::{client::Command, release::InstallStage, thread::TeamBudget};
+use dusk_protocol::{client::Command, release::InstallStage, thread::MAX_TEAM_AT_ONCE};
 
 impl App {
     pub(super) fn panel_key(&mut self, key: KeyEvent) -> Action {
@@ -425,26 +425,24 @@ impl App {
             }
             Panel::Overview(view) => {
                 let team = self.team.as_ref().filter(|team| team.ended().is_none());
-                if let Some(edit) = &mut view.budget {
-                    match key.code {
-                        KeyCode::Esc => view.budget = None,
-                        KeyCode::Up | KeyCode::BackTab => edit.selected = (edit.selected + 3) % 4,
-                        KeyCode::Down | KeyCode::Tab => edit.selected = (edit.selected + 1) % 4,
-                        KeyCode::Backspace => {
-                            edit.fields[edit.selected].pop();
+                if let Some(edit) = &mut view.at_once {
+                    // The protocol's most bounds the stepper; the core holds it to the
+                    // settings and says so under it.
+                    let by = match key.code {
+                        KeyCode::Esc => {
+                            view.at_once = None;
+                            return Action::None;
                         }
-                        KeyCode::Char(c) if c.is_ascii_alphanumeric() || c == '.' => {
-                            edit.fields[edit.selected].push(c);
-                        }
-                        KeyCode::Enter => {
-                            let texts = edit.fields.each_ref().map(String::as_str);
-                            match TeamBudget::read(texts) {
-                                Ok(budget) => return Action::SetTeamBudget(budget),
-                                Err(error) => edit.error = Some(format!("{error:#}")),
-                            }
-                        }
-                        _ => {}
-                    }
+                        KeyCode::Enter => return Action::SetTeamAtOnce(edit.at_once),
+                        KeyCode::Left | KeyCode::Down | KeyCode::Char('-') => -1,
+                        KeyCode::Right | KeyCode::Up | KeyCode::Char('+' | '=') => 1,
+                        _ => 0,
+                    };
+                    edit.at_once = edit
+                        .at_once
+                        .saturating_add_signed(by)
+                        .clamp(1, MAX_TEAM_AT_ONCE);
+                    edit.error = None;
                     return Action::None;
                 }
                 // `s` asks "Stop team? y/n": only `y` stops, and any other key, `s` held
@@ -475,10 +473,9 @@ impl App {
                     // Any other key answers no, and does nothing else.
                     _ if stopping => {}
                     (KeyCode::Char('s'), Some(_)) => view.stopping = true,
-                    (KeyCode::Char('b'), Some(team)) => {
-                        view.budget = Some(BudgetEdit {
-                            fields: team.budget.fields(),
-                            selected: 0,
+                    (KeyCode::Char('a'), Some(team)) => {
+                        view.at_once = Some(AtOnceEdit {
+                            at_once: team.at_once,
                             error: None,
                         });
                     }
@@ -540,8 +537,7 @@ fn scroll(row: &mut usize, code: KeyCode, up: bool, down: bool) -> bool {
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent};
     use dusk_protocol::thread::{
-        ContextReport, Overview, TaskStatus, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus,
-        TeamUsed,
+        ContextReport, Overview, TaskStatus, Team, TeamEnd, TeamMember, TeamStatus, TeamUsed,
     };
 
     use crate::app::{Action, App, OverviewView, Panel, tabs::tests::app};
@@ -553,16 +549,19 @@ mod tests {
             role: None,
             model: None,
             task_id: format!("task-{thread}"),
+            summary: String::new(),
             status: TaskStatus::Running,
         };
         Team {
             thread_id: "lead".into(),
             status,
-            budget: TeamBudget::new(3, 400, 4_000_000, 120).unwrap(),
+            at_once: 3,
             used: TeamUsed::default(),
             members: vec![member("m1"), member("m2")],
             started_at: None,
             ended_at: None,
+            winding_since: None,
+            goal: String::new(),
         }
     }
 
@@ -614,27 +613,29 @@ mod tests {
         assert!(ended.panel.is_none());
     }
 
-    /// `b` opens the budget in its fields; what is typed is read back by the protocol.
+    /// `a` opens members at once on the team's own; left and right step it within the
+    /// protocol's bounds, enter saves, esc leaves it.
     #[test]
-    fn the_budget_is_edited_field_by_field() {
+    fn members_at_once_step_and_save() {
         let mut app = overview(TeamStatus::Running);
-        press(&mut app, KeyCode::Char('b'));
-        press(&mut app, KeyCode::Down);
-        press(&mut app, KeyCode::Char('0'));
-        let Action::SetTeamBudget(budget) = press(&mut app, KeyCode::Enter) else {
-            panic!("no budget to save");
-        };
-        assert_eq!(budget.steps(), 4_000);
-        press(&mut app, KeyCode::Char('x'));
-        assert!(matches!(press(&mut app, KeyCode::Enter), Action::None));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Right);
+        assert!(matches!(
+            press(&mut app, KeyCode::Enter),
+            Action::SetTeamAtOnce(4)
+        ));
+        for _ in 0..12 {
+            press(&mut app, KeyCode::Left);
+        }
+        assert!(matches!(
+            press(&mut app, KeyCode::Enter),
+            Action::SetTeamAtOnce(1)
+        ));
+        press(&mut app, KeyCode::Esc);
         let Some(Panel::Overview(view)) = &app.panel else {
             panic!("the Overview closed");
         };
-        assert!(
-            view.budget
-                .as_ref()
-                .is_some_and(|edit| edit.error.is_some())
-        );
+        assert!(view.at_once.is_none());
     }
 
     /// Tab chooses a member and enter opens its chat.
@@ -653,7 +654,7 @@ mod tests {
 #[cfg(test)]
 mod team_tests {
     use dusk_protocol::thread::{
-        TaskStatus, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed, ThreadEvent,
+        TaskStatus, Team, TeamEnd, TeamMember, TeamStatus, TeamUsed, ThreadEvent,
     };
 
     use crate::app::tabs::tests::app;
@@ -662,7 +663,7 @@ mod team_tests {
         Team {
             thread_id: "lead".into(),
             status,
-            budget: TeamBudget::new(2, 100, 1_000_000, 60).unwrap(),
+            at_once: 2,
             used: TeamUsed::default(),
             members: members
                 .iter()
@@ -672,11 +673,14 @@ mod team_tests {
                     role: None,
                     model: None,
                     task_id: (*task).into(),
+                    summary: String::new(),
                     status: *status,
                 })
                 .collect(),
             started_at: None,
             ended_at: None,
+            winding_since: None,
+            goal: String::new(),
         }
     }
 

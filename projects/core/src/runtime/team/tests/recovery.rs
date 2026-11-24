@@ -14,10 +14,9 @@ use crate::{
 async fn stopped_after_the_thread(rig: &Rig) -> (String, String) {
     let ids = rig.plan(&[task("one")]).await;
     let now = timestamp_ms().unwrap();
-    let limits = rig.launcher().config.current().limits();
-    let ceilings = TeamCeilings::from_limits(&limits).unwrap();
+    let at_once = crate::runtime::team::at_once_setting(&rig.launcher().config.current().limits());
     rig.state()
-        .start_team(&rig.lead, ceilings.budget(), ceilings, now)
+        .start_team(&rig.lead, at_once, now)
         .await
         .unwrap();
     let paths = &rig.launcher().paths;
@@ -50,7 +49,7 @@ async fn a_stop_between_the_thread_and_the_claim_leaves_a_thread_the_next_pass_t
     })
     .await;
     assert_eq!(rig.task(&id).await.owner_thread_id, Some(made.clone()));
-    assert_eq!(rig.uids(&made).await, [format!("card:{id}:1")]);
+    assert_eq!(rig.uids(&made).await, [format!("card:{id}:1:{made}")]);
 }
 
 #[tokio::test]
@@ -76,7 +75,7 @@ async fn a_stop_between_the_claim_and_the_card_delivers_the_card_once() {
     })
     .await;
     assert_eq!(rig.members().await, [made.as_str()], "no second member");
-    assert_eq!(rig.uids(&made).await, [format!("card:{id}:1")]);
+    assert_eq!(rig.uids(&made).await, [format!("card:{id}:1:{made}")]);
     assert_eq!(rig.turns(&made).await, (1, false), "the task ran once");
     assert_eq!(rig.task(&id).await.attempts, 1);
 }
@@ -111,7 +110,7 @@ async fn a_claimed_task_nobody_works_on_reopens_when_its_lease_runs_out() {
         (2, Some(made.clone()))
     );
     assert_eq!(rig.members().await, [made.as_str()]);
-    assert_eq!(rig.uids(&made).await, [format!("card:{id}:2")]);
+    assert_eq!(rig.uids(&made).await, [format!("card:{id}:2:{made}")]);
 }
 
 /// A member's task as a stop of the core leaves it right after its turn ended: the
@@ -140,17 +139,19 @@ async fn stopped_after_the_turn(rig: &Rig, outcome: TurnOutcome) -> (String, Str
 #[tokio::test]
 async fn a_task_whose_turn_a_stop_cut_off_returns_to_the_pool_exactly_once() {
     let rig = Rig::new("team_settle_lost", hang).await;
-    let (id, dead) = stopped_after_the_turn(&rig, TurnOutcome::Interrupted(None)).await;
+    let (id, cut) = stopped_after_the_turn(&rig, TurnOutcome::Interrupted(None)).await;
     let fresh = restarted(&rig);
 
     fresh.team_settle(&rig.lead).await;
 
-    // Released and given out again in the same breath, to a thread that has read
-    // nothing; the dead member's thread is not started again.
+    // Released and given out again in the same breath, back to the member the restart
+    // cut off, which goes on from its transcript with a resume note. The restart, not
+    // the member, cut the turn off: that attempt is not counted.
     let task = rig.task(&id).await;
-    assert_eq!(task.attempts, 2);
-    assert!(task.owner_thread_id.is_some() && task.owner_thread_id != Some(dead.clone()));
-    assert_eq!(rig.turns(&dead).await, (1, false));
+    assert_eq!((task.attempts, task.resumes), (1, 1));
+    assert_eq!(task.owner_thread_id, Some(cut.clone()));
+    let card = format!("card:{id}:1:{cut}");
+    assert_eq!(rig.uids(&cut).await, [card, format!("resume:{id}:1")]);
 
     // Settling again finds nothing left by a stopped core: the task is not released
     // a second time.
@@ -159,9 +160,9 @@ async fn a_task_whose_turn_a_stop_cut_off_returns_to_the_pool_exactly_once() {
     let again = rig.task(&id).await;
     assert_eq!(
         (again.attempts, again.owner_thread_id),
-        (2, task.owner_thread_id)
+        (1, task.owner_thread_id)
     );
-    assert_eq!(rig.members().await.len(), 2);
+    assert_eq!(rig.members().await, [cut.as_str()]);
 }
 
 #[tokio::test]

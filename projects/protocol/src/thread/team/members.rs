@@ -2,7 +2,7 @@
 //! and how its task stands.
 
 use super::{Team, plan::find_task, roster::role_name};
-use crate::thread::{Task, TaskStatus};
+use crate::thread::{Task, TaskStatus, TeamMember};
 
 /// One member as a row shows it. The task's words are model text: plain text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,12 +61,21 @@ impl Team {
                     name: member.name.clone(),
                     role: role_name(member.role.as_deref()).to_owned(),
                     model: model.map(short_model),
-                    task: task.map(|(number, task)| task.numbered(number)),
+                    task: task
+                        .map(|(number, task)| task.numbered(number))
+                        .or_else(|| member.summary()),
                     spend: task.and_then(|(_, task)| task.spend()),
                     status: member.status,
                 }
             })
             .collect()
+    }
+}
+
+impl TeamMember {
+    /// What it does when the plan does not say: the core's summary, if it wrote one.
+    pub fn summary(&self) -> Option<String> {
+        (!self.summary.is_empty()).then(|| self.summary.clone())
     }
 }
 
@@ -81,7 +90,7 @@ pub fn short_model(model: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thread::{TeamBudget, TeamMember, TeamStatus, TeamUsed};
+    use crate::thread::{TeamStatus, TeamUsed};
 
     #[test]
     fn a_member_row_names_its_task_model_and_spend() {
@@ -107,12 +116,13 @@ mod tests {
             role: role.map(Into::into),
             model: None,
             task_id: task.into(),
+            summary: String::new(),
             status: TaskStatus::Running,
         };
         let team = Team {
             thread_id: "lead".into(),
             status: TeamStatus::Running,
-            budget: TeamBudget::new(2, 100, 1_000, 10).unwrap(),
+            at_once: 2,
             used: TeamUsed::default(),
             members: vec![
                 member("m2", "t2", Some("backend-engineer")),
@@ -120,6 +130,8 @@ mod tests {
             ],
             started_at: None,
             ended_at: None,
+            winding_since: None,
+            goal: String::new(),
         };
         let rows = team.member_rows(&tasks);
         assert_eq!(rows[0].task.as_deref(), Some("#2 Remove expired entries"));
@@ -131,5 +143,31 @@ mod tests {
             (rows[1].task.as_deref(), rows[1].detail()),
             (None, "general".into())
         );
+    }
+
+    #[test]
+    fn a_member_whose_task_the_plan_lacks_shows_the_cores_summary() {
+        let team = Team {
+            thread_id: "lead".into(),
+            status: TeamStatus::Running,
+            at_once: 1,
+            used: TeamUsed::default(),
+            members: vec![TeamMember {
+                thread_id: "m1".into(),
+                name: "Ember-0c".into(),
+                role: Some("code-reviewer".into()),
+                model: None,
+                task_id: "t9".into(),
+                summary: "review of #77aa01bc".into(),
+                status: TaskStatus::Running,
+            }],
+            started_at: None,
+            ended_at: None,
+            winding_since: None,
+            goal: String::new(),
+        };
+        let rows = team.member_rows(&[]);
+        assert_eq!(rows[0].task.as_deref(), Some("review of #77aa01bc"));
+        assert_eq!(rows[0].line(), "review of #77aa01bc \u{00B7} code-reviewer");
     }
 }

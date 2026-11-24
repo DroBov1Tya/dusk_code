@@ -927,11 +927,7 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .ov-segs { display: flex; gap: 2px; margin: 12px 0 4px; }
 .ov-segs i { min-width: 3px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--fg) 14%, transparent); }
 .ov-segs i.done { background: var(--good); } .ov-segs i.run { background: var(--accent); } .ov-segs i.block { background: var(--warn); }
-.ov-budget { display: grid; grid-template-columns: 64px 1fr 96px; gap: 8px; align-items: center; height: 24px; font-size: 12.5px; color: var(--muted); }
-.ov-budget .num { text-align: right; }
-.ov-track { height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--fg) 14%, transparent); overflow: hidden; }
-.ov-track i { display: block; height: 100%; background: var(--fg2); border-radius: 2px; }
-.ov-track i.near { background: var(--warn); }
+.ov-used { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
 .ov-row { height: 32px; display: flex; align-items: center; gap: 8px; font-size: 13.75px; }
 .ov-row + .ov-row { border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
 .ov-row .name { font-weight: 500; }
@@ -942,8 +938,8 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .ov-member-text .name { font-weight: 500; }
 .ov-member-text .cut { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
-.ov-budget-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s2); }
-.ov-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.ov-at-once { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font-size: 12.5px; }
+.ov-at-once b { min-width: 24px; text-align: center; font-weight: 500; }
 .ov-row .live { color: var(--accent); } .ov-row .good { color: var(--good); } .ov-row .warn { color: var(--warn); } .ov-row .bad { color: var(--bad); }
 .ov-glyph { display: flex; } .ov-glyph .glyph { width: 14px; height: 14px; }
 .ov-glyph.muted { color: var(--muted); }

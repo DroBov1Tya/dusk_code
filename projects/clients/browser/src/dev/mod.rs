@@ -11,8 +11,8 @@ use crate::{
 use dusk_protocol::{
     model::{ModelEvent, ToolCall},
     thread::{
-        Message, MessageRole, Task, TaskStatus, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus,
-        TeamUsed, ThreadEvent, Turn, TurnStatus, agent_name, team_call_id,
+        Message, MessageRole, Task, TaskStatus, Team, TeamEnd, TeamMember, TeamStatus, TeamUsed,
+        ThreadEvent, Turn, TurnStatus, agent_name, team_call_id,
     },
     tools::ToolResult,
 };
@@ -211,18 +211,16 @@ fn team(chat: &mut ChatData, ended: bool, now: i64) {
             model: Some("chatgpt/gpt-5.5".into()),
             task_id: format!("t{number}"),
             status,
+            summary: String::new(),
         })
         .collect();
-    let Ok(budget) = TeamBudget::new(3, 400, 4_000_000, 120) else {
-        return;
-    };
     chat.apply(ThreadEvent::Team(Team {
         thread_id: CHAT.into(),
         status: match ended {
-            true => TeamStatus::Ended(TeamEnd::Steps),
+            true => TeamStatus::Ended(TeamEnd::Done),
             false => TeamStatus::Running,
         },
-        budget,
+        at_once: 3,
         used: TeamUsed {
             at_once: if ended { 0 } else { 2 },
             steps: 182,
@@ -233,6 +231,8 @@ fn team(chat: &mut ChatData, ended: bool, now: i64) {
         // Started 72 seconds ago, as the card the owner drew: "1m 12s".
         started_at: Some(now - 72_000),
         ended_at: ended.then_some(now - 5_000),
+        winding_since: None,
+        goal: String::new(),
     }));
 }
 

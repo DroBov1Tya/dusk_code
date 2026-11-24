@@ -30,15 +30,16 @@ pub use thread::{MEMBER_SOURCE, short_task_id, slim_pull};
 // `tasks` tool (L1); until they land only its tests use these.
 #[allow(unused_imports)]
 pub use thread::{
-    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_NOTE,
-    MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
-    PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, overlaps,
+    BlockedOn, Claim, Duty, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_GOAL,
+    MAX_NOTE, MAX_OPEN_TASKS, MAX_RESULT, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy,
+    PlanError, PlanStatus, PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, current_wave,
+    overlaps, waves,
 };
 // The team's store. Its callers are the team's runtime (T1), serving (P1) and recovery
 // (R1); until they land only its tests use these.
 #[allow(unused_imports)]
 pub use thread::{
-    BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamCounts, TeamError, TeamRun,
+    TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun, WindWhy, Winding, member_summary,
 };
 pub use usage::{ItemUsage, KIND_MCP_TOOL, KIND_SKILL};
 

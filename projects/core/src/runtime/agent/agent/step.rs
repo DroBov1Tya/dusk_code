@@ -42,7 +42,7 @@ impl Agent {
     ) -> Result<StepEnd> {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config_now().await;
-        // A team's member steps only while it holds its task and the team has budget.
+        // A team's member steps only while it holds its task and the team runs.
         crate::runtime::team::may_step(&self.state, &config, &self.thread_id, self.depth).await?;
         let stub_results = config.limits().stub_results;
         let mut conversation = Loaded::take(loaded, self, stub_results).await?;

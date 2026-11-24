@@ -70,7 +70,7 @@ named! {
     R::Work(W::Events { .. }) => "work.events",
     R::Work(W::ConfirmTask { .. }) => "work.confirm_task",
     R::Work(W::StopTeam { .. }) => "work.stop_team",
-    R::Work(W::SetTeamBudget { .. }) => "work.set_team_budget",
+    R::Work(W::SetTeamAtOnce { .. }) => "work.set_team_at_once",
     R::Settings(S::ContextPolicy(_)) => "settings.context_policy",
     R::Settings(S::MaxAgentsAtWork(_)) => "settings.max_agents_at_work",
     R::Settings(S::IdleScreenMinutes(_)) => "settings.idle_screen_minutes",

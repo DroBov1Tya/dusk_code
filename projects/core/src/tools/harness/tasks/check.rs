@@ -14,12 +14,14 @@ use crate::{
     config::Effort,
     project::plain_relative,
     runtime::tiers::Tier as ModelTier,
-    state::{GoalCheck, MAX_FILES, NewTask, TaskEdit, TaskFiles},
+    state::{GoalCheck, MAX_FILES, NewTask, TaskEdit, TaskFiles, overlaps},
     tools::{ToolContext, ToolScope},
 };
 
 /// Known roles named in a refusal at most.
 const MAX_NAMED_ROLES: usize = 24;
+/// The role of a task that reads and changes nothing, so it needs no files.
+pub const SCOUT_ROLE: &str = "scout";
 
 /// A task as the lead writes it, in `add` or in `edit`. A field left out of an `edit`
 /// stays as it is.
@@ -58,10 +60,33 @@ pub async fn new_tasks(
     agents: &Agents,
 ) -> Result<Vec<NewTask>> {
     refuse_key_loop(&entries)?;
+    let labels: Vec<String> = entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| entry.label(index))
+        .collect();
+    let reach = reach(&entries);
     let mut tasks = Vec::with_capacity(entries.len());
     for (index, entry) in entries.into_iter().enumerate() {
         let label = entry.label(index);
         let parts = parts(&entry, context.scope.as_ref()).with_context(|| label.clone())?;
+        ensure!(
+            entry
+                .accept
+                .as_deref()
+                .is_some_and(|accept| !accept.trim().is_empty()),
+            "{label} needs accept: how to tell it is done"
+        );
+        let scout = parts.role.as_deref() == Some(SCOUT_ROLE);
+        let no_files = parts
+            .files
+            .as_ref()
+            .is_none_or(|files| files.entries().is_empty());
+        ensure!(
+            scout || !no_files,
+            "{label} needs files (Yours); a task that changes nothing is a scout task \
+             (role scout)"
+        );
         tasks.push(NewTask {
             key: entry.key,
             description: entry.text,
@@ -76,12 +101,85 @@ pub async fn new_tasks(
             effort: entry.effort,
         });
     }
+    refuse_shared_files(&tasks, &labels, &reach)?;
     let roles: Vec<&str> = tasks
         .iter()
         .filter_map(|task| task.role.as_deref())
         .collect();
     known_roles(&roles, context, agents).await?;
     Ok(tasks)
+}
+
+/// Two tasks of one add that share a file and could run at once: neither is `after` the
+/// other through the keys of the add. The claim would hold one back anyway; refused here,
+/// the lead decides which order it is.
+fn refuse_shared_files(tasks: &[NewTask], labels: &[String], reach: &[Vec<bool>]) -> Result<()> {
+    for (first, mine) in tasks.iter().enumerate() {
+        for (second, theirs) in tasks.iter().enumerate().skip(first + 1) {
+            if reach[first][second] || reach[second][first] {
+                continue;
+            }
+            let shared = mine.files.entries().iter().find_map(|entry| {
+                theirs
+                    .files
+                    .entries()
+                    .iter()
+                    .find(|other| overlaps(entry, other))
+                    .map(|other| {
+                        if entry.len() >= other.len() {
+                            entry
+                        } else {
+                            other
+                        }
+                    })
+            });
+            if let Some(path) = shared {
+                bail!(
+                    "{} and {} share {}; give it to one, or put one after the other",
+                    labels[first],
+                    labels[second],
+                    plain(path, 80)
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `reach[a][b]`: task `a` of the add stands after task `b`, through keys of the add.
+fn reach(entries: &[TaskArguments]) -> Vec<Vec<bool>> {
+    let edges = key_edges(entries);
+    let mut reach = vec![vec![false; entries.len()]; entries.len()];
+    for (start, row) in reach.iter_mut().enumerate() {
+        let mut stack = edges[start].clone();
+        while let Some(at) = stack.pop() {
+            if !row[at] {
+                row[at] = true;
+                stack.extend(&edges[at]);
+            }
+        }
+    }
+    reach
+}
+
+/// For each task of an add, the tasks of the same add it names in `after`, by index.
+fn key_edges(entries: &[TaskArguments]) -> Vec<Vec<usize>> {
+    let keys: HashMap<&str, usize> = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| Some((entry.key.as_deref()?, index)))
+        .collect();
+    entries
+        .iter()
+        .map(|entry| {
+            entry
+                .after
+                .iter()
+                .flatten()
+                .filter_map(|after| keys.get(after.as_str()).copied())
+                .collect()
+        })
+        .collect()
 }
 
 /// What an `edit` changes, checked as `add` checks it.
@@ -246,22 +344,7 @@ async fn known_roles(roles: &[&str], context: &ToolContext, agents: &Agents) -> 
 /// A loop among the keys of one `add`. Tasks already in the plan cannot depend on new
 /// ones, so this is every loop an `add` can make; named by keys, which the lead knows.
 fn refuse_key_loop(entries: &[TaskArguments]) -> Result<()> {
-    let keys: HashMap<&str, usize> = entries
-        .iter()
-        .enumerate()
-        .filter_map(|(index, entry)| Some((entry.key.as_deref()?, index)))
-        .collect();
-    let edges: Vec<Vec<usize>> = entries
-        .iter()
-        .map(|entry| {
-            entry
-                .after
-                .iter()
-                .flatten()
-                .filter_map(|after| keys.get(after.as_str()).copied())
-                .collect()
-        })
-        .collect();
+    let edges = key_edges(entries);
     // 0 not seen, 1 on the path, 2 done.
     let mut seen = vec![0u8; entries.len()];
     for start in 0..entries.len() {

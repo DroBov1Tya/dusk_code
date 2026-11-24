@@ -1,6 +1,6 @@
 //! A plan's tasks in the words, glyphs and tones every client shows.
 
-use crate::thread::{Task, TaskStatus, Tone, plural};
+use crate::thread::{Task, TaskDuty, TaskStatus, Tone, plural};
 
 impl TaskStatus {
     /// Given out or running: a member works on it.
@@ -45,6 +45,44 @@ impl Task {
     /// "#3 Remove expired entries in get()", numbered as the plan's rows are.
     pub fn numbered(&self, number: usize) -> String {
         format!("#{number} {}", self.title())
+    }
+
+    /// Done, or given up by the lead: the next wave does not wait for it.
+    pub fn finished(&self) -> bool {
+        self.status == TaskStatus::Done || self.skipped
+    }
+
+    /// How its fresh review stands, as a chip beside it: "reviewing", "reviewed",
+    /// "review: fix", "review failed", numbered from the second review on ("review 2 ·
+    /// fix"). `None` for a task no reviewer took up.
+    pub fn review_word(&self, tasks: &[Task]) -> Option<String> {
+        let reviews: Vec<&Task> = tasks
+            .iter()
+            .filter(|row| {
+                row.duty == TaskDuty::Review && row.review_of.as_deref() == Some(&self.task_id)
+            })
+            .collect();
+        let last = reviews
+            .iter()
+            .max_by_key(|row| (row.created_at, &row.task_id))?;
+        let verdict = last
+            .result
+            .lines()
+            .rev()
+            .find_map(|line| line.strip_prefix("Verdict:"))
+            .map(|word| word.trim().trim_end_matches('.').to_ascii_lowercase());
+        let word = match (last.status, verdict.as_deref()) {
+            (TaskStatus::Done, Some("approve" | "approved")) => "reviewed",
+            (TaskStatus::Done, Some("fix")) => "review: fix",
+            (TaskStatus::Done, _) => "review: no verdict",
+            (TaskStatus::Failed, _) => "review failed",
+            _ if last.skipped => "review failed",
+            _ => "reviewing",
+        };
+        Some(match reviews.len() {
+            1 => word.to_owned(),
+            count => format!("{word} \u{00B7} {count}"),
+        })
     }
 
     /// "31 steps · 204k tokens", or none before it spent anything.
