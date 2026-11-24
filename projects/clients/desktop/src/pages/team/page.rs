@@ -137,6 +137,18 @@ fn team(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let related = Related::of(page.pick(), chat.team.as_ref(), &chat.tasks);
     let mut body = div().flex().flex_col();
     if let Some(team) = &chat.team {
+        // What the lead ran it toward: model text, one plain line.
+        let goal = team.goal.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !goal.is_empty() {
+            body = body.child(
+                div()
+                    .pb_1()
+                    .small()
+                    .text_color(foreground.opacity(0.85))
+                    .line_clamp(2)
+                    .child(format!("Goal: {goal}")),
+            );
+        }
         // What it used, shown and never a limit; then how many work at once.
         let at_once = format!("{} of {} at once", team.used.at_once, team.at_once);
         body = body.child(

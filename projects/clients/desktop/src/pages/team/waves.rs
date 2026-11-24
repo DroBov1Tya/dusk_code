@@ -6,7 +6,8 @@
 use std::{collections::HashMap, time::Instant};
 
 use dusk_protocol::thread::{
-    GoalCheck, Subagent, Task, TaskStatus, duration_words, role_name, short_model, team_layout,
+    GoalCheck, Subagent, Task, TaskDuty, TaskStatus, duration_words, role_name, short_model,
+    team_layout,
 };
 use gpui_kit::{
     component::{
@@ -81,11 +82,12 @@ impl Folds {
     }
 }
 
-/// The wave in work: the first that holds a task not done.
+/// The wave in work: the first that holds a task not done or skipped, as the core gives
+/// out one wave at a time.
 fn current(tasks: &[Task], waves: &[Vec<usize>]) -> Option<usize> {
     waves
         .iter()
-        .position(|wave| wave.iter().any(|&at| tasks[at].status != TaskStatus::Done))
+        .position(|wave| wave.iter().any(|&at| !tasks[at].finished()))
 }
 
 /// Its review waits for the user's confirmation.
@@ -94,11 +96,12 @@ pub fn for_user(task: &Task) -> bool {
 }
 
 /// "2 running · 2 done · 1 needs you", the last part brighter, behind the accent's dot.
+/// The lead's tasks only: a review rides on its task, and the critic is the core's.
 pub fn summary(tasks: &[Task], cx: &App) -> Div {
     let theme = cx.theme();
-    let running = tasks.iter().filter(|task| task.status.at_work()).count();
-    let done = tasks
-        .iter()
+    let work = || tasks.iter().filter(|task| task.duty == TaskDuty::Work);
+    let running = work().filter(|task| task.status.at_work()).count();
+    let done = work()
         .filter(|task| task.status == TaskStatus::Done)
         .count();
     let need = tasks.iter().filter(|task| for_user(task)).count();
@@ -253,6 +256,11 @@ fn wave_block(
         .iter()
         .filter(|&&at| tasks[at].status == TaskStatus::Done)
         .count();
+    // The critic stands alone past the last wave: it is the check, not a wave of work.
+    let name = match wave.iter().all(|&at| tasks[at].duty == TaskDuty::Critic) {
+        true => "Check".to_owned(),
+        false => format!("Wave {}", index + 1),
+    };
     let (of, chat) = (view.of, chat_id.to_owned());
     let head = div()
         .id(SharedString::from(format!("{}-wave-{index}", view.key)))
@@ -280,7 +288,7 @@ fn wave_block(
                 .flex_1()
                 .small()
                 .text_color(theme.foreground.opacity(0.8))
-                .child(format!("Wave {}", index + 1)),
+                .child(name),
         )
         .child(
             div()
@@ -310,7 +318,7 @@ fn wave_block(
     if open {
         let mut rows = div().flex().flex_col().pb_2();
         for &at in wave {
-            rows = rows.child(task_block(chat_id, &tasks[at], agents, view, cx));
+            rows = rows.child(task_block(chat_id, tasks, at, agents, view, cx));
         }
         block = block.child(widgets::unfold(
             SharedString::from(format!("{}-wave-body-{index}", view.key)),
@@ -333,22 +341,43 @@ pub fn run_of<'a>(
 
 fn task_block(
     chat_id: &str,
-    task: &Task,
+    tasks: &[Task],
+    at: usize,
     agents: &std::collections::BTreeMap<String, Subagent>,
     view: &View,
     cx: &mut Context<Workspace>,
 ) -> Div {
+    let task = &tasks[at];
     let theme = cx.theme();
     let (muted, hover) = (theme.muted_foreground, theme.list_hover);
     let open = view.folds.task_open(chat_id, &task.task_id);
     let run = run_of(task, agents);
+    let review = task.review_word(tasks);
     // Only what needs a look carries a word, in its colour; the rest a time or nothing.
+    // A task the lead gave up says so, quietly; a review in work or asking for a fix
+    // shows as a chip beside the task it checks.
     let right = match task.status {
-        TaskStatus::Failed => Some(("failed", theme.danger)),
-        TaskStatus::Blocked => Some(("blocked", theme.warning)),
-        _ if for_user(task) => Some(("confirm", theme.primary)),
+        _ if task.skipped => Some(("skipped".to_owned(), muted)),
+        TaskStatus::Failed => Some(("failed".to_owned(), theme.danger)),
+        TaskStatus::Blocked => Some(("blocked".to_owned(), theme.warning)),
+        _ if for_user(task) => Some(("confirm".to_owned(), theme.primary)),
         _ => None,
     };
+    let chip = review.filter(|_| right.is_none()).map(|word| {
+        let color = match word.starts_with("reviewed") {
+            true => muted,
+            false if word.starts_with("reviewing") => theme.primary,
+            false => theme.warning,
+        };
+        div()
+            .flex_none()
+            .px_1p5()
+            .rounded_sm()
+            .bg(color.opacity(0.12))
+            .text_color(color)
+            .meta()
+            .child(word)
+    });
     let right = match right {
         Some((word, color)) => Some(div().text_color(color).child(word)),
         None => match task.status {
@@ -392,11 +421,14 @@ fn task_block(
                 .small()
                 .truncate()
                 .text_color(match task.status {
+                    _ if task.skipped => muted,
                     TaskStatus::Done => muted,
                     _ => theme.foreground.opacity(0.85),
                 })
+                .when(task.skipped, |title| title.line_through())
                 .child(task.title()),
         )
+        .children(chip)
         .children(right.map(|right| right.min_w_0().truncate().meta()))
         .on_click(cx.listener(move |ws, _, _, cx| {
             let folds = of(ws).mine(&chat);
@@ -504,6 +536,14 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
                     .child(task.note.clone()),
             )
     });
+    // What its member reported, or a reviewer's verdict: model text, a few lines.
+    let report = (!task.result.trim().is_empty()).then(|| {
+        div()
+            .mt_2()
+            .text_color(muted)
+            .line_clamp(5)
+            .child(task.result.trim().to_owned())
+    });
     let key = view.key;
     let mut actions = div().flex().flex_row().flex_wrap().gap_1p5().mt_2p5();
     if for_user(task) {
@@ -547,6 +587,7 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
         .small()
         .child(who)
         .children(note)
+        .children(report)
         .child(actions)
 }
 
