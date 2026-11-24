@@ -317,10 +317,6 @@ impl Config {
             "work_history.max_chars must be above zero"
         );
         ensure!(
-            self.limits.max_goal_rounds > 0,
-            "max_goal_rounds must be above zero"
-        );
-        ensure!(
             (MIN_MODEL_TIMEOUT_SECONDS..=MAX_MODEL_TIMEOUT_SECONDS)
                 .contains(&self.limits.model_timeout_seconds),
             "limits.model_timeout_seconds must be between {MIN_MODEL_TIMEOUT_SECONDS} and \
@@ -369,13 +365,6 @@ impl Config {
             (MIN_TEXT_LOOP_REPEATS..=MAX_TEXT_LOOP_REPEATS).contains(&limits.text_loop_repeats),
             "limits.text_loop_repeats must be between {MIN_TEXT_LOOP_REPEATS} and \
              {MAX_TEXT_LOOP_REPEATS}"
-        );
-        ensure!(
-            MIN_FAILURE_RUNG <= limits.monologue_note_at
-                && limits.monologue_note_at < limits.monologue_replan_at
-                && limits.monologue_replan_at <= MAX_FAILURE_RUNG,
-            "limits.monologue_note_at and monologue_replan_at must rise in this order, from \
-             {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
         );
         ensure!(
             (MIN_FAILURE_RUNG..=MAX_FAILURE_RUNG).contains(&limits.goal_stall_rounds),

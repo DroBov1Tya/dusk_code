@@ -306,13 +306,13 @@ impl Agent {
         Ok((stop, status))
     }
 
-    /// Only a chat has a goal: the user and the chat's own model set it.
+    /// Only a chat has a goal, and only the user sets it.
     pub async fn active_goal(&self) -> Result<Option<Goal>> {
         if self.depth > 0 {
             return Ok(None);
         }
         let goal = self.state.goal(&self.thread_id).await?;
-        Ok(goal.filter(|goal| goal.status == GoalStatus::Active && goal.approved))
+        Ok(goal.filter(|goal| goal.status == GoalStatus::Active))
     }
 
     /// Messages from other agents join the running turn, so the next step reads them,

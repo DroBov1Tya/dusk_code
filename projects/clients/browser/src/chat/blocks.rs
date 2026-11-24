@@ -442,6 +442,11 @@ fn item_view(
         Item::Audio(card) => view! { <AudioCard card /> }.into_any(),
         Item::Run(_) => view! { <RunCardView id source /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),
+        // The evaluator's verdict on the goal, with its reason under it.
+        Item::Goal(evaluation) => view! {
+            <div class="notice">{evaluation.title()}<div class="muted">{evaluation.reason}</div></div>
+        }
+        .into_any(),
         Item::Error(text) => view! { <ErrorRow id text source thread /> }.into_any(),
     }
 }

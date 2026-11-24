@@ -95,12 +95,9 @@ fn one_line(text: &str, max: usize) -> String {
 }
 
 impl Agent {
-    /// Settles what a stopped process left of this thread: a review it cut off runs
-    /// again, and its running turn goes on, waits for the user, or is stopped.
+    /// Settles what a stopped process left of this thread: its running turn goes on,
+    /// waits for the user, or is stopped.
     pub async fn recover(&self) -> Result<Recovered> {
-        self.state
-            .recover_goal_verification(&self.thread_id)
-            .await?;
         let Some(unfinished) = self.state.unfinished_turn(&self.thread_id).await? else {
             self.pause_phase().await;
             return Ok(Recovered::Nothing);

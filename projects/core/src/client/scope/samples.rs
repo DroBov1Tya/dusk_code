@@ -192,7 +192,6 @@ fn settings() -> Vec<S> {
         S::ContextPolicy(ContextPolicy::Auto),
         S::MaxAgentsAtWork(1),
         S::IdleScreenMinutes(1),
-        S::MaxGoalRounds(1),
         S::ModelTimeout(1),
         S::MaxAttempts(1),
         S::MemoryChars(1),

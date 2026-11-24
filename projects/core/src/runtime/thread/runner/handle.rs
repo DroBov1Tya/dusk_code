@@ -2,8 +2,12 @@
 
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Decision, Input};
+use crate::runtime::goal::STOPPED;
 use crate::runtime::model_choice::ModelChoice;
-use crate::{config::live::LiveConfig, state::State};
+use crate::{
+    config::live::LiveConfig,
+    state::{GoalStatus, State},
+};
 use anyhow::{Result, ensure};
 use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
@@ -43,13 +47,10 @@ impl ThreadInput {
 
     /// Stops the running turn; queued messages wait for the next one.
     pub async fn cancel(&self) -> Result<()> {
-        // Serializes cancellation with the verification commit. Once this returns,
-        // an active goal cannot complete on an earlier request.
-        sqlx::query("UPDATE goals SET status = 'paused', note = 'stopped by the user',
-            verification = CASE WHEN verification IN ('pending', 'checking') THEN 'gaps' ELSE verification END,
-            verification_note = CASE WHEN verification IN ('pending', 'checking') THEN 'Verification cancelled; no pass was recorded.' ELSE verification_note END
-            WHERE thread_id = ? AND status = 'active'")
-            .bind(&self.thread_id).execute(&self.state.pool).await?;
+        // Paused before the runner hears it, so a judgment under way starts no other turn.
+        self.state
+            .set_goal_status(&self.thread_id, GoalStatus::Paused, Some(STOPPED))
+            .await?;
         ensure!(self.inputs.send(Input::Cancel).is_ok(), "thread has ended");
         Ok(())
     }

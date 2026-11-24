@@ -31,7 +31,7 @@ pub use block::{
 };
 pub use context::{ContextItemDetail, ContextReport, ContextSection, ContextSource};
 pub use event::{EpisodeKind, RepeatRung, ThreadEvent};
-pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
+pub use goal::{Goal, GoalCheck, GoalEvaluation, GoalStatus, GoalVerdict, MAX_GOAL_CHARS};
 pub use job::{JobInfo, JobResult, job_message};
 pub use link::{THREAD_LINK_PREFIX, links_in, thread_link, thread_of_link};
 pub use live::{LiveTurn, STALLED_AFTER_MS, Work, WorkKind, activity};

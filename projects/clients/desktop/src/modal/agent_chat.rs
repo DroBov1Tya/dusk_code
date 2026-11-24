@@ -100,8 +100,8 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 }
                 said.into_any_element()
             }
-            // Only a chat shows Workshop cards; an agent has no user to show one to.
-            Item::Tool(_) | Item::Suggestion(_) => div().into_any_element(),
+            // Only a chat shows Workshop cards and has a goal; an agent has no user.
+            Item::Tool(_) | Item::Suggestion(_) | Item::Goal(_) => div().into_any_element(),
             // Agents an agent started read as one quiet line; their details are the chat's.
             Item::Run(_) => div()
                 .meta()

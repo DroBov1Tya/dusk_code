@@ -30,7 +30,7 @@ pub use computer::{
 };
 pub use console::{Jobs, RunCommand, Shaped};
 pub use harness::{
-    AddWorkshopSource, AskUser, DisplayAudio, DisplayImage, GatesYes, GoalTool, PlanEdit, Question,
+    AddWorkshopSource, AskUser, DisplayAudio, DisplayImage, GatesYes, PlanEdit, Question,
     ReadHistory, Remember, SearchWorkshop, Show, Started, SuggestFromWorkshop, SuggestNext, Tasks,
     TeamRunner, is_sound, save_sound,
 };

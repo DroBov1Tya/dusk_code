@@ -26,10 +26,6 @@ impl Settings<'_> {
             .await
     }
 
-    pub async fn max_goal_rounds(&self, rounds: u32) -> Result<()> {
-        self.done(SettingsRequest::MaxGoalRounds(rounds)).await
-    }
-
     /// Seconds a model call may stay silent before it is given up on.
     pub async fn model_timeout(&self, seconds: u32) -> Result<()> {
         self.done(SettingsRequest::ModelTimeout(seconds)).await

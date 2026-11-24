@@ -24,12 +24,13 @@ pub struct Limits {
     max_input_tokens: Option<u64>,
     #[serde(default, skip_serializing)]
     max_output_tokens: Option<u64>,
+    /// Older configs capped a goal's rounds; a goal now runs until it is met or the user
+    /// bounds it in its own words.
+    #[serde(default, skip_serializing)]
+    max_goal_rounds: Option<u32>,
     /// Maximum number of subagents running across all threads.
     #[serde(default = "default_max_agents_at_work")]
     pub max_agents_at_work: usize,
-    /// Turns a goal may start by itself before it is paused for the user.
-    #[serde(default = "default_max_goal_rounds")]
-    pub max_goal_rounds: u32,
     /// Seconds a model call may stay silent before it is given up on. A reasoning model
     /// can think for a while, so the quiet counts, not the whole call.
     #[serde(default = "default_model_timeout_seconds")]
@@ -136,17 +137,6 @@ pub struct Limits {
     /// Times a 50-character piece of text comes back close together before the cut.
     #[serde(default = "default_text_loop_repeats")]
     pub text_loop_repeats: u32,
-    /// Whether goal rounds in a row that only wrote text, calling no tool, with no
-    /// message from the user between, get a note in the next round, then a request for a
-    /// different plan. Notes only.
-    #[serde(default = "yes")]
-    pub monologue: bool,
-    /// Such rounds in a row before the note, and between notes after the re-plan.
-    #[serde(default = "default_monologue_note_at")]
-    pub monologue_note_at: u32,
-    /// Rounds before the model is asked for a different plan.
-    #[serde(default = "default_monologue_replan_at")]
-    pub monologue_replan_at: u32,
     /// Whether a goal pauses for the user once its rounds stop changing anything: the
     /// same project files and the same test results after each.
     #[serde(default = "yes")]
@@ -253,7 +243,7 @@ impl Default for Limits {
             max_input_tokens: None,
             max_output_tokens: None,
             max_agents_at_work: default_max_agents_at_work(),
-            max_goal_rounds: default_max_goal_rounds(),
+            max_goal_rounds: None,
             model_timeout_seconds: default_model_timeout_seconds(),
             max_attempts: default_max_attempts(),
             retry_unreachable_seconds: default_retry_unreachable_seconds(),
@@ -280,9 +270,6 @@ impl Default for Limits {
             loop_judge_calls: default_loop_judge_calls(),
             text_loops: true,
             text_loop_repeats: default_text_loop_repeats(),
-            monologue: true,
-            monologue_note_at: default_monologue_note_at(),
-            monologue_replan_at: default_monologue_replan_at(),
             goal_stall: true,
             goal_stall_rounds: default_goal_stall_rounds(),
             record_changes: true,
@@ -322,10 +309,6 @@ impl Limits {
 
 fn default_max_agents_at_work() -> usize {
     8
-}
-
-fn default_max_goal_rounds() -> u32 {
-    10
 }
 
 /// Long enough for a reasoning model's pauses, short enough not to hang a turn.
@@ -431,15 +414,6 @@ fn default_text_loop_repeats() -> u32 {
 /// Fewer and a refrain or a list in prose would be cut.
 pub const MIN_TEXT_LOOP_REPEATS: u32 = 5;
 pub const MAX_TEXT_LOOP_REPEATS: u32 = 100;
-
-/// OpenHands' count of answers in a row with no action.
-fn default_monologue_note_at() -> u32 {
-    3
-}
-
-fn default_monologue_replan_at() -> u32 {
-    5
-}
 
 /// One round that changed nothing can be a look around; three is a goal going nowhere.
 fn default_goal_stall_rounds() -> u32 {

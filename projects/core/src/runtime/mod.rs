@@ -3,7 +3,7 @@
 //! it; `agent`, the agent of one thread (its steps, model calls, compaction and the
 //! messages between agents); `team`, the core's run of a chat's plan by members; the model all
 //! threads talk to in `model_choice`, and the strong, default and weak models a subagent may
-//! be asked on in `tiers`; goals and their verification; the arbiter; temporary
+//! be asked on in `tiers`; goals and the evaluator that judges them; the arbiter; temporary
 //! chats; and the background jobs.
 
 pub mod agent;

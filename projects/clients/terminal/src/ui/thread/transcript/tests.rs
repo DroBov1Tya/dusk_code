@@ -257,3 +257,101 @@ fn a_workshop_card_lists_its_rows_and_says_how_to_add_one() {
     // Narrow, every line still fits.
     screen(&transcript, 20);
 }
+
+/// A verdict on the goal is one line with its cost; opened, its reason shows under it.
+#[test]
+fn a_goal_verdict_folds_its_reason() {
+    use dusk_protocol::thread::{GoalEvaluation, GoalVerdict};
+    let mut transcript = Transcript::default();
+    transcript.add_user("/goal the tests pass");
+    transcript.apply(ThreadEvent::GoalEvaluated(GoalEvaluation {
+        verdict: GoalVerdict::Met,
+        reason: "cargo test ran and every test passed".into(),
+        turn: 3,
+        tokens: 12_400,
+        elapsed_ms: 242_000,
+    }));
+    let folded = screen(&transcript, 80);
+    let index = transcript.entries.len() - 1;
+    assert!(transcript.is_foldable(index));
+    let verdict = folded.iter().find(|row| row.contains("Goal achieved"));
+    let verdict = verdict.expect("no verdict line").trim_end().to_owned();
+    assert!(
+        verdict.ends_with("Goal achieved \u{00B7} 4m 2s \u{00B7} 3 turns \u{00B7} 12.4k tokens"),
+        "{verdict}"
+    );
+    assert!(!folded.iter().any(|row| row.contains("every test passed")));
+    transcript.toggle(index);
+    let open = screen(&transcript, 80);
+    assert!(
+        open.iter().any(|row| row.contains("every test passed")),
+        "{open:#?}"
+    );
+    for row in &open {
+        println!("{}", row.trim_end());
+    }
+}
+
+/// A reopened chat shows the verdicts the core stored, as they came live.
+#[test]
+fn a_reopened_chat_shows_its_goal_verdicts() {
+    use dusk_protocol::thread::{GoalEvaluation, GoalVerdict, Message, MessageRole};
+    let message = |sequence: u64, role, content: String| Message {
+        message_id: format!("m{sequence}"),
+        thread_id: "t".into(),
+        sequence,
+        role,
+        content,
+        reasoning: None,
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        artifacts: Vec::new(),
+        from_thread_id: None,
+        from_job_id: None,
+        content_tokens: 0,
+        tool_calls_tokens: 0,
+        reasoning_tokens: 0,
+        created_at: sequence as i64,
+    };
+    let verdict = |sequence, verdict, turn, reason: &str| {
+        let evaluation = GoalEvaluation {
+            verdict,
+            reason: reason.into(),
+            turn,
+            tokens: 12_400,
+            elapsed_ms: 242_000,
+        };
+        message(
+            sequence,
+            MessageRole::Goal,
+            serde_json::to_string(&evaluation).unwrap(),
+        )
+    };
+    let history = [
+        message(1, MessageRole::User, "Goal: the tests pass".into()),
+        message(2, MessageRole::Assistant, "I fixed the parser.".into()),
+        verdict(3, GoalVerdict::NotMet, 1, "no test output was shown"),
+        message(4, MessageRole::User, "The goal is not met yet".into()),
+        message(5, MessageRole::Assistant, "cargo test: 12 passed".into()),
+        verdict(
+            6,
+            GoalVerdict::Met,
+            2,
+            "cargo test ran and every test passed",
+        ),
+    ];
+    let transcript = Transcript::from_history(&history);
+    let rows = screen(&transcript, 80);
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("Goal not met yet (turn 1)")),
+        "{rows:#?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.contains("Goal achieved")),
+        "{rows:#?}"
+    );
+    for row in &rows {
+        println!("{}", row.trim_end());
+    }
+}

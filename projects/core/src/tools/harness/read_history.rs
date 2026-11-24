@@ -328,6 +328,7 @@ fn describe(message: &Message) -> String {
         MessageRole::Assistant => "assistant",
         MessageRole::Tool => "tool result",
         MessageRole::Job => "background job result",
+        MessageRole::Goal => "goal verdict",
     };
     let mut text = format!(
         "#{} {author}:\n{}",

@@ -38,7 +38,7 @@ pub enum Command {
     Update { channel: Option<String> },
     /// Shows the reasoning effort, or sets it to a supported level or default.
     Effort { level: Option<String> },
-    /// Creates a draft goal; shows, approves, confirms, pauses, resumes or clears it.
+    /// Sets the chat's goal and starts work on it, shows it, or clears it.
     Goal { argument: Option<String> },
     /// Lists the user's messages of a thread; a client fills in its open thread. With a
     /// sequence, takes the thread back to before that message.

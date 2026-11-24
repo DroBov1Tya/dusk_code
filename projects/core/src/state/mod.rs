@@ -18,10 +18,9 @@ pub use db::State;
 pub use project::{Episode, Recall};
 pub use project::{EpisodeKind, NewEpisode};
 pub use skill_changes::{NewSkillChange, StoredSkillChange};
-pub(crate) use thread::below;
 pub use thread::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Delivery,
-    Ended, Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt,
+    Ended, Goal, GoalCheck, GoalEvaluation, GoalStatus, GoalVerdict, JobSummary, LastPrompt,
     LocalUnsent, Message, MessageRole, ModelCall, NewStub, PendingMessage, ProviderFailure, Settle,
     ShapedResult, Source, Stub, Task, Thread, Turn, TurnAnswer, TurnFailure, TurnOutcome,
     TurnStatus, UndoPoint, Unfinished, calls_of, estimate_tokens, saved_tokens,

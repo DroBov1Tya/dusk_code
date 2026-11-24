@@ -122,16 +122,10 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   lists, headings, quotes and rules are not read, and each such line forgets what came
   before it. After two cuts in a turn the next step streams whole, so the rule never
   ends a turn or loses its calls.
-- **Goal monologues.** `limits.monologue` (on): goal rounds in a row that called no
-  tool, with no message from the user or another agent between (one that comes with
-  a round's start makes that turn a reply, not a round), get a note in the next round's start at
-  `limits.monologue_note_at` (3), a request for a different plan at
-  `monologue_replan_at` (5), and again every `monologue_note_at` rounds after, as
-  `NoProgress` and `NoProgressReplan` notices; within a turn an answer without a tool
-  call ends it, so only rounds can talk on. With `limits.goal_stall` on, a round that
-  still only talks after the request for a different plan pauses the goal, saying the
-  rounds only wrote text.
-- **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
+- **Goal stalls.** Two rules, one per cause. Turns of a goal that call no tool are the
+  evaluator's: after three in a row no turn is started, and the goal goes on after the
+  user's next message. Turns that do act but change nothing are measured here:
+  `limits.goal_stall` (on, needs `record_changes`): after each round of
   a goal, the state of the files its chat and agents changed and the test results of
   the round (error lines included, so a build failing with fewer errors is another
   result) are stored with it; once `limits.goal_stall_rounds` (3) measured rounds in a row
@@ -150,7 +144,7 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   glob). It walks as the change ledger does (ignore rules, no `.git`, no links followed) on
   every call; nothing is indexed or stored. The name is kept from the code graph it replaced.
 - **Episodes and `recall`.** `limits.episodes` (on): for a saved project, what ended a
-  repeated failure, or a goal's verification that passed, is stored as an episode (at most
+  repeated failure, or a goal the evaluator found met, is stored as an episode (at most
   500 a project). `limits.episode_lesson` (on) adds a one-line lesson from the model. The
   `recall` tool (`tools: { recall: false }` hides it) returns up to three notes.
 

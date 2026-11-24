@@ -1,35 +1,56 @@
-//! A goal's rounds: after each turn of a chat with an active goal, the runner checks
-//! the work against the goal's criteria when the model asked for that, and otherwise
-//! queues the next round until the rounds run out or stop changing anything. Rounds that
-//! only talk get a note in the next round's start (`monologue`), and pause the goal
-//! when they go on talking after a request for a different plan.
+//! A goal's turns: after each turn of a chat with an active goal, the evaluator judges it,
+//! and a goal not met starts the next turn with the evaluator's reason. There is no cap:
+//! a user who wants a bound writes it into the goal, and the evaluator judges it. Each
+//! verdict is stored in the chat as a `MessageRole::Goal` message the model never reads,
+//! so a reopened transcript shows it.
+//!
+//! A turn is judged only once nothing runs in the background: while a job, an agent or
+//! a question to the user is under way, the goal waits for its result and the turn it
+//! starts.
+//!
+//! Stall rule: when `STALL_TURNS` turns in a row end without calling a tool, the agent is
+//! only answering the evaluator, so no turn is started. The goal stays set, control goes
+//! back to the user, and the goal goes on after their next message. Turns that do call
+//! tools yet leave the files and test results as they were are `stall`'s: once
+//! `limits.goal_stall_rounds` of them follow each other, the goal pauses.
+//!
+//! A failed turn: an error the provider may get over is tried again `RETRIES` times, a
+//! spent limit or another failure pauses the goal, and one that no retry fixes clears it.
 
 use std::sync::Arc;
 
 use anyhow::Result;
+use dusk_protocol::system::now_ms;
 
-use super::action as goal;
+use super::command as goal;
 use crate::{
-    runtime::{ThreadEvent, ThreadRunner},
-    state::GoalStatus,
+    providers::ProviderErrorKind,
+    runtime::{ThreadEvent, ThreadRunner, agent::Stop},
+    state::{GoalEvaluation, GoalStatus, GoalVerdict},
 };
 
+/// Turns in a row without a tool call after which a goal stops starting turns.
+pub const STALL_TURNS: u32 = 3;
+/// Times a turn that failed on an error the provider may get over is tried again.
+pub const RETRIES: u32 = 3;
+
 impl ThreadRunner {
-    pub async fn verification_pending(&self) -> Result<bool> {
-        Ok(self.agent.depth == 0
-            && self
-                .agent
-                .state
-                .goal(&self.agent.thread_id)
-                .await?
-                .is_some_and(|g| {
-                    g.approved && g.status == GoalStatus::Active && g.verification == "pending"
-                }))
+    /// Counts a turn of an active goal that called no tool toward the stall rule; one
+    /// that called a tool, or a turn without an active goal, starts the count again.
+    pub async fn count_quiet_turn(&mut self, turn_id: &str) -> Result<()> {
+        if self.agent.active_goal().await?.is_none() {
+            self.goal_quiet_turns = 0;
+            return Ok(());
+        }
+        self.goal_quiet_turns = match self.agent.state.turn_called_tools(turn_id).await? {
+            true => 0,
+            false => self.goal_quiet_turns + 1,
+        };
+        Ok(())
     }
 
-    /// Queues the next round of an active goal, or pauses it when the rounds are spent
-    /// or stopped changing anything; `ended` is the turn that ended the round, when one
-    /// ran. Returns whether a round was queued.
+    /// Judges an active goal after its turn and starts the next turn when it is not met;
+    /// `ended` is the turn that ran, when one did. Returns whether a turn was queued.
     pub async fn next_goal_round(&mut self, ended: Option<&str>) -> Result<bool> {
         let Some(goal) = self.agent.active_goal().await? else {
             self.goal_waiting = false;
@@ -51,33 +72,10 @@ impl ThreadRunner {
             .state
             .goal_wake_state(&self.agent.thread_id)
             .await?;
-        if !pending && !dependencies && !reporting && goal.verification == "pending" {
-            if let Some(reviewed) =
-                super::verification::verify(&self.agent.state, &self.agent.thread_id).await?
-            {
-                // `verify` moves a goal from checking to passed only here, once.
-                if reviewed.verification == "passed" {
-                    self.agent.record_verified(&reviewed).await;
-                }
-                let note = goal::describe(&reviewed);
-                self.agent.emit(ThreadEvent::Goal {
-                    goal: Some(reviewed.clone()),
-                    note,
-                    started: None,
-                });
-                if reviewed.status == GoalStatus::Done || reviewed.verification == "needs_user" {
-                    self.goal_waiting = false;
-                    return Ok(false);
-                }
-            } else {
-                self.goal_waiting = true;
-                return Ok(false);
-            }
-        }
         drop(live);
         if pending {
-            // A result or user message won the race with start_turn: answer it
-            // before creating another goal message or consuming a round.
+            // A result or user message won the race with start_turn: answer it, and
+            // judge the turn that does.
             self.goal_waiting = true;
             self.take_in().await?;
             return Ok(true);
@@ -86,65 +84,165 @@ impl ThreadRunner {
         if self.goal_waiting {
             return Ok(false);
         }
-        if goal.verification == "needs_user" {
+        let judgment = match self.inbox.race(self.agent.judge_goal(&goal)).await {
+            Ok(judgment) => judgment,
+            Err(Stop::Cancelled) => {
+                self.cancel_work().await?;
+                return Ok(false);
+            }
+            // The user's message goes first; the turn it starts is judged.
+            Err(Stop::Preempted) => {
+                self.take_in().await?;
+                return Ok(true);
+            }
+        };
+        let state = &self.agent.state;
+        let thread_id = &self.agent.thread_id;
+        let Some(goal) = state.count_goal_turn(thread_id, &judgment.reason).await? else {
+            return Ok(false);
+        };
+        let evaluation = GoalEvaluation {
+            verdict: judgment.verdict,
+            reason: judgment.reason.clone(),
+            turn: goal.turns,
+            tokens: goal.tokens,
+            elapsed_ms: now_ms() - goal.started_at,
+        };
+        // Kept in the chat, so a reopened transcript still says how the goal went.
+        state.add_goal_verdict(thread_id, &evaluation).await?;
+        self.agent.emit(ThreadEvent::GoalEvaluated(evaluation));
+        if judgment.verdict != GoalVerdict::NotMet {
+            if judgment.verdict == GoalVerdict::Met {
+                self.agent.record_met(&goal).await;
+            }
+            state.clear_goal(thread_id).await?;
+            self.goal_quiet_turns = 0;
+            self.agent.emit(ThreadEvent::Goal {
+                goal: None,
+                note: String::new(),
+                started: None,
+            });
+            return Ok(false);
+        }
+        // A stop that came while the turn was judged.
+        if goal.status != GoalStatus::Active {
+            self.agent.emit(ThreadEvent::Goal {
+                goal: Some(goal),
+                note: String::new(),
+                started: None,
+            });
             return Ok(false);
         }
         if let Some(turn_id) = ended
             && let Some(reason) = self.round_stalled(turn_id).await?
         {
+            self.goal_quiet_turns = 0;
             self.pause_goal(&reason).await?;
             return Ok(false);
         }
-        let rounds = self.agent.config.current().limits().max_goal_rounds;
-        if goal.rounds >= rounds {
-            self.pause_goal(&format!("all {rounds} rounds used"))
-                .await?;
+        if self.goal_quiet_turns >= STALL_TURNS {
+            // The count starts again, so the user's next turn resumes the goal.
+            self.goal_quiet_turns = 0;
+            self.agent.emit(ThreadEvent::Goal {
+                goal: Some(goal),
+                note: format!(
+                    "Goal stalled: {STALL_TURNS} turns in a row used no tool. \
+                     It stays set and goes on after your next message."
+                ),
+                started: None,
+            });
             return Ok(false);
         }
-        // Only a round's own turn counts: a reply to the user is no monologue.
-        let quiet = match ended {
-            Some(turn_id) if self.round_turn => {
-                let acted = self.agent.repeats.lock().acted(turn_id);
-                let limits = self.agent.config.current().limits();
-                self.monologue.round(acted, &limits)
-            }
-            _ => None,
-        };
-        let limits = self.agent.config.current().limits();
-        if limits.goal_stall
-            && let Some(rounds) = self.monologue.talked_out(&limits)
-        {
-            let reason = format!("the last {rounds} rounds only wrote text and called no tool");
-            // A resumed goal gets its rounds counted afresh.
-            self.monologue.reset();
-            self.pause_goal(&reason).await?;
-            return Ok(false);
+        if self.has_pending().await? {
+            // The user sent something while the turn was judged, perhaps `/goal clear`:
+            // it goes first, and the turn it starts is judged.
+            self.goal_waiting = true;
+            self.take_in().await?;
+            return Ok(true);
         }
-        let state = &self.agent.state;
-        let Some(goal) = state.count_goal_round(&self.agent.thread_id).await? else {
-            return Ok(false);
-        };
-        let mut kickoff = goal::kickoff(&goal, rounds);
-        if let Some((_, _, note)) = &quiet {
-            kickoff.push_str(&format!("\n\n{note}"));
-        }
-        let queued = state.add_pending(&self.agent.thread_id, &kickoff).await?;
-        self.round_queued = Some(queued.pending_id);
-        if let Some((rung, count, _)) = quiet {
-            self.agent.emit(ThreadEvent::RepeatNotice { rung, count });
-        }
-        let note = format!("goal round {} of {rounds}", goal.rounds);
+        let next = goal::continuation(&judgment.reason);
+        state.add_pending(thread_id, &next).await?;
         self.agent.emit(ThreadEvent::Goal {
             goal: Some(goal),
-            note,
-            started: Some(kickoff),
+            note: String::new(),
+            started: Some(next),
         });
         self.take_in().await?;
         Ok(true)
     }
 
-    pub async fn pause_goal(&self, reason: &str) -> Result<()> {
-        if self.agent.active_goal().await?.is_none() {
+    /// After a turn of an active goal failed: tries it again when the provider may get
+    /// over the error, pauses the goal when a limit is spent or the failure would repeat,
+    /// and clears it when nothing the agent does can fix it. Returns whether a turn was
+    /// queued.
+    pub async fn goal_turn_failed(&mut self) -> Result<bool> {
+        let Some(goal) = self.agent.active_goal().await? else {
+            return Ok(false);
+        };
+        let state = &self.agent.state;
+        let thread_id = &self.agent.thread_id;
+        let failure = state.last_failure(thread_id).await?;
+        let kind = failure
+            .as_ref()
+            .and_then(|failure| failure.provider)
+            .map(|provider| provider.kind);
+        let error = failure.map_or_else(|| "the turn failed".to_owned(), |f| f.text());
+        use ProviderErrorKind::*;
+        match kind {
+            Some(Auth | Refused | TooLong) => {
+                state.clear_goal(thread_id).await?;
+                self.agent.emit(ThreadEvent::Goal {
+                    goal: None,
+                    note: format!(
+                        "Goal cleared after an unrecoverable error: {error}. \
+                         Run /goal again once it is fixed."
+                    ),
+                    started: None,
+                });
+                Ok(false)
+            }
+            Some(RateLimited | Quota) => {
+                self.pause_goal(&format!("{error}; it goes on after your next message"))
+                    .await?;
+                Ok(false)
+            }
+            Some(Unreachable | TimedOut | Overloaded | Interrupted)
+                if self.goal_retries < RETRIES =>
+            {
+                self.goal_retries += 1;
+                let next = goal::retry(&error);
+                state.add_pending(thread_id, &next).await?;
+                self.agent.emit(ThreadEvent::Goal {
+                    goal: Some(goal),
+                    note: format!("Goal: trying again ({} of {RETRIES})", self.goal_retries),
+                    started: Some(next),
+                });
+                self.take_in().await?;
+                Ok(true)
+            }
+            Some(_) => {
+                self.pause_goal(&format!("{error}, tried {RETRIES} more times"))
+                    .await?;
+                Ok(false)
+            }
+            None => {
+                self.pause_goal("the last turn failed").await?;
+                Ok(false)
+            }
+        }
+    }
+
+    /// Pauses the chat's goal, if it has one, and says why.
+    pub async fn pause_goal(&mut self, reason: &str) -> Result<()> {
+        self.goal_retries = 0;
+        if self.agent.depth > 0
+            || self
+                .agent
+                .state
+                .goal(&self.agent.thread_id)
+                .await?
+                .is_none()
+        {
             return Ok(());
         }
         let goal = self.agent.state.set_goal_status(
@@ -155,7 +253,7 @@ impl ThreadRunner {
         let goal = goal.await?;
         self.agent.emit(ThreadEvent::Goal {
             goal,
-            note: format!("goal paused: {reason}"),
+            note: format!("Goal paused: {reason}"),
             started: None,
         });
         Ok(())

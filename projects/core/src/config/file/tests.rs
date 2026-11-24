@@ -421,10 +421,9 @@ fn the_progress_guards_are_on_and_their_steps_rise() {
 #[test]
 fn the_judge_and_text_guards_are_on_and_bounded() {
     let plain = parse(PROVIDERS).unwrap().limits();
-    assert!(plain.loop_judge && plain.text_loops && plain.monologue);
+    assert!(plain.loop_judge && plain.text_loops);
     assert_eq!(plain.loop_judge_calls, 3);
     assert_eq!(plain.text_loop_repeats, 10);
-    assert_eq!((plain.monologue_note_at, plain.monologue_replan_at), (3, 5));
     let set = parse("limits:\n  loop_judge: false\n  text_loop_repeats: 20\n").unwrap();
     assert!(!set.limits().loop_judge);
     assert_eq!(set.limits().text_loop_repeats, 20);
@@ -433,9 +432,6 @@ fn the_judge_and_text_guards_are_on_and_bounded() {
         "limits:\n  loop_judge_calls: 11\n",
         "limits:\n  text_loop_repeats: 4\n",
         "limits:\n  text_loop_repeats: 101\n",
-        "limits:\n  monologue_note_at: 1\n",
-        "limits:\n  monologue_note_at: 5\n",
-        "limits:\n  monologue_replan_at: 51\n",
     ] {
         assert!(parse(bad).is_err(), "{bad:?}");
     }
@@ -563,4 +559,10 @@ fn a_config_file_is_read_bounded_and_never_through_a_link() {
     let link = directory.join("linked.yml");
     symlink(&path, &link).unwrap();
     assert!(Config::load_from(&link).is_err());
+}
+
+#[test]
+fn an_old_goal_round_cap_still_loads_and_is_not_written_back() {
+    let old = parse("limits:\n  max_goal_rounds: 10\n").unwrap();
+    assert!(!old.to_yaml().unwrap().contains("max_goal_rounds"));
 }

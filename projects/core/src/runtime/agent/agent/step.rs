@@ -11,10 +11,10 @@ use crate::{
         ChatMessage, ChatRequest, ProviderErrorKind, ToolSpec, is_output_limit,
         is_unsupported_pictures, text_calls,
     },
-    runtime::goal::action as goal,
+    runtime::goal::command as goal,
     state::{
-        CallPurpose, GoalStatus, MessageRole, ModelCall, ProviderFailure, Turn, TurnAnswer,
-        TurnFailure, TurnOutcome, estimate_tokens,
+        CallPurpose, MessageRole, ModelCall, ProviderFailure, Turn, TurnAnswer, TurnFailure,
+        TurnOutcome, estimate_tokens,
     },
 };
 use anyhow::{Context, Result};
@@ -65,17 +65,7 @@ impl Agent {
         if tools.iter().any(screen) && !self.sees_pictures().await {
             tools.retain(|spec| !screen(spec));
         }
-        let standing = if self.depth == 0 {
-            self.state.goal(&self.thread_id).await?
-        } else {
-            None
-        };
-        if standing
-            .as_ref()
-            .is_some_and(|g| !g.approved && g.status != GoalStatus::Done)
-        {
-            tools.retain(|tool| tool.name == "goal");
-        }
+        let standing = self.active_goal().await?;
         let workspace = self.scope.workspace();
         let with_pictures = self.takes_pictures();
         let sources = ThreadSources {
@@ -106,11 +96,8 @@ impl Agent {
             block.first_time
         });
         // The goal is said last, so it stays in view however long the context grows.
-        if let Some(goal) = standing.filter(|g| {
-            g.status == GoalStatus::Active || (!g.approved && g.status != GoalStatus::Done)
-        }) {
-            let rounds = config.limits().max_goal_rounds;
-            messages.push(ChatMessage::System(goal::reminder(&goal, rounds)));
+        if let Some(goal) = standing {
+            messages.push(ChatMessage::System(goal::reminder(&goal)?));
         }
         if let Some(note) = missing_tools(&messages, &tools) {
             messages.push(ChatMessage::System(note));

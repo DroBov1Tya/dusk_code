@@ -21,7 +21,6 @@ impl Server {
                 let saved = runtime.config().current().appearance().idle_screen_minutes;
                 return Ok(Response::Number(saved.into()));
             }
-            SettingsRequest::MaxGoalRounds(rounds) => runtime.set_max_goal_rounds(rounds)?,
             SettingsRequest::ModelTimeout(seconds) => {
                 runtime.set_model_timeout(seconds)?;
                 let saved = runtime.config().current().limits().model_timeout_seconds;

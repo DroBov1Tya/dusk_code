@@ -73,6 +73,15 @@ impl State {
         count.try_into().context("negative turn count")
     }
 
+    /// Whether the turn called any tool.
+    pub async fn turn_called_tools(&self, turn_id: &str) -> Result<bool> {
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tool_executions WHERE turn_id = ?)")
+            .bind(turn_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("check the turn's tool calls")
+    }
+
     /// Sequence of the newest message any turn of the thread has taken; 0 before the first.
     pub async fn answered_through(&self, thread_id: &str) -> Result<u64> {
         let sequence: i64 = sqlx::query_scalar(
@@ -141,61 +150,10 @@ impl State {
         let turn = read_running_turn(&mut transaction, turn_id).await?;
         let message = insert_message(&mut transaction, &turn.thread_id, &new, None, timestamp);
         let message = message.await?;
-        // A paused contract still owns its evidence. Work performed meanwhile
-        // must invalidate earlier checks before a later resume can reuse them.
-        let contract: Option<(String, String)> = sqlx::query_as(
-            "SELECT revision, criteria_json FROM goals
-            WHERE thread_id = ? AND approved_at IS NOT NULL",
-        )
-        .bind(&turn.thread_id)
-        .fetch_optional(&mut *transaction)
-        .await?;
-        let criteria: Vec<crate::state::GoalCriterion> = contract
-            .as_ref()
-            .map(|(_, json)| serde_json::from_str(json))
-            .transpose()?
-            .unwrap_or_default();
         for call in calls {
-            if contract.is_some() {
-                let approved_check = call.name == "run_command"
-                    && criteria.iter().any(|c| {
-                        matches!(&c.check, crate::state::GoalCheck::Command { command }
-                        if call.arguments["command"].as_str() == Some(command))
-                    });
-                let read_only = matches!(
-                    call.name.as_str(),
-                    "goal"
-                        | "read_file"
-                        | "changes"
-                        | "search_files"
-                        | "read_history"
-                        | "recall"
-                        | "project_graph"
-                        | "load_skill"
-                        | "display_image"
-                        | "display_audio"
-                        | "show"
-                        | "search_workshop"
-                        | "suggest_from_workshop"
-                        | "tasks"
-                        | "remember"
-                        | "ask_user"
-                        | "suggest_next"
-                        | "jobs"
-                );
-                if !approved_check && !read_only {
-                    sqlx::query("UPDATE goals SET work_epoch = work_epoch + 1 WHERE thread_id = ?")
-                        .bind(&turn.thread_id)
-                        .execute(&mut *transaction)
-                        .await?;
-                }
-            }
             sqlx::query(
                 "INSERT INTO tool_executions (execution_id, turn_id, thread_id, call_id,
-                call_message_id, tool_name, arguments_json, goal_revision, goal_epoch)
-                VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT revision FROM goals WHERE thread_id = ?
-                    AND approved_at IS NOT NULL),
-                    (SELECT work_epoch FROM goals WHERE thread_id = ? AND approved_at IS NOT NULL))",
+                call_message_id, tool_name, arguments_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(Uuid::now_v7().to_string())
             .bind(turn_id)
@@ -204,8 +162,6 @@ impl State {
             .bind(&message.message_id)
             .bind(call.name)
             .bind(serde_json::to_string(&call.arguments)?)
-            .bind(&turn.thread_id)
-            .bind(&turn.thread_id)
             .execute(&mut *transaction)
             .await
             .context("record call provenance")?;
@@ -270,9 +226,16 @@ impl State {
         .execute(&mut *transaction)
         .await?;
         if outcome == "succeeded" {
-            sqlx::query("UPDATE goals SET awaiting_user = 1 WHERE thread_id = ? AND revision =
-                (SELECT goal_revision FROM tool_executions WHERE turn_id = ? AND call_id = ? AND tool_name = 'ask_user')")
-                .bind(&turn.thread_id).bind(turn_id).bind(call_id).execute(&mut *transaction).await?;
+            // A question the user is asked holds the goal until they answer.
+            sqlx::query(
+                "UPDATE goals SET awaiting_user = 1 WHERE thread_id = ? AND EXISTS (SELECT 1
+                FROM tool_executions WHERE turn_id = ? AND call_id = ? AND tool_name = 'ask_user')",
+            )
+            .bind(&turn.thread_id)
+            .bind(turn_id)
+            .bind(call_id)
+            .execute(&mut *transaction)
+            .await?;
         }
         transaction.commit().await.context("commit tool result")?;
         Ok(message)

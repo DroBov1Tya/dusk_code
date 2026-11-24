@@ -53,7 +53,6 @@ pub enum Action {
         api_key: Option<String>,
     },
     SetAgentLimit(usize),
-    SetGoalRounds(u32),
     SetModelTimeout(u32),
     SetMaxAttempts(u32),
     SetIdleMinutes(u32),

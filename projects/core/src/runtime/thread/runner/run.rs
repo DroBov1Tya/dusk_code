@@ -2,7 +2,7 @@
 
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Agent, Inbox, Input, Mailbox, Mailboxes, Stop};
-use crate::runtime::goal::action as goal;
+use crate::runtime::goal::STOPPED;
 use crate::runtime::{ThreadLock, model_choice::ModelChoice};
 use crate::state::artifacts::ArtifactStore;
 use crate::{
@@ -26,18 +26,15 @@ const FOREIGN_JOB_POLL: Duration = Duration::from_secs(2);
 /// Runs one thread; `Runtime` gives each active thread its own task with one of these.
 pub struct ThreadRunner {
     pub agent: Agent,
-    pub(super) inbox: Inbox,
+    pub(crate) inbox: Inbox,
     pub mailboxes: Arc<Mailboxes>,
     ends_when_idle: bool,
     /// The next automatic round waits for dependency completion, not a timer.
     pub goal_waiting: bool,
-    /// Goal rounds in a row that called no tool.
-    pub(crate) monologue: crate::runtime::goal::Monologue,
-    /// The kickoff of the goal round queued, by its pending id: the next turn is the
-    /// round's unless another message came with it or the goal stopped meanwhile.
-    pub(crate) round_queued: Option<i64>,
-    /// The last turn that started was a goal round's.
-    pub(crate) round_turn: bool,
+    /// Turns in a row that called no tool, for a goal's stall rule.
+    pub goal_quiet_turns: u32,
+    /// Turns of a goal tried again in a row after a provider error.
+    pub goal_retries: u32,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
     /// The question a restart asked while the runner waits for its answer.
@@ -118,9 +115,8 @@ impl ThreadRunner {
             mailboxes: setup.mailboxes,
             ends_when_idle: setup.ends_when_idle,
             goal_waiting: false,
-            monologue: Default::default(),
-            round_queued: None,
-            round_turn: false,
+            goal_quiet_turns: 0,
+            goal_retries: 0,
             left: false,
             deciding,
             _lock: setup.lock,
@@ -162,10 +158,9 @@ impl ThreadRunner {
         if self.agent.depth == 0
             && let Some(goal) = self.agent.state.goal(&self.agent.thread_id).await?
         {
-            let note = goal::describe(&goal);
             self.agent.emit(ThreadEvent::Goal {
                 goal: Some(goal),
-                note,
+                note: String::new(),
                 started: None,
             });
         }
@@ -307,18 +302,15 @@ impl ThreadRunner {
                 Ok(Some((turn, resumes))) => {
                     ran = true;
                     ended = Some(turn.turn_id.clone());
-                    // A turn the goal did not start, or that also reads what someone
-                    // wrote, answers them; a goal paused or ended meanwhile has no round.
-                    self.round_turn = self.round_queued.take().is_some()
-                        && self.agent.active_goal().await?.is_some();
-                    if !self.round_turn {
-                        self.monologue.reset();
-                    }
                     let (stop, status) = match resumes {
                         true => self.agent.resume_turn(&turn, &mut self.inbox).await?,
                         false => self.agent.run_turn(&turn, &mut self.inbox).await?,
                     };
                     failed = status == TurnStatus::Failed;
+                    if !failed {
+                        self.goal_retries = 0;
+                    }
+                    self.count_quiet_turn(&turn.turn_id).await?;
                     match stop {
                         Some(stop) => Some(stop),
                         None => self.agent.name_thread(&mut self.inbox).await,
@@ -326,13 +318,15 @@ impl ThreadRunner {
                 }
                 // Only a turn that ran goes on to the next round: a context too
                 // large to start one would start none forever.
-                // A failing turn would fail again: the goal waits for the user.
                 Ok(None) if ran && failed => {
-                    self.pause_goal("the last turn failed").await?;
+                    if self.goal_turn_failed().await? {
+                        (ran, failed) = (false, false);
+                        continue;
+                    }
                     return Ok(());
                 }
                 Ok(None)
-                    if (ran || self.goal_waiting || self.verification_pending().await?)
+                    if (ran || self.goal_waiting)
                         && self.next_goal_round(ended.take().as_deref()).await? =>
                 {
                     ran = false;
@@ -347,10 +341,10 @@ impl ThreadRunner {
         }
     }
 
-    /// A cancel also pauses an idle goal waiting for dependency completion.
-    pub(super) async fn cancel_work(&mut self) -> Result<()> {
+    /// A cancel also pauses the goal, whether a turn of it runs or it waits for work.
+    pub(crate) async fn cancel_work(&mut self) -> Result<()> {
         self.goal_waiting = false;
-        self.pause_goal("stopped by the user").await?;
+        self.pause_goal(STOPPED).await?;
         self.cancel_agents().await
     }
 
@@ -384,7 +378,7 @@ impl ThreadRunner {
         Ok(true)
     }
 
-    async fn has_pending(&self) -> Result<bool> {
+    pub(crate) async fn has_pending(&self) -> Result<bool> {
         self.agent.state.has_pending(&self.agent.thread_id).await
     }
 }

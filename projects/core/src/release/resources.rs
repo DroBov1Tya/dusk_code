@@ -12,13 +12,15 @@ use crate::{init::create_private_dir, release::update::VERSION};
 
 /// Folders of resources, each shipped into the rules folder; `internal` goes to `prompts`.
 pub const CATEGORIES: [&str; 5] = ["agents", "skills", "internal", "modes", "plugins"];
-pub const REQUIRED: [&str; 13] = [
+pub const REQUIRED: [&str; 15] = [
     "internal/AGENT.md",
     "internal/ARBITER.md",
     "internal/AGENT_LEAF.md",
     "internal/AGENT_LINKS.md",
     "internal/COMPACT.md",
     "internal/FORK.md",
+    "internal/GOAL.md",
+    "internal/GOAL_EVALUATOR.md",
     "internal/LOOP_JUDGE.md",
     "internal/MEMORY.md",
     "internal/WORK_MEMORY.md",

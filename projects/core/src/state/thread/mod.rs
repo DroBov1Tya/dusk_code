@@ -20,9 +20,8 @@ pub use conversation::{
     CallEnd, Compaction, Delivery, Ended, LocalUnsent, Message, MessageRole, NewStub,
     PendingMessage, ShapedResult, Source, Stub, UndoPoint, calls_of, estimate_tokens, saved_tokens,
 };
-pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
+pub use goal::{Goal, GoalCheck, GoalEvaluation, GoalStatus, GoalVerdict};
 pub use pulls::slim_pull;
-pub(crate) use threads::below;
 pub use threads::{MEMBER_SOURCE, Thread};
 pub use work::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallPurpose, JobSummary, LastPrompt, ModelCall,

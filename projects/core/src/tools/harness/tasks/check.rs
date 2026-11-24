@@ -14,7 +14,7 @@ use crate::{
     config::Effort,
     project::plain_relative,
     runtime::tiers::Tier as ModelTier,
-    state::{GoalCheck, GoalCriterion, MAX_FILES, NewTask, TaskEdit, TaskFiles},
+    state::{GoalCheck, MAX_FILES, NewTask, TaskEdit, TaskFiles},
     tools::{ToolContext, ToolScope},
 };
 
@@ -156,14 +156,10 @@ fn gate(command: Option<&str>, confirm: Option<bool>) -> Result<Option<Option<Go
         (None, Some(false)) => return Ok(Some(None)),
         (None, None) => return Ok(None),
     };
-    let criterion = GoalCriterion {
-        id: "gate".into(),
-        description: "gate".into(),
-        check,
-    };
-    GoalCriterion::validate(std::slice::from_ref(&criterion))
+    check
+        .validate()
         .context("the gate must be the exact command that exits 0 when the task is done")?;
-    Ok(Some(Some(criterion.check)))
+    Ok(Some(Some(check)))
 }
 
 /// Each entry relative to the project, resolved with links followed, and refused when

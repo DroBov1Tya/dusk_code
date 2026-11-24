@@ -930,3 +930,65 @@ fn a_subagent_keeps_the_model_and_effort_it_was_started_on() {
         "general \u{00B7} openrouter/haiku \u{00B7} low effort"
     );
 }
+
+/// A goal's verdicts are stored in the chat, so a reopened chat shows them where they
+/// came live, each standing alone between the turns.
+#[test]
+fn goal_verdicts_read_the_same_from_history_and_live() {
+    use crate::thread::{GoalEvaluation, GoalVerdict};
+    let verdict = |verdict, turn| GoalEvaluation {
+        verdict,
+        reason: format!("reason {turn}"),
+        turn,
+        tokens: 100,
+        elapsed_ms: 1_000,
+    };
+    let stored = |evaluation: &GoalEvaluation| {
+        message(
+            MessageRole::Goal,
+            &serde_json::to_string(evaluation).unwrap(),
+        )
+    };
+    let (first, last) = (
+        verdict(GoalVerdict::NotMet, 1),
+        verdict(GoalVerdict::Met, 2),
+    );
+    let history = [
+        message(MessageRole::User, "Goal: build it"),
+        message(MessageRole::Assistant, "planned"),
+        stored(&first),
+        message(MessageRole::User, "The goal is not met yet"),
+        message(MessageRole::Assistant, "built"),
+        stored(&last),
+        message(MessageRole::Goal, "not a verdict"),
+    ];
+    let reopened = Chat::from_history(&history);
+
+    let ended = || Turn {
+        status: TurnStatus::Completed,
+        ..turn()
+    };
+    let events = [
+        ThreadEvent::UserMessage(history[0].clone()),
+        ThreadEvent::TurnStarted(turn()),
+        text("planned"),
+        ThreadEvent::TurnFinished(ended()),
+        ThreadEvent::Idle,
+        ThreadEvent::GoalEvaluated(first.clone()),
+        ThreadEvent::UserMessage(history[3].clone()),
+        ThreadEvent::TurnStarted(turn()),
+        text("built"),
+        ThreadEvent::TurnFinished(ended()),
+        ThreadEvent::Idle,
+        ThreadEvent::GoalEvaluated(last.clone()),
+    ];
+    let mut live = Chat::default();
+    for (at, event) in events.into_iter().enumerate() {
+        live.apply(event, at as i64);
+    }
+
+    assert_eq!(live.items, reopened.items);
+    assert_eq!(live.activity_boundaries, reopened.activity_boundaries);
+    assert_eq!(reopened.items[2], Item::Goal(first));
+    assert_eq!(reopened.items.last(), Some(&Item::Goal(last)));
+}

@@ -16,7 +16,7 @@ use crate::{
         ChatRequest, ModelEvent, ModelOutput, ProviderError, ToolCall, is_refused_effort,
         is_unsupported_effort, provider_error,
     },
-    state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, NewSkillChange, Turn, TurnOutcome},
+    state::{KIND_MCP_TOOL, KIND_SKILL, NewSkillChange, Turn, TurnOutcome},
     tools::{Progress, ToolKind, ToolResult},
 };
 use anyhow::{Context, Result, anyhow};
@@ -379,12 +379,6 @@ impl Agent {
         if self.repeats.lock().stopping(&turn.turn_id) {
             return Ok(Some(Ran::cancelled(LADDER_STOPPED)));
         }
-        let draft = self.depth == 0
-            && self
-                .state
-                .goal(&self.thread_id)
-                .await?
-                .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
         let denied = match self.hooks.is_empty() {
             true => None,
             false => {
@@ -396,13 +390,7 @@ impl Agent {
                 checked.await
             }
         };
-        Ok(match denied {
-            _ if draft && call.name != "goal" => Some(Ran::failed(
-                "error: draft goal execution is blocked until the user approves its acceptance contract".to_owned(),
-            )),
-            Some(denied) => Some(Ran::failed(format!("error: {denied}"))),
-            None => None,
-        })
+        Ok(denied.map(|denied| Ran::failed(format!("error: {denied}"))))
     }
 
     /// Runs `group[i]` for each `i` in `running`, at most `TOGETHER` at once, until all are

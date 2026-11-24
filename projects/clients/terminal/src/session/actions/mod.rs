@@ -101,7 +101,6 @@ pub async fn apply(
         Action::Pin(ask) => thread::pin(client, app, ask).await,
         Action::SetBranchPrefix(prefix) => settings::set_branch_prefix(client, app, prefix).await,
         Action::SetIdleMinutes(minutes) => settings::set_idle_minutes(client, app, minutes).await,
-        Action::SetGoalRounds(rounds) => settings::set_goal_rounds(client, app, rounds).await,
         Action::SetModelTimeout(seconds) => settings::set_model_timeout(client, app, seconds).await,
         Action::SetMaxAttempts(attempts) => settings::set_max_attempts(client, app, attempts).await,
         Action::SetMemoryChars(chars) => settings::set_memory_chars(client, app, chars).await,
