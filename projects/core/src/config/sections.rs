@@ -120,6 +120,33 @@ pub struct Limits {
     /// Steps before the model is asked for a different plan.
     #[serde(default = "default_no_progress_replan_at")]
     pub no_progress_replan_at: u32,
+    /// Whether a turn that a rule marks a stall candidate (still no progress after the
+    /// re-plan, or a cycle asked twice for a different plan) is read by a judge model: it
+    /// ends the turn only when confident it is stuck, and otherwise its advice goes to
+    /// the model as a note and the next look waits longer.
+    #[serde(default = "yes")]
+    pub loop_judge: bool,
+    /// Judge calls a turn may make at most.
+    #[serde(default = "default_loop_judge_calls")]
+    pub loop_judge_calls: u32,
+    /// Whether the model's text repeating one piece over and over, outside code, tables
+    /// and lists, is cut short and the step taken again with a note.
+    #[serde(default = "yes")]
+    pub text_loops: bool,
+    /// Times a 50-character piece of text comes back close together before the cut.
+    #[serde(default = "default_text_loop_repeats")]
+    pub text_loop_repeats: u32,
+    /// Whether goal rounds in a row that only wrote text, calling no tool, with no
+    /// message from the user between, get a note in the next round, then a request for a
+    /// different plan. Notes only.
+    #[serde(default = "yes")]
+    pub monologue: bool,
+    /// Such rounds in a row before the note, and between notes after the re-plan.
+    #[serde(default = "default_monologue_note_at")]
+    pub monologue_note_at: u32,
+    /// Rounds before the model is asked for a different plan.
+    #[serde(default = "default_monologue_replan_at")]
+    pub monologue_replan_at: u32,
     /// Whether a goal pauses for the user once its rounds stop changing anything: the
     /// same project files and the same test results after each.
     #[serde(default = "yes")]
@@ -244,6 +271,13 @@ impl Default for Limits {
             no_progress: true,
             no_progress_note_at: default_no_progress_note_at(),
             no_progress_replan_at: default_no_progress_replan_at(),
+            loop_judge: true,
+            loop_judge_calls: default_loop_judge_calls(),
+            text_loops: true,
+            text_loop_repeats: default_text_loop_repeats(),
+            monologue: true,
+            monologue_note_at: default_monologue_note_at(),
+            monologue_replan_at: default_monologue_replan_at(),
             goal_stall: true,
             goal_stall_rounds: default_goal_stall_rounds(),
             record_changes: true,
@@ -372,6 +406,34 @@ fn default_no_progress_replan_at() -> u32 {
 /// turn that burns itself out.
 pub const MIN_NO_PROGRESS_STEPS: u32 = 3;
 pub const MAX_NO_PROGRESS_STEPS: u32 = 500;
+
+/// A judge per stall candidate, the look after a redirect waiting longer each time:
+/// three reach far into a turn.
+fn default_loop_judge_calls() -> u32 {
+    3
+}
+
+pub const MIN_LOOP_JUDGE_CALLS: u32 = 1;
+pub const MAX_LOOP_JUDGE_CALLS: u32 = 10;
+
+/// Gemini CLI's count: ten times one piece of text within a few hundred characters is
+/// no longer prose.
+fn default_text_loop_repeats() -> u32 {
+    10
+}
+
+/// Fewer and a refrain or a list in prose would be cut.
+pub const MIN_TEXT_LOOP_REPEATS: u32 = 5;
+pub const MAX_TEXT_LOOP_REPEATS: u32 = 100;
+
+/// OpenHands' count of answers in a row with no action.
+fn default_monologue_note_at() -> u32 {
+    3
+}
+
+fn default_monologue_replan_at() -> u32 {
+    5
+}
 
 /// One round that changed nothing can be a look around; three is a goal going nowhere.
 fn default_goal_stall_rounds() -> u32 {
