@@ -6,4 +6,4 @@ change while the team runs, from 1 up to the setting (`work.set_team_at_once` re
 budget form). Old configs'
 `limits.team_max_steps`, `team_max_tokens` and `team_max_minutes` are read and dropped;
 a team that ended on a budget under an older core still reads with that reason. Clients
-older than protocol 38 are no longer accepted.
+older than protocol 39 are no longer accepted.

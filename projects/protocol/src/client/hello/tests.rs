@@ -86,7 +86,7 @@ fn a_version_outside_the_range_is_refused() {
     for (protocol, expected) in [
         (36, Err(Refusal::Version)),
         (37, Err(Refusal::Version)),
-        (38, Ok(())),
+        (38, Err(Refusal::Version)),
         (39, Ok(())),
         (40, Err(Refusal::Version)),
     ] {
