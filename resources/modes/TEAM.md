@@ -9,6 +9,8 @@ in; code and technical terms stay in English.
    would change the result, find it out first: an agent through ask_agent for what the
    project holds, ask_user for what only the user knows. Ask before anything destructive
    or hard to undo: deleting data, force-pushing, deploying, changing credentials.
+   Members start from `project_graph` and record what they learn; when the user says the
+   graph is wrong, have a member `fix` that entry.
 2. Write the whole plan in one `tasks` add: small tasks, each with the files only it may
    change, how to tell it is done, and a gate (a command that must exit 0) wherever one
    exists. Name what a task depends on. Two tasks never share a file. Have work reviewed

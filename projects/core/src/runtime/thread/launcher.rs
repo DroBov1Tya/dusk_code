@@ -85,6 +85,14 @@ impl Launcher {
         depth: usize,
     ) -> Result<ThreadSetup> {
         let scope = Arc::new(self.scope(cwd, workspace)?);
+        // The thread starts: its project's graph is brought up to date, in the background.
+        if self.config.current().limits().project_graph {
+            crate::project::graph::refresh_soon(
+                Arc::clone(&self.state),
+                scope.cwd().to_owned(),
+                crate::tools::console::skipped_folders(&scope),
+            );
+        }
         Ok(ThreadSetup {
             state: Arc::clone(&self.state),
             model: Arc::clone(&self.model),
@@ -413,7 +421,7 @@ mod tests {
     #[tokio::test]
     async fn argument_dependent_tools_repeat_only_for_reads() {
         let (chat, _) = registries("arguments").await;
-        let cases: [(&str, Value, bool); 8] = [
+        let cases: [(&str, Value, bool); 11] = [
             ("goal", json!({"action": "show"}), true),
             ("goal", json!({"action": "propose"}), false),
             ("goal", json!({"action": "request_verification"}), false),
@@ -422,6 +430,9 @@ mod tests {
             ("jobs", json!({"action": "output", "job_id": "j"}), true),
             ("jobs", json!({"action": "cancel", "job_id": "j"}), false),
             ("jobs", json!({}), false),
+            ("project_graph", json!({"action": "about"}), true),
+            ("project_graph", json!({"action": "record"}), false),
+            ("project_graph", json!({"action": "fix"}), false),
         ];
         for (name, arguments, expected) in cases {
             assert_eq!(
@@ -431,8 +442,8 @@ mod tests {
             );
             assert_eq!(
                 chat.read_only(name, &arguments),
-                // Only the job reads are read-only; goal show is repeatable but writes.
-                expected && name == "jobs",
+                // Goal show is repeatable but writes; the other reads are read-only.
+                expected && name != "goal",
                 "{name} {arguments} read-only"
             );
         }
