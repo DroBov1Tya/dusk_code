@@ -474,7 +474,12 @@ fn with_no_judge_the_same_failing_tests_stop_the_turn_as_before() {
     let mut limits = Limits::default();
     limits.loop_judge = false;
     let stop_at = limits.failure_stop_at;
-    assert!(!edits_failing_the_same(&mut repeats, 0, stop_at - 1, &limits));
+    assert!(!edits_failing_the_same(
+        &mut repeats,
+        0,
+        stop_at - 1,
+        &limits
+    ));
     assert!(edits_failing_the_same(&mut repeats, stop_at, 1, &limits));
 }
 
@@ -488,8 +493,18 @@ fn once_the_judges_are_spent_the_same_failing_tests_stop_the_turn_later() {
     for _ in 0..limits.loop_judge_calls {
         repeats.judged("t");
     }
-    assert!(!edits_failing_the_same(&mut repeats, stop_at, stop_at - 1, &limits));
-    assert!(edits_failing_the_same(&mut repeats, 2 * stop_at - 1, 1, &limits));
+    assert!(!edits_failing_the_same(
+        &mut repeats,
+        stop_at,
+        stop_at - 1,
+        &limits
+    ));
+    assert!(edits_failing_the_same(
+        &mut repeats,
+        2 * stop_at - 1,
+        1,
+        &limits
+    ));
 }
 
 #[test]
@@ -516,8 +531,7 @@ fn the_same_command_ending_another_way_is_news() {
     let passed = exited(0, "2 passed in 0.10s");
     assert_eq!(run(&mut repeats, &test, &passed, Some(3), &limits), None);
     // A pass after it is checked again is a repeat of the pass, not of the failure.
-    let (rung, count, note) =
-        run(&mut repeats, &test, &passed, Some(3), &limits).expect("a note");
+    let (rung, count, note) = run(&mut repeats, &test, &passed, Some(3), &limits).expect("a note");
     assert_eq!((rung, count), (RepeatRung::TestRerun, 2));
     assert!(note.contains("it passed"), "{note}");
     // A flaky failure checked again that passes is news too.

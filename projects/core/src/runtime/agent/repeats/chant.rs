@@ -211,7 +211,12 @@ impl Chant {
             return;
         };
         let close = last.saturating_sub(first) <= MAX_GAP * (self.repeats - 1);
-        if close && self.places.get(&key).is_some_and(|places| self.spans_alike(places)) {
+        if close
+            && self
+                .places
+                .get(&key)
+                .is_some_and(|places| self.spans_alike(places))
+        {
             self.cut = Some(second);
         }
     }
