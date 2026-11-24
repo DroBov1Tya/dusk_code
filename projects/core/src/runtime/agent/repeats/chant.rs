@@ -2,7 +2,9 @@
 //! lost its way does, burning the output cap on a loop no tool rule sees. As Gemini CLI
 //! does, the streamed answer is read in 50-character pieces, each piece's places kept,
 //! and a piece that comes back `limits.text_loop_repeats` times close together (on
-//! average within `MAX_GAP` characters of the one before) is a loop.
+//! average within `MAX_GAP` characters of the one before) is a loop. Only places that do
+//! not overlap count, so a run of one character or a short pattern is a loop only once
+//! it is ten pieces long.
 //!
 //! Text that repeats by its nature is not read: code (inside a fence or indented),
 //! tables, lists, headings, quotes and rules. Such a line also forgets what came
@@ -180,6 +182,12 @@ impl Chant {
         }
         let start = at + 1 - CHUNK;
         let places = self.places.entry(hash(&self.piece)).or_default();
+        // Only places that do not overlap count: inside a run of one character, or of a
+        // short pattern, every piece is the same one place later, and a long hash, a
+        // rule after a word or a bar of blocks is no loop.
+        if places.back().is_some_and(|last| start < last + CHUNK) {
+            return;
+        }
         places.push_back(start);
         if places.len() > self.repeats {
             places.pop_front();

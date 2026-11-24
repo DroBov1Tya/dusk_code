@@ -199,6 +199,8 @@ impl Agent {
         // A stream that ended before the cut took effect went round all the same.
         if let (Some(cut), Ok(_), Some(repeats)) = (chanted, &generated, chant) {
             info!("thread {}: the model's text went round", self.thread_id);
+            // Told as a cycle: the rungs were fixed for all of the loop guards in one
+            // protocol version, with none for text. The log line above tells them apart.
             self.emit(ThreadEvent::RepeatNotice {
                 rung: RepeatRung::Cycle,
                 count: repeats,

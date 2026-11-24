@@ -118,6 +118,30 @@ fn any_text_is_read_without_failing() {
     for text in odd {
         let _ = read(&text, 3);
     }
-    // One character said over and over is no prose either.
-    assert!(read(&"a".repeat(200), 1).is_some());
+    // A short run of one character is no loop; one ten pieces long is.
+    assert_eq!(read(&"a".repeat(200), 1), None);
+    assert!(read(&"a".repeat(600), 7).is_some());
+}
+
+#[test]
+fn runs_of_one_character_or_a_short_pattern_in_prose_are_not_cut() {
+    let zeros = "0".repeat(64);
+    let hash = format!("The empty tree hashes to `{zeros}`, and so does the test vector.\n");
+    let dots = format!("Introduction {} page 1\n", ".".repeat(70));
+    let rule = format!("Result {}\n", "=".repeat(80));
+    let blocks = format!("Progress {} 100%\n", "\u{2588}".repeat(80));
+    let base64 = format!("The key is {}== in the fixture.\n", "QUFB".repeat(30));
+    for text in [hash, dots, rule, blocks, base64] {
+        for part in [1, 5, 64] {
+            assert_eq!(read(&text, part), None, "{text}");
+        }
+        // Said a few times in an answer, still no loop.
+        assert_eq!(read(&text.repeat(3), 9), None, "{text}");
+    }
+}
+
+#[test]
+fn a_short_sentence_said_many_times_is_still_cut() {
+    let text = "Trying again. ".repeat(60);
+    assert!(read(&text, 4).is_some());
 }
