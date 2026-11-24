@@ -1,8 +1,8 @@
 ---
 name: computer-use
 description: "Driving the screen with the computer tools: screenshot, click, type_text, press_keys, computer_actions, window_session, physical_input. Use before the first action on an app's window or the desktop; not when a command or a file tool can do the work."
-source: "duskcode"
-author: "duskcode"
+source: "Duskcode"
+author: "Duskcode"
 license: MIT
 tags: [computer, desktop]
 ---

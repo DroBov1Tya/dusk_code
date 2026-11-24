@@ -1,8 +1,8 @@
 ---
 name: skill-evolve
 description: "Change a skill when what worked differs from or beats its steps; create one when a checked method repeated and no skill covers it."
-source: "dusk_code"
-author: "Neil Ermak"
+source: "Duskcode"
+author: "Duskcode"
 license: MIT
 tags: [skills, learning]
 links: [skill-creator]
@@ -47,9 +47,9 @@ not a step. When unsure, do not write; tell the user what you noticed.
 
 ## Built-in skills
 
-A skill dusk ships (its `source` is `dusk_code` or `duskcode`, as in this one) is
-replaced from the release at every start, so an edit is lost. Do not edit it; tell the
-user in one line what should change.
+A skill dusk ships (its `source` is `Duskcode`, as in this one) is replaced from the
+release at every start, so an edit is lost. Do not edit it; tell the user in one line
+what should change.
 
 ## Save and tell
 
