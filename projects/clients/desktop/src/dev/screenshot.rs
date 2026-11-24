@@ -21,6 +21,8 @@
 //!   (`DUSK_METEOR_SMALL`: a small one, `DUSK_METEOR_LEFT`: a great one from the left);
 //! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
+//! - `fake=tiers`: two providers with models and the subagent tiers set, unset and on a
+//!   provider no longer connected, for `settings=llm` (after its models load);
 //! - `fake=limits`: API rate limits; `fake=plan-limits|plan-unavailable`: ChatGPT plan usage;
 //! - `fake=plugins`: about 200 made-up plugin parts of 60 plugins in the status (see
 //!   `dev::plugins`); `plugins=menu`: open the menu of them; `plugins=search:TEXT`: type
@@ -741,6 +743,46 @@ fn act(
             ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
             cx.notify();
         }
+        // Two providers with models and the subagent tiers in each state: strong chosen,
+        // default left on the chat's model, weak on a provider no longer connected.
+        "fake" if value == "tiers" => {
+            use dusk_protocol::config::TierState;
+            use dusk_protocol::model::{Model, ProviderStatus};
+            let provider = |name: &str, ids: &[&str]| ProviderStatus {
+                name: name.into(),
+                models: Ok(ids
+                    .iter()
+                    .map(|id| Model {
+                        id: (*id).into(),
+                        context_window: None,
+                        max_output: None,
+                    })
+                    .collect()),
+                balance: None,
+                limits: None,
+                enabled: true,
+                failure: None,
+            };
+            ws.providers = vec![
+                provider("chatgpt", &["gpt-5.5", "gpt-6.1-sol", "gpt-6.2-rigel"]),
+                provider(
+                    "openrouter",
+                    &["claude-opus-4.7", "claude-sonnet-4.6", "claude-haiku-4.5"],
+                ),
+            ];
+            ws.status.model = Some("chatgpt/gpt-5.5".into());
+            let tiers = &mut ws.status.model_tiers;
+            tiers.strong = TierState {
+                chosen: Some("openrouter/claude-opus-4.7".into()),
+                missing: false,
+            };
+            tiers.default = TierState::default();
+            tiers.weak = TierState {
+                chosen: Some("local/qwen-coder-7b".into()),
+                missing: true,
+            };
+            cx.notify();
+        }
         // A user's message with a picture thumbnail under it. The bytes are decoded here
         // in place of the core, so a window with no real chat can show the card.
         "fake" if value == "sentpicture" => {
@@ -825,8 +867,21 @@ fn act(
                         thread_id: thread_id.clone(),
                         agent: (*role).into(),
                         task: (*task).into(),
-                        effort: None,
-                        model: Some("chatgpt/gpt-5.5".into()),
+                        // The tiers an agent picks: strong for review and plans, weak
+                        // for scouting, the chat's model for the rest.
+                        effort: match index {
+                            3 | 7 => Some(dusk_protocol::model::Effort::High),
+                            5 => Some(dusk_protocol::model::Effort::Low),
+                            _ => Some(dusk_protocol::model::Effort::Medium),
+                        },
+                        model: Some(
+                            match index {
+                                3 | 7 => "chatgpt/gpt-6.1-sol",
+                                5 => "openrouter/claude-haiku-4.5",
+                                _ => "chatgpt/gpt-5.5",
+                            }
+                            .into(),
+                        ),
                         task_id: None,
                     });
                     let inner = match index {

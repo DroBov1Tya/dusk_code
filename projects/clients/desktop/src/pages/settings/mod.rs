@@ -11,6 +11,7 @@ mod secrets;
 pub use secrets::TokenBox;
 mod shortcuts;
 mod system;
+mod tiers;
 pub mod uninstall;
 mod workshop;
 pub use workshop::Repositories;

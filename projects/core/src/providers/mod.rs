@@ -22,9 +22,11 @@ mod request;
 pub(crate) mod transport;
 
 #[cfg(test)]
+pub use errors::RefusedEffort;
+#[cfg(test)]
 pub use errors::is_transient;
 pub use errors::{
-    ProviderError, ProviderErrorKind, is_output_limit, is_unsupported_effort,
+    ProviderError, ProviderErrorKind, is_output_limit, is_refused_effort, is_unsupported_effort,
     is_unsupported_pictures, provider_error, stream_error,
 };
 pub use health::Health;

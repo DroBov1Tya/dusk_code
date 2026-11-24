@@ -16,7 +16,8 @@ pub const DESCRIPTION: &str = "\
     left out), `files` (the paths only it may change), `accept` (how to tell it is \
     done), `gate` (a command that must exit 0; the core runs it) or `confirm` (the user \
     must confirm), `brief` (what the plan alone does not say), `phase`, `kind` (a \
-    procedure). A cycle is refused. `run` starts the team with a `budget`: the core \
+    procedure), `tier` (its model: strong to design, review or debug, weak for \
+    mechanical or read-only work) and `effort`. A cycle is refused. `run` starts the team with a `budget`: the core \
     gives each task whose `after` are done to an agent with only what that task needs, \
     checks gates, and writes to you only when a task waits for you, fails or is blocked, \
     and when the team ends. End your turn and wait; never ask for status. `review` \
@@ -46,7 +47,10 @@ pub fn schema() -> Value {
                     "confirm": {"type": "boolean"},
                     "brief": {"type": "string"},
                     "phase": {"type": "string"},
-                    "kind": {"type": "string"}
+                    "kind": {"type": "string"},
+                    "tier": {"type": "string", "enum": ["strong", "default", "weak"]},
+                    "effort": {"type": "string", "enum": [
+                        "off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]}
                 },
                 "additionalProperties": false,
                 "required": ["text"]

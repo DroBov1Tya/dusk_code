@@ -237,7 +237,7 @@ fn figure(
                                 .truncate()
                                 .meta()
                                 .text_color(muted)
-                                .child(agent.role_and_model()),
+                                .child(about(agent)),
                         ),
                 )
                 .child(div().small().truncate().child(headline(&agent.task)))
@@ -312,6 +312,21 @@ fn figure(
             ws.open_agent_chat(&open, cx);
             ws.modal_focus.focus(window, cx);
         }))
+}
+
+/// `backend-engineer · gpt-5.5 · high`: the row is narrow, so the model goes without its
+/// provider and the effort without its word; the agent's own chat names both in full.
+fn about(agent: &Agent) -> String {
+    let model = agent
+        .model
+        .as_deref()
+        .map(dusk_protocol::thread::short_model);
+    let effort = agent.effort.map(|effort| effort.name().to_owned());
+    [Some(agent.role.clone()), model, effort]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" \u{00B7} ")
 }
 
 /// A task in one line: its first line that says something, markdown marks off. A brief

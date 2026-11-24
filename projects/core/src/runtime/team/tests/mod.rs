@@ -47,6 +47,9 @@ pub(super) enum Out {
     Call(&'static str, Value),
     /// The call fails in a way not worth retrying, so the turn fails.
     Reject,
+    /// The provider refuses the request's level of reasoning effort, as a model without
+    /// reasoning does.
+    RefuseEffort,
     /// The call never answers, like a member still at work.
     Hang,
     /// Answers `Say` once the test lets one member through (`Rig::let_through`).
@@ -60,6 +63,8 @@ pub(super) struct Asked {
     pub user: String,
     /// The newest tool result, when it is the last message of the request.
     pub result: Option<String>,
+    /// The level of reasoning effort the call carries.
+    pub effort: Option<crate::config::Effort>,
 }
 
 type Script = Box<dyn Fn(&Asked) -> Out + Send + Sync>;
@@ -128,6 +133,7 @@ impl ModelProvider for Scripted {
             lead: *self.lead.lock().unwrap() == thread,
             user: user.unwrap_or_default(),
             result,
+            effort: request.effort,
         };
         let stream = match (self.script)(&asked) {
             Out::Say(text) => plain(say(text)),
@@ -156,6 +162,11 @@ impl ModelProvider for Scripted {
                 ]))
             }
             Out::Reject => return Box::pin(async { Err(anyhow::anyhow!("bad request")) }),
+            Out::RefuseEffort => {
+                use crate::providers::{ProviderError, ProviderErrorKind, RefusedEffort};
+                let failure = ProviderError::new(ProviderErrorKind::Refused, "bad request");
+                return Box::pin(async move { Err(RefusedEffort(failure.into()).into()) });
+            }
         };
         Box::pin(async move { Ok(Box::new(stream) as Box<dyn ChatStream>) })
     }

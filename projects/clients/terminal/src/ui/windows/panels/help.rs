@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 45] = [
+pub const KEYS: [(&str, &str); 46] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -75,6 +75,10 @@ pub const KEYS: [(&str, &str); 45] = [
         "what @me says about you; its files are set in the GUI",
     ),
     ("/snippet", "write a snippet for @name: /snippet name"),
+    (
+        "/tier",
+        "subagent models by tier: /tier strong provider/model, /tier weak unset",
+    ),
     (
         "/access",
         "this chat's access: ask, sandbox, auto, full, default",

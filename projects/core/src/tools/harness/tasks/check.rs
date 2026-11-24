@@ -11,7 +11,9 @@ use serde::Deserialize;
 use super::text::plain;
 use crate::{
     catalog::agents::{Agents, GENERAL_AGENT},
+    config::Effort,
     project::plain_relative,
+    runtime::tiers::Tier as ModelTier,
     state::{GoalCheck, GoalCriterion, MAX_FILES, NewTask, TaskEdit, TaskFiles},
     tools::{ToolContext, ToolScope},
 };
@@ -35,6 +37,8 @@ pub struct TaskArguments {
     pub brief: Option<String>,
     pub phase: Option<String>,
     pub kind: Option<String>,
+    pub tier: Option<ModelTier>,
+    pub effort: Option<Effort>,
 }
 
 impl TaskArguments {
@@ -68,6 +72,8 @@ pub async fn new_tasks(
             brief: entry.brief.unwrap_or_default(),
             gate: parts.gate.flatten(),
             files: parts.files.unwrap_or_default(),
+            tier: entry.tier,
+            effort: entry.effort,
         });
     }
     let roles: Vec<&str> = tasks
@@ -101,6 +107,8 @@ pub async fn task_edit(
         brief: entry.brief,
         gate: parts.gate,
         files: parts.files,
+        tier: entry.tier,
+        effort: entry.effort,
     })
 }
 

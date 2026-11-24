@@ -13,7 +13,8 @@ use crate::{
     },
     config::{Config, Effort, Limits},
     providers::{
-        ChatRequest, ModelOutput, ProviderError, ToolCall, is_unsupported_effort, provider_error,
+        ChatRequest, ModelOutput, ProviderError, ToolCall, is_refused_effort,
+        is_unsupported_effort, provider_error,
     },
     state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, NewSkillChange, Turn, TurnOutcome},
     tools::{Progress, ToolKind, ToolResult},
@@ -100,16 +101,25 @@ pub struct Called {
 }
 
 impl Agent {
+    /// A subagent's model that already refused the reasoning effort is asked without it.
+    /// A chat keeps the level the user set, and its failure says why.
+    fn drops_effort(&self, model: &str) -> bool {
+        self.depth > 0 && self.effort_refused.lock().as_deref() == Some(model)
+    }
+
     /// Streams the model's response, trying again when the call fails in a way that may
     /// pass and nothing reached the user yet. The `Err` means the user stopped it during
     /// a pause between attempts. The last failure comes back as it was.
     pub async fn call_model(
         &self,
         choice: &Choice,
-        request: ChatRequest<'_>,
+        mut request: ChatRequest<'_>,
         requested_config: &Config,
         inbox: &mut Inbox,
     ) -> Result<Called, Stop> {
+        if self.drops_effort(request.model) {
+            request.effort = None;
+        }
         let limits = self.config.current().limits();
         let idle = std::time::Duration::from_secs(limits.model_timeout_seconds.into());
         let started = tokio::time::Instant::now();
@@ -156,6 +166,18 @@ impl Agent {
                 };
                 let rejected = std::mem::replace(error, anyhow!("reasoning effort rejected"));
                 *error = rejected.context(detail);
+            }
+            // A subagent's level comes from its asker, not from what its model takes: a
+            // model that refuses it is asked once more without one, and from then on.
+            let effort_refused = matches!(&generated, Ok(Err(error)) if is_refused_effort(error));
+            if effort_refused && self.depth > 0 && request.effort.is_some() && !output.answered() {
+                warn!(
+                    "thread {}: model {} refused the reasoning effort; asking without it",
+                    self.thread_id, request.model
+                );
+                *self.effort_refused.lock() = Some(request.model.to_owned());
+                request.effort = None;
+                continue;
             }
             let retry = match &generated {
                 Ok(Err(error)) if !output.answered() => provider_error(error)

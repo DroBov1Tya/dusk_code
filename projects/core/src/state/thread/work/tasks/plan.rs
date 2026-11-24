@@ -1,7 +1,7 @@
 //! The words of a plan: a task's status, its row as the store keeps it, what a lead
 //! writes into one, and the caps.
 
-use dusk_protocol::thread::GoalCheck;
+use dusk_protocol::{config::ModelTier, model::Effort, thread::GoalCheck};
 use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{error::PlanError, files::TaskFiles};
@@ -137,6 +137,10 @@ pub struct PlanTask {
     pub gate_job: Option<String>,
     pub checkpoint: Option<String>,
     pub model: Option<String>,
+    /// The tier the lead picked for the member's model; a role's own model is above it.
+    pub tier: Option<ModelTier>,
+    /// The effort the lead picked for the member.
+    pub effort: Option<Effort>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -156,6 +160,8 @@ pub struct NewTask {
     pub brief: String,
     pub gate: Option<GoalCheck>,
     pub files: TaskFiles,
+    pub tier: Option<ModelTier>,
+    pub effort: Option<Effort>,
 }
 
 /// What an `edit` changes; `None` leaves a field as it is.
@@ -170,6 +176,8 @@ pub struct TaskEdit {
     pub brief: Option<String>,
     pub gate: Option<Option<GoalCheck>>,
     pub files: Option<TaskFiles>,
+    pub tier: Option<ModelTier>,
+    pub effort: Option<Effort>,
 }
 
 /// The columns `decode` reads, in front of the rest of a query.
@@ -179,7 +187,8 @@ macro_rules! select_tasks {
             "SELECT t.task_id, t.thread_id, t.description, t.status, t.depends_on, t.role, \
              t.phase, t.acceptance, t.brief, t.gate, t.files, t.owner_thread_id, \
              t.lease_until, t.attempts, t.reworks, t.waits_on, t.note, t.gate_job, \
-             t.checkpoint, t.model, t.created_at, t.updated_at FROM tasks t ",
+             t.checkpoint, t.model, t.tier, t.effort, t.created_at, t.updated_at \
+             FROM tasks t ",
             $rest
         )
     };
@@ -195,6 +204,14 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
     let files: Vec<String> = serde_json::from_str(&files)?;
     let gate: Option<String> = row.try_get("gate")?;
     let waits_on: Option<String> = row.try_get("waits_on")?;
+    let tier: Option<String> = row.try_get("tier")?;
+    let effort: Option<String> = row.try_get("effort")?;
+    let effort = effort
+        .as_deref()
+        .map(Effort::parse)
+        .transpose()
+        .map_err(PlanError::Store)?
+        .flatten();
     let count = |name: &str| -> Result<u32, PlanError> {
         let value: i64 = row.try_get(name)?;
         u32::try_from(value).map_err(|error| PlanError::Store(error.into()))
@@ -220,6 +237,8 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
         gate_job: row.try_get("gate_job")?,
         checkpoint: row.try_get("checkpoint")?,
         model: row.try_get("model")?,
+        tier: tier.as_deref().and_then(ModelTier::parse),
+        effort,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

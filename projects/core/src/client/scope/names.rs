@@ -82,6 +82,7 @@ named! {
     R::Settings(S::Switch { .. }) => "settings.switch",
     R::Settings(S::BranchPrefix(_)) => "settings.branch_prefix",
     R::Settings(S::Arbiter(_)) => "settings.arbiter",
+    R::Settings(S::ModelTier { .. }) => "settings.model_tier",
     R::Settings(S::NextMode) => "settings.next_mode",
     R::Settings(S::Mode(_)) => "settings.mode",
     R::Settings(S::Connect { .. }) => "settings.connect",

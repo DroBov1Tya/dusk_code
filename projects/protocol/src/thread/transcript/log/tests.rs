@@ -907,3 +907,26 @@ fn a_team_card_tells_the_run_it_stands_for() {
         "Team \u{00B7} ended"
     );
 }
+
+/// The model and effort the core started a subagent on are what its row says of it.
+#[test]
+fn a_subagent_keeps_the_model_and_effort_it_was_started_on() {
+    let mut chat = Chat::default();
+    chat.apply(
+        ThreadEvent::SubagentStarted {
+            call_id: "ask".into(),
+            thread_id: "sub".into(),
+            agent: "general".into(),
+            task: "look".into(),
+            effort: Some(crate::model::Effort::Low),
+            model: Some("openrouter/haiku".into()),
+            task_id: None,
+        },
+        1,
+    );
+    let agent = chat.agent("sub").expect("the subagent is listed");
+    assert_eq!(
+        agent.role_and_model(),
+        "general \u{00B7} openrouter/haiku \u{00B7} low effort"
+    );
+}

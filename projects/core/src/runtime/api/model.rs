@@ -3,8 +3,13 @@
 use crate::config::ContextPolicy;
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::Input;
-use crate::runtime::{Runtime, model_choice::Choice};
-use anyhow::{Context, Result};
+use crate::runtime::{
+    Runtime,
+    model_choice::Choice,
+    tiers::{self, Tier},
+};
+use anyhow::{Context, Result, ensure};
+use dusk_protocol::config::{TierStates, is_model_name};
 use std::sync::Arc;
 
 impl Runtime {
@@ -59,6 +64,29 @@ impl Runtime {
         self.launcher.model.set(choice.clone());
         self.announce_model(choice);
         Ok(())
+    }
+
+    /// Chooses the model of a subagent tier, `provider/model` of a connected provider;
+    /// `None` unsets it, so subagents asked at it answer on their chat's model.
+    pub fn set_model_tier(&self, tier: Tier, model: Option<String>) -> Result<()> {
+        let model = model
+            .map(|name| name.trim().to_owned())
+            .filter(|name| !name.is_empty());
+        if let Some(name) = &model {
+            ensure!(is_model_name(name), "write the model as provider/model");
+            ensure!(
+                tiers::connected(&self.config().current(), name),
+                "{name} names no connected provider"
+            );
+        }
+        self.config()
+            .update(|config| config.set_model_tier(tier, model))?;
+        Ok(())
+    }
+
+    /// Each tier's model as the settings show it.
+    pub fn model_tiers(&self) -> TierStates {
+        tiers::states(&self.config().current())
     }
 
     /// A catalogue just read may know the window of the chosen model the start missed.

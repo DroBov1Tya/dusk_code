@@ -220,6 +220,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::Switch { .. }
         | Settings::BranchPrefix(_)
         | Settings::Arbiter(_)
+        | Settings::ModelTier { .. }
         | Settings::NextMode
         | Settings::Mode(_)
         | Settings::Connect { .. }

@@ -152,10 +152,11 @@ impl Config {
         self.providers.remove(name).is_some()
     }
 
-    /// Forgets every provider and the chosen model, which belonged to one of them.
+    /// Forgets every provider, the chosen model and the tiers' models, which belonged to them.
     pub fn remove_all_providers(&mut self) {
         self.providers.clear();
         self.model_contexts.clear();
         self.model = None;
+        self.models = Default::default();
     }
 }

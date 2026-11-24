@@ -462,6 +462,8 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
             let meta = [
                 Some(role_name(task.role.as_deref()).to_owned()),
                 model,
+                run.and_then(|run| run.effort)
+                    .map(|effort| format!("{} effort", effort.name())),
                 (task.attempts > 0).then(|| format!("attempt {}", task.attempts)),
             ]
             .into_iter()
