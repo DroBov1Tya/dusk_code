@@ -352,8 +352,9 @@ pub fn guard_names(listings: &mut [Listing], taken: &BTreeMap<String, BTreeSet<S
 }
 
 /// Who the Official mark is for: the maintainers of the official Workshop, as its
-/// publisher (`scripts/repo.py`) names them.
-const OWNERS: [&str; 2] = ["duskcode", "DroBov1Tya"];
+/// publisher (`scripts/repo.py`) names them. "Duskcode" is the canonical name; the
+/// lowercase one stays for lists signed before it.
+const OWNERS: [&str; 3] = ["Duskcode", "duskcode", "DroBov1Tya"];
 
 /// How far `entry` is trusted: its source's tier, lowered to Verified for an entry of the
 /// official list that somebody else made. Only the official list's badge and author are

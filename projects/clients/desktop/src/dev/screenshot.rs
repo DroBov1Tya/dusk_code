@@ -37,6 +37,7 @@
 //!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
 //! - `fake=blocks|blocks-working|blocks-wait|blocks-decision`: a chat with a Flow, Checks and
 //!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
+//! - `fake=diagrams|diagram-KIND`: a chat with a diagram of each kind, or of one kind;
 //! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
 //!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
 //!   the composer's panel, the Todo's finished tasks; `fake=todo-short`: its board cut to
@@ -491,6 +492,8 @@ fn act(
             }
             cx.notify();
         }
+        // The removal window at a step or phase; `removed` closes the app as a removal would.
+        "uninstall" => ws.dev_uninstall(value, window, cx),
         "type" => {
             ws.edit_draft(
                 ws.shown.clone(),
@@ -630,6 +633,7 @@ fn act(
             cx.notify();
         }
         "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
+        "fake" if value.starts_with("diagram") => super::diagrams::fake(ws, value, cx),
         "fake" if value == "mcp" => super::polish::mcp(ws, cx),
         "fake"
             if matches!(
@@ -969,7 +973,16 @@ fn act(
             inner.push(
                 Item::Assistant {
                     text: "Entries now expire after the time set in `ttl`; the tests pass.".into(),
-                    reasoning: String::new(),
+                    // Long enough to scroll, so the copy button rides down the open block.
+                    reasoning: (1..=30)
+                        .map(|line| {
+                            format!(
+                                "Line {line}: the entry keeps its deadline beside the value, \
+                                 so a read can drop it without a second lookup."
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
                 },
                 0,
             );
@@ -980,6 +993,7 @@ fn act(
             use crate::pages::chat::messages::{RUN, STEP};
             ws.unfolded.insert(("fake-agent".into(), 1 | RUN));
             ws.unfolded.insert(("fake-agent".into(), 1 | STEP));
+            ws.unfolded.insert(("fake-agent".into(), 6));
             ws.modal = Some(Modal::AgentChat {
                 agent: "fake-agent".into(),
                 name: "backend-engineer".into(),

@@ -1,12 +1,11 @@
 //! Taking duskcode off the machine: a section on the Advanced page and a window of three
-//! steps. The last one asks for a word typed. The removal itself is the terminal client's
-//! `remove`, started in the background; it waits for this window to close before it
-//! deletes anything, because the window holds the data it deletes.
+//! steps. The last one asks for a word typed. The removal is the core's, the one
+//! `duskcode remove` runs, done from inside the app once its core has stopped; the app
+//! then says so and closes itself.
 
 use crate::ui::Type;
-use std::process::{Command, Stdio};
+use std::time::Duration;
 
-use anyhow::{Context as _, Result, ensure};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, IconName,
@@ -27,6 +26,8 @@ const WORD: &str = "REMOVE";
 pub struct Uninstall {
     step: u8,
     files: bool,
+    /// Where the removal is once the word was typed.
+    phase: Phase,
     typed: Entity<InputState>,
     /// Redraws the window as the word is typed, so the button can open.
     _typing: Subscription,
@@ -39,11 +40,23 @@ impl Uninstall {
         Self {
             step: 1,
             files: false,
+            phase: Phase::Asking,
             typed,
             _typing,
         }
     }
 }
+
+enum Phase {
+    Asking,
+    Removing,
+    /// Done; the keys the keychain kept, if any.
+    Removed(Option<String>),
+    Failed(String),
+}
+
+/// How long the last word stays before the app closes.
+const FAREWELL: Duration = Duration::from_millis(2500);
 
 /// The section at the end of the Advanced page.
 pub fn section(cx: &mut Context<Workspace>) -> Div {
@@ -74,6 +87,16 @@ pub fn section(cx: &mut Context<Workspace>) -> Div {
 }
 
 pub fn render(state: &Uninstall, cx: &mut Context<Workspace>) -> Div {
+    match &state.phase {
+        Phase::Asking => {}
+        Phase::Removing => {
+            return div()
+                .p_5()
+                .child(crate::ui::loading("Removing duskcode...", cx).px_0());
+        }
+        Phase::Removed(kept) => return removed(kept.as_deref(), cx),
+        Phase::Failed(error) => return failed(error, cx),
+    }
     let theme = cx.theme();
     let (muted, danger) = (theme.muted_foreground, theme.danger);
     let (title, text, last) = match state.step {
@@ -92,8 +115,8 @@ pub fn render(state: &Uninstall, cx: &mut Context<Workspace>) -> Div {
         ),
         _ => (
             "Last step",
-            "duskcode will close now. The removal then runs in the background and finishes in a \
-             few seconds. Type the word below to go on.",
+            "duskcode stops, removes itself in a few seconds and then closes. Type the word \
+             below to go on.",
             true,
         ),
     };
@@ -164,11 +187,69 @@ pub fn render(state: &Uninstall, cx: &mut Context<Workspace>) -> Div {
     )
 }
 
+/// The last word, shown while the app closes itself.
+fn removed(kept: Option<&str>, cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .p_5()
+        .child(
+            div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child("duskcode is removed"),
+        )
+        .children(kept.map(|kept| {
+            div().small().text_color(cx.theme().danger).child(format!(
+                "Some API keys stayed in the system keychain; delete them in the Keychain \
+                     Access app. {kept}"
+            ))
+        }))
+        .child(
+            div()
+                .small()
+                .text_color(muted)
+                .child("This window closes in a moment."),
+        )
+}
+
+/// What stopped the removal. The core has stopped, so the app can only close.
+fn failed(error: &str, cx: &mut Context<Workspace>) -> Div {
+    let theme = cx.theme();
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .p_5()
+        .child(
+            div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.danger)
+                .child("The removal did not finish"),
+        )
+        .child(div().small().child(error.to_owned()))
+        .child(div().small().text_color(theme.muted_foreground).child(
+            "Close every other duskcode window and terminal, then open duskcode and remove it \
+             again, or run `duskcode remove` in a terminal.",
+        ))
+        .child(
+            div().flex().flex_row().justify_end().child(
+                Button::new("uninstall-quit")
+                    .label("Close duskcode")
+                    .on_click(|_, _, cx| cx.quit()),
+            ),
+        )
+}
+
 impl Workspace {
     fn uninstall_next(&mut self, cx: &mut Context<Self>) {
         let Some(Modal::Uninstall(state)) = &mut self.modal else {
             return;
         };
+        if !matches!(state.phase, Phase::Asking) {
+            return;
+        }
         if state.step < 3 {
             state.step += 1;
             cx.notify();
@@ -177,44 +258,78 @@ impl Workspace {
         if state.typed.read(cx).value().trim() != WORD {
             return;
         }
-        match start_removal(state.files) {
-            Ok(()) => cx.quit(),
-            Err(error) => {
-                self.modal = None;
-                self.fail(error, cx);
+        state.phase = Phase::Removing;
+        let files = state.files;
+        cx.notify();
+        self.core
+            .clone()
+            .uninstall(cx, files, |ws, result, cx| ws.uninstall_done(result, cx));
+    }
+
+    /// Says how the removal went; after one that worked, the app closes itself.
+    pub fn uninstall_done(
+        &mut self,
+        result: anyhow::Result<Option<String>>,
+        cx: &mut Context<Self>,
+    ) {
+        let ok = result.is_ok();
+        let phase = match result {
+            Ok(kept) => Phase::Removed(kept),
+            Err(error) => Phase::Failed(format!("{error:#}")),
+        };
+        match &mut self.modal {
+            Some(Modal::Uninstall(state)) => state.phase = phase,
+            // Closed meanwhile: what failed still has to be said.
+            _ => {
+                if let Phase::Failed(error) = phase {
+                    self.fail(anyhow::anyhow!(error), cx);
+                }
             }
         }
+        cx.notify();
+        if ok {
+            cx.spawn(async move |_, cx| {
+                cx.background_executor().timer(FAREWELL).await;
+                cx.update(|cx| cx.quit());
+            })
+            .detach();
+        }
     }
-}
 
-/// Starts `duskcode remove --yes` beside this program, detached, so it outlives it.
-fn start_removal(files: bool) -> Result<()> {
-    let exe = std::env::current_exe().context("cannot find this program")?;
-    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
-    let cli = exe
-        .parent()
-        .map(|folder| folder.join("duskcode"))
-        .context("this program has no folder")?;
-    ensure!(
-        cli.is_file(),
-        "the terminal client is not beside this program ({}); run `duskcode remove` in a terminal",
-        cli.display()
-    );
-    let mut command = Command::new(&cli);
-    command.args(["remove", "--yes"]);
-    if files {
-        command.arg("--files");
+    /// Development only: the window at a step or a phase, without removing anything.
+    #[cfg(feature = "screenshot")]
+    pub fn dev_uninstall(&mut self, at: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let mut state = Uninstall::new(window, cx);
+        match at {
+            "2" => state.step = 2,
+            "3" => {
+                state.step = 3;
+                state
+                    .typed
+                    .update(cx, |typed, cx| typed.set_value(WORD, window, cx));
+            }
+            "removing" => state.phase = Phase::Removing,
+            _ => {}
+        }
+        self.modal = Some(Modal::Uninstall(state));
+        match at {
+            "removed" => self.uninstall_done(Ok(None), cx),
+            "failed" => self.uninstall_done(
+                Err(anyhow::anyhow!("another duskcode is still running")),
+                cx,
+            ),
+            _ => cx.notify(),
+        }
     }
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // Its own group, so closing this window does not take it along.
-        command.process_group(0);
+
+    /// Whether the removal window may close: not while the core is being taken away.
+    pub fn uninstall_busy(&self) -> bool {
+        matches!(
+            &self.modal,
+            Some(Modal::Uninstall(Uninstall {
+                phase: Phase::Removing | Phase::Removed(_),
+                ..
+            }))
+        )
     }
-    command.spawn().context("cannot start the removal")?;
-    Ok(())
 }

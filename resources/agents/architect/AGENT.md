@@ -5,7 +5,8 @@ entry: true
 links: [duskcode-agents/backend-engineer, duskcode-agents/web-engineer, duskcode-agents/mobile-engineer, duskcode-agents/infrastructure-engineer, duskcode-agents/network-engineer]
 skills: [duskcode-engineering/spike]
 tools: [read_file, search_files, run_command, jobs, load_skill, read_history, tasks, ask_agent]
-source: Dusk Code
+source: "Duskcode"
+author: "Duskcode"
 tags: [architecture, design, integration]
 ---
 

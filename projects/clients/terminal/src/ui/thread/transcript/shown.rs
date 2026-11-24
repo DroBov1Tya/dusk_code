@@ -1,6 +1,6 @@
-//! Blocks the agent showed with the `show` tool. Every text in one is a protocol `Line`:
-//! drawn as it is, never as markdown or a link. Each block says it is the agent's, so it
-//! cannot pass for a prompt of the app.
+//! Blocks the agent showed with `show` or `draw_diagram`. Every text in one is a protocol
+//! `Line`: drawn as it is, never as markdown or a link. Each block says it is the agent's,
+//! so it cannot pass for a prompt of the app.
 
 use dusk_protocol::thread::{Block, CheckState, Checks, Counts, Flow, FlowCard, Layer};
 use ratatui::{
@@ -51,6 +51,7 @@ pub(super) fn render(block: &Block, width: usize) -> Vec<Line<'static>> {
         Block::Flow(_) => as_text(block, "flow", width),
         Block::Checks(checks) => draw_checks(checks, width),
         Block::Choices(_) => as_text(block, "choices", width),
+        Block::Diagram(diagram) => super::diagram::render(diagram, width),
     }
 }
 
@@ -68,7 +69,7 @@ pub(super) fn as_text(block: &Block, kind: &str, width: usize) -> Vec<Line<'stat
 }
 
 /// The kind and "from the agent", wrapped to the width; the words stay whole.
-fn head(kind: &str, width: usize) -> Vec<Line<'static>> {
+pub(super) fn head(kind: &str, width: usize) -> Vec<Line<'static>> {
     let words = vec![
         Span::styled(kind.to_owned(), fg(TEXT_SOFT)),
         Span::styled(format!(" {DOT} from the agent"), dim()),

@@ -383,6 +383,9 @@ pub struct Workspace {
     /// The chat whose reply buttons were just pressed and how many items it had then,
     /// so one press sends once.
     pub replied: Option<(String, usize)>,
+    /// The node of a diagram the pointer is on, by chat, item index and node, which
+    /// lights the edges that touch it.
+    pub diagram_hover: Option<(String, usize, usize)>,
     /// The pinned bar: the pin it shows, whether its list is open, a pin under way.
     pub pins: chat::pins::PinsView,
     /// The first screen while no provider is connected.

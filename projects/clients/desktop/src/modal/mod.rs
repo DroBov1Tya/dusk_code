@@ -444,6 +444,10 @@ impl Workspace {
     }
 
     pub fn close_modal(&mut self, cx: &mut Context<Self>) {
+        // The app is taking itself away; its last word stays until it closes.
+        if self.uninstall_busy() {
+            return;
+        }
         // A plugin's window that closes tells its plugin.
         if let Some(Modal::Plugin(key)) = self.modal.take() {
             self.close_plugin_part(key, cx);

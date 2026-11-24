@@ -4,7 +4,8 @@ description: Application security engineering and review using source analysis, 
 entry: true
 links: [duskcode-agents/web-security-specialist, duskcode-agents/api-security-specialist, duskcode-agents/mobile-security-specialist, duskcode-agents/cloud-security-specialist, duskcode-agents/ad-security-specialist, duskcode-agents/infrastructure-security-specialist]
 skills: [dev-workflow-skills/security-best-practices, dev-workflow-skills/security-threat-model, duskcode-security/security-assessment]
-source: Dusk Code
+source: "Duskcode"
+author: "Duskcode"
 tags: [security, appsec, review]
 ---
 

@@ -26,7 +26,7 @@ pub const TEAM: &str = "TEAM";
 const BUILTIN: [&str; 4] = [MAIN, PLAN, ORCHESTRATOR, TEAM];
 
 /// What PLAN can do: read, look things up, and write the plan down.
-const PLAN_TOOLS: [&str; 10] = [
+const PLAN_TOOLS: [&str; 11] = [
     "read_file",
     "search_files",
     "project_graph",
@@ -36,24 +36,26 @@ const PLAN_TOOLS: [&str; 10] = [
     "tasks",
     "ask_user",
     "show",
+    "draw_diagram",
     "suggest_next",
 ];
 
 /// What ORCHESTRATOR can do: hand work out and keep track of it.
-const ORCHESTRATOR_TOOLS: [&str; 7] = [
+const ORCHESTRATOR_TOOLS: [&str; 8] = [
     "ask_agent",
     "read_history",
     "load_skill",
     "tasks",
     "ask_user",
     "show",
+    "draw_diagram",
     "suggest_next",
 ];
 
 /// What TEAM's lead can do: read the project to plan, and hand work out only through the
 /// plan. No `ask_agent`, no command and no write: whatever changes a file is a task, and
 /// a large search is a task of the `scout` role.
-const TEAM_TOOLS: [&str; 10] = [
+const TEAM_TOOLS: [&str; 11] = [
     "tasks",
     "read_file",
     "search_files",
@@ -63,6 +65,7 @@ const TEAM_TOOLS: [&str; 10] = [
     "load_skill",
     "ask_user",
     "show",
+    "draw_diagram",
     "suggest_next",
 ];
 
