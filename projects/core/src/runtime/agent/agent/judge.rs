@@ -7,7 +7,7 @@
 use super::{Agent, Pace};
 use crate::{
     config::Effort,
-    providers::{ChatMessage, ChatRequest, ModelOutput, is_unsupported_effort},
+    providers::{ChatMessage, ChatRequest, ModelOutput, is_refused_effort, is_unsupported_effort},
     runtime::{
         ThreadEvent,
         agent::{Inbox, Stop, generation, repeats},
@@ -111,8 +111,16 @@ impl Agent {
             self.config.current().limits().model_timeout_seconds.into(),
         );
         let mut output = ModelOutput::default();
-        // Low effort first; a model that takes no effort is asked again without one.
-        for effort in [Some(Effort::Low), None] {
+        // Low effort first; a model that says it takes no effort, as one without
+        // reasoning does, is asked again without one (`RefusedEffort`), and so is a
+        // subagent's model that refused it before.
+        let refused = self.effort_refused.lock().as_deref() == Some(choice.model.id.as_str());
+        let efforts = if refused {
+            &[None][..]
+        } else {
+            &[Some(Effort::Low), None][..]
+        };
+        for &effort in efforts {
             let request = ChatRequest {
                 model: &choice.model.id,
                 messages: &messages,
@@ -126,7 +134,13 @@ impl Agent {
                 generation::generate(&*choice.provider, request, &mut output, idle, |_| {});
             match inbox.race(generated).await? {
                 Ok(_) => break,
-                Err(error) if effort.is_some() && is_unsupported_effort(&error) => continue,
+                Err(error)
+                    if effort.is_some()
+                        && (is_unsupported_effort(&error) || is_refused_effort(&error)) =>
+                {
+                    info!("the judge's model takes no reasoning effort; asking without it");
+                    continue;
+                }
                 Err(error) => {
                     warn!("the judge's call failed: {error:#}");
                     return Ok(None);

@@ -167,9 +167,21 @@ async fn varied_work_and_batch_edits_are_never_judged() {
     assert_eq!(notices(&events), []);
 }
 
-/// A provider server on this machine that keeps every request it is sent and refuses
-/// each chat, so the turn goes on without a verdict.
-async fn helper_server() -> (String, Arc<Mutex<Vec<String>>>) {
+/// How a helper server answers a chat request: status line, content type and body.
+type Answer = fn(&str) -> (&'static str, &'static str, String);
+
+/// Refuses each chat, so the turn goes on without a verdict.
+fn refuse(_request: &str) -> (&'static str, &'static str, String) {
+    (
+        "400 Bad Request",
+        "application/json",
+        r#"{"error":{"message":"refused in the test"}}"#.to_owned(),
+    )
+}
+
+/// A provider server on this machine that keeps every request it is sent and answers
+/// each chat with `answer`.
+async fn helper_server(answer: Answer) -> (String, Arc<Mutex<Vec<String>>>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -203,17 +215,14 @@ async fn helper_server() -> (String, Arc<Mutex<Vec<String>>>) {
                 }
             }
             let text = String::from_utf8_lossy(&request).into_owned();
-            let (status, body) = if text.starts_with("GET") {
-                ("200 OK", r#"{"data":[]}"#)
+            let (status, kind, body) = if text.starts_with("GET") {
+                ("200 OK", "application/json", r#"{"data":[]}"#.to_owned())
             } else {
-                (
-                    "400 Bad Request",
-                    r#"{"error":{"message":"refused in the test"}}"#,
-                )
+                answer(&text)
             };
             kept.lock().unwrap().push(text);
             let reply = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
             let _ = socket.write_all(reply.as_bytes()).await;
@@ -224,7 +233,7 @@ async fn helper_server() -> (String, Arc<Mutex<Vec<String>>>) {
 
 #[tokio::test]
 async fn the_arbiters_helper_model_judges_when_the_user_set_one() {
-    let (base, seen) = helper_server().await;
+    let (base, seen) = helper_server(refuse).await;
     let config = crate::testing::temp_live_config_of(
         "judge_helper_config",
         &format!(
@@ -261,4 +270,54 @@ async fn a_helper_model_that_cannot_be_had_leaves_the_judge_to_the_turns_model()
     assert_eq!(turn.status, TurnStatus::Completed);
     assert_eq!(judge_requests(&provider).len(), 1);
     assert!(notices(&events).contains(&(RepeatRung::JudgeRedirect, 5)));
+}
+
+/// Refuses a request that carries a reasoning effort as a model without reasoning does,
+/// and answers one without it with a verdict sure the turn is stuck.
+fn no_reasoning(request: &str) -> (&'static str, &'static str, String) {
+    if request.contains("reasoning_effort") {
+        return (
+            "400 Bad Request",
+            "application/json",
+            concat!(
+                r#"{"error":{"type":"invalid_request_error","code":"unsupported_parameter","#,
+                r#""param":"reasoning_effort","message":"reasoning_effort is not supported"}}"#
+            )
+            .to_owned(),
+        );
+    }
+    let verdict = serde_json::to_string(
+        r#"{"stuck": true, "confidence": 0.95, "redirect": "Ask the user."}"#,
+    )
+    .unwrap();
+    let body = format!(
+        "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"content\":{verdict}}}}}]}}\n\n\
+         data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"stop\"}}]}}\n\n\
+         data: [DONE]\n\n"
+    );
+    ("200 OK", "text/event-stream", body)
+}
+
+#[tokio::test]
+async fn a_helper_model_without_reasoning_is_asked_again_without_an_effort() {
+    let (base, seen) = helper_server(no_reasoning).await;
+    let config = crate::testing::temp_live_config_of(
+        "judge_no_reasoning_config",
+        &format!(
+            "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    \
+             api_key: 'sk-test'\n  helper:\n    kind: openai_compatible\n    base_url: '{base}'\n    \
+             api_key: 'sk-test'\narbiter:\n  model: helper/small-judge\n"
+        ),
+    );
+    let mut scripts = cycle(11);
+    scripts.push(vec![Step::Text("done"), Step::Done]);
+    let (_, events, turn) = run_with("judge_no_reasoning", config, scripts).await;
+    // The second ask, without the effort, gave the verdict.
+    assert_eq!(turn.status, TurnStatus::Failed);
+    assert_eq!(notices(&events).last(), Some(&(RepeatRung::JudgeStop, 5)));
+    let seen = seen.lock().unwrap();
+    let asked: Vec<&String> = seen.iter().filter(|r| r.starts_with("POST")).collect();
+    assert_eq!(asked.len(), 2, "{asked:?}");
+    assert!(asked[0].contains("reasoning_effort"), "{}", asked[0]);
+    assert!(!asked[1].contains("reasoning_effort"), "{}", asked[1]);
 }
