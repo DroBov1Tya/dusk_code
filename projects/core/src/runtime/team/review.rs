@@ -75,13 +75,7 @@ impl Verdict {
     /// reviewer quotes, says nothing. `None` when the footer names no verdict, or two.
     pub fn of(answer: &str) -> Option<Self> {
         let footer = footer::read(answer, &FOOTER, &ITEMS);
-        let fix = match footer
-            .word("Verdict:", &["approve", "approved", "fix"])?
-            .as_str()
-        {
-            "fix" => true,
-            _ => false,
-        };
+        let fix = footer.word("Verdict:", &["approve", "approved", "fix"])? == "fix";
         let problems: Vec<Problem> = footer
             .items
             .iter()
