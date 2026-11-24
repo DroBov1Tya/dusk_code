@@ -32,10 +32,12 @@ pub async fn watch(context: &ToolContext) -> Option<Watch> {
         Ok(Some(before)) => Some(Watch { root, before }),
         Ok(None) => {
             tracing::info!("the project is too large to record what a command changes");
+            unwatched(context);
             None
         }
         Err(error) => {
             tracing::warn!("cannot walk the project before a command: {error}");
+            unwatched(context);
             None
         }
     }
@@ -63,10 +65,12 @@ impl Watch {
                 tracing::info!(
                     "a command changed too much, or the project is too large, to record"
                 );
+                unwatched(context);
                 return;
             }
             Err(error) => {
                 tracing::warn!("cannot compare the project after a command: {error}");
+                unwatched(context);
                 return;
             }
         };
@@ -83,11 +87,20 @@ impl Watch {
             .await
         {
             tracing::warn!("cannot record the changes a command made: {error:#}");
+            unwatched(context);
         }
         let touched: Vec<Change> = edits.iter().map(touched).collect();
         if let Err(error) = state.note_thread_files(&context.thread_id, &touched).await {
             tracing::warn!("cannot note the files a command changed: {error:#}");
         }
+    }
+}
+
+/// Tells the turn that the call may have changed files the ledger holds nothing of, so
+/// it does not read an unmoved ledger as nothing changed.
+pub fn unwatched(context: &ToolContext) {
+    if let (Some(state), Some(progress)) = (&context.state, &context.progress) {
+        state.note_unwatched(&context.thread_id, &progress.call_id);
     }
 }
 

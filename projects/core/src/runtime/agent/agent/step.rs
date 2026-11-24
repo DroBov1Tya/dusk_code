@@ -4,7 +4,7 @@ use super::calls::Called;
 use super::wait::waits_out;
 use super::{Agent, StepEnd, insert_project, interrupted, missing_tools, recorded_reasoning};
 use crate::runtime::ThreadEvent;
-use crate::runtime::agent::{Inbox, Loaded};
+use crate::runtime::agent::{Inbox, Loaded, repeats};
 use crate::{
     message::sources::{SourceBlock, ThreadSources},
     providers::{
@@ -18,6 +18,7 @@ use crate::{
     },
 };
 use anyhow::{Context, Result};
+use dusk_protocol::thread::RepeatRung;
 use tracing::info;
 
 /// An answer this short may stand beside a call the model wrote in its reasoning
@@ -27,7 +28,8 @@ const SHORT_ANSWER: usize = 200;
 impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     /// `waited` says the turn's provider wait is stored, to end once the model answers.
-    /// `note` goes to the model last, for this step only.
+    /// `note` goes to the model last, for this step only. With `reads_text`, the
+    /// answer is cut once its text goes round (`limits.text_loops`).
     #[tracing::instrument(name = "step", skip_all)]
     pub(super) async fn step(
         &self,
@@ -36,6 +38,7 @@ impl Agent {
         waited: bool,
         loaded: Option<Loaded>,
         note: Option<String>,
+        reads_text: bool,
     ) -> Result<StepEnd> {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config_now().await;
@@ -116,6 +119,8 @@ impl Agent {
             messages.push(ChatMessage::System(note));
         }
         let choice = self.model.current().context("provider is unavailable")?;
+        let limits = config.limits();
+        let chant = (reads_text && limits.text_loops).then_some(limits.text_loop_repeats);
         let set = self.effort(&config).await;
         let effort = self.pace.lock().effort(set);
         let request = ChatRequest {
@@ -126,7 +131,9 @@ impl Agent {
             effort,
             cache_key: Some(&self.thread_id),
         };
-        let mut called = self.call_model(&choice, request, &config, inbox).await;
+        let mut called = self
+            .call_model(&choice, request, &config, chant, inbox)
+            .await;
         let pictures_refused = matches!(
             &called,
             Ok(Called { generated: Ok(Err(error)), .. }) if is_unsupported_pictures(error)
@@ -141,12 +148,15 @@ impl Agent {
                 effort,
                 cache_key: Some(&self.thread_id),
             };
-            called = self.call_model(&choice, request, &config, inbox).await;
+            called = self
+                .call_model(&choice, request, &config, chant, inbox)
+                .await;
         }
         let Called {
             output,
             generated,
             attempts,
+            chanted,
         } = match called {
             Ok(called) => called,
             Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
@@ -186,6 +196,21 @@ impl Agent {
                 return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
             }
             self.report_progress(&turn.turn_id).await;
+        }
+        // The answer went round: the step is taken again. A stream that ended before the
+        // cut took effect went round all the same.
+        if let (Some(_), Ok(_), Some(repeats)) = (chanted, &generated, chant) {
+            info!("thread {}: the model's text went round", self.thread_id);
+            // Told as a cycle: the rungs were fixed for all of the loop guards in one
+            // protocol version, with none for text. The log line above tells them apart.
+            self.emit(ThreadEvent::RepeatNotice {
+                rung: RepeatRung::Cycle,
+                count: repeats,
+            });
+            if waited {
+                self.state.end_wait(&turn.turn_id).await?;
+            }
+            return Ok(StepEnd::Chanted(repeats::chant_note(repeats)));
         }
         let mut reasoning = recorded_reasoning(&config, &output);
         let mut stranded = None;

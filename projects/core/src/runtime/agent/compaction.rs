@@ -334,7 +334,9 @@ impl Agent {
                 effort: config.effort(),
                 cache_key: Some(&self.thread_id),
             };
-            let (output, generated) = match self.call_model(&choice, request, &config, inbox).await
+            let (output, generated) = match self
+                .call_model(&choice, request, &config, None, inbox)
+                .await
             {
                 Ok(called) => (called.output, called.generated),
                 Err(stop) => return Ok(Err(stop)),

@@ -9,12 +9,14 @@ mod switches;
 mod tests;
 
 use super::sections::{
-    MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS,
-    MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE, MAX_TEAM_GATE_SECONDS, MAX_TEAM_MAX_GATE_RUNS,
-    MAX_TEAM_MAX_MINUTES, MAX_TEAM_MAX_STEPS, MAX_TEAM_MAX_TOKENS, MIN_COMPACT_TAIL_TOKENS,
-    MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS,
-    MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS, MIN_TEAM_MAX_MINUTES,
-    MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, is_zero, yes,
+    MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_LOOP_JUDGE_CALLS, MAX_NO_PROGRESS_STEPS,
+    MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS, MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE,
+    MAX_TEAM_GATE_SECONDS, MAX_TEAM_MAX_GATE_RUNS, MAX_TEAM_MAX_MINUTES, MAX_TEAM_MAX_STEPS,
+    MAX_TEAM_MAX_TOKENS, MAX_TEXT_LOOP_REPEATS, MIN_COMPACT_TAIL_TOKENS, MIN_FAILURE_RUNG,
+    MIN_LOOP_JUDGE_CALLS, MIN_NO_PROGRESS_STEPS, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS,
+    MIN_STUB_MIN_TOKENS, MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS,
+    MIN_TEAM_MAX_MINUTES, MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, MIN_TEXT_LOOP_REPEATS, is_zero,
+    yes,
 };
 use super::{
     Appearance, ApprovalPolicy, Arbiter, ContextPolicy, CoreSection, Effort, Limits, Logging,
@@ -336,6 +338,48 @@ impl Config {
                 && limits.failure_stop_at <= MAX_FAILURE_RUNG,
             "limits.failure_note_at, failure_replan_at and failure_stop_at must rise in this \
              order, from {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.cycle_note_at
+                && limits.cycle_note_at < limits.cycle_replan_at
+                && limits.cycle_replan_at <= MAX_FAILURE_RUNG,
+            "limits.cycle_note_at and cycle_replan_at must rise in this order, from \
+             {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.test_rerun_note_at
+                && limits.test_rerun_note_at < limits.test_rerun_replan_at
+                && limits.test_rerun_replan_at <= MAX_FAILURE_RUNG,
+            "limits.test_rerun_note_at and test_rerun_replan_at must rise in this order, from \
+             {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            MIN_NO_PROGRESS_STEPS <= limits.no_progress_note_at
+                && limits.no_progress_note_at < limits.no_progress_replan_at
+                && limits.no_progress_replan_at <= MAX_NO_PROGRESS_STEPS,
+            "limits.no_progress_note_at and no_progress_replan_at must rise in this order, \
+             from {MIN_NO_PROGRESS_STEPS} to {MAX_NO_PROGRESS_STEPS}"
+        );
+        ensure!(
+            (MIN_LOOP_JUDGE_CALLS..=MAX_LOOP_JUDGE_CALLS).contains(&limits.loop_judge_calls),
+            "limits.loop_judge_calls must be between {MIN_LOOP_JUDGE_CALLS} and \
+             {MAX_LOOP_JUDGE_CALLS}"
+        );
+        ensure!(
+            (MIN_TEXT_LOOP_REPEATS..=MAX_TEXT_LOOP_REPEATS).contains(&limits.text_loop_repeats),
+            "limits.text_loop_repeats must be between {MIN_TEXT_LOOP_REPEATS} and \
+             {MAX_TEXT_LOOP_REPEATS}"
+        );
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.monologue_note_at
+                && limits.monologue_note_at < limits.monologue_replan_at
+                && limits.monologue_replan_at <= MAX_FAILURE_RUNG,
+            "limits.monologue_note_at and monologue_replan_at must rise in this order, from \
+             {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            (MIN_FAILURE_RUNG..=MAX_FAILURE_RUNG).contains(&limits.goal_stall_rounds),
+            "limits.goal_stall_rounds must be between {MIN_FAILURE_RUNG} and {MAX_FAILURE_RUNG}"
         );
         ensure!(
             (MIN_RETRY_UNREACHABLE_SECONDS..=MAX_RETRY_UNREACHABLE_SECONDS)

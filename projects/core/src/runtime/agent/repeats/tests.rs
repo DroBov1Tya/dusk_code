@@ -4,7 +4,7 @@
 use dusk_protocol::thread::RepeatRung;
 use serde_json::json;
 
-use super::Repeats;
+use super::{Facts, Repeats};
 use crate::{config::Limits, providers::ToolCall, tools::ToolResult};
 
 fn command(text: &str) -> ToolCall {
@@ -34,7 +34,14 @@ fn ladder_on() -> Limits {
 fn fail(repeats: &mut Repeats, turn: &str, attempt: u32, limits: &Limits) -> Option<RepeatRung> {
     let call = command(&format!("make -j{attempt} V={attempt}"));
     let result = failed("make: *** No rule to make target 'all'.  Stop.");
-    let notice = repeats.note(turn, &call, &result, &result.content, limits);
+    let notice = repeats.note(
+        turn,
+        &call,
+        &result,
+        &result.content,
+        &Facts::default(),
+        limits,
+    );
     notice.map(|notice| notice.rung)
 }
 
@@ -54,7 +61,7 @@ fn the_same_error_climbs_the_ladder_whatever_comes_between() {
         let ok = ToolResult::text("all:\n\tcc main.c".into());
         assert!(
             repeats
-                .note("t", &read, &ok, &ok.content, &limits)
+                .note("t", &read, &ok, &ok.content, &Facts::default(), &limits)
                 .is_none()
         );
         if attempt < 8 {
@@ -90,7 +97,14 @@ fn the_notes_list_the_attempts_and_say_what_to_do() {
     let mut notes = Vec::new();
     for attempt in 1..=5 {
         let call = command(&format!("make -j{attempt} V={attempt}"));
-        let notice = repeats.note("t", &call, &result, &result.content, &limits);
+        let notice = repeats.note(
+            "t",
+            &call,
+            &result,
+            &result.content,
+            &Facts::default(),
+            &limits,
+        );
         notes.push(notice.map(|notice| (notice.count, notice.note)));
     }
     let (count, third) = notes[2].clone().expect("a note at three");
@@ -116,7 +130,14 @@ fn errors_that_differ_never_climb() {
         let result = failed(&format!("ls: {name}: No such file or directory"));
         assert!(
             repeats
-                .note("t", &call, &result, &result.content, &limits)
+                .note(
+                    "t",
+                    &call,
+                    &result,
+                    &result.content,
+                    &Facts::default(),
+                    &limits
+                )
                 .is_none()
         );
     }
@@ -138,7 +159,14 @@ fn with_the_ladder_off_only_the_same_call_is_noted() {
     let result = failed("make: *** No rule to make target 'all'.  Stop.");
     let mut same = Vec::new();
     for _ in 0..3 {
-        let notice = repeats.note("t", &call, &result, &result.content, &limits);
+        let notice = repeats.note(
+            "t",
+            &call,
+            &result,
+            &result.content,
+            &Facts::default(),
+            &limits,
+        );
         same.push(notice.map(|notice| (notice.rung, notice.count)));
     }
     assert_eq!(same, [None, None, Some((RepeatRung::SameCall, 3))]);
@@ -157,9 +185,9 @@ fn a_new_turn_starts_every_count_over() {
     let call = command("make");
     let ok = ToolResult::text("done".into());
     for _ in 0..2 {
-        repeats.note("b", &call, &ok, &ok.content, &limits);
+        repeats.note("b", &call, &ok, &ok.content, &Facts::default(), &limits);
     }
-    let same = repeats.note("c", &call, &ok, &ok.content, &limits);
+    let same = repeats.note("c", &call, &ok, &ok.content, &Facts::default(), &limits);
     assert!(
         same.is_none(),
         "the same call counts from one in a new turn"

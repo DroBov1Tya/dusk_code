@@ -373,6 +373,75 @@ fn the_failure_ladder_is_on_and_its_rungs_rise() {
 }
 
 #[test]
+fn the_loop_guards_are_on_and_their_rungs_rise() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.loop_cycles && plain.test_reruns);
+    assert_eq!((plain.cycle_note_at, plain.cycle_replan_at), (3, 5));
+    assert_eq!(
+        (plain.test_rerun_note_at, plain.test_rerun_replan_at),
+        (2, 4)
+    );
+    let set = parse("limits:\n  loop_cycles: false\n  test_rerun_replan_at: 9\n").unwrap();
+    assert!(!set.limits().loop_cycles);
+    assert_eq!(set.limits().test_rerun_replan_at, 9);
+    for bad in [
+        "limits:\n  cycle_note_at: 1\n",
+        "limits:\n  cycle_replan_at: 3\n",
+        "limits:\n  cycle_replan_at: 51\n",
+        "limits:\n  test_rerun_note_at: 4\n",
+        "limits:\n  test_rerun_replan_at: 51\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_progress_guards_are_on_and_their_steps_rise() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.no_progress && plain.goal_stall);
+    assert_eq!(
+        (plain.no_progress_note_at, plain.no_progress_replan_at),
+        (12, 30)
+    );
+    assert_eq!(plain.goal_stall_rounds, 3);
+    let set = parse("limits:\n  no_progress: false\n  no_progress_note_at: 20\n").unwrap();
+    assert!(!set.limits().no_progress);
+    assert_eq!(set.limits().no_progress_note_at, 20);
+    for bad in [
+        "limits:\n  no_progress_note_at: 2\n",
+        "limits:\n  no_progress_note_at: 30\n",
+        "limits:\n  no_progress_replan_at: 501\n",
+        "limits:\n  goal_stall_rounds: 1\n",
+        "limits:\n  goal_stall_rounds: 51\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_judge_and_text_guards_are_on_and_bounded() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.loop_judge && plain.text_loops && plain.monologue);
+    assert_eq!(plain.loop_judge_calls, 3);
+    assert_eq!(plain.text_loop_repeats, 10);
+    assert_eq!((plain.monologue_note_at, plain.monologue_replan_at), (3, 5));
+    let set = parse("limits:\n  loop_judge: false\n  text_loop_repeats: 20\n").unwrap();
+    assert!(!set.limits().loop_judge);
+    assert_eq!(set.limits().text_loop_repeats, 20);
+    for bad in [
+        "limits:\n  loop_judge_calls: 0\n",
+        "limits:\n  loop_judge_calls: 11\n",
+        "limits:\n  text_loop_repeats: 4\n",
+        "limits:\n  text_loop_repeats: 101\n",
+        "limits:\n  monologue_note_at: 1\n",
+        "limits:\n  monologue_note_at: 5\n",
+        "limits:\n  monologue_replan_at: 51\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
 fn the_team_parts_are_off_and_its_ceilings_have_defaults() {
     let plain = parse(PROVIDERS).unwrap().limits();
     // The team itself is chosen by the mode; `plan_graph` only switches it off.

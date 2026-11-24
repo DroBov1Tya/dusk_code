@@ -348,8 +348,8 @@ async fn the_repeat_note_fires_as_before_while_results_move() {
             _ => None,
         })
         .collect();
-    use RepeatRung::SameCall;
-    assert_eq!(notices, [(SameCall, 3), (SameCall, 4), (SameCall, 5)]);
+    use RepeatRung::{CycleReplan, SameCall};
+    assert_eq!(notices, [(SameCall, 3), (SameCall, 4), (CycleReplan, 5)]);
 }
 
 #[tokio::test]

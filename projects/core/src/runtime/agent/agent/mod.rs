@@ -4,6 +4,7 @@
 
 mod calls;
 mod episodes;
+mod judge;
 mod mode;
 mod pictures;
 mod report;
@@ -68,6 +69,8 @@ pub struct Agent {
     pub pictures_refused: Mutex<Option<String>>,
     /// The model that refused a subagent's reasoning effort; it is asked without one.
     pub effort_refused: Mutex<Option<String>>,
+    /// The model that refused the loop judge's effort; the judge asks it without one.
+    pub judge_effort_refused: Mutex<Option<String>>,
     /// Where the turn is: planning, carrying out, or working out a surprise.
     pub pace: Mutex<Pace>,
     /// Calls repeated with the same result, to tell a stuck model.
@@ -111,6 +114,9 @@ enum StepEnd {
     /// The model wrote a tool call as text that could not be run: the turn takes the
     /// step again with this note, or ends with the answer as it is.
     Stranded(String, TurnAnswer),
+    /// The model's text went round and was cut: the turn takes the step again with this
+    /// note.
+    Chanted(String),
 }
 
 /// What a stopped step keeps: the text written so far, if any.

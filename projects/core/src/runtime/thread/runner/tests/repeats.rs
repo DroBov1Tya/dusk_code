@@ -313,3 +313,32 @@ async fn a_goal_pauses_after_the_stop_instead_of_another_round() {
     assert_eq!(state.count_turns("thread").await.unwrap(), 1);
     assert_eq!(provider.efforts.lock().unwrap().len(), 8);
 }
+
+#[tokio::test]
+async fn two_calls_taking_turns_are_a_cycle_noted_without_ending_the_turn() {
+    let mut scripts = Vec::new();
+    for _ in 0..5 {
+        scripts.push(calls("edit".into()));
+        scripts.push(calls("check: 1 error".into()));
+    }
+    scripts.push(vec![Step::Text("done"), Step::Done]);
+    let (state, _, events, turn) = run("cycle", "", scripts, 0).await;
+
+    use RepeatRung::{Cycle, CycleReplan};
+    let expected = [
+        (Cycle, 3),
+        (Cycle, 3),
+        (Cycle, 4),
+        (Cycle, 4),
+        (CycleReplan, 5),
+    ];
+    assert_eq!(notices(&events), expected);
+    assert_eq!(turn.status, TurnStatus::Completed);
+    let results = tool_results(&state).await;
+    assert!(
+        results[5].contains("repeat the 2 before them"),
+        "{}",
+        results[5]
+    );
+    assert!(results[9].contains("different plan"), "{}", results[9]);
+}

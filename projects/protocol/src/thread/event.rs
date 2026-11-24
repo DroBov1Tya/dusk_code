@@ -64,8 +64,10 @@ pub enum ThreadEvent {
     /// turn's `TurnFinished`, and again when a chat whose newest turn failed is opened.
     TurnFailed(TurnFailure),
     /// The model repeated itself and the core stepped in: the result of the call just
-    /// finished carries a note, and at `RepeatRung::Stop` the turn ends. `count` is how
-    /// many times the same call, or the same error, came back in this turn.
+    /// finished carries a note, and at `RepeatRung::Stop` or `RepeatRung::JudgeStop` the
+    /// turn ends. `count` is what the rung counts in this turn: the same call or error
+    /// coming back, a cycle's rounds, test runs with no change between, or steps with no
+    /// progress.
     RepeatNotice {
         rung: RepeatRung,
         count: u32,
@@ -257,6 +259,35 @@ pub enum RepeatRung {
     Replan,
     /// The turn ends as failed, with the error and the attempts.
     Stop,
+    /// The same short run of calls with the same results came round again, or one call
+    /// gave the same result several times with nothing changed between: the model is told
+    /// it is going in circles.
+    Cycle,
+    /// The cycle went on: the model is asked for a different plan.
+    CycleReplan,
+    /// The tests ran again with no project file changed since their last run: the model
+    /// is told what that run found.
+    TestRerun,
+    /// The tests kept running with nothing changed: the model is asked for a different
+    /// plan.
+    TestRerunReplan,
+    /// Steps went by with nothing new: no file changed, nothing new read, nothing that
+    /// failed passed. The model is asked where it stands.
+    NoProgress,
+    /// Still no progress: the model is asked for a different plan.
+    NoProgressReplan,
+    /// A judge model read the turn after a rule fired and found it not stuck; its
+    /// advice goes to the model and the turn goes on.
+    JudgeRedirect,
+    /// A judge model confirmed the turn is stuck: the turn ends as failed, with why.
+    JudgeStop,
+}
+
+impl RepeatRung {
+    /// Whether the turn ends at this rung.
+    pub fn stops(self) -> bool {
+        matches!(self, Self::Stop | Self::JudgeStop)
+    }
 }
 
 /// What an episode the core wrote down is about.

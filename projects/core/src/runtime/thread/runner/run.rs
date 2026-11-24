@@ -31,6 +31,13 @@ pub struct ThreadRunner {
     ends_when_idle: bool,
     /// The next automatic round waits for dependency completion, not a timer.
     pub goal_waiting: bool,
+    /// Goal rounds in a row that called no tool.
+    pub(crate) monologue: crate::runtime::goal::Monologue,
+    /// The kickoff of the goal round queued, by its pending id: the next turn is the
+    /// round's unless another message came with it or the goal stopped meanwhile.
+    pub(crate) round_queued: Option<i64>,
+    /// The last turn that started was a goal round's.
+    pub(crate) round_turn: bool,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
     /// The question a restart asked while the runner waits for its answer.
@@ -89,6 +96,7 @@ impl ThreadRunner {
             project: setup.project,
             pictures_refused: Mutex::new(None),
             effort_refused: Mutex::new(None),
+            judge_effort_refused: Mutex::new(None),
             pace: Mutex::default(),
             repeats: Mutex::default(),
             asking: Mutex::new(Vec::new()),
@@ -110,6 +118,9 @@ impl ThreadRunner {
             mailboxes: setup.mailboxes,
             ends_when_idle: setup.ends_when_idle,
             goal_waiting: false,
+            monologue: Default::default(),
+            round_queued: None,
+            round_turn: false,
             left: false,
             deciding,
             _lock: setup.lock,
@@ -280,6 +291,8 @@ impl ThreadRunner {
     async fn run_queued(&mut self, mut resumed: Option<Turn>) -> Result<()> {
         let mut ran = false;
         let mut failed = false;
+        // The last turn that ran, so a goal round is judged by how it ended.
+        let mut ended: Option<String> = None;
         loop {
             let turn = match resumed.take() {
                 // It goes on as it stood: a compaction would cut its step in two.
@@ -293,6 +306,14 @@ impl ThreadRunner {
                 Err(stop) => Some(stop),
                 Ok(Some((turn, resumes))) => {
                     ran = true;
+                    ended = Some(turn.turn_id.clone());
+                    // A turn the goal did not start, or that also reads what someone
+                    // wrote, answers them; a goal paused or ended meanwhile has no round.
+                    self.round_turn = self.round_queued.take().is_some()
+                        && self.agent.active_goal().await?.is_some();
+                    if !self.round_turn {
+                        self.monologue.reset();
+                    }
                     let (stop, status) = match resumes {
                         true => self.agent.resume_turn(&turn, &mut self.inbox).await?,
                         false => self.agent.run_turn(&turn, &mut self.inbox).await?,
@@ -312,7 +333,7 @@ impl ThreadRunner {
                 }
                 Ok(None)
                     if (ran || self.goal_waiting || self.verification_pending().await?)
-                        && self.next_goal_round().await? =>
+                        && self.next_goal_round(ended.take().as_deref()).await? =>
                 {
                     ran = false;
                     continue;

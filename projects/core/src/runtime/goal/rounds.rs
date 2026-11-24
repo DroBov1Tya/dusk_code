@@ -1,6 +1,8 @@
 //! A goal's rounds: after each turn of a chat with an active goal, the runner checks
 //! the work against the goal's criteria when the model asked for that, and otherwise
-//! queues the next round until the rounds run out.
+//! queues the next round until the rounds run out or stop changing anything. Rounds that
+//! only talk get a note in the next round's start (`monologue`), and pause the goal
+//! when they go on talking after a request for a different plan.
 
 use std::sync::Arc;
 
@@ -25,9 +27,10 @@ impl ThreadRunner {
                 }))
     }
 
-    /// Queues the next round of an active goal, or pauses it when the rounds are spent.
-    /// Returns whether a round was queued.
-    pub async fn next_goal_round(&mut self) -> Result<bool> {
+    /// Queues the next round of an active goal, or pauses it when the rounds are spent
+    /// or stopped changing anything; `ended` is the turn that ended the round, when one
+    /// ran. Returns whether a round was queued.
+    pub async fn next_goal_round(&mut self, ended: Option<&str>) -> Result<bool> {
         let Some(goal) = self.agent.active_goal().await? else {
             self.goal_waiting = false;
             return Ok(false);
@@ -86,18 +89,50 @@ impl ThreadRunner {
         if goal.verification == "needs_user" {
             return Ok(false);
         }
+        if let Some(turn_id) = ended
+            && let Some(reason) = self.round_stalled(turn_id).await?
+        {
+            self.pause_goal(&reason).await?;
+            return Ok(false);
+        }
         let rounds = self.agent.config.current().limits().max_goal_rounds;
         if goal.rounds >= rounds {
             self.pause_goal(&format!("all {rounds} rounds used"))
                 .await?;
             return Ok(false);
         }
+        // Only a round's own turn counts: a reply to the user is no monologue.
+        let quiet = match ended {
+            Some(turn_id) if self.round_turn => {
+                let acted = self.agent.repeats.lock().acted(turn_id);
+                let limits = self.agent.config.current().limits();
+                self.monologue.round(acted, &limits)
+            }
+            _ => None,
+        };
+        let limits = self.agent.config.current().limits();
+        if limits.goal_stall
+            && let Some(rounds) = self.monologue.talked_out(&limits)
+        {
+            let reason = format!("the last {rounds} rounds only wrote text and called no tool");
+            // A resumed goal gets its rounds counted afresh.
+            self.monologue.reset();
+            self.pause_goal(&reason).await?;
+            return Ok(false);
+        }
         let state = &self.agent.state;
         let Some(goal) = state.count_goal_round(&self.agent.thread_id).await? else {
             return Ok(false);
         };
-        let kickoff = goal::kickoff(&goal, rounds);
-        state.add_pending(&self.agent.thread_id, &kickoff).await?;
+        let mut kickoff = goal::kickoff(&goal, rounds);
+        if let Some((_, _, note)) = &quiet {
+            kickoff.push_str(&format!("\n\n{note}"));
+        }
+        let queued = state.add_pending(&self.agent.thread_id, &kickoff).await?;
+        self.round_queued = Some(queued.pending_id);
+        if let Some((rung, count, _)) = quiet {
+            self.agent.emit(ThreadEvent::RepeatNotice { rung, count });
+        }
         let note = format!("goal round {} of {rounds}", goal.rounds);
         self.agent.emit(ThreadEvent::Goal {
             goal: Some(goal),

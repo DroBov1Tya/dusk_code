@@ -1,5 +1,6 @@
 //! A turn: starting it, running it, and what joins it from outside.
 
+use super::judge::Judged;
 use super::wait::Waited;
 use super::{Agent, Pace, StepEnd};
 use crate::plugins::HookEvent;
@@ -17,6 +18,10 @@ const MAX_SHRINKS: u32 = 2;
 /// Steps taken again after a tool call written as text, so a model that keeps doing it
 /// cannot spend the turn.
 const MAX_STRANDED: u32 = 2;
+
+/// Steps taken again after the model's text went round; the step after them streams
+/// whole, so text read wrongly as a loop never ends the turn or loses its calls.
+const MAX_CHANTED: u32 = 2;
 
 impl Agent {
     /// Starts a turn when something is queued and the context fits the input limit.
@@ -105,13 +110,17 @@ impl Agent {
         // Steps taken again for a call written as text, and the note for the next one.
         let mut stranded = 0;
         let mut note = None;
+        // Steps taken again for text that went round.
+        let mut chanted = 0;
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
             let step = match first.take() {
                 Some(end) => Ok(end),
                 None => {
                     let waited = waiting_since.is_some();
-                    self.step(turn, inbox, waited, loaded.take(), note.clone())
+                    let reads_text = chanted < MAX_CHANTED;
+                    let loaded = loaded.take();
+                    self.step(turn, inbox, waited, loaded, note.clone(), reads_text)
                         .await
                 }
             };
@@ -136,6 +145,31 @@ impl Agent {
             let repeated = match end {
                 StepEnd::CalledTools => self.repeats.lock().take_stop(&turn.turn_id),
                 _ => None,
+            };
+            // A re-plan came to nothing (steps with nothing new, a cycle going on): only a
+            // judge may end the turn for that; otherwise its advice is the next note.
+            let stalled = match end {
+                StepEnd::CalledTools if repeated.is_none() => {
+                    let limits = self.config.current().limits();
+                    self.repeats.lock().take_stall(&turn.turn_id, &limits)
+                }
+                _ => None,
+            };
+            let repeated = match stalled {
+                Some(stall) => match self.judge_stall(turn, &stall, inbox).await {
+                    Judged::Stuck(why) => Some(why),
+                    Judged::Redirect(advice) => {
+                        note = Some(advice);
+                        None
+                    }
+                    Judged::Goes => None,
+                    Judged::Stopped(reason) => {
+                        stop = Some(reason);
+                        outcome = TurnOutcome::Interrupted(None);
+                        break;
+                    }
+                },
+                None => repeated,
             };
             if let Some(why) = repeated {
                 outcome = TurnOutcome::Failed(dusk_protocol::thread::TurnFailure {
@@ -213,6 +247,12 @@ impl Agent {
                     );
                 }
                 StepEnd::Stranded(_, answer) => outcome = TurnOutcome::Completed(answer),
+                StepEnd::Chanted(text) => {
+                    chanted += 1;
+                    waiting_since = None;
+                    note = Some(text);
+                    continue;
+                }
                 StepEnd::Answered(answer) => outcome = answer,
                 StepEnd::Stopped(reason, partial) => {
                     stop = Some(reason);

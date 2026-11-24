@@ -56,6 +56,90 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   turn through calls that differ, the model is told to stop varying the call at the third
   time (`limits.failure_note_at`), asked for a different plan at the fifth
   (`failure_replan_at`), and the turn ends as failed at the eighth (`failure_stop_at`).
+- **Loop cycles.** `limits.loop_cycles` (on): within the last 20 calls of a turn, a
+  short run of calls (one to four) coming round with the same results, or a read giving
+  the same result with nothing that may write between, gets a note at the third round
+  (`limits.cycle_note_at`) and a request for a different plan at the fifth
+  (`cycle_replan_at`). The reads of one step count as one; ids, times and durations in
+  results do not hide a repeat; a read again counts only within the steps whose results
+  are still sent whole (`stub_keep_steps`). Notes only. Off, the same call with the same
+  result three times in a row still gets a note, as before.
+- **Test re-runs.** `limits.test_reruns` (on): a test run (`cargo test`, `pytest`, `go
+  test`, `npm test`, `jest`, ...) that repeats a run of the same runner with no project
+  file changed since, as the same command ending the same way or with the same tests
+  failing, gets a note
+  with the step of that run and its failing tests (`limits.test_rerun_note_at`, 2), and a
+  request for a different plan at the fourth such run (`test_rerun_replan_at`). The
+  same command ending another way (a service started, a flaky test passing) is news
+  and starts the runs over. A narrower run to look at one failure is not a repeat, nor is the first run that names
+  the one test that failed. Changes are read from the change ledger once it has
+  recorded one in the chat, else any call that may write a project file counts as one
+  (the chat's own goal, tasks, plan and memory, and messages, do not); a write the
+  ledger cannot see (a subagent, a background job, an MCP tool, a command whose walk
+  gave up on a project or change too large or slow to compare) always counts. The
+  command still runs. The failing test ids also stand for a run's error in the failure
+  ladder, so the same failures under another filter climb it; at its top they make
+  the turn a stall candidate for the judge rather than ending it, since tests failing
+  for another reason come back through real edits. Where no judge can rule they still
+  stop it: at `failure_stop_at` with the judge off, at twice that once its calls are
+  spent.
+- **No progress.** `limits.no_progress` (on): a step makes progress when one of its
+  calls changed a project file to a state not seen in the turn (by the change ledger),
+  gave a result not seen in the turn (ids and times made alike), read a file, range or
+  search not asked for before, or passed a command that failed earlier in the turn.
+  Steps in a row without any get a note asking where the turn stands
+  (`limits.no_progress_note_at`, 12), then a request for a different plan
+  (`no_progress_replan_at`, 30), and again every `no_progress_note_at` steps after. Until
+  the ledger records a change in the turn, and for writes it cannot see (a subagent, a
+  job, an MCP tool, a command whose walk gave up), a new call that may write a project
+  file counts as progress (the chat's goal, tasks, plan and memory are no project
+  file); a step of only looks at background jobs, or of plain waits (`sleep 30`) once
+  a job started in the turn, is not counted. Notes only: after the re-plan the turn is a stall
+  candidate for a judge, and goes on.
+- **Loop judge.** `limits.loop_judge` (on): a turn still without progress after the
+  no-progress re-plan, a cycle asked twice for a different plan, or the same failing
+  tests at the failure ladder's top, is read by a judge: the arbiter's helper model
+  when the user set one (`arbiter.model`), else, or when it cannot be had, the turn's
+  own model, at low effort (asked again without one when the model refuses it, as one
+  without reasoning does, and without one from then on) and without tools, given the
+  user's request, the last 20 calls one line each, what the rule saw and the error that came back most
+  (`resources/internal/LOOP_JUDGE.md`, which says varied retries and batch edits are not
+  loops). It answers `{stuck, confidence, redirect}`. Only `stuck` at 0.9 or more ends
+  the turn as failed, with the last calls and the suggestion (`JudgeStop`); otherwise
+  the redirect is the next step's note (`JudgeRedirect`) and the next candidate waits
+  for one more mark than the last did. A cycle counts once per step toward the two
+  re-plans, and a call outside it or one that brings something new starts the count
+  over. At most `limits.loop_judge_calls` (3) a turn; an answer that cannot be read
+  lets the turn go on. Its tokens are logged, not kept in the usage ledger.
+- **Text loops.** `limits.text_loops` (on): the model's answer is read as it streams in
+  50-character pieces; one that comes back `limits.text_loop_repeats` (10) times close
+  together (on average within 250 characters) cuts the stream, and the step is taken
+  again with a note (`Cycle`: the protocol has no rung of its own for text, so a text
+  loop is told as the cycle it is). It is a loop only when the text between the
+  piece's places is mostly the same too, so a list of paths or links sharing a long
+  start is prose. Only places that do not overlap count, so a long hash, a dotted
+  leader or a bar of one character is no loop. Code (fenced or indented), tables,
+  lists, headings, quotes and rules are not read, and each such line forgets what came
+  before it. After two cuts in a turn the next step streams whole, so the rule never
+  ends a turn or loses its calls.
+- **Goal monologues.** `limits.monologue` (on): goal rounds in a row that called no
+  tool, with no message from the user or another agent between (one that comes with
+  a round's start makes that turn a reply, not a round), get a note in the next round's start at
+  `limits.monologue_note_at` (3), a request for a different plan at
+  `monologue_replan_at` (5), and again every `monologue_note_at` rounds after, as
+  `NoProgress` and `NoProgressReplan` notices; within a turn an answer without a tool
+  call ends it, so only rounds can talk on. With `limits.goal_stall` on, a round that
+  still only talks after the request for a different plan pauses the goal, saying the
+  rounds only wrote text.
+- **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
+  a goal, the state of the files its chat and agents changed and the test results of
+  the round (error lines included, so a build failing with fewer errors is another
+  result) are stored with it; once `limits.goal_stall_rounds` (3) measured rounds in a row
+  left both as they were, the goal pauses for the user, saying what stayed the same. A
+  round that changed no file and ran no test is not measured, nor one that may have
+  written where the ledger does not look (a job, a subagent, an MCP tool, a command too
+  large to compare); a look at the goal or the tasks is no write. Nor is any round
+  in a chat the ledger never recorded a change of. A resume starts the count over.
 
 ## Project knowledge
 

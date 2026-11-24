@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 38,
+  "x-protocol": 39,
   "x-oldest": 36,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -6407,6 +6407,46 @@
           "const": "Stop",
           "description": "The turn ends as failed, with the error and the attempts.",
           "type": "string"
+        },
+        {
+          "const": "Cycle",
+          "description": "The same short run of calls with the same results came round again, or one call\ngave the same result several times with nothing changed between: the model is told\nit is going in circles.",
+          "type": "string"
+        },
+        {
+          "const": "CycleReplan",
+          "description": "The cycle went on: the model is asked for a different plan.",
+          "type": "string"
+        },
+        {
+          "const": "TestRerun",
+          "description": "The tests ran again with no project file changed since their last run: the model\nis told what that run found.",
+          "type": "string"
+        },
+        {
+          "const": "TestRerunReplan",
+          "description": "The tests kept running with nothing changed: the model is asked for a different\nplan.",
+          "type": "string"
+        },
+        {
+          "const": "NoProgress",
+          "description": "Steps went by with nothing new: no file changed, nothing new read, nothing that\nfailed passed. The model is asked where it stands.",
+          "type": "string"
+        },
+        {
+          "const": "NoProgressReplan",
+          "description": "Still no progress: the model is asked for a different plan.",
+          "type": "string"
+        },
+        {
+          "const": "JudgeRedirect",
+          "description": "A judge model read the turn after a rule fired and found it not stuck; its\nadvice goes to the model and the turn goes on.",
+          "type": "string"
+        },
+        {
+          "const": "JudgeStop",
+          "description": "A judge model confirmed the turn is stuck: the turn ends as failed, with why.",
+          "type": "string"
         }
       ]
     },
@@ -10706,7 +10746,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The model repeated itself and the core stepped in: the result of the call just\nfinished carries a note, and at `RepeatRung::Stop` the turn ends. `count` is how\nmany times the same call, or the same error, came back in this turn.",
+          "description": "The model repeated itself and the core stepped in: the result of the call just\nfinished carries a note, and at `RepeatRung::Stop` or `RepeatRung::JudgeStop` the\nturn ends. `count` is what the rung counts in this turn: the same call or error\ncoming back, a cycle's rounds, test runs with no change between, or steps with no\nprogress.",
           "properties": {
             "RepeatNotice": {
               "properties": {

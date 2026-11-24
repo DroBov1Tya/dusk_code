@@ -10,7 +10,10 @@ use std::collections::HashMap;
 
 use dusk_protocol::thread::RepeatRung;
 
-use super::{hash, signature};
+use super::{
+    hash,
+    signature::{self, Signature},
+};
 use crate::{config::Limits, project::episodes, providers::ToolCall};
 
 /// Distinct failures a turn keeps count of; more are not counted, so a turn that
@@ -65,6 +68,12 @@ impl Ladder {
     /// output has nothing to recognize or the turn keeps count of too many.
     pub fn count(&mut self, call: &ToolCall, output: &str) -> Option<u64> {
         let signature = signature::of(&call.name, &call.arguments, output)?;
+        self.count_signature(call, signature)
+    }
+
+    /// Counts a failed call under a signature found another way, as a test run's
+    /// failing ids.
+    pub fn count_signature(&mut self, call: &ToolCall, signature: Signature) -> Option<u64> {
         let key = hash(&signature.key);
         if !self.seen.contains_key(&key) && self.seen.len() >= MAX_SIGNATURES {
             return None;
@@ -90,13 +99,14 @@ impl Ladder {
         Some(key)
     }
 
-    /// What to do once the error counted under `key` has come back often enough.
-    pub fn climb(&self, key: u64, limits: &Limits) -> Option<Climb> {
+    /// What to do once the error counted under `key` has come back often enough. The
+    /// turn stops at `stop_at`; with None, the top rung asks for a different plan again
+    /// instead.
+    pub fn climb(&self, key: u64, limits: &Limits, stop_at: Option<u32>) -> Option<Climb> {
         let seen = self.seen.get(&key)?;
         let count = seen.count;
         let attempts = seen.list();
-        let stop_at = limits.failure_stop_at;
-        let (rung, note, stop) = if count >= stop_at {
+        let (rung, note, stop) = if stop_at.is_some_and(|at| count >= at) {
             let note = format!(
                 "[this same error has come back {count} times in this turn; the turn stops here.]"
             );
@@ -107,10 +117,13 @@ impl Ladder {
             );
             (RepeatRung::Stop, note, Some(stop))
         } else if count >= limits.failure_replan_at {
+            let then = stop_at
+                .map(|at| format!(" At {at} the turn stops."))
+                .unwrap_or_default();
             let note = format!(
                 "[this same error has come back {count} times in this turn; the approach is \
                  not working. Attempts so far:\n{attempts}\nBefore your next call, write one \
-                 sentence with a different plan, then follow it. At {stop_at} the turn stops.]"
+                 sentence with a different plan, then follow it.{then}]"
             );
             (RepeatRung::Replan, note, None)
         } else if count >= limits.failure_note_at {
@@ -130,6 +143,24 @@ impl Ladder {
             note,
             stop,
         })
+    }
+}
+
+impl Ladder {
+    /// The error that came back most often in the turn, with its attempts; None when
+    /// none came back.
+    pub fn worst(&self) -> Option<String> {
+        let seen = self
+            .seen
+            .values()
+            .filter(|seen| seen.count >= 2)
+            .max_by_key(|seen| (seen.count, seen.last))?;
+        Some(format!(
+            "this error came back {} times:\n{}\nattempts:\n{}",
+            seen.count,
+            seen.excerpt,
+            seen.list()
+        ))
     }
 }
 

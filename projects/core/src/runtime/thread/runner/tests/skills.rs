@@ -105,7 +105,7 @@ async fn scribed_by(
         &provider,
         &config,
         model(None),
-        tool,
+        vec![tool],
         root,
         artifacts,
         false,

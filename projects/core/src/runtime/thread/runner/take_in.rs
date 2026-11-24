@@ -28,6 +28,15 @@ impl ThreadRunner {
     }
 
     async fn take(&mut self, pending: PendingMessage) -> Result<()> {
+        // The user or another agent wrote with the goal's kickoff: the turn answers
+        // them, not the round. A finished job's report is part of the round's work.
+        if pending.from_job_id.is_none()
+            && self
+                .round_queued
+                .is_some_and(|kickoff| kickoff != pending.pending_id)
+        {
+            self.round_queued = None;
+        }
         let state = Arc::clone(&self.agent.state);
         // Another agent's message is never a command, whatever it starts with.
         let command = if pending.from_thread_id.is_some() || pending.from_job_id.is_some() {

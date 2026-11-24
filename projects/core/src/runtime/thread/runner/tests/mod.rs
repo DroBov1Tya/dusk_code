@@ -346,7 +346,32 @@ fn runner_with(
     let root = temp_dir("runner_scope");
     std::fs::create_dir_all(&root).unwrap();
     let artifacts = ArtifactStore::new(root.join("artifacts"));
-    runner_seeing(state, provider, config, model, tool, root, artifacts, false)
+    runner_seeing(
+        state,
+        provider,
+        config,
+        model,
+        vec![tool],
+        root,
+        artifacts,
+        false,
+    )
+}
+
+/// `runner_with` with several tools.
+fn runner_with_tools(
+    state: &Arc<State>,
+    provider: &Arc<FakeProvider>,
+    config: &Arc<LiveConfig>,
+    model: Model,
+    tools: Vec<Box<dyn Tool>>,
+) -> (ThreadRunner, ThreadInput, ThreadOutput) {
+    let root = temp_dir("runner_scope");
+    std::fs::create_dir_all(&root).unwrap();
+    let artifacts = ArtifactStore::new(root.join("artifacts"));
+    runner_seeing(
+        state, provider, config, model, tools, root, artifacts, false,
+    )
 }
 
 /// `runner_with` in `root`, keeping pictures in `artifacts`; with `vision`, the model is
@@ -357,13 +382,15 @@ fn runner_seeing(
     provider: &Arc<FakeProvider>,
     config: &Arc<LiveConfig>,
     model: Model,
-    tool: Box<dyn Tool>,
+    with: Vec<Box<dyn Tool>>,
     root: std::path::PathBuf,
     artifacts: ArtifactStore,
     vision: bool,
 ) -> (ThreadRunner, ThreadInput, ThreadOutput) {
     let mut tools = ToolRegistry::default();
-    tools.add(tool);
+    for tool in with {
+        tools.add(tool);
+    }
     tools.set_depth(0);
     let choice = Choice {
         provider_name: "fake".into(),
@@ -430,8 +457,11 @@ async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
         .collect()
 }
 
+mod chant;
 mod episodes;
 mod goals;
+mod judge;
+mod progress;
 mod repeats;
 mod resume;
 mod retries;

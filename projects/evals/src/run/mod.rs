@@ -20,7 +20,7 @@ use dusk_core::{app::Paths, client::Client};
 use dusk_protocol::{
     client::Event,
     model::{ModelEvent, Usage},
-    thread::{RepeatRung, ThreadEvent},
+    thread::ThreadEvent,
 };
 use regex::Regex;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -207,10 +207,7 @@ impl Watch {
                 self.tool_errors += u64::from(result.is_error);
             }
             ThreadEvent::Retrying { .. } => self.retries += 1,
-            ThreadEvent::RepeatNotice {
-                rung: RepeatRung::Stop,
-                ..
-            } => self.repeat_stops += 1,
+            ThreadEvent::RepeatNotice { rung, .. } if rung.stops() => self.repeat_stops += 1,
             ThreadEvent::RepeatNotice { .. } => self.repeat_notices += 1,
             ThreadEvent::ResultsStubbed {
                 results,
@@ -428,6 +425,8 @@ async fn one(
 
 #[cfg(test)]
 mod tests {
+    use dusk_protocol::thread::RepeatRung;
+
     use super::*;
 
     #[test]
@@ -441,7 +440,9 @@ mod tests {
         };
         watch.see(from_agent(notice(RepeatRung::Replan)), None);
         watch.see(from_agent(notice(RepeatRung::Stop)), None);
-        assert_eq!((watch.repeat_notices, watch.repeat_stops), (2, 1));
+        watch.see(notice(RepeatRung::Cycle), None);
+        watch.see(notice(RepeatRung::JudgeStop), None);
+        assert_eq!((watch.repeat_notices, watch.repeat_stops), (3, 2));
     }
 
     /// Test commands are counted for the chat and its agents; other commands are not.

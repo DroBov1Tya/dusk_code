@@ -211,6 +211,11 @@ impl Tasks {
 }
 
 impl Tool for Tasks {
+    /// Keeps the chat's own records or speaks to someone: no project file changes.
+    fn writes_project(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     fn name(&self) -> &'static str {
         "tasks"
     }
