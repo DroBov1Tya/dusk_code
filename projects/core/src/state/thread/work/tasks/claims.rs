@@ -69,7 +69,7 @@ impl State {
     /// open to claimed: gives the task to `claim.owner`, if it is open, everything it
     /// depends on is done, no task holds an overlapping file, fewer than `at_once` are at
     /// work and the owner has no unfinished task. One statement, so of two claims of one
-    /// task one wins. The budget is the caller's to check.
+    /// task one wins.
     pub async fn claim_task(
         &self,
         thread: &str,

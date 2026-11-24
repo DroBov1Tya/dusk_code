@@ -159,7 +159,8 @@ fn work(request: &Work) -> Access<'_> {
         | Work::SavePlan { thread_id, .. }
         | Work::ConfirmTask { thread_id, .. }
         | Work::StopTeam { thread_id } => of(Area::ThreadWrite, thread_id),
-        // How much the team may spend unasked, so it sits with the approval mode.
+        // How many members work at once, a setting of the team, so it sits with the approval
+        // mode.
         Work::SetTeamAtOnce { thread_id, .. } => of(Area::ThreadApprovals, thread_id),
     }
 }

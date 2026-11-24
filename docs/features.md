@@ -120,7 +120,7 @@ board too and no team runs.
   shaped like a key before they are stored or sent.
 - **No budget; ends.** A team has no step, token or time budget: what it used is shown,
   never a limit. `limits.team_at_once` is the most members at work at once; the user may
-  lower it while the team runs. The team ends when all is done, it is stopped, the lead
+  change it while the team runs, from 1 up to that setting. The team ends when all is done, it is stopped, the lead
   went quiet at the cap of agent messages, or nothing can start and the lead changed
   nothing. Older configs' `team_max_steps`, `team_max_tokens` and `team_max_minutes` are
   read and dropped.

@@ -24,8 +24,8 @@ pub enum GatesYes {
 
 /// What starts, stops and reports the team of a plan. `lead` is the chat's root thread.
 pub trait TeamRunner: Send + Sync {
-    /// Starts the team of the plan, or goes on with the one running; a second call with a team running changes nothing, since
-    /// a restart runs it again. In a mode that asks for each command, the user is asked
+    /// Starts the team of the plan, or goes on with the one running; a second call with a
+    /// team running changes nothing, since a restart runs it again. In a mode that asks for each command, the user is asked
     /// once, through `progress`, to allow the plan's gate commands.
     fn run<'a>(&'a self, lead: &'a str, progress: Option<Progress>) -> BoxFuture<'a, Started>;
 
