@@ -96,6 +96,12 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   again with a note (`Cycle`). Code (fenced or indented), tables, lists, headings,
   quotes and rules are not read, and each such line forgets what came before it. After
   two cuts in a turn the turn ends with the text up to where the piece came back.
+- **Goal monologues.** `limits.monologue` (on): goal rounds in a row that called no
+  tool, with no message from the user between, get a note in the next round's start at
+  `limits.monologue_note_at` (3), a request for a different plan at
+  `monologue_replan_at` (5), and again every `monologue_note_at` rounds after, as
+  `NoProgress` and `NoProgressReplan` notices. Notes only; within a turn an answer
+  without a tool call ends it, so only rounds can talk on.
 - **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
   a goal, the state of the files its chat and agents changed and the test results of
   the round (error lines included, so a build failing with fewer errors is another

@@ -352,6 +352,11 @@ impl Repeats {
         self.skip = self.judged;
     }
 
+    /// Whether the turn `turn_id` called any tool.
+    pub fn acted(&self, turn_id: &str) -> bool {
+        self.turn == turn_id && self.steps > 0
+    }
+
     /// The loop a call that passed ended, for an episode. Only asked with
     /// `limits.episodes` on, which is what counts the failures it ends.
     pub fn solved(

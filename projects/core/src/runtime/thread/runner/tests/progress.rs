@@ -1,6 +1,6 @@
 //! Work that brings nothing new in real turns: a turn of steps that change nothing gets a
-//! note and goes on, and a goal whose rounds leave the files and tests as they were
-//! pauses for the user; work that moves on gets neither.
+//! note and goes on, a goal whose rounds leave the files and tests as they were pauses
+//! for the user, and goal rounds that only talk get a note; work that moves on gets none.
 
 use super::*;
 use crate::project::ledger::Edit;
@@ -158,6 +158,16 @@ async fn with_the_switch_off_no_note_comes() {
 /// Approves a goal for the chat and runs `scripts` until the goal pauses; the goal and
 /// the turns run.
 async fn run_goal(name: &str, settings: &str, scripts: Vec<Vec<Step>>) -> (Goal, u64) {
+    let (_, goal, turns) = run_goal_in(name, settings, scripts).await;
+    (goal, turns)
+}
+
+/// The same, with the chat's state.
+async fn run_goal_in(
+    name: &str,
+    settings: &str,
+    scripts: Vec<Vec<Step>>,
+) -> (Arc<State>, Goal, u64) {
     let state = thread_state(name).await;
     let config = Arc::new(temp_live_config_with(&format!("{name}_config"), settings));
     let draft = state
@@ -194,7 +204,19 @@ async fn run_goal(name: &str, settings: &str, scripts: Vec<Vec<Step>>) -> (Goal,
     };
     let (_, goal) = tokio::join!(runner.run(), client);
     let turns = state.count_turns("thread").await.unwrap();
-    (goal, turns)
+    (state, goal, turns)
+}
+
+/// The starts of the goal's rounds that carry the note for rounds that only talk.
+async fn talk_notes(state: &State) -> usize {
+    transcript(state)
+        .await
+        .into_iter()
+        .filter(|(role, content)| {
+            *role == MessageRole::User
+                && (content.contains("only written text") || content.contains("only wrote text"))
+        })
+        .count()
 }
 
 /// The first round, then the chat's name the model is asked for after its first turn.
@@ -296,4 +318,31 @@ async fn rounds_that_fix_build_errors_are_not_a_stall() {
     let settings = "limits:\n  max_goal_rounds: 5\n";
     let (goal, _) = run_goal("goal_build_errors", settings, scripts).await;
     assert_eq!(goal.note.as_deref(), Some("all 5 rounds used"));
+}
+
+#[tokio::test]
+async fn goal_rounds_that_only_talk_get_a_note_in_the_next_round() {
+    let mut scripts = first_round("h1");
+    for i in 0..8 {
+        let text: &'static str = Box::leak(format!("plan {i}: I will fix the parser").into());
+        scripts.push(vec![Step::Text(text), Step::Done]);
+    }
+    let settings = "limits:\n  max_goal_rounds: 7\n";
+    let (state, goal, _) = run_goal_in("goal_talk", settings, scripts).await;
+    assert_eq!(goal.note.as_deref(), Some("all 7 rounds used"));
+    // Rounds 2 to 7 only talk: the 3rd of them and the 5th leave a note for the next.
+    let notes = talk_notes(&state).await;
+    assert_eq!(notes, 2, "{:?}", transcript(&state).await);
+}
+
+#[tokio::test]
+async fn goal_rounds_that_act_get_no_talk_note() {
+    let mut scripts = first_round("h0");
+    for i in 1..8 {
+        scripts.extend(round(Some(&format!("h{i}"))));
+    }
+    let settings = "limits:\n  max_goal_rounds: 5\n";
+    let (state, goal, _) = run_goal_in("goal_acting", settings, scripts).await;
+    assert_eq!(goal.note.as_deref(), Some("all 5 rounds used"));
+    assert_eq!(talk_notes(&state).await, 0);
 }
