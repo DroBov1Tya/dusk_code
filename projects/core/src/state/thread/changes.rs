@@ -171,6 +171,21 @@ impl State {
         .context("list the state of the changed files")
     }
 
+    /// Whether the threads recorded a change since the turn `turn_id` started; false
+    /// for a turn not known.
+    pub async fn changed_in_turn(&self, threads: &[String], turn_id: &str) -> Result<bool> {
+        sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM changes
+                WHERE thread_id IN (SELECT value FROM json_each(?1))
+                  AND created_at >= (SELECT started_at FROM turns WHERE turn_id = ?2))",
+        )
+        .bind(serde_json::to_string(threads)?)
+        .bind(turn_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("tell whether a turn changed a file")
+    }
+
     /// The thread's own changes for a client, newest first, at most `MAX_FILE_CHANGES`.
     pub async fn thread_changes(&self, thread_id: &str) -> Result<Vec<FileChange>> {
         sqlx::query(select!(

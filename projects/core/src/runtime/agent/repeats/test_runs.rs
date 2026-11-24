@@ -161,6 +161,11 @@ impl TestRuns {
         }
     }
 
+    /// Whether a call of the turn may have written where the ledger does not look.
+    pub fn unseen_writes(&self) -> bool {
+        self.unseen > 0
+    }
+
     /// Notes a test run at `step`, with the ledger's count after it; the rung, count and
     /// note when it repeats a run of its runner with nothing changed since.
     pub fn run(

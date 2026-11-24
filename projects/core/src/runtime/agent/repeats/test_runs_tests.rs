@@ -422,3 +422,63 @@ fn failing_ids_stay_bounded_on_any_output() {
     let huge = "x".repeat(3 << 20) + "\ntest tail::id ... FAILED";
     assert_eq!(failing_ids(&huge), ["tail::id"]);
 }
+
+#[test]
+fn a_round_tells_builds_that_fail_differently_apart() {
+    let limits = Limits::default();
+    let build = |errors: &[&str], line: u32| {
+        let mut repeats = Repeats::default();
+        let lines: Vec<String> = errors
+            .iter()
+            .map(|name| {
+                format!("error[E0425]: cannot find value `{name}`\n --> src/lib.rs:{line}:5")
+            })
+            .collect();
+        let output = format!(
+            "{}\nerror: could not compile `app` due to {} previous errors",
+            lines.join("\n"),
+            errors.len()
+        );
+        let _ = run(
+            &mut repeats,
+            &command("cargo test"),
+            &exited(101, &output),
+            None,
+            &limits,
+        );
+        repeats.round("t").tests
+    };
+    let before = build(&["alpha", "beta", "gamma"], 10);
+    let after = build(&["gamma"], 10);
+    // No test id is read from a build that failed: the error lines tell the runs apart.
+    assert_eq!(before[0].shown, "cargo test: exit 101: ");
+    assert_eq!(before[0].shown, after[0].shown);
+    assert_ne!(before, after, "fewer errors is another outcome");
+    assert_eq!(build(&["gamma"], 12), after, "a line moved is not");
+}
+
+#[test]
+fn a_round_knows_a_write_the_ledger_cannot_see() {
+    let limits = Limits::default();
+    let mut repeats = Repeats::default();
+    repeats.step("t");
+    let result = exited(0, "written");
+    let facts = Facts::default();
+    let echo = command("echo x > file");
+    let _ = repeats.note("t", &echo, &result, &result.content, &facts, &limits);
+    assert!(
+        !repeats.round("t").unseen_writes,
+        "a foreground command is seen"
+    );
+    repeats.step("t");
+    let call = ToolCall {
+        id: "call".into(),
+        name: "spawn_agent".into(),
+        arguments: json!({ "task": "fix it" }),
+    };
+    let result = ToolResult::text("agent finished".into());
+    let _ = repeats.note("t", &call, &result, &result.content, &facts, &limits);
+    assert!(repeats.round("t").unseen_writes);
+    assert!(repeats.round("another turn").tests.is_empty());
+    assert!(!repeats.round("another turn").unseen_writes);
+}

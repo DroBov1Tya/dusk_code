@@ -206,19 +206,24 @@ fn first_round(hash: &str) -> Vec<Vec<Step>> {
 
 /// A round that runs the tests, after an edit to `hash` when one is given, then ends.
 fn round(hash: Option<&str>) -> Vec<Vec<Step>> {
-    let mut steps = Vec::new();
+    let mut steps = tests_round("test parser::reads_dates ... FAILED\ntest result: FAILED");
     if let Some(hash) = hash {
-        steps.push(command(
-            json!({ "command": format!("apply {hash}"), "edit": "src/lib.rs", "hash": hash }),
-        ));
+        steps.insert(
+            0,
+            command(
+                json!({ "command": format!("apply {hash}"), "edit": "src/lib.rs", "hash": hash }),
+            ),
+        );
     }
-    steps.push(command(json!({
-        "command": "cargo test",
-        "exit": 101,
-        "output": "test parser::reads_dates ... FAILED\ntest result: FAILED",
-    })));
-    steps.push(vec![Step::Text("not yet"), Step::Done]);
     steps
+}
+
+/// A round that only runs the tests, which fail with `output`, then ends.
+fn tests_round(output: &str) -> Vec<Vec<Step>> {
+    vec![
+        command(json!({ "command": "cargo test", "exit": 101, "output": output })),
+        vec![Step::Text("not yet"), Step::Done],
+    ]
 }
 
 #[tokio::test]
@@ -258,5 +263,37 @@ async fn with_the_switch_off_a_goal_runs_to_its_cap() {
     }
     let settings = "limits:\n  max_goal_rounds: 5\n  goal_stall: false\n";
     let (goal, _) = run_goal("goal_stall_off", settings, scripts).await;
+    assert_eq!(goal.note.as_deref(), Some("all 5 rounds used"));
+}
+
+#[tokio::test]
+async fn rounds_of_research_after_an_edit_are_not_measured() {
+    let mut scripts = first_round("h1");
+    for _ in 0..8 {
+        // A look around, a question, a plan: no file changed, no test run.
+        scripts.push(vec![Step::Text("read the parser docs"), Step::Done]);
+    }
+    let settings = "limits:\n  max_goal_rounds: 5\n";
+    let (goal, _) = run_goal("goal_research", settings, scripts).await;
+    assert_eq!(goal.note.as_deref(), Some("all 5 rounds used"));
+}
+
+#[tokio::test]
+async fn rounds_that_fix_build_errors_are_not_a_stall() {
+    let mut scripts = first_round("h1");
+    // Rounds that only run the build: no test id is read from it, but fewer errors are
+    // left each time.
+    for left in (1..=8).rev() {
+        let errors: Vec<String> = (0..left)
+            .map(|i| format!("error[E0425]: cannot find value `v{i}` in this scope"))
+            .collect();
+        let output = format!(
+            "{}\nerror: could not compile `app` due to {left} previous errors",
+            errors.join("\n")
+        );
+        scripts.extend(tests_round(&output));
+    }
+    let settings = "limits:\n  max_goal_rounds: 5\n";
+    let (goal, _) = run_goal("goal_build_errors", settings, scripts).await;
     assert_eq!(goal.note.as_deref(), Some("all 5 rounds used"));
 }

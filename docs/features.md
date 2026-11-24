@@ -80,9 +80,12 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   re-plan the turn is a stall candidate for a judge, and goes on.
 - **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
   a goal, the state of the files its chat and agents changed and the test results of
-  the round are stored with it; once `limits.goal_stall_rounds` (3) rounds in a row left
-  both as they were, the goal pauses for the user, saying what stayed the same. A round
-  with no file changed and no test run is not measured. A resume starts the count over.
+  the round (error lines included, so a build failing with fewer errors is another
+  result) are stored with it; once `limits.goal_stall_rounds` (3) measured rounds in a row
+  left both as they were, the goal pauses for the user, saying what stayed the same. A
+  round that changed no file and ran no test is not measured, nor one that may have
+  written where the ledger does not look (a job, a subagent, an MCP tool), nor any round
+  in a chat the ledger never recorded a change of. A resume starts the count over.
 
 ## Project knowledge
 

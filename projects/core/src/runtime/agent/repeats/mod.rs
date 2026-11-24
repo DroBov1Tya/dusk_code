@@ -13,8 +13,9 @@
 //!   failing ids standing for its error). The same count tells, with `limits.episodes`
 //!   on, when a pass ended such an error (`solved`).
 //!
-//! Only the ladder ends a turn; the other rules add notes. The test results of the turn
-//! are kept too, for a goal to tell whether its rounds still change anything.
+//! Only the ladder ends a turn; the other rules add notes. The test results of the turn,
+//! and whether it wrote where the change ledger does not look, are kept too, for a goal
+//! to tell whether its rounds still change anything (`Round`).
 
 mod cycles;
 #[cfg(test)]
@@ -68,6 +69,26 @@ pub struct Facts {
     pub edits: Option<Vec<(String, String)>>,
 }
 
+/// How a test runner's last run in a turn ended.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TestOutcome {
+    /// Whether it passed and which tests failed, for the user.
+    pub shown: String,
+    /// The run's error lines, made alike as `signature::volatile` does; empty when it
+    /// passed or wrote none.
+    pub error: String,
+}
+
+/// What a turn did that a goal round is measured by.
+#[derive(Debug, Default)]
+pub struct Round {
+    /// The last result of each test runner, sorted by runner.
+    pub tests: Vec<TestOutcome>,
+    /// A call may have written where the change ledger does not look: a background job,
+    /// a subagent, an MCP tool.
+    pub unseen_writes: bool,
+}
+
 /// Kept per turn: a new turn starts every count over.
 #[derive(Default)]
 pub struct Repeats {
@@ -77,9 +98,8 @@ pub struct Repeats {
     cycles: cycles::Cycles,
     test_runs: test_runs::TestRuns,
     progress: progress::Progress,
-    /// The last result of each test runner in the turn: whether it passed and what
-    /// failed, at most `MAX_TEST_RUNNERS`.
-    tests: BTreeMap<String, String>,
+    /// The last result of each test runner in the turn, at most `MAX_TEST_RUNNERS`.
+    tests: BTreeMap<String, TestOutcome>,
     ladder: ladder::Ladder,
     /// Why the turn must end, once the ladder reached its top.
     stop: Option<String>,
@@ -134,8 +154,10 @@ impl Repeats {
         let tests = (limits.test_reruns || limits.goal_stall)
             .then(|| test_runs::TestRun::of(call, result))
             .flatten();
-        if let Some(run) = &tests {
-            self.keep_test_result(run);
+        if let Some(run) = &tests
+            && limits.goal_stall
+        {
+            self.keep_test_result(run, call, result);
         }
         let tests = tests.filter(|_| limits.test_reruns);
         let signature = tests.as_ref().and_then(test_runs::TestRun::signature);
@@ -176,27 +198,46 @@ impl Repeats {
         Some(notice)
     }
 
-    fn keep_test_result(&mut self, run: &test_runs::TestRun) {
+    fn keep_test_result(&mut self, run: &test_runs::TestRun, call: &ToolCall, result: &ToolResult) {
         if self.tests.len() >= MAX_TEST_RUNNERS && !self.tests.contains_key(&run.runner) {
             return;
         }
-        let outcome = match run.exit_code {
-            0 => "passed".to_owned(),
-            code => format!("exit {code}: {}", run.failing.join(" ")),
+        let (shown, error) = match run.exit_code {
+            0 => ("passed".to_owned(), String::new()),
+            code => {
+                // A run that fails to build names no failing test: its error lines, with
+                // line numbers and times made alike but counts kept, tell two apart.
+                let error = signature::of(&call.name, &call.arguments, &result.content)
+                    .map(|found| {
+                        let lines: Vec<String> =
+                            found.error.lines().map(signature::volatile).collect();
+                        lines.join("\n")
+                    })
+                    .unwrap_or_default();
+                (format!("exit {code}: {}", run.failing.join(" ")), error)
+            }
         };
-        self.tests.insert(run.runner.clone(), outcome);
+        self.tests
+            .insert(run.runner.clone(), TestOutcome { shown, error });
     }
 
-    /// The last result of each test runner in the turn `turn_id`, one line each, sorted;
-    /// empty when it ran none or is not the turn these counts are of.
-    pub fn test_results(&self, turn_id: &str) -> Vec<String> {
+    /// What the turn `turn_id` did that a goal round is measured by; empty when it called
+    /// no tool or is not the turn these counts are of.
+    pub fn round(&self, turn_id: &str) -> Round {
         if self.turn != turn_id {
-            return Vec::new();
+            return Round::default();
         }
-        self.tests
-            .iter()
-            .map(|(runner, outcome)| format!("{runner}: {outcome}"))
-            .collect()
+        Round {
+            tests: self
+                .tests
+                .iter()
+                .map(|(runner, outcome)| TestOutcome {
+                    shown: format!("{runner}: {}", outcome.shown),
+                    error: outcome.error.clone(),
+                })
+                .collect(),
+            unseen_writes: self.test_runs.unseen_writes(),
+        }
     }
 
     /// Steps in a row with nothing new in the turn `turn_id`, once the model was asked
