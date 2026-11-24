@@ -33,8 +33,9 @@ pub struct ThreadRunner {
     pub goal_waiting: bool,
     /// Goal rounds in a row that called no tool.
     pub(crate) monologue: crate::runtime::goal::Monologue,
-    /// A goal round was queued: the next turn is its.
-    pub(crate) round_queued: bool,
+    /// The kickoff of the goal round queued, by its pending id: the next turn is the
+    /// round's unless another message came with it or the goal stopped meanwhile.
+    pub(crate) round_queued: Option<i64>,
     /// The last turn that started was a goal round's.
     pub(crate) round_turn: bool,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
@@ -116,7 +117,7 @@ impl ThreadRunner {
             ends_when_idle: setup.ends_when_idle,
             goal_waiting: false,
             monologue: Default::default(),
-            round_queued: false,
+            round_queued: None,
             round_turn: false,
             left: false,
             deciding,
@@ -304,8 +305,10 @@ impl ThreadRunner {
                 Ok(Some((turn, resumes))) => {
                     ran = true;
                     ended = Some(turn.turn_id.clone());
-                    // A turn the goal did not start answers someone who wrote.
-                    self.round_turn = std::mem::take(&mut self.round_queued);
+                    // A turn the goal did not start, or that also reads what someone
+                    // wrote, answers them; a goal paused or ended meanwhile has no round.
+                    self.round_turn = self.round_queued.take().is_some()
+                        && self.agent.active_goal().await?.is_some();
                     if !self.round_turn {
                         self.monologue.reset();
                     }

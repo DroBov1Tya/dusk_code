@@ -117,8 +117,8 @@ impl ThreadRunner {
         if let Some((_, _, note)) = &quiet {
             kickoff.push_str(&format!("\n\n{note}"));
         }
-        state.add_pending(&self.agent.thread_id, &kickoff).await?;
-        self.round_queued = true;
+        let queued = state.add_pending(&self.agent.thread_id, &kickoff).await?;
+        self.round_queued = Some(queued.pending_id);
         if let Some((rung, count, _)) = quiet {
             self.agent.emit(ThreadEvent::RepeatNotice { rung, count });
         }
