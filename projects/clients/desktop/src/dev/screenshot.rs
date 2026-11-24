@@ -37,6 +37,7 @@
 //!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
 //! - `fake=blocks|blocks-working|blocks-wait|blocks-decision`: a chat with a Flow, Checks and
 //!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
+//! - `fake=diagrams|diagram-KIND`: a chat with a diagram of each kind, or of one kind;
 //! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
 //!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
 //!   the composer's panel, the Todo's finished tasks; `fake=todo-short`: its board cut to
@@ -632,6 +633,7 @@ fn act(
             cx.notify();
         }
         "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
+        "fake" if value.starts_with("diagram") => super::diagrams::fake(ws, value, cx),
         "fake" if value == "mcp" => super::polish::mcp(ws, cx),
         "fake"
             if matches!(

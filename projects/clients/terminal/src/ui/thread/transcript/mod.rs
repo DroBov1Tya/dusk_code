@@ -2,6 +2,7 @@
 //! summaries fold into one line each and stack tightly, so the conversation stays in view.
 
 mod blocks;
+mod diagram;
 mod lines;
 mod shown;
 mod suggested;

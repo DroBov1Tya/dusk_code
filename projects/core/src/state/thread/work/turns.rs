@@ -175,6 +175,7 @@ impl State {
                         | "display_image"
                         | "display_audio"
                         | "show"
+                        | "draw_diagram"
                         | "search_workshop"
                         | "suggest_from_workshop"
                         | "tasks"

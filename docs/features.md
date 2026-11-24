@@ -157,7 +157,9 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 ## What the chat shows
 
 - **Structured blocks.** The `show` tool puts a flow, a list of checks or reply buttons in
-  the chat; on by default; `tools: { show: false }` hides it. See [blocks.md](blocks.md).
+  the chat; on by default; `tools: { show: false }` hides it. `draw_diagram` draws a flow,
+  an architecture, a sequence, a timeline, a tree or states from nodes and edges; on by
+  default; `tools: { draw_diagram: false }` hides it. See [blocks.md](blocks.md).
 - **Overview.** The Statistics view of every client: the plan's progress and members,
   tokens, context, changes, tool activity and an event log. The core counts all of it;
   there is no switch.
