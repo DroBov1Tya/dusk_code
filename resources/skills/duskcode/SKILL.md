@@ -1,8 +1,8 @@
 ---
 name: duskcode
 description: "Where dusk's own agents, skills, MCP servers and memory live and the front matter or YAML each takes. Use when asked to add, change or configure one of them in dusk itself; not for the user's project code."
-source: "dusk_code"
-author: "Neil Ermak"
+source: "Duskcode"
+author: "Duskcode"
 license: MIT
 tags: [dusk, setup]
 ---

@@ -1,8 +1,8 @@
 ---
 name: skill-creator
 description: "Write or revise a Dusk skill: its name, description, steps, Markdown references and a check that it works. Use when the user asks to make, save or fix a skill or a reusable procedure; to change a skill on evidence from the current work, load skill-evolve."
-source: "dusk_code"
-author: "Neil Ermak"
+source: "Duskcode"
+author: "Duskcode"
 license: MIT
 tags: [skills, authoring]
 ---

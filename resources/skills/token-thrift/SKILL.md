@@ -1,8 +1,8 @@
 ---
 name: token-thrift
 description: "Spending fewer tokens and steps for the same result: when to think, what to read, how to batch tool calls and keep results short. Use on long or tool-heavy work."
-source: "duskcode"
-author: "duskcode"
+source: "Duskcode"
+author: "Duskcode"
 license: MIT
 tags: [efficiency, tokens]
 ---
