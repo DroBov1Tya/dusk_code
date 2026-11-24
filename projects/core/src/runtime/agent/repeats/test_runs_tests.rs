@@ -493,6 +493,40 @@ fn once_the_judges_are_spent_the_same_failing_tests_stop_the_turn_later() {
 }
 
 #[test]
+fn the_same_command_ending_another_way_is_news() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let test = command("pytest");
+    let failed = exited(
+        1,
+        "FAILED tests/test_a.py::test_a - ConnectionRefusedError\n\
+         FAILED tests/test_a.py::test_b - ConnectionRefusedError",
+    );
+    // The ledger has recorded an edit of the thread before: it is trusted.
+    assert!(run(&mut repeats, &test, &failed, Some(3), &limits).is_none());
+    // A service is started outside the project: the ledger shows no row.
+    repeats.step("t");
+    let started = ToolResult::text("Container db Started".to_owned());
+    let facts = Facts {
+        writes_project: false,
+        ..Facts::default()
+    };
+    let up = command("docker compose up -d");
+    repeats.note("t", &up, &started, &started.content, &facts, &limits);
+    let passed = exited(0, "2 passed in 0.10s");
+    assert_eq!(run(&mut repeats, &test, &passed, Some(3), &limits), None);
+    // A pass after it is checked again is a repeat of the pass, not of the failure.
+    let (rung, count, note) =
+        run(&mut repeats, &test, &passed, Some(3), &limits).expect("a note");
+    assert_eq!((rung, count), (RepeatRung::TestRerun, 2));
+    assert!(note.contains("it passed"), "{note}");
+    // A flaky failure checked again that passes is news too.
+    let mut repeats = Repeats::default();
+    assert!(run(&mut repeats, &test, &failed, Some(3), &limits).is_none());
+    assert_eq!(run(&mut repeats, &test, &passed, Some(3), &limits), None);
+}
+
+#[test]
 fn test_runners_are_told_from_other_commands() {
     for (line, expected) in [
         ("cargo test", "cargo test"),

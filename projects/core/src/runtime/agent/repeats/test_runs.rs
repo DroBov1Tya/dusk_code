@@ -3,8 +3,9 @@
 //! command whose program and first word name a test runner (`cargo test`, `pytest`,
 //! `npm test`, ...); the runs of each runner since a project file last changed are kept
 //! with the tests that failed and the change ledger's count at the time. A run that
-//! repeats one of them, as the same command or with the same tests failing, gets a note
-//! with what that run found. A narrower run to look at one failure fails fewer tests and
+//! repeats one of them, as the same command ending the same way or with the same tests
+//! failing, gets a note with what that run found; the same command ending another way
+//! is news and starts the runs over. A narrower run to look at one failure fails fewer tests and
 //! is not a repeat. The command still runs: tests can be flaky, and a change outside the
 //! project (an env var, a service) is not seen.
 //!
@@ -24,7 +25,7 @@ use std::collections::{BTreeSet, HashMap};
 use dusk_protocol::{text::clip_chars, thread::RepeatRung};
 
 use super::{
-    Facts,
+    Facts, hash,
     signature::{self, RUN_COMMAND, Signature},
 };
 use crate::{
@@ -54,6 +55,9 @@ pub struct TestRun {
     pub exit_code: i32,
     /// Sorted, each once; empty when it passed or none could be read.
     pub failing: Vec<String>,
+    /// The hash of its error lines made alike, when it failed with no failing id read,
+    /// as a build that fails does; 0 otherwise.
+    error: u64,
 }
 
 impl TestRun {
@@ -70,11 +74,20 @@ impl TestRun {
         } else {
             failing_ids(&result.content)
         };
+        let error = if exit_code != 0 && failing.is_empty() {
+            let lines: Option<Vec<String>> =
+                signature::of(&call.name, &call.arguments, &result.content)
+                    .map(|found| found.error.lines().map(signature::volatile).collect());
+            hash(lines)
+        } else {
+            0
+        };
         Some(Self {
             runner,
             command: command.split_whitespace().collect::<Vec<_>>().join(" "),
             exit_code,
             failing,
+            error,
         })
     }
 
@@ -91,6 +104,14 @@ impl TestRun {
             excerpt: clip_chars(&format!("failing tests:\n{list}"), 400, "…"),
             error: format!("failing tests:\n{list}"),
         })
+    }
+
+    /// Whether `other` ended as this run did: the same exit code and failing tests, or
+    /// for a failure with none read, the same error lines.
+    fn same_outcome(&self, other: &TestRun) -> bool {
+        self.exit_code == other.exit_code
+            && self.failing == other.failing
+            && self.error == other.error
     }
 
     fn outcome(&self) -> String {
@@ -128,12 +149,13 @@ struct Last {
 }
 
 impl Last {
-    /// Whether `run` repeats this one: the same command, or the same tests failing. The
-    /// first run that names a failing test to look at it alone is not a repeat of a
-    /// broader run that failed only that test; another look of the same kind is.
+    /// Whether `run` repeats this one: the same command ending the same way, or the
+    /// same tests failing. The first run that names a failing test to look at it alone
+    /// is not a repeat of a broader run that failed only that test; another look of the
+    /// same kind is.
     fn repeated_by(&self, run: &TestRun) -> bool {
         let focused = run.names_failing() && !self.run.names_failing();
-        self.run.command == run.command
+        (self.run.command == run.command && self.run.same_outcome(run))
             || (!self.run.failing.is_empty() && self.run.failing == run.failing && !focused)
     }
 }
@@ -202,6 +224,18 @@ impl TestRuns {
             && runs
                 .last()
                 .is_some_and(|newest| changed(newest, ledger, self.writes, self.unseen))
+        {
+            runs.clear();
+        }
+        // The same command ending another way is news: something outside the project
+        // changed (a service started, a tool installed), or a test is flaky. It starts
+        // the runs over.
+        if let Some(runs) = self.runs.get_mut(&run.runner)
+            && runs
+                .iter()
+                .rev()
+                .find(|last| last.run.command == run.command)
+                .is_some_and(|last| !last.run.same_outcome(&run))
         {
             runs.clear();
         }

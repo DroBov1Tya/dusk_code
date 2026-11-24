@@ -66,10 +66,12 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   result three times in a row still gets a note, as before.
 - **Test re-runs.** `limits.test_reruns` (on): a test run (`cargo test`, `pytest`, `go
   test`, `npm test`, `jest`, ...) that repeats a run of the same runner with no project
-  file changed since, as the same command or with the same tests failing, gets a note
+  file changed since, as the same command ending the same way or with the same tests
+  failing, gets a note
   with the step of that run and its failing tests (`limits.test_rerun_note_at`, 2), and a
-  request for a different plan at the fourth such run (`test_rerun_replan_at`). A
-  narrower run to look at one failure is not a repeat, nor is the first run that names
+  request for a different plan at the fourth such run (`test_rerun_replan_at`). The
+  same command ending another way (a service started, a flaky test passing) is news
+  and starts the runs over. A narrower run to look at one failure is not a repeat, nor is the first run that names
   the one test that failed. Changes are read from the change ledger once it has
   recorded one in the chat, else any call that may write a project file counts as one
   (the chat's own goal, tasks, plan and memory, and messages, do not); a write the
