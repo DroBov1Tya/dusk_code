@@ -280,6 +280,14 @@ impl Agent {
                 self.thread_id, turn.turn_id, turn.status
             ),
         }
+        // What the turn changed is counted and its facts marked stale, in the background.
+        if self.config.current().limits().project_graph {
+            crate::project::graph::refresh_soon(
+                std::sync::Arc::clone(&self.state),
+                self.scope.cwd().to_owned(),
+                crate::tools::console::skipped_folders(&self.scope),
+            );
+        }
         let status = turn.status;
         let ended = match status {
             TurnStatus::Completed => Some(AgentPhase::Done),
