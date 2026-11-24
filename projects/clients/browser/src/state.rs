@@ -131,15 +131,14 @@ impl AppState {
         for thread_id in open {
             spawn_local(async move {
                 let cwd = self.cwd_of(&thread_id);
+                if let Some(chat) = self.chat(&thread_id) {
+                    chat.update(ChatData::reopening);
+                }
                 if api::resume(&thread_id, cwd).await.is_ok()
                     && let Ok(history) = api::messages(&thread_id).await
                     && let Some(chat) = self.chat(&thread_id)
                 {
-                    chat.update(|data| {
-                        let (tasks, access) = (data.tasks.clone(), data.access);
-                        *data = ChatData::from_history(&history);
-                        (data.tasks, data.access) = (tasks, access);
-                    });
+                    chat.update(|data| data.reloaded(&history));
                 }
             });
         }
