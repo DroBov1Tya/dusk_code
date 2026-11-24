@@ -638,6 +638,7 @@ fn act(
             super::polish::state(ws, value, cx)
         }
         "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
+        "fake" if value.starts_with("goal-") => super::goal::fake(ws, value, cx),
         "fake" if value == "team" || value == "team-ended" => super::team::fake(ws, value, cx),
         "fake" if value.starts_with("team-") => super::team_sizes::fake(ws, value, cx),
         // The Team page's layers, and a long plan's done waves shown.
@@ -664,6 +665,7 @@ fn act(
             match value {
                 "pins" => ws.pins.open = true,
                 "plan" => ws.dock.plan_open = true,
+                "goal" => ws.dock.goal_open = true,
                 "panel" => ws.toggle_panel(cx),
                 "done" => ws.todo_done_open = true,
                 other => eprintln!("no such fold: {other}"),

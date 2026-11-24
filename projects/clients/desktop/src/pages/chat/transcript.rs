@@ -1,6 +1,7 @@
 //! What one chat shows: the shared chat of the protocol, folded from its history and then
 //! from its live events, with what only this window keeps beside it (commands the user ran,
-//! the arbiter's exchanges, when rows arrived, the state of skill rows and questions).
+//! the arbiter's exchanges, when rows arrived, the state of skill rows and questions, the
+//! standing goal).
 
 use std::{
     collections::BTreeMap,
@@ -10,7 +11,7 @@ use std::{
 
 use dusk_protocol::{
     system::now_ms,
-    thread::{ChatLog, Message, ThreadEvent, transcript},
+    thread::{ChatLog, Goal, Message, ThreadEvent, transcript},
     tools::{Card, QuestionQueue},
 };
 
@@ -146,6 +147,9 @@ pub struct Transcript {
     /// What the working row and the running turn's headings said on the last frame, so
     /// a change of words is a short swap and not a cut.
     pub swaps: super::activity::RowSwaps,
+    /// The chat's standing goal as the core last told it; what happened to it shows as a
+    /// notice of the chat.
+    pub goal: Option<Goal>,
     next_run: u64,
 }
 
@@ -207,6 +211,7 @@ impl Transcript {
                 }
             }
             ThreadEvent::SkillChanged(change) => self.skill_settled(change.id),
+            ThreadEvent::Goal { goal, .. } => self.goal = goal.clone(),
             ThreadEvent::ToolFinished { call_id, .. } => {
                 self.settled.insert(call_id.clone(), Instant::now());
             }

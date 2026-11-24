@@ -1,10 +1,13 @@
 //! The dock between the transcript and the composer: the plan card, a row a wave that
-//! unfolds to its tasks, and the panel the tab on the composer's upper edge opens. Both draw
-//! what the core holds: the chat's tasks, the plan's counts, the chat's folder and meters.
+//! unfolds to its tasks, the standing goal, and the panel the tab on the composer's upper
+//! edge opens. All draw what the core holds: the chat's tasks, the plan's counts, its goal,
+//! the chat's folder and meters.
 
+mod goal;
 pub mod panel;
 mod plan;
 
+pub use goal::render as goal_strip;
 pub use plan::render as plan_strip;
 
 use dusk_protocol::thread::{PlanCounts, ThreadEvent};
@@ -28,6 +31,8 @@ pub struct Dock {
     queued: bool,
     /// The card shows the plan's waves.
     pub plan_open: bool,
+    /// The goal's indicator is open to its card.
+    pub goal_open: bool,
     /// Which waves and task of the card are unfolded.
     pub waves: crate::pages::team::waves::Folds,
     /// The composer's panel is open.
@@ -48,6 +53,7 @@ impl Dock {
             busy: false,
             queued: false,
             plan_open: true,
+            goal_open: false,
             waves: Default::default(),
             panel_open: false,
             panel_focus: cx.focus_handle().tab_index(0).tab_stop(true),

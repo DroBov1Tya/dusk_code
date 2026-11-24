@@ -266,10 +266,9 @@ impl Workspace {
                     Item::Notice(text) | Item::Summary(text) => {
                         notice(&key, div().meta().text_color(muted), text, cx).into_any_element()
                     }
-                    // The evaluator's verdict on the goal, with its reason under it.
+                    // The evaluator's verdict on the goal, folded over its reason.
                     Item::Goal(evaluation) => {
-                        let text = format!("{}\n{}", evaluation.title(), evaluation.reason);
-                        notice(&key, div().meta().text_color(muted), &text, cx).into_any_element()
+                        super::goal::verdict(self, &shown, at, evaluation, cx).into_any_element()
                     }
                     Item::Error(text) => {
                         // Only the error the chat ends with can be answered by sending
