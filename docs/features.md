@@ -81,23 +81,29 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   candidate for a judge, and goes on.
 - **Loop judge.** `limits.loop_judge` (on): a turn still without progress after the
   no-progress re-plan, or a cycle asked twice for a different plan, is read by a judge:
-  the turn's own model (no smaller helper model is configured anywhere; titles and
-  summaries use the chat's model too), without tools, given the user's request, the
-  last 20 calls one line each, what the rule saw and the error that came back most
+  the arbiter's helper model when the user set one (`arbiter.model`), else, or when it
+  cannot be had, the turn's own model, at low effort and without tools, given the
+  user's request, the last 20 calls one line each, what the rule saw and the error that came back most
   (`resources/internal/LOOP_JUDGE.md`, which says varied retries and batch edits are not
   loops). It answers `{stuck, confidence, redirect}`. Only `stuck` at 0.9 or more ends
   the turn as failed, with the last calls and the suggestion (`JudgeStop`); otherwise
   the redirect is the next step's note (`JudgeRedirect`) and the next candidate waits
-  for one more mark than the last did. At most `limits.loop_judge_calls` (3) a turn; an
-  answer that cannot be read lets the turn go on.
+  for one more mark than the last did. A cycle counts once per step toward the two
+  re-plans, and a call outside it or one that brings something new starts the count
+  over. At most `limits.loop_judge_calls` (3) a turn; an answer that cannot be read
+  lets the turn go on. Its tokens are logged, not kept in the usage ledger.
 - **Text loops.** `limits.text_loops` (on): the model's answer is read as it streams in
   50-character pieces; one that comes back `limits.text_loop_repeats` (10) times close
   together (on average within 250 characters) cuts the stream, and the step is taken
-  again with a note (`Cycle`). Code (fenced or indented), tables, lists, headings,
-  quotes and rules are not read, and each such line forgets what came before it. After
-  two cuts in a turn the turn ends with the text up to where the piece came back.
+  again with a note (`Cycle`: the protocol has no rung of its own for text, so a text
+  loop is told as the cycle it is). Only places that do not overlap count, so a long
+  hash, a dotted leader or a bar of one character is no loop. Code (fenced or
+  indented), tables, lists, headings, quotes and rules are not read, and each such line
+  forgets what came before it. After two cuts in a turn the turn ends with the text up
+  to where the piece came back.
 - **Goal monologues.** `limits.monologue` (on): goal rounds in a row that called no
-  tool, with no message from the user between, get a note in the next round's start at
+  tool, with no message from the user or another agent between (one that comes with
+  a round's start makes that turn a reply, not a round), get a note in the next round's start at
   `limits.monologue_note_at` (3), a request for a different plan at
   `monologue_replan_at` (5), and again every `monologue_note_at` rounds after, as
   `NoProgress` and `NoProgressReplan` notices. Notes only; within a turn an answer
