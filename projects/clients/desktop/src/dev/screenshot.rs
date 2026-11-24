@@ -864,8 +864,21 @@ fn act(
                         thread_id: thread_id.clone(),
                         agent: (*role).into(),
                         task: (*task).into(),
-                        effort: None,
-                        model: Some("chatgpt/gpt-5.5".into()),
+                        // The tiers an agent picks: strong for review and plans, weak
+                        // for scouting, the chat's model for the rest.
+                        effort: match index {
+                            3 | 7 => Some(dusk_protocol::model::Effort::High),
+                            5 => Some(dusk_protocol::model::Effort::Low),
+                            _ => Some(dusk_protocol::model::Effort::Medium),
+                        },
+                        model: Some(
+                            match index {
+                                3 | 7 => "chatgpt/gpt-6.1-sol",
+                                5 => "openrouter/claude-haiku-4.5",
+                                _ => "chatgpt/gpt-5.5",
+                            }
+                            .into(),
+                        ),
                         task_id: None,
                     });
                     let inner = match index {
