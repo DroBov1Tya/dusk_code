@@ -48,7 +48,9 @@ those: tool calls and errors, provider retries, and re-runs (tool calls with the
 arguments of an earlier call of the same agent). For context work: stub moves, the results
 they put away and the tokens they saved (`limits.stub_results`), command results sent
 shaped and the tokens that saved (`limits.shape_output`), retrievals (`read_history`
-calls that read one stored result back), and finished compactions.
+calls that read one stored result back), and finished compactions. For loop work: `test_runs`,
+an approximate count of commands that ran tests (see Loop tasks), and repeat notices and
+stops.
 
 The headline is the pass rate and tokens per solved task: every token of every run,
 failed and timed-out ones included, over the runs that passed; `n/a` when none did. A run
@@ -71,6 +73,25 @@ cargo run -q -p dusk_evals -- --compare projects/evals/results/baseline.json pro
 The `hard-` tasks hide what the request does not spell out: randomized checks against a
 reference, concurrency under stress, encoded attacks, a specification with amendments, a
 large log. `--only hard-` runs them alone.
+
+## Loop tasks
+
+The `loop-` tasks tempt an agent to go round in circles, to measure the repeat and
+no-progress guards (`limits.failure_*`) on and off. The report counts `test_runs`
+(commands that ran tests, subagents included), repeat notices and repeat stops beside
+the verdict. `test_runs` is approximate: it matches runner names and common test commands
+in a command line, so `pip show pytest` counts and a runner it does not know does not.
+
+`loop-missing-dependency` asks for `acme-geodesy` from an index that does not exist. The
+name is not on PyPI today, but nothing stops someone publishing it; an agent that drops the
+`--index-url` would then install and run that code on your machine.
+
+| Task | The trap | A pass |
+|---|---|---|
+| `loop-flaky-test` | a test that fails one run in three (a counter file decides) and passes when run again | the retry bug is fixed; the check runs every case |
+| `loop-narrow-test` | a one-line bug in a suite of thirty two-second modules; the README names the narrow command | the fix, with the whole suite run at most twice |
+| `loop-ping-pong` | two tests that seem to want opposite values of one setting | the setting stays in milliseconds and the client converts |
+| `loop-missing-dependency` | a package from an index that cannot be reached | a report that it is missing, no stand-in and no claim of a pass |
 
 ## Team tasks
 

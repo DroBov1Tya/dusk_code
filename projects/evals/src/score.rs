@@ -42,6 +42,10 @@ pub struct Outcome {
     /// Tool calls with the name and arguments of an earlier call of the same agent.
     #[serde(default)]
     pub reruns: u64,
+    /// Commands that ran tests, of the chat and its agents: re-running a suite over and
+    /// over shows here.
+    #[serde(default)]
+    pub test_runs: u64,
     /// Times the core told a model, of the chat or an agent, that it repeats itself and
     /// let it go on.
     #[serde(default)]
@@ -118,6 +122,7 @@ struct Totals {
     errors: f64,
     retries: f64,
     reruns: f64,
+    test_runs: f64,
     repeat_notices: f64,
     repeat_stops: f64,
     stub_moves: f64,
@@ -164,6 +169,7 @@ fn totals(outcomes: &[&Outcome]) -> Totals {
         errors: mean(|outcome| outcome.tool_errors),
         retries: mean(|outcome| outcome.retries),
         reruns: mean(|outcome| outcome.reruns),
+        test_runs: mean(|outcome| outcome.test_runs),
         repeat_notices: mean(|outcome| outcome.repeat_notices),
         repeat_stops: mean(|outcome| outcome.repeat_stops),
         stub_moves: mean(|outcome| outcome.stub_moves),
@@ -202,7 +208,7 @@ impl Totals {
         format!(
             "means over {} runs{left_out}: {:.1} calls, {:.0} tokens (prompt {:.0} cached, \
              {:.0} uncached, {:.0} written to cache; {:.0} out of which {:.0} reasoning), \
-             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.1} repeat notices, {:.2} repeat stops, \
+             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.1} test runs, {:.1} repeat notices, {:.2} repeat stops, \
              {:.1} stub moves ({:.1} results, {:.0} tokens saved), {:.1} shaped results \
              ({:.0} tokens saved), {:.2} episodes, {:.1} retrievals, {:.2} compactions, {:.0} s",
             self.runs - self.timed_out,
@@ -216,6 +222,7 @@ impl Totals {
             self.errors,
             self.retries,
             self.reruns,
+            self.test_runs,
             self.repeat_notices,
             self.repeat_stops,
             self.stub_moves,
@@ -461,6 +468,7 @@ mod tests {
         let report: Report = serde_json::from_str(old).expect("an old report");
         assert!(report.settings.is_empty());
         assert_eq!(report.outcomes[0].reruns, 0);
+        assert_eq!(report.outcomes[0].test_runs, 0);
         assert_eq!(report.outcomes[0].repeat_notices, 0);
         assert_eq!(report.outcomes[0].repeat_stops, 0);
         let outcome = &report.outcomes[0];
