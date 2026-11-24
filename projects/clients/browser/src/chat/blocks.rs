@@ -1123,15 +1123,20 @@ fn RunCardView(id: u64, source: Source) -> impl IntoView {
             })
             .collect_view();
         let line = card.line();
+        let shown = !card.marks.is_empty();
+        // The row takes the chat's lane, so the card stands at its start at any width.
         Some(view! {
-            <button class="run-card" on:click=move |_| state().inspector_tab.set(tab)>
-                <span class="run-card-head">
-                    <span class="run-card-title">{card.title.clone()}</span>
-                    <Icon name=IconName::ChevronRight />
-                </span>
-                <span class="run-card-line">{line}</span>
-                <span class="run-marks" aria-hidden="true">{marks}</span>
-            </button>
+            <div class="run-row">
+                <button class="run-card" title=card.title.clone()
+                    on:click=move |_| state().show_inspector(tab)>
+                    <span class="run-card-head">
+                        <span class="run-card-title">{card.title.clone()}</span>
+                        <Icon name=IconName::ChevronRight />
+                    </span>
+                    <span class="run-card-line">{line}</span>
+                    {shown.then(|| view! { <span class="run-marks" aria-hidden="true">{marks}</span> })}
+                </button>
+            </div>
         })
     }
 }

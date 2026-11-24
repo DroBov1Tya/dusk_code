@@ -146,7 +146,8 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .notice { color: var(--muted); font-size: 13px; margin: 8px auto; }
 .notice.error { color: var(--bad); }
 /* A run the chat started: a calm card where it began, a square a task or agent. */
-.run-card { display: flex; flex-direction: column; gap: var(--s1); width: 100%; max-width: 420px; margin: var(--s2) 0; padding: var(--s3) var(--s4); border: 0; border-radius: 12px; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.run-row { margin: var(--s2) auto; }
+.run-card { display: flex; flex-direction: column; gap: var(--s1); width: 100%; max-width: 420px; margin: 0; padding: var(--s3) var(--s4); border: 0; border-radius: 12px; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .run-card:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .run-card-head { display: flex; align-items: center; gap: var(--s2); color: var(--muted); }
 .run-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: 500; }
