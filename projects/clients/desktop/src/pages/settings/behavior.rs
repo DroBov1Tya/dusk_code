@@ -296,6 +296,7 @@ pub(super) fn llm(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     cx,
                 )),
         )
+        .child(super::tiers::render(ws, cx))
         .child(super::providers::render(ws, cx))
 }
 

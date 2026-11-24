@@ -22,6 +22,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `file=PATH[:LINE]` | opens a file in the viewer |
 | `fake=welcome`, `welcome=page:N`, `welcome=form`, `welcome=address:URL`, `welcome=connected:NAME` | the first run's welcome, its Nth page (1 Hello, 2 Model, 3 Tools, 4 Ready), the Model page, an address typed in it (`key=enter` connects), the Model page as after a connection to NAME |
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
+| `fake=tiers` | two providers with models and the subagent tiers in each state (chosen, the chat's model, a provider no longer connected), for `settings=llm` after its models loaded |
 | `fake=pulls` | four pull requests in Changes, one of each state and checks (a click on a count opens its window of checks), a chat of the chosen project with eight pull requests of its own, seven read and counted under its icon and one not read yet left out (`hover=` on the icon shows their card, faded at the bottom while it scrolls on), and a chat whose links to two of them are drawn as chips (`hover=` on one shows its card); needs `right=all` before it, since reading the column again replaces the fake |
 | `fake=unread` | three loose chats at the top of the sidebar: one unread, one read, one unread whose agent works again |
 | `fake=forge-signin`, `fake=forge-unserved` | the quiet line in Changes when the forge asks to sign in (its hint as a command to copy), or when no plugin serves the host |
