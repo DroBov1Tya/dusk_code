@@ -86,6 +86,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rounds_that_end_alike_are_counted_until_a_resume() {
+        let state = temp_state("goal-round-fingerprint").await;
+        state.create_thread("thread", "test").await.unwrap();
+        assert_eq!(state.note_goal_round("thread", "a").await.unwrap(), None);
+        let draft = state.set_goal("thread", "do work").await.unwrap();
+        let criteria = vec![GoalCriterion {
+            id: "behavior".into(),
+            description: "human checks behavior".into(),
+            check: GoalCheck::UserConfirmation,
+        }];
+        let draft = state
+            .propose_goal("thread", &draft.revision, criteria)
+            .await
+            .unwrap();
+        state.approve_goal("thread", &draft.revision).await.unwrap();
+        let mut counts = Vec::new();
+        for fingerprint in ["a", "a", "b", "b", "b"] {
+            counts.push(state.note_goal_round("thread", fingerprint).await.unwrap());
+        }
+        assert_eq!(counts, [Some(1), Some(2), Some(1), Some(2), Some(3)]);
+        state
+            .set_goal_status("thread", GoalStatus::Paused, Some("stalled"))
+            .await
+            .unwrap();
+        state
+            .set_goal_status("thread", GoalStatus::Active, None)
+            .await
+            .unwrap();
+        let after = state.note_goal_round("thread", "b").await.unwrap();
+        assert_eq!(after, Some(1), "a resume starts the count over");
+    }
+
+    #[tokio::test]
     async fn migration_preserves_legacy_history_without_assuming_verification() {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)

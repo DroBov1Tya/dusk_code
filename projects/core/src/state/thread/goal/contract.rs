@@ -27,7 +27,8 @@ impl State {
                 revision = excluded.revision, criteria_json = '[]', approved_at = NULL, work_epoch = 0, awaiting_user = 0,
                 evidence_after_sequence = 0, verification = 'unverified', verification_id = NULL,
                 verification_request = NULL, verification_turn_id = NULL,
-                verification_attempts = 0, verification_note = NULL",
+                verification_attempts = 0, verification_note = NULL,
+                round_fingerprint = NULL, same_rounds = 0",
         )
         .bind(thread_id)
         .bind(text.trim())
@@ -77,6 +78,7 @@ impl State {
         ensure!(!goal.approved, "contract is already approved");
         GoalCriterion::validate(&goal.criteria)?;
         sqlx::query("UPDATE goals SET approved_at = ?, status = 'active', rounds = 0,
+            round_fingerprint = NULL, same_rounds = 0,
             evidence_after_sequence = (SELECT COALESCE(MAX(sequence), 0) FROM messages WHERE thread_id = ?),
             updated_at = ? WHERE thread_id = ? AND revision = ?")
             .bind(timestamp_ms()?).bind(thread_id).bind(timestamp_ms()?).bind(thread_id).bind(revision)
@@ -103,15 +105,36 @@ impl State {
                 work_epoch = work_epoch + CASE WHEN ? = 'active' THEN 1 ELSE 0 END,
                 verification = CASE WHEN verification = 'passed' THEN 'unverified' ELSE verification END,
                 awaiting_user = CASE WHEN ? = 'active' THEN 0 ELSE awaiting_user END,
-                verification_attempts = CASE WHEN ? = 'active' THEN 0 ELSE verification_attempts END
+                verification_attempts = CASE WHEN ? = 'active' THEN 0 ELSE verification_attempts END,
+                same_rounds = CASE WHEN ? = 'active' THEN 0 ELSE same_rounds END
              WHERE thread_id = ? AND (? != 'active' OR approved_at IS NOT NULL)",
         ).bind(status.name()).bind(note).bind(timestamp_ms()?).bind(status.name()).bind(status.name()).bind(status.name()).bind(status.name())
-            .bind(thread_id).bind(status.name()).execute(&self.pool).await?;
+            .bind(status.name()).bind(thread_id).bind(status.name()).execute(&self.pool).await?;
         ensure!(
             changed.rows_affected() == 1,
             "no approved goal; review and approve its criteria first"
         );
         self.goal(thread_id).await
+    }
+
+    /// Notes how a round of the goal ended, as `fingerprint`; the rounds in a row that
+    /// ended so, this one included. A new goal, an approval or a resume starts the count
+    /// over. None when the chat has no goal.
+    pub async fn note_goal_round(&self, thread_id: &str, fingerprint: &str) -> Result<Option<u32>> {
+        let same: Option<i64> = sqlx::query_scalar(
+            "UPDATE goals SET
+                same_rounds = CASE WHEN same_rounds > 0 AND round_fingerprint = ?1
+                    THEN same_rounds + 1 ELSE 1 END,
+                round_fingerprint = ?1
+             WHERE thread_id = ?2 RETURNING same_rounds",
+        )
+        .bind(fingerprint)
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("note how a goal round ended")?;
+        same.map(|same| u32::try_from(same).context("same rounds out of range"))
+            .transpose()
     }
 
     pub async fn count_goal_round(&self, thread_id: &str) -> Result<Option<Goal>> {

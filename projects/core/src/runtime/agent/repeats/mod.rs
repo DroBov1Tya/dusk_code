@@ -13,7 +13,8 @@
 //!   failing ids standing for its error). The same count tells, with `limits.episodes`
 //!   on, when a pass ended such an error (`solved`).
 //!
-//! Only the ladder ends a turn; the other rules add notes.
+//! Only the ladder ends a turn; the other rules add notes. The test results of the turn
+//! are kept too, for a goal to tell whether its rounds still change anything.
 
 mod cycles;
 #[cfg(test)]
@@ -35,7 +36,7 @@ mod test_runs_tests;
 mod tests;
 
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{BTreeMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
 };
 
@@ -76,6 +77,9 @@ pub struct Repeats {
     cycles: cycles::Cycles,
     test_runs: test_runs::TestRuns,
     progress: progress::Progress,
+    /// The last result of each test runner in the turn: whether it passed and what
+    /// failed, at most `MAX_TEST_RUNNERS`.
+    tests: BTreeMap<String, String>,
     ladder: ladder::Ladder,
     /// Why the turn must end, once the ladder reached its top.
     stop: Option<String>,
@@ -127,10 +131,13 @@ impl Repeats {
             },
             limits,
         );
-        let tests = limits
-            .test_reruns
+        let tests = (limits.test_reruns || limits.goal_stall)
             .then(|| test_runs::TestRun::of(call, result))
             .flatten();
+        if let Some(run) = &tests {
+            self.keep_test_result(run);
+        }
+        let tests = tests.filter(|_| limits.test_reruns);
         let signature = tests.as_ref().and_then(test_runs::TestRun::signature);
         let rerun = match tests {
             Some(run) => self.test_runs.run(self.steps, run, facts.ledger, limits),
@@ -167,6 +174,29 @@ impl Repeats {
         // A no-progress note that lost to another rule's comes with a later call.
         self.progress.noticed(notice.rung, limits);
         Some(notice)
+    }
+
+    fn keep_test_result(&mut self, run: &test_runs::TestRun) {
+        if self.tests.len() >= MAX_TEST_RUNNERS && !self.tests.contains_key(&run.runner) {
+            return;
+        }
+        let outcome = match run.exit_code {
+            0 => "passed".to_owned(),
+            code => format!("exit {code}: {}", run.failing.join(" ")),
+        };
+        self.tests.insert(run.runner.clone(), outcome);
+    }
+
+    /// The last result of each test runner in the turn `turn_id`, one line each, sorted;
+    /// empty when it ran none or is not the turn these counts are of.
+    pub fn test_results(&self, turn_id: &str) -> Vec<String> {
+        if self.turn != turn_id {
+            return Vec::new();
+        }
+        self.tests
+            .iter()
+            .map(|(runner, outcome)| format!("{runner}: {outcome}"))
+            .collect()
     }
 
     /// Steps in a row with nothing new in the turn `turn_id`, once the model was asked
@@ -226,6 +256,9 @@ impl Repeats {
         self.stop.take()
     }
 }
+
+/// Test runners a turn keeps the last result of.
+const MAX_TEST_RUNNERS: usize = 16;
 
 /// Which notice wins when rules agree on a call: lower first.
 fn weight(rung: RepeatRung) -> u8 {

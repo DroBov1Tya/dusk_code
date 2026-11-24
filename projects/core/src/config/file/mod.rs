@@ -355,6 +355,10 @@ impl Config {
              from {MIN_NO_PROGRESS_STEPS} to {MAX_NO_PROGRESS_STEPS}"
         );
         ensure!(
+            (MIN_FAILURE_RUNG..=MAX_FAILURE_RUNG).contains(&limits.goal_stall_rounds),
+            "limits.goal_stall_rounds must be between {MIN_FAILURE_RUNG} and {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
             (MIN_RETRY_UNREACHABLE_SECONDS..=MAX_RETRY_UNREACHABLE_SECONDS)
                 .contains(&self.limits.retry_unreachable_seconds),
             "limits.retry_unreachable_seconds must be between {MIN_RETRY_UNREACHABLE_SECONDS} \

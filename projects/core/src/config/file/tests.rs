@@ -390,11 +390,12 @@ fn the_loop_guards_are_on_and_their_rungs_rise() {
 #[test]
 fn the_progress_guards_are_on_and_their_steps_rise() {
     let plain = parse(PROVIDERS).unwrap().limits();
-    assert!(plain.no_progress);
+    assert!(plain.no_progress && plain.goal_stall);
     assert_eq!(
         (plain.no_progress_note_at, plain.no_progress_replan_at),
         (12, 30)
     );
+    assert_eq!(plain.goal_stall_rounds, 3);
     let set = parse("limits:\n  no_progress: false\n  no_progress_note_at: 20\n").unwrap();
     assert!(!set.limits().no_progress);
     assert_eq!(set.limits().no_progress_note_at, 20);
@@ -402,6 +403,8 @@ fn the_progress_guards_are_on_and_their_steps_rise() {
         "limits:\n  no_progress_note_at: 2\n",
         "limits:\n  no_progress_note_at: 30\n",
         "limits:\n  no_progress_replan_at: 501\n",
+        "limits:\n  goal_stall_rounds: 1\n",
+        "limits:\n  goal_stall_rounds: 51\n",
     ] {
         assert!(parse(bad).is_err(), "{bad:?}");
     }

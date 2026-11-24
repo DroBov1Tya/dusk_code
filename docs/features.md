@@ -78,6 +78,11 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   the ledger records a change in the turn, and for writes it cannot see (a subagent, a
   job, an MCP tool), a new call that may write counts as progress. Notes only: after the
   re-plan the turn is a stall candidate for a judge, and goes on.
+- **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
+  a goal, the state of the files its chat and agents changed and the test results of
+  the round are stored with it; once `limits.goal_stall_rounds` (3) rounds in a row left
+  both as they were, the goal pauses for the user, saying what stayed the same. A round
+  with no file changed and no test run is not measured. A resume starts the count over.
 
 ## Project knowledge
 

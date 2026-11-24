@@ -1,6 +1,6 @@
 //! A goal's rounds: after each turn of a chat with an active goal, the runner checks
 //! the work against the goal's criteria when the model asked for that, and otherwise
-//! queues the next round until the rounds run out.
+//! queues the next round until the rounds run out or stop changing anything.
 
 use std::sync::Arc;
 
@@ -25,9 +25,10 @@ impl ThreadRunner {
                 }))
     }
 
-    /// Queues the next round of an active goal, or pauses it when the rounds are spent.
-    /// Returns whether a round was queued.
-    pub async fn next_goal_round(&mut self) -> Result<bool> {
+    /// Queues the next round of an active goal, or pauses it when the rounds are spent
+    /// or stopped changing anything; `ended` is the turn that ended the round, when one
+    /// ran. Returns whether a round was queued.
+    pub async fn next_goal_round(&mut self, ended: Option<&str>) -> Result<bool> {
         let Some(goal) = self.agent.active_goal().await? else {
             self.goal_waiting = false;
             return Ok(false);
@@ -84,6 +85,12 @@ impl ThreadRunner {
             return Ok(false);
         }
         if goal.verification == "needs_user" {
+            return Ok(false);
+        }
+        if let Some(turn_id) = ended
+            && let Some(reason) = self.round_stalled(turn_id).await?
+        {
+            self.pause_goal(&reason).await?;
             return Ok(false);
         }
         let rounds = self.agent.config.current().limits().max_goal_rounds;

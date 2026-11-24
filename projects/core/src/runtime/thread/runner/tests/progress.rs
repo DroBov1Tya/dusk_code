@@ -1,5 +1,6 @@
 //! Work that brings nothing new in real turns: a turn of steps that change nothing gets a
-//! note and goes on.
+//! note and goes on, and a goal whose rounds leave the files and tests as they were
+//! pauses for the user; work that moves on gets neither.
 
 use super::*;
 use crate::project::ledger::Edit;
@@ -152,4 +153,110 @@ async fn with_the_switch_off_no_note_comes() {
     let (_, events, turn) = run_turn("no_progress_off", settings, idle_turn(13)).await;
     assert_eq!(notices(&events), []);
     assert_eq!(turn.status, TurnStatus::Completed);
+}
+
+/// Approves a goal for the chat and runs `scripts` until the goal pauses; the goal and
+/// the turns run.
+async fn run_goal(name: &str, settings: &str, scripts: Vec<Vec<Step>>) -> (Goal, u64) {
+    let state = thread_state(name).await;
+    let config = Arc::new(temp_live_config_with(&format!("{name}_config"), settings));
+    let draft = state
+        .set_goal("thread", "make the tests pass")
+        .await
+        .unwrap();
+    let criterion = crate::state::GoalCriterion {
+        id: "result".into(),
+        description: "the tests pass".into(),
+        check: crate::state::GoalCheck::UserConfirmation,
+    };
+    let propose = state.propose_goal("thread", &draft.revision, vec![criterion]);
+    let draft = propose.await.unwrap();
+    let provider = provider(scripts);
+    let tool = Box::new(Commands {
+        state: Arc::clone(&state),
+    });
+    let (runner, input, mut output) = runner_with(&state, &provider, &config, model(None), tool);
+    let client = async move {
+        input
+            .send(format!("/goal approve {}", draft.revision))
+            .await
+            .unwrap();
+        loop {
+            if let Some(ThreadEvent::Goal {
+                goal: Some(goal), ..
+            }) = output.next_event().await
+                && goal.status == GoalStatus::Paused
+                && goal.approved
+            {
+                return goal;
+            }
+        }
+    };
+    let (_, goal) = tokio::join!(runner.run(), client);
+    let turns = state.count_turns("thread").await.unwrap();
+    (goal, turns)
+}
+
+/// The first round, then the chat's name the model is asked for after its first turn.
+fn first_round(hash: &str) -> Vec<Vec<Step>> {
+    let mut scripts = round(Some(hash));
+    scripts.push(vec![Step::Text("Failing parser"), Step::Done]);
+    scripts
+}
+
+/// A round that runs the tests, after an edit to `hash` when one is given, then ends.
+fn round(hash: Option<&str>) -> Vec<Vec<Step>> {
+    let mut steps = Vec::new();
+    if let Some(hash) = hash {
+        steps.push(command(
+            json!({ "command": format!("apply {hash}"), "edit": "src/lib.rs", "hash": hash }),
+        ));
+    }
+    steps.push(command(json!({
+        "command": "cargo test",
+        "exit": 101,
+        "output": "test parser::reads_dates ... FAILED\ntest result: FAILED",
+    })));
+    steps.push(vec![Step::Text("not yet"), Step::Done]);
+    steps
+}
+
+#[tokio::test]
+async fn a_goal_whose_rounds_change_nothing_pauses_with_why() {
+    let mut scripts = first_round("h1");
+    for _ in 0..8 {
+        scripts.extend(round(None));
+    }
+    let settings = "limits:\n  max_goal_rounds: 20\n";
+    let (goal, turns) = run_goal("goal_stall", settings, scripts).await;
+    let note = goal.note.unwrap_or_default();
+    assert!(
+        note.starts_with("the last 3 rounds changed nothing"),
+        "{note}"
+    );
+    assert!(note.contains("parser::reads_dates"), "{note}");
+    // The first round changed a file; the three after it changed nothing.
+    assert_eq!(turns, 4);
+}
+
+#[tokio::test]
+async fn a_goal_whose_rounds_keep_changing_files_runs_to_its_cap() {
+    let mut scripts = first_round("h0");
+    for i in 1..8 {
+        scripts.extend(round(Some(&format!("h{i}"))));
+    }
+    let settings = "limits:\n  max_goal_rounds: 5\n";
+    let (goal, _) = run_goal("goal_moving", settings, scripts).await;
+    assert_eq!(goal.note.as_deref(), Some("all 5 rounds used"));
+}
+
+#[tokio::test]
+async fn with_the_switch_off_a_goal_runs_to_its_cap() {
+    let mut scripts = first_round("h1");
+    for _ in 0..8 {
+        scripts.extend(round(None));
+    }
+    let settings = "limits:\n  max_goal_rounds: 5\n  goal_stall: false\n";
+    let (goal, _) = run_goal("goal_stall_off", settings, scripts).await;
+    assert_eq!(goal.note.as_deref(), Some("all 5 rounds used"));
 }

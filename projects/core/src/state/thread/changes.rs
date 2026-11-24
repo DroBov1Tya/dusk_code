@@ -154,6 +154,23 @@ impl State {
         .context("list what a call changed")
     }
 
+    /// Each file the threads changed with its latest state, as (path, state after), by
+    /// path; see `state_after!`.
+    pub async fn files_state(&self, threads: &[String]) -> Result<Vec<(String, String)>> {
+        // SQLite takes the other columns of a MAX() group from the row with the maximum.
+        sqlx::query_as(concat!(
+            "SELECT path, state FROM (SELECT path, ",
+            state_after!(),
+            " AS state, MAX(rowid) FROM changes
+                WHERE thread_id IN (SELECT value FROM json_each(?)) GROUP BY path)
+             ORDER BY path"
+        ))
+        .bind(serde_json::to_string(threads)?)
+        .fetch_all(&self.pool)
+        .await
+        .context("list the state of the changed files")
+    }
+
     /// The thread's own changes for a client, newest first, at most `MAX_FILE_CHANGES`.
     pub async fn thread_changes(&self, thread_id: &str) -> Result<Vec<FileChange>> {
         sqlx::query(select!(

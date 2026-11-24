@@ -279,6 +279,8 @@ impl ThreadRunner {
     async fn run_queued(&mut self, mut resumed: Option<Turn>) -> Result<()> {
         let mut ran = false;
         let mut failed = false;
+        // The last turn that ran, so a goal round is judged by how it ended.
+        let mut ended: Option<String> = None;
         loop {
             let turn = match resumed.take() {
                 // It goes on as it stood: a compaction would cut its step in two.
@@ -292,6 +294,7 @@ impl ThreadRunner {
                 Err(stop) => Some(stop),
                 Ok(Some((turn, resumes))) => {
                     ran = true;
+                    ended = Some(turn.turn_id.clone());
                     let (stop, status) = match resumes {
                         true => self.agent.resume_turn(&turn, &mut self.inbox).await?,
                         false => self.agent.run_turn(&turn, &mut self.inbox).await?,
@@ -311,7 +314,7 @@ impl ThreadRunner {
                 }
                 Ok(None)
                     if (ran || self.goal_waiting || self.verification_pending().await?)
-                        && self.next_goal_round().await? =>
+                        && self.next_goal_round(ended.take().as_deref()).await? =>
                 {
                     ran = false;
                     continue;

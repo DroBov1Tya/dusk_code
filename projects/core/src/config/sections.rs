@@ -120,6 +120,13 @@ pub struct Limits {
     /// Steps before the model is asked for a different plan.
     #[serde(default = "default_no_progress_replan_at")]
     pub no_progress_replan_at: u32,
+    /// Whether a goal pauses for the user once its rounds stop changing anything: the
+    /// same project files and the same test results after each.
+    #[serde(default = "yes")]
+    pub goal_stall: bool,
+    /// Rounds in a row that changed nothing before the goal pauses.
+    #[serde(default = "default_goal_stall_rounds")]
+    pub goal_stall_rounds: u32,
     /// Whether the files a command changes in the project are recorded, with a diff when
     /// the text before is known, so the agent and clients can ask what changed. Off, no
     /// command is watched and the chat's list of changed files stays empty too.
@@ -237,6 +244,8 @@ impl Default for Limits {
             no_progress: true,
             no_progress_note_at: default_no_progress_note_at(),
             no_progress_replan_at: default_no_progress_replan_at(),
+            goal_stall: true,
+            goal_stall_rounds: default_goal_stall_rounds(),
             record_changes: true,
             stub_results: true,
             stub_keep_steps: default_stub_keep_steps(),
@@ -363,6 +372,11 @@ fn default_no_progress_replan_at() -> u32 {
 /// turn that burns itself out.
 pub const MIN_NO_PROGRESS_STEPS: u32 = 3;
 pub const MAX_NO_PROGRESS_STEPS: u32 = 500;
+
+/// One round that changed nothing can be a look around; three is a goal going nowhere.
+fn default_goal_stall_rounds() -> u32 {
+    3
+}
 
 /// Two steps at least, so the result the model is reading is never put away under it.
 pub const MIN_STUB_KEEP_STEPS: u32 = 2;
