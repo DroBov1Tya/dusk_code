@@ -99,15 +99,14 @@ impl Ladder {
         Some(key)
     }
 
-    /// What to do once the error counted under `key` has come back often enough. With
-    /// `stops` off, the top rung asks for a different plan again instead of ending the
-    /// turn.
-    pub fn climb(&self, key: u64, limits: &Limits, stops: bool) -> Option<Climb> {
+    /// What to do once the error counted under `key` has come back often enough. The
+    /// turn stops at `stop_at`; with None, the top rung asks for a different plan again
+    /// instead.
+    pub fn climb(&self, key: u64, limits: &Limits, stop_at: Option<u32>) -> Option<Climb> {
         let seen = self.seen.get(&key)?;
         let count = seen.count;
         let attempts = seen.list();
-        let stop_at = limits.failure_stop_at;
-        let (rung, note, stop) = if stops && count >= stop_at {
+        let (rung, note, stop) = if stop_at.is_some_and(|at| count >= at) {
             let note = format!(
                 "[this same error has come back {count} times in this turn; the turn stops here.]"
             );
@@ -118,11 +117,9 @@ impl Ladder {
             );
             (RepeatRung::Stop, note, Some(stop))
         } else if count >= limits.failure_replan_at {
-            let then = if stops {
-                format!(" At {stop_at} the turn stops.")
-            } else {
-                String::new()
-            };
+            let then = stop_at
+                .map(|at| format!(" At {at} the turn stops."))
+                .unwrap_or_default();
             let note = format!(
                 "[this same error has come back {count} times in this turn; the approach is \
                  not working. Attempts so far:\n{attempts}\nBefore your next call, write one \

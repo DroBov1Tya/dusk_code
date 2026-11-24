@@ -76,9 +76,11 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   ledger cannot see (a subagent, a background job, an MCP tool, a command whose walk
   gave up on a project or change too large or slow to compare) always counts. The
   command still runs. The failing test ids also stand for a run's error in the failure
-  ladder, so the same failures under another filter climb it; at its top they do not
-  end the turn but make it a stall candidate for the judge, since tests failing for
-  another reason come back through real edits.
+  ladder, so the same failures under another filter climb it; at its top they make
+  the turn a stall candidate for the judge rather than ending it, since tests failing
+  for another reason come back through real edits. Where no judge can rule they still
+  stop it: at `failure_stop_at` with the judge off, at twice that once its calls are
+  spent.
 - **No progress.** `limits.no_progress` (on): a step makes progress when one of its
   calls changed a project file to a state not seen in the turn (by the change ledger),
   gave a result not seen in the turn (ids and times made alike), read a file, range or

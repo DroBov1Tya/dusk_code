@@ -448,6 +448,50 @@ fn the_same_failing_tests_never_stop_the_turn_alone() {
     );
 }
 
+/// Edits and runs of `cargo test` that fail `tests::flaky` each time, `rounds` of them
+/// from `from` on; whether the turn stops after the last.
+fn edits_failing_the_same(repeats: &mut Repeats, from: u32, rounds: u32, limits: &Limits) -> bool {
+    for round in from..from + rounds {
+        other(
+            repeats,
+            &format!("sed -i 's/{round}/x/' src/lib.rs"),
+            false,
+            limits,
+        );
+        let output = exited(
+            101,
+            &cargo_output(&["tests::flaky"], &format!("src/a.rs:{round}")),
+        );
+        let test = command(&format!("cargo test --test t{round}"));
+        run(repeats, &test, &output, Some(10 + u64::from(round)), limits);
+    }
+    repeats.stopping("t")
+}
+
+#[test]
+fn with_no_judge_the_same_failing_tests_stop_the_turn_as_before() {
+    let mut repeats = Repeats::default();
+    let mut limits = Limits::default();
+    limits.loop_judge = false;
+    let stop_at = limits.failure_stop_at;
+    assert!(!edits_failing_the_same(&mut repeats, 0, stop_at - 1, &limits));
+    assert!(edits_failing_the_same(&mut repeats, stop_at, 1, &limits));
+}
+
+#[test]
+fn once_the_judges_are_spent_the_same_failing_tests_stop_the_turn_later() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let stop_at = limits.failure_stop_at;
+    assert!(!edits_failing_the_same(&mut repeats, 0, stop_at, &limits));
+    // Every judge let the turn go on, or could not answer.
+    for _ in 0..limits.loop_judge_calls {
+        repeats.judged("t");
+    }
+    assert!(!edits_failing_the_same(&mut repeats, stop_at, stop_at - 1, &limits));
+    assert!(edits_failing_the_same(&mut repeats, 2 * stop_at - 1, 1, &limits));
+}
+
 #[test]
 fn test_runners_are_told_from_other_commands() {
     for (line, expected) in [

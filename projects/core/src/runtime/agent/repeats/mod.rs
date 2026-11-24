@@ -226,8 +226,17 @@ impl Repeats {
         let tests = tests.filter(|_| limits.test_reruns);
         let signature = tests.as_ref().and_then(test_runs::TestRun::signature);
         // The same failing tests come back through real edits when some fail for another
-        // reason: their count never ends the turn by itself; at the top it is the judge's.
+        // reason: at the ladder's top the judge reads the turn. Where no judge can rule
+        // (it is off, or its calls are spent) the old stop stands, twice as far once
+        // judges let the turn go on, so a stuck run of tests still ends.
         let by_ids = signature.is_some();
+        let stop_at = if !by_ids || !limits.loop_judge {
+            Some(limits.failure_stop_at)
+        } else if self.judged >= limits.loop_judge_calls {
+            Some(limits.failure_stop_at.saturating_mul(2))
+        } else {
+            None
+        };
         let rerun = match tests {
             Some(run) => self.test_runs.run(self.steps, run, facts.ledger, limits),
             None => {
@@ -245,7 +254,7 @@ impl Repeats {
             .flatten();
         let climbed = counted
             .filter(|_| limits.failure_ladder)
-            .and_then(|key| self.ladder.climb(key, limits, !by_ids));
+            .and_then(|key| self.ladder.climb(key, limits, stop_at));
         if limits.loop_judge {
             self.keep_recent(call, result);
         }
