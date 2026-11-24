@@ -19,10 +19,13 @@
 //! before counts as progress: a project too large to watch is never nagged for edits.
 //! So does such a call where the ledger never looks: a subagent, a job, an MCP tool.
 //!
-//! A look at the background jobs is neither: a build or a run going on shows little more
-//! than a counter between two looks, which is not news, yet the job is moving. A step of
-//! nothing but such looks, and plain waits (`sleep 30`) once a job started in the turn,
-//! is not counted. `polls_job` tells such a call, for the cycle rule too.
+//! A look at a running background job is neither: a build or a run going on shows little
+//! more than a counter between two looks, which is not news, yet the job is moving. A step
+//! of nothing but such looks, and plain waits (`sleep 30`) while a job runs, is not
+//! counted. A job runs from its start until a look shows none running; a look that shows
+//! none, a cancel, and a wait with no job running are counted like any call, so waiting
+//! on a job that ended long ago is idle. `polls_job` tells such a call, for the cycle rule
+//! too.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -95,8 +98,9 @@ pub struct Progress {
     moved: bool,
     /// The running step made a call other than a look at the jobs.
     counted: bool,
-    /// A command of the turn went on in the background: waiting on it is no idle step.
-    jobs_started: bool,
+    /// A background job is running, as its start or the last look at the jobs showed:
+    /// waiting on it is no idle step.
+    job_running: bool,
     /// Finished steps in a row that brought nothing new.
     idle: u32,
     /// The count the next notice waits for; 0 before the first since progress.
@@ -151,16 +155,26 @@ impl Progress {
         })
     }
 
-    /// Notes a finished call before the rules read it; whether it only polls a job: a
-    /// look at the jobs, or a plain wait once a command of the turn went on in the
-    /// background. Such a call is neither an idle step nor a step of a cycle.
+    /// Notes a finished call before the rules read it; whether it only polls a running
+    /// job: a look at the jobs that shows one running, or a plain wait while one runs.
+    /// Such a call is neither an idle step nor a step of a cycle. A cancel is never a
+    /// poll, and a foreground command killed at its timeout started no job.
     pub fn polls_job(&mut self, call: &ToolCall, result: &ToolResult) -> bool {
         if call.name == signature::RUN_COMMAND
-            && (call.arguments["background"].as_bool() == Some(true) || result.exit_code.is_none())
+            && call.arguments["background"].as_bool() == Some(true)
+            && !result.is_error
         {
-            self.jobs_started = true;
+            self.job_running = true;
+            return false;
         }
-        call.name == JOBS || (self.jobs_started && is_wait(call))
+        if call.name == JOBS {
+            let Some(running) = shows_running(call, result) else {
+                return false;
+            };
+            self.job_running = running;
+            return running;
+        }
+        self.job_running && is_wait(call)
     }
 
     /// Whether the running step brought something new so far.
@@ -231,6 +245,24 @@ fn ledger_blind(done: &Call<'_>) -> bool {
 }
 
 /// Whether `call` only waits, as `sleep 30` does.
+/// Whether a look at the jobs shows one running; None for a call that only acts on a
+/// job (a cancel). `JobManager::status` says "running" only of a live job: a list gives
+/// a line `id: status - command` per job, a status `id: status`, an output
+/// `job id: status` above the job's output.
+fn shows_running(call: &ToolCall, result: &ToolResult) -> Option<bool> {
+    let running = |line: &str| {
+        line.split_once(": ")
+            .is_some_and(|(_, status)| status.starts_with("running"))
+    };
+    let content = &result.content;
+    Some(match call.arguments["action"].as_str() {
+        _ if result.is_error => false,
+        Some("list") => content.lines().any(running),
+        Some("status" | "output") => content.lines().next().is_some_and(running),
+        _ => return None,
+    })
+}
+
 fn is_wait(call: &ToolCall) -> bool {
     if call.name != signature::RUN_COMMAND {
         return false;

@@ -324,7 +324,7 @@ fn looks_at_a_running_job_are_not_counted() {
     // A build in the background shows only a counter between looks.
     for i in 0..40 {
         let done = Done {
-            output: &format!("job 1 running: [{i}/300] Compiling"),
+            output: &format!("1: running [{i}/300] Compiling"),
             read_only: true,
             edits: None,
             ..quiet(call("jobs", json!({ "action": "status", "job_id": "1" })))
@@ -364,7 +364,7 @@ fn waits_on_a_job_started_in_the_turn_are_not_counted() {
         };
         assert!(!idle(step(&mut repeats, wait, &limits)), "wait {i}");
         let look = Done {
-            output: "job 1 running",
+            output: "job 1: running\n   Compiling dusk_core",
             read_only: true,
             edits: None,
             ..quiet(call("jobs", json!({ "action": "output", "job_id": "1" })))
@@ -402,4 +402,59 @@ fn a_write_whose_walk_gave_up_is_progress_and_a_harness_record_is_not() {
         step(&mut repeats, done, &limits).map(|n| n.0),
         Some(RepeatRung::NoProgress)
     );
+}
+
+#[test]
+fn waits_on_a_job_that_ended_are_counted() {
+    let mut no_cycles = Limits::default();
+    no_cycles.loop_cycles = false;
+    // With the cycle rule on it speaks first; without it, the no-progress rule does.
+    for (limits, rung) in [
+        (Limits::default(), RepeatRung::Cycle),
+        (no_cycles, RepeatRung::NoProgress),
+    ] {
+        waits_on_an_ended_job(&limits, rung);
+    }
+}
+
+fn waits_on_an_ended_job(limits: &Limits, rung: RepeatRung) {
+    let mut repeats = Repeats::default();
+    let _ = idle_after_edit(&mut repeats, 2, limits);
+    let build = call(
+        "run_command",
+        json!({ "command": "cargo build --release", "background": true }),
+    );
+    let started = Done {
+        output: "background job started: job_id=1",
+        ..quiet(build)
+    };
+    assert_eq!(step(&mut repeats, started, limits), None);
+    let look = |output: &'static str| Done {
+        output,
+        read_only: true,
+        edits: None,
+        ..quiet(call("jobs", json!({ "action": "status", "job_id": "1" })))
+    };
+    let wait = || Done {
+        output: "",
+        ..quiet(command("sleep 30"))
+    };
+    for i in 0..20 {
+        assert_eq!(step(&mut repeats, wait(), limits), None, "wait {i}");
+        assert_eq!(
+            step(&mut repeats, look("1: running"), limits),
+            None,
+            "look {i}"
+        );
+    }
+    // The job ended; the model goes on waiting and looking at the same finished status.
+    let mut rungs = Vec::new();
+    let mut stalled = false;
+    for _ in 0..40 {
+        rungs.push(step(&mut repeats, wait(), limits).map(|n| n.0));
+        rungs.push(step(&mut repeats, look("1: exited 0"), limits).map(|n| n.0));
+        stalled |= repeats.take_stall("t", limits).is_some();
+    }
+    assert!(rungs.contains(&Some(rung)), "{rungs:?}");
+    assert!(stalled, "{rungs:?}");
 }

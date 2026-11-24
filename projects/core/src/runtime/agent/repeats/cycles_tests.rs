@@ -328,7 +328,7 @@ fn polling_a_running_job_is_no_cycle_and_no_stall() {
             "wait {i}"
         );
         assert_eq!(
-            step(&mut repeats, &look, "job 1 running", true, &limits),
+            step(&mut repeats, &look, "1: running", true, &limits),
             None,
             "look {i}"
         );
@@ -346,9 +346,9 @@ fn a_cycle_between_polls_of_a_job_is_still_caught() {
     let mut rungs = Vec::new();
     let mut stalled = false;
     for _ in 0..8 {
-        step(&mut repeats, &look, "job 1 running", true, &limits);
+        step(&mut repeats, &look, "job 1: running\n", true, &limits);
         rungs.push(step(&mut repeats, &edit, "", false, &limits).map(|n| n.0));
-        step(&mut repeats, &look, "job 1 running", true, &limits);
+        step(&mut repeats, &look, "job 1: running\n", true, &limits);
         rungs.push(step(&mut repeats, &check, "error[E0308]", false, &limits).map(|n| n.0));
         stalled |= repeats.take_stall("t", &limits).is_some();
     }
@@ -356,4 +356,91 @@ fn a_cycle_between_polls_of_a_job_is_still_caught() {
     assert!(rungs.contains(&Some(RepeatRung::CycleReplan)), "{rungs:?}");
     // The polls between did not break the run of re-plans: the judge is told.
     assert!(stalled);
+}
+
+#[test]
+fn waiting_on_a_job_that_ended_is_caught() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let build = call(
+        "run_command",
+        json!({ "command": "cargo build --release", "background": true }),
+    );
+    let started = "background job started: job_id=1";
+    assert_eq!(step(&mut repeats, &build, started, false, &limits), None);
+    let wait = command("sleep 30");
+    let look = call("jobs", json!({ "action": "status", "job_id": "1" }));
+    // While it runs, polling it is no cycle.
+    for i in 0..5 {
+        assert_eq!(step(&mut repeats, &wait, "", false, &limits), None, "{i}");
+        assert_eq!(step(&mut repeats, &look, "1: running", true, &limits), None);
+    }
+    // It ended long ago: the same wait and the same look again and again go round.
+    let mut rungs = Vec::new();
+    let mut stalled = false;
+    for _ in 0..40 {
+        rungs.push(step(&mut repeats, &wait, "", false, &limits).map(|n| n.0));
+        rungs.push(step(&mut repeats, &look, "1: exited 0", true, &limits).map(|n| n.0));
+        stalled |= repeats.take_stall("t", &limits).is_some();
+    }
+    assert!(rungs.contains(&Some(RepeatRung::Cycle)), "{rungs:?}");
+    assert!(stalled, "{rungs:?}");
+}
+
+#[test]
+fn looks_that_show_no_running_job_and_cancels_are_no_polls() {
+    let limits = Limits::default();
+    let wait = command("sleep 30");
+    for (look, output) in [
+        (
+            call("jobs", json!({ "action": "list" })),
+            "no background jobs",
+        ),
+        (
+            call("jobs", json!({ "action": "output", "job_id": "1" })),
+            "job 1: exited 0\nrunning tests",
+        ),
+        (
+            call("jobs", json!({ "action": "cancel", "job_id": "1" })),
+            "cancelled",
+        ),
+    ] {
+        let mut repeats = Repeats::default();
+        let mut rungs = Vec::new();
+        for _ in 0..6 {
+            rungs.push(step(&mut repeats, &wait, "", false, &limits).map(|n| n.0));
+            rungs.push(step(&mut repeats, &look, output, true, &limits).map(|n| n.0));
+        }
+        assert!(
+            rungs.contains(&Some(RepeatRung::Cycle)),
+            "{output}: {rungs:?}"
+        );
+    }
+}
+
+#[test]
+fn a_command_killed_at_its_timeout_starts_no_job() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let slow = command("cargo test");
+    repeats.step("t");
+    let killed = ToolResult {
+        content: "timed out".into(),
+        is_error: true,
+        exit_code: None,
+        artifacts: Vec::new(),
+    };
+    let _ = repeats.note(
+        "t",
+        &slow,
+        &killed,
+        &killed.content,
+        &Facts::default(),
+        &limits,
+    );
+    let wait = command("sleep 30");
+    let rungs: Vec<_> = (0..4)
+        .map(|_| step(&mut repeats, &wait, "", false, &limits).map(|n| n.0))
+        .collect();
+    assert!(rungs.iter().any(Option::is_some), "{rungs:?}");
 }

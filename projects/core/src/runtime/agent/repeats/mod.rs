@@ -5,7 +5,7 @@
 //! - calls going in circles (`cycles`): the same call with the same result in a row, a
 //!   short run of calls coming round again, or a read giving the same result with
 //!   nothing changed between; with `limits.loop_cycles` on they escalate to a re-plan;
-//!   polling a background job (`progress::Progress::polls_job`) is not one;
+//!   polling a running background job (`progress::Progress::polls_job`) is not one;
 //! - tests run again with no project file changed (`test_runs`, `limits.test_reruns`);
 //! - steps in a row that bring nothing new (`progress`, `limits.no_progress`), which also
 //!   mark the turn a stall candidate for a judge, as a cycle asked twice for a different
