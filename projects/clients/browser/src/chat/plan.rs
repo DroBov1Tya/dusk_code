@@ -9,7 +9,7 @@ use crate::{
     ui::{Icon, IconName, run, tone_text},
 };
 use dusk_protocol::thread::{
-    GoalCheck, PlanCounts, Task, TaskCard, TaskStatus, WorkKind, plan_aside, task_card,
+    GoalCheck, PlanCounts, Task, TaskCard, TaskDuty, TaskStatus, WorkKind, plan_aside, task_card,
 };
 use leptos::prelude::*;
 
@@ -57,11 +57,10 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
         })
     });
     // A row is drawn once for its task and then follows it, so only a task that just
-    // came draws in.
+    // came draws in. A review has no row: it rides on its task as a word beside it.
     let numbers = Memo::new(move |_| {
         tasks.with(|tasks| {
-            tasks
-                .iter()
+            rows(tasks)
                 .enumerate()
                 .map(|(i, task)| (i + 1, task.task_id.clone()))
                 .collect::<Vec<_>>()
@@ -92,23 +91,22 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
                                 let found = task_id.clone();
                                 let task = Memo::new(move |_| {
                                     tasks.with(|tasks| {
-                                        tasks
-                                            .iter()
+                                        rows(tasks)
                                             .enumerate()
                                             .find(|(_, task)| task.task_id == found)
-                                            .map(|(i, task)| (i + 1, task.clone()))
+                                            .map(|(i, task)| (i + 1, task.clone(), task.review_word(tasks)))
                                     })
                                 });
                                 let _ = first_number;
                                 let (found_row, clicked) = (task_id.clone(), task_id);
                                 view! {
-                                    <li class="plan-row" class:done=move || task.with(|t| t.as_ref().is_some_and(|(_, t)| t.status == TaskStatus::Done))
+                                    <li class="plan-row" class:done=move || task.with(|t| t.as_ref().is_some_and(|(_, t, _)| t.status == TaskStatus::Done || t.skipped))
                                         class:chosen=move || chosen.with(|c| c.as_deref() == Some(found_row.as_str()))
                                         on:click=move |_| chosen.update(|c| *c = match c.as_deref() == Some(clicked.as_str()) {
                                             true => None,
                                             false => Some(clicked.clone()),
                                         })>
-                                        {move || task.get().map(|(number, task)| row(number, task, id.get_value()))}
+                                        {move || task.get().map(|(number, task, review)| row(number, task, review, id.get_value()))}
                                     </li>
                                 }
                             }
@@ -124,11 +122,28 @@ pub fn PlanStrip(id: String, chat: Chat) -> impl IntoView {
     }
 }
 
-fn row(number: usize, task: Task, thread_id: String) -> impl IntoView {
+/// The plan's rows: the lead's tasks and the critic, not the reviews.
+fn rows(tasks: &[Task]) -> impl Iterator<Item = &Task> {
+    tasks.iter().filter(|task| task.duty != TaskDuty::Review)
+}
+
+fn row(number: usize, task: Task, review: Option<String>, thread_id: String) -> impl IntoView {
     let (glyph, tone) = (task.status.glyph(), tone_text(task.status.tone()));
     let for_user =
         task.status == TaskStatus::Review && task.gate == Some(GoalCheck::UserConfirmation);
-    let word = if for_user {
+    // How the task's review stands, beside it, as the desktop's chip.
+    let review = review.filter(|_| !task.skipped).map(|word| {
+        let tone = match word.starts_with("reviewed") {
+            true => "tone-good",
+            false if word.contains("fix") || word.contains("failed") => "tone-warn",
+            false => "tone-muted",
+        };
+        view! { <span class=format!("plan-owner {tone}")>{word}</span> }
+    });
+    let word = if task.skipped {
+        // Given up by the lead: it holds no wave, and says so quietly.
+        view! { <span class="plan-word muted">"skipped"</span> }.into_any()
+    } else if for_user {
         let task_id = task.task_id.clone();
         view! {
             <button class="link plan-word" title="Confirm this task is done" on:click=move |ev| {
@@ -146,6 +161,7 @@ fn row(number: usize, task: Task, thread_id: String) -> impl IntoView {
         <span class="plan-number muted num">{number}</span>
         <span class=format!("plan-glyph {tone}") aria-hidden="true">{glyph}</span>
         <span class="plan-text">{task.title()}</span>
+        {review}
         {task.owner.map(|owner| view! { <span class="plan-owner muted">{owner.name}</span> })}
         {word}
     }
