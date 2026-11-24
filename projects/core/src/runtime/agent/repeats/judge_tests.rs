@@ -149,6 +149,78 @@ fn a_cycle_asked_twice_to_replan_is_a_stall_and_judges_wait_longer() {
     }
 }
 
+/// One call of the step running, `read_only` or not, with the same result each time.
+fn call(repeats: &mut Repeats, text: &str, read_only: bool) -> Option<RepeatRung> {
+    let result = ToolResult {
+        content: "same".into(),
+        is_error: false,
+        exit_code: Some(0),
+        artifacts: Vec::new(),
+    };
+    let facts = Facts {
+        read_only,
+        ..Facts::default()
+    };
+    repeats
+        .note(
+            "t",
+            &command(text),
+            &result,
+            "same",
+            &facts,
+            &Limits::default(),
+        )
+        .map(|notice| notice.rung)
+}
+
+#[test]
+fn two_cycles_far_apart_that_each_replan_once_make_no_stall() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    for round in 0..3 {
+        let mut replanned = false;
+        for i in 0..40 {
+            let text = if i % 2 == 0 { "git status" } else { "git diff" };
+            if step(&mut repeats, text, &limits) == Some(RepeatRung::CycleReplan) {
+                replanned = true;
+                break;
+            }
+        }
+        assert!(replanned, "round {round}");
+        assert_eq!(repeats.take_stall("t", &limits), None, "round {round}");
+        // Other work in between: each call reads a new file.
+        for i in 0..8 {
+            repeats.step("t");
+            call(&mut repeats, &format!("cat src/round_{round}_{i}.rs"), true);
+        }
+    }
+}
+
+#[test]
+fn a_step_of_several_calls_in_the_cycle_counts_as_one_replan() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let texts = ["git status", "git diff"];
+    let mut at = None;
+    for i in 0..40 {
+        repeats.step("t");
+        if call(&mut repeats, texts[i % 2], false) == Some(RepeatRung::CycleReplan) {
+            at = Some(i);
+            break;
+        }
+    }
+    let at = at.expect("a re-plan");
+    // The same step calls again, still in the cycle: asked again, but the model has not
+    // read the first re-plan yet, so no stall.
+    let again = call(&mut repeats, texts[(at + 1) % 2], false);
+    assert_eq!(again, Some(RepeatRung::CycleReplan));
+    assert_eq!(repeats.take_stall("t", &limits), None);
+    // The next step, still in the cycle, is the second re-plan.
+    repeats.step("t");
+    call(&mut repeats, texts[at % 2], false);
+    assert!(repeats.take_stall("t", &limits).is_some());
+}
+
 #[test]
 fn with_the_judge_off_no_stall_is_given() {
     let mut repeats = Repeats::default();

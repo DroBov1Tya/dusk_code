@@ -137,8 +137,11 @@ pub struct Repeats {
     lesson_asked: bool,
     /// The newest calls, one line each, for a judge; kept with `limits.loop_judge` on.
     recent: VecDeque<String>,
-    /// Re-plans the cycle rule asked for since it last marked a stall.
+    /// Steps whose calls the cycle rule asked a re-plan of, in a row with the cycle
+    /// going on and nothing new, since it last marked a stall.
     cycle_replans: u32,
+    /// The step the newest of those re-plans was asked in.
+    cycle_replan_step: u32,
     /// A cycle asked twice for a different plan and the judge has not been told yet.
     cycle_stall: Option<Stall>,
     /// Judge calls made in the turn.
@@ -230,6 +233,11 @@ impl Repeats {
             }
             notices.push((climbed.rung, climbed.count, climbed.note));
         }
+        // A call outside the cycle, or one that brought something new, ends the run of
+        // re-plans: another cycle later starts its own.
+        if cycle.is_none() || self.progress.moved() {
+            self.cycle_replans = 0;
+        }
         notices.extend(rerun);
         notices.extend(cycle);
         notices.extend(moved);
@@ -239,7 +247,12 @@ impl Repeats {
             .map(|(rung, count, note)| Notice { rung, count, note })?;
         // A no-progress note that lost to another rule's comes with a later call.
         self.progress.noticed(notice.rung, limits);
-        if notice.rung == RepeatRung::CycleReplan {
+        // Every call of a step past the mark is asked again: the step counts once, as
+        // the model reads the re-plan only after it.
+        if notice.rung == RepeatRung::CycleReplan
+            && (self.cycle_replans == 0 || self.cycle_replan_step != self.steps)
+        {
+            self.cycle_replan_step = self.steps;
             self.cycle_replans += 1;
             if self.cycle_replans >= CYCLE_REPLANS_TO_JUDGE {
                 self.cycle_replans = 0;

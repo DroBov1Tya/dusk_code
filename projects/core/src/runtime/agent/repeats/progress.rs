@@ -142,6 +142,11 @@ impl Progress {
         })
     }
 
+    /// Whether the running step brought something new so far.
+    pub fn moved(&self) -> bool {
+        self.moved
+    }
+
     /// The notice of `rung` went to the model: the next waits for more steps.
     pub fn noticed(&mut self, rung: RepeatRung, limits: &Limits) {
         match rung {
