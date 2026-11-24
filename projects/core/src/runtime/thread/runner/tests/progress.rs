@@ -357,12 +357,29 @@ async fn goal_rounds_that_only_talk_get_a_note_in_the_next_round() {
         let text: &'static str = Box::leak(format!("plan {i}: I will fix the parser").into());
         scripts.push(vec![Step::Text(text), Step::Done]);
     }
-    let settings = "limits:\n  max_goal_rounds: 7\n";
+    // With goal stalls off, talk never pauses the goal: the notes are all there is.
+    let settings = "limits:\n  max_goal_rounds: 7\n  goal_stall: false\n";
     let (state, goal, _) = run_goal_in("goal_talk", settings, scripts).await;
     assert_eq!(goal.note.as_deref(), Some("all 7 rounds used"));
     // Rounds 2 to 7 only talk: the 3rd of them and the 5th leave a note for the next.
     let notes = talk_notes(&state).await;
     assert_eq!(notes, 2, "{:?}", transcript(&state).await);
+}
+
+#[tokio::test]
+async fn goal_rounds_that_go_on_talking_after_the_replan_pause_the_goal() {
+    let mut scripts = first_round("h1");
+    for i in 0..12 {
+        let text: &'static str = Box::leak(format!("plan {i}: I will fix the parser").into());
+        scripts.push(vec![Step::Text(text), Step::Done]);
+    }
+    let settings = "limits:\n  max_goal_rounds: 20\n";
+    let (state, goal, turns) = run_goal_in("goal_talk_pause", settings, scripts).await;
+    let note = goal.note.unwrap_or_default();
+    assert_eq!(note, "the last 6 rounds only wrote text and called no tool");
+    // The first round acted; six talked, the last after the request for a new plan.
+    assert_eq!(turns, 7);
+    assert_eq!(talk_notes(&state).await, 2);
 }
 
 #[tokio::test]

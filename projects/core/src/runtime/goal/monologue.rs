@@ -4,8 +4,9 @@
 //! not measured by `stall`. As OpenHands counts answers with no action in a row, rounds
 //! in a row that called no tool, with no message from the user between, get a note in
 //! the next round's start at `limits.monologue_note_at`, a request for a different plan
-//! at `monologue_replan_at`, and again every `monologue_note_at` rounds after. Notes
-//! only: the goal goes on.
+//! at `monologue_replan_at`, and again every `monologue_note_at` rounds after. A round
+//! that talks after the re-plan changed nothing either: with `limits.goal_stall` on,
+//! the goal then pauses (`talked_out`).
 
 use dusk_protocol::thread::RepeatRung;
 
@@ -23,6 +24,12 @@ impl Monologue {
     /// The user or another agent wrote: what came before is no monologue any more.
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    /// The rounds in a row that only talked, once one more did after the request for a
+    /// different plan; None before.
+    pub fn talked_out(&self, limits: &Limits) -> Option<u32> {
+        (limits.monologue && self.rounds > limits.monologue_replan_at).then_some(self.rounds)
     }
 
     /// A round ended, having called a tool or not (`acted`); the rung, count and note for

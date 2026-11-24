@@ -1,7 +1,8 @@
 //! A goal's rounds: after each turn of a chat with an active goal, the runner checks
 //! the work against the goal's criteria when the model asked for that, and otherwise
 //! queues the next round until the rounds run out or stop changing anything. Rounds that
-//! only talk get a note in the next round's start (`monologue`).
+//! only talk get a note in the next round's start (`monologue`), and pause the goal
+//! when they go on talking after a request for a different plan.
 
 use std::sync::Arc;
 
@@ -109,6 +110,16 @@ impl ThreadRunner {
             }
             _ => None,
         };
+        let limits = self.agent.config.current().limits();
+        if limits.goal_stall
+            && let Some(rounds) = self.monologue.talked_out(&limits)
+        {
+            let reason = format!("the last {rounds} rounds only wrote text and called no tool");
+            // A resumed goal gets its rounds counted afresh.
+            self.monologue.reset();
+            self.pause_goal(&reason).await?;
+            return Ok(false);
+        }
         let state = &self.agent.state;
         let Some(goal) = state.count_goal_round(&self.agent.thread_id).await? else {
             return Ok(false);
