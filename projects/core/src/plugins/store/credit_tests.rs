@@ -60,7 +60,8 @@ fn a_format_3_list_says_who_made_each_entry() {
 #[test]
 fn only_the_owners_work_in_the_official_list_is_official() {
     let entries = [
-        entry("ours", &credit("duskcode", "official")),
+        entry("ours", &credit("Duskcode", "official")),
+        entry("older", &credit("duskcode", "official")),
         entry("theirs", &credit("someone", "verified")),
         // The official list claiming Official for another author's work is lowered.
         entry("claimed", &credit("someone", "official")),
@@ -77,6 +78,7 @@ fn only_the_owners_work_in_the_official_list_is_official() {
     assert_eq!(
         tiers,
         [
+            Tier::Official,
             Tier::Official,
             Tier::Verified,
             Tier::Verified,
