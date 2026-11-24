@@ -222,6 +222,33 @@ async fn a_task_with_an_unset_tier_runs_on_the_chats_model_at_its_effort() {
 }
 
 #[tokio::test]
+async fn a_member_whose_model_refuses_the_effort_answers_without_it() {
+    use crate::config::Effort;
+    // The chat thinks at high; the member's model takes no reasoning effort at all.
+    let rig = Rig::with(
+        "team_effort_refused",
+        "mode: TEAM\neffort: high\n",
+        |asked| match (asked.lead, asked.effort) {
+            (true, _) => Out::Say("Noted.".into()),
+            (false, Some(_)) => Out::RefuseEffort,
+            (false, None) => Out::Say(DONE.into()),
+        },
+    )
+    .await;
+    let ids = rig
+        .plan(&[NewTask {
+            effort: Some(Effort::High),
+            ..task("scout")
+        }])
+        .await;
+    rig.run().await;
+    until("the member handed in", || async {
+        rig.status(&ids[0]).await == PlanStatus::Review
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_mode_switch_for_another_chat_does_not_pause_the_team() {
     let rig = Rig::new("team_mode_left", hang).await;
     // The user writes to the chat in TEAM mode: the chat takes that mode up.

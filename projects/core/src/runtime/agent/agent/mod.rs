@@ -66,6 +66,8 @@ pub struct Agent {
     pub project: String,
     /// The model that refused pictures; the others still get them.
     pub pictures_refused: Mutex<Option<String>>,
+    /// The model that refused a subagent's reasoning effort; it is asked without one.
+    pub effort_refused: Mutex<Option<String>>,
     /// Where the turn is: planning, carrying out, or working out a surprise.
     pub pace: Mutex<Pace>,
     /// Calls repeated with the same result, to tell a stuck model.
