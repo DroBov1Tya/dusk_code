@@ -55,6 +55,7 @@ impl Server {
                     // Read before the lock, which no wait may hold.
                     let failure = runtime.last_failure(&thread_id).await?;
                     let agents = runtime.agents_at_work(&thread_id).await?;
+                    let goal = runtime.goal(&thread_id).await?;
                     let Some(open) = self.threads.get_mut(&thread_id) else {
                         anyhow::bail!("thread has ended");
                     };
@@ -79,10 +80,20 @@ impl Server {
                         (None, None) => [None, None],
                     };
                     let agents = agents.then_some(ThreadEvent::AgentsWorking(true));
+                    // The thread told its goal when it opened, before this client came.
+                    let goal = goal.map(|goal| ThreadEvent::Goal {
+                        goal: Some(goal),
+                        note: String::new(),
+                        started: None,
+                    });
                     let suggestion = suggested
                         .clone()
                         .map(|text| ThreadEvent::NextSuggested { text });
-                    for event in events.into_iter().chain([agents, suggestion]).flatten() {
+                    for event in events
+                        .into_iter()
+                        .chain([goal, agents, suggestion])
+                        .flatten()
+                    {
                         send_to(
                             &self.subscribers,
                             self.caller,

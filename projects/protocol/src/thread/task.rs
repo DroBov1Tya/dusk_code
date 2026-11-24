@@ -54,6 +54,44 @@ pub struct Task {
     pub tokens: u64,
     /// Files its turns changed.
     pub changes: u32,
+    /// The footer its member handed in with, or a reviewer's verdict. Model text: data.
+    pub result: String,
+    /// What the row is for: the lead's work, or a check the core added.
+    pub duty: TaskDuty,
+    /// For a review: the task it reviews.
+    pub review_of: Option<String>,
+    /// The lead gave it up: it failed or was blocked, and no longer holds the next wave.
+    pub skipped: bool,
+}
+
+/// What a task of a plan is for.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskDuty {
+    /// A task of the lead's plan.
+    #[default]
+    Work,
+    /// The core's independent review of a task that changed files.
+    Review,
+    /// The core's check at the end: what the request asked that no task did or verified.
+    Critic,
+}
+
+impl TaskDuty {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Work => "work",
+            Self::Review => "review",
+            Self::Critic => "critic",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        [Self::Work, Self::Review, Self::Critic]
+            .into_iter()
+            .find(|duty| duty.name() == text)
+    }
 }
 
 /// The fields of a `Task` as they arrive. `status` is optional only so a task written
@@ -101,6 +139,14 @@ struct TaskFields {
     tokens: u64,
     #[serde(default)]
     changes: u32,
+    #[serde(default)]
+    result: String,
+    #[serde(default)]
+    duty: TaskDuty,
+    #[serde(default)]
+    review_of: Option<String>,
+    #[serde(default)]
+    skipped: bool,
 }
 
 impl TryFrom<TaskFields> for Task {
@@ -139,6 +185,10 @@ impl TryFrom<TaskFields> for Task {
             steps: fields.steps,
             tokens: fields.tokens,
             changes: fields.changes,
+            result: fields.result,
+            duty: fields.duty,
+            review_of: fields.review_of,
+            skipped: fields.skipped,
         })
     }
 }
@@ -238,6 +288,8 @@ pub enum WaitsOn {
     Message(i64),
     /// A task in review that the core held for the lead's decision.
     Lead,
+    /// A task in review that a reviewer row, by its id, checks now.
+    Review(String),
 }
 
 /// One page of a plan, for the strip: every task not done, then done ones, newest first.

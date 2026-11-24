@@ -7,14 +7,14 @@ use crate::{
     client::{Area, Scope},
     config::Limits,
     init::paths::Paths,
-    state::{BlockedOn, Claim, NewTask, PassedBy, TaskFiles, TeamCeilings},
+    state::{BlockedOn, Claim, NewTask, PassedBy, TaskFiles},
     testing::temp_dir,
 };
 use dusk_protocol::{
     client::{Request, ThreadRequest, WorkRequest},
     thread::{
-        GoalCheck, PLAN_PAGE_DONE, PlanPage, Task, TaskStatus, Team, TeamBudget, TeamEnd,
-        TeamStatus, ThreadEvent, WaitsOn,
+        GoalCheck, PLAN_PAGE_DONE, PlanPage, Task, TaskStatus, Team, TeamEnd, TeamStatus,
+        ThreadEvent, WaitsOn,
     },
 };
 use tokio::sync::mpsc;
@@ -135,17 +135,9 @@ fn written(text: &str, gate: Option<GoalCheck>) -> NewTask {
     }
 }
 
-fn budget(steps: u32) -> TeamBudget {
-    TeamBudget::new(3, steps, 4_000_000, 120).unwrap()
-}
-
-async fn start_team(rig: &Rig, steps: u32) {
-    let ceilings = TeamCeilings::from_limits(&Limits::default()).unwrap();
+async fn start_team(rig: &Rig, at_once: u32) {
     let now = crate::state::timestamp_ms().unwrap();
-    rig.state()
-        .start_team("lead", budget(steps), ceilings, now)
-        .await
-        .unwrap();
+    rig.state().start_team("lead", at_once, now).await.unwrap();
 }
 
 fn drained(events: &mut mpsc::UnboundedReceiver<Event>) -> Vec<ThreadEvent> {
@@ -356,7 +348,7 @@ async fn the_team_is_read_from_the_chat_or_any_member() {
         })
         .await;
     assert!(matches!(none, Ok(Response::Team(None))));
-    start_team(&rig, 400).await;
+    start_team(&rig, 3).await;
     let ids = rig.add("lead", &[written("one", None)]).await;
     rig.to_review(&ids[0], "m0").await;
     for thread in ["lead", "m0"] {
@@ -514,18 +506,19 @@ async fn a_task_of_another_chat_is_never_found() {
 }
 
 #[tokio::test]
-async fn the_user_raises_a_budget_only_to_the_ceiling() {
-    let mut rig = Rig::new("plan_serve_budget").await;
-    let set = |steps: u32| WorkRequest::SetTeamBudget {
+async fn the_user_sets_members_at_once_only_to_the_setting() {
+    let mut rig = Rig::new("plan_serve_at_once").await;
+    let set = |at_once: u32| WorkRequest::SetTeamAtOnce {
         thread_id: "lead".into(),
-        budget: budget(steps),
+        at_once,
     };
-    let none = rig.ask(set(300)).await.unwrap_err();
+    let ceiling = crate::runtime::team::at_once_setting(&Limits::default());
+    let none = rig.ask(set(1)).await.unwrap_err();
     assert!(none.contains("no team has run"), "{none}");
-    start_team(&rig, 200).await;
+    start_team(&rig, 1).await;
     let mut events = rig.attach(2, None);
 
-    assert!(matches!(rig.ask(set(400)).await, Ok(Response::Done)));
+    assert!(matches!(rig.ask(set(ceiling)).await, Ok(Response::Done)));
     let Ok(Response::Team(Some(team))) = rig
         .ask(WorkRequest::Team {
             thread_id: "lead".into(),
@@ -534,18 +527,18 @@ async fn the_user_raises_a_budget_only_to_the_ceiling() {
     else {
         panic!("no team");
     };
-    assert_eq!(team.budget.steps(), 400);
+    assert_eq!(team.at_once, ceiling);
     assert!(matches!(drained(&mut events).as_slice(), [ThreadEvent::Team(told)] if *told == team));
 
-    let past = rig.ask(set(401)).await.unwrap_err();
-    assert_eq!(past, "steps past the ceiling of 400");
+    let past = rig.ask(set(ceiling + 1)).await.unwrap_err();
+    assert_eq!(past, format!("members at once must be 1 to {ceiling}"));
     assert!(drained(&mut events).is_empty());
     rig.ask(WorkRequest::StopTeam {
         thread_id: "lead".into(),
     })
     .await
     .unwrap();
-    let ended = rig.ask(set(100)).await.unwrap_err();
+    let ended = rig.ask(set(1)).await.unwrap_err();
     assert!(ended.contains("not running"), "{ended}");
 }
 
@@ -561,7 +554,7 @@ async fn stopping_a_team_ends_it_and_gives_its_work_back() {
             .unwrap_err()
             .contains("no team has run")
     );
-    start_team(&rig, 400).await;
+    start_team(&rig, 3).await;
     let ids = rig.add("lead", &[written("working", None)]).await;
     let claim = Claim {
         owner: "m0",
@@ -593,13 +586,13 @@ async fn only_clients_that_may_read_the_chat_hear_of_its_plan() {
     let mut full = rig.attach(2, None);
     let mut of_chat = rig.attach(3, Some("lead"));
     let mut of_other = rig.attach(4, Some("other"));
-    start_team(&rig, 200).await;
+    start_team(&rig, 1).await;
 
-    // A client bound to the chat sets the budget from one of its members' threads.
+    // A client bound to the chat sets members at once from one of its members' threads.
     rig.server.caller = 3;
-    let request = Request::Work(WorkRequest::SetTeamBudget {
+    let request = Request::Work(WorkRequest::SetTeamAtOnce {
         thread_id: "m0".into(),
-        budget: budget(300),
+        at_once: 2,
     });
     assert!(rig.server.admit(3, &request).await.is_ok());
     let Request::Work(request) = request else {

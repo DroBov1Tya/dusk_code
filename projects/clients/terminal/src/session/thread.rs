@@ -22,14 +22,15 @@ impl OpenThread {
     pub async fn resume(client: &Client, app: &mut App, thread_id: &str) -> Result<Self> {
         let threads = client.threads();
         let history = threads.messages(thread_id).await?;
-        let title = threads
+        let listed = threads
             .list()
             .await?
             .into_iter()
-            .find(|thread| thread.id == thread_id)
-            .and_then(|thread| thread.title);
+            .find(|thread| thread.id == thread_id);
+        let (title, branch) = listed.map_or((None, None), |thread| (thread.title, thread.branch));
         let thread_id = threads.resume(thread_id, env::current_dir()?).await?;
         app.open(Some(thread_id.clone()), title, &history);
+        app.branch = branch;
         show_skill_changes(client, app, &thread_id).await;
         app.tasks = threads.tasks(&thread_id).await?;
         app.pins = threads.pins(&thread_id).await?;

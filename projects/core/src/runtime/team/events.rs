@@ -1,5 +1,5 @@
 //! What a chat's clients hear of its plan and its team: `TaskChanged` for every task this
-//! module moved, `Team` when the team's status, members or budget changed. Both go out
+//! module moved, `Team` when the team's status, members or members at once changed. Both go out
 //! through the lead's own thread, so only a chat that is open hears them; a client that
 //! opens it later reads the plan and the team with its requests.
 

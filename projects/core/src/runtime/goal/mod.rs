@@ -1,14 +1,13 @@
-//! Goals: what `/goal` sets and how a chat works toward it. `action` reads the
-//! command and writes the messages that start and remind each round; `rounds` queues
-//! the rounds after each turn, `stall` pauses them once they change nothing and
-//! `monologue` notes rounds that only talk;
-//! `verification` checks saved evidence against the criteria, and only it marks a goal
-//! done. The records are in `state::thread::goals`.
+//! Goals: what `/goal` sets and how a chat works toward it. `command` reads the command
+//! and writes the messages that start and remind each turn; `evaluate` asks a separate
+//! model call whether the goal is met; `rounds` judges each turn and starts the next, and
+//! `stall` pauses a goal whose rounds stop changing anything. The records are in
+//! `state::thread::goal`.
 
-pub mod action;
-mod monologue;
+pub mod command;
+mod evaluate;
 mod rounds;
 mod stall;
-mod verification;
 
-pub(crate) use monologue::Monologue;
+/// Why a goal the user stopped is paused.
+pub const STOPPED: &str = "stopped by the user";

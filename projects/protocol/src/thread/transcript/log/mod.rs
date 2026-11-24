@@ -24,8 +24,8 @@ use crate::{
     model::{Effort, ModelEvent, ToolCall},
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
-        Block, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens,
-        TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
+        Block, GoalEvaluation, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team,
+        ThreadEvent, ThreadTokens, TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind},
 };
@@ -79,6 +79,8 @@ pub enum Item<L = Infallible> {
         aside: bool,
     },
     Audio(Card),
+    /// What the evaluator said of the chat's goal after a turn.
+    Goal(GoalEvaluation),
     Notice(String),
     Error(String),
     Local(L),
@@ -652,6 +654,7 @@ impl<L> ChatLog<L> {
             ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
                 self.add_message(&message, now);
             }
+            ThreadEvent::GoalEvaluated(evaluation) => self.goal_verdict(evaluation, now),
             ThreadEvent::TurnStarted(_) => {
                 self.boundary(now);
                 self.working = true;
@@ -896,6 +899,13 @@ impl<L> ChatLog<L> {
         }
         self.skill_changes
             .sort_by_key(|change| (change.changed_at_ms, change.id));
+    }
+
+    /// A verdict on the goal, live or stored: it comes between turns and stands alone.
+    fn goal_verdict(&mut self, evaluation: GoalEvaluation, at: i64) {
+        self.boundary(at);
+        self.push(Item::Goal(evaluation), at);
+        self.boundary(at);
     }
 
     /// Draws a boundary after the last item; false when there is one there already.

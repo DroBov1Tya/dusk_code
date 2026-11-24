@@ -88,7 +88,7 @@ impl Tool for RecallTool {
                 .state
                 .as_ref()
                 .context("no episodes are kept here")?;
-            let Some(project) = saved_dir(state, context.scope.cwd()).await? else {
+            let Some(project) = saved_dir(state, context.scope.project_dir()).await? else {
                 bail!("this folder is not a saved project, so it has no notes");
             };
             match state.recall_episodes(&project, &query).await? {

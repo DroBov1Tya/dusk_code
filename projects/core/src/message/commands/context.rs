@@ -138,7 +138,7 @@ fn thread_sections(conversation: &Conversation) -> Vec<ContextSection> {
             tool_names.insert(call.id.clone(), call.name.clone());
         }
         let kind = match message.role {
-            MessageRole::System => continue,
+            MessageRole::System | MessageRole::Goal => continue,
             MessageRole::Tool => {
                 let name = message
                     .tool_call_id

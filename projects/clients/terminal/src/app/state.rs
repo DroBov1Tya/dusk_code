@@ -131,8 +131,11 @@ pub struct App {
     pub flash: Option<String>,
     /// Whether the terminal is in front, when it says; none until it does.
     pub focused: Option<bool>,
-    /// The repository the client runs in, for the line under the box.
+    /// The repository the client runs in, for the line under the box: the worktree's
+    /// while the thread works on a branch of its own.
     pub git: Option<dusk_protocol::project::GitSummary>,
+    /// The branch the open thread works on in a worktree, when it branched off.
+    pub branch: Option<dusk_protocol::project::ThreadBranch>,
     /// When Ctrl+C last cleared the box; another soon after quits.
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,
@@ -161,8 +164,6 @@ pub struct App {
     pub update_available: Option<String>,
     /// The open thread's standing goal.
     pub goal: Option<Goal>,
-    /// Rounds a goal may run before it pauses, as the config says.
-    pub goal_rounds: u32,
     pub goal_hits: Vec<GoalHit>,
     /// The MCP servers of the config, as the core last reported them.
     pub mcp: Vec<McpStatus>,
@@ -268,7 +269,6 @@ impl App {
             update_available: None,
             undone: None,
             paths: None,
-            goal_rounds: status.max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
             suggestion: Default::default(),
@@ -288,6 +288,7 @@ impl App {
             flash: None,
             focused: None,
             git: None,
+            branch: None,
             quit_armed: None,
             command_popup: None,
             jobs: Vec::new(),
@@ -345,6 +346,7 @@ impl App {
         self.forget_overview();
         self.thread_id = thread_id;
         self.title = title;
+        self.branch = None;
         self.poll = None;
         self.questions.clear();
         self.local_unsent.clear();

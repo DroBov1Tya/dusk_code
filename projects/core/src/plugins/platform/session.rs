@@ -18,7 +18,7 @@ use tracing::warn;
 use crate::{
     providers::ModelEvent,
     runtime::{Launcher, ThreadEvent},
-    state::{Goal, GoalStatus, TurnStatus, artifacts::ArtifactStore},
+    state::{Goal, TurnStatus, artifacts::ArtifactStore},
     tools::{ApprovalRequest, Decision, Question},
 };
 
@@ -263,24 +263,21 @@ impl<'a> Session<'a> {
                 _ => Ok(()),
             },
             ThreadEvent::Goal { goal, note, .. } => {
-                // Proposed criteria wait on the user: approved, or sent back to change.
-                let proposed = goal
-                    .as_ref()
-                    .is_some_and(|goal| !goal.approved && !goal.criteria.is_empty());
                 self.goal = goal;
-                if proposed {
-                    return self
-                        .send(ToPlatform::Menu {
-                            command: "goal",
-                            title: note,
-                            options: vec!["approve".into(), "change".into()],
-                        })
-                        .await;
-                }
                 if note.is_empty() {
                     return Ok(());
                 }
                 self.reply(&note).await
+            }
+            // Each verdict, with its reason under it.
+            ThreadEvent::GoalEvaluated(evaluation) => {
+                self.reply(&format!(
+                    "{}
+{}",
+                    evaluation.title(),
+                    evaluation.reason
+                ))
+                .await
             }
             ThreadEvent::Rejected { reason } => self.reply(&reason).await,
             ThreadEvent::Failed(error) => self.reply(&format!("The thread stopped: {error}")).await,
@@ -371,17 +368,9 @@ impl<'a> Session<'a> {
                 self.reply("Stopping.").await
             }
             ("stop", _) => self.reply("The agent is not working.").await,
-            ("resume", _) => {
-                let paused = self
-                    .goal
-                    .as_ref()
-                    .is_some_and(|goal| goal.status == GoalStatus::Paused);
-                match (paused, self.working) {
-                    (true, _) => input.send("/goal resume").await,
-                    (false, true) => self.reply("The agent is already working.").await,
-                    (false, false) => input.send("Continue where you stopped.").await,
-                }
-            }
+            // A message goes on with a paused goal as well.
+            ("resume", _) if self.working => self.reply("The agent is already working.").await,
+            ("resume", _) => input.send("Continue where you stopped.").await,
             ("status", _) => {
                 let status = self.status();
                 self.reply(&status).await
@@ -426,20 +415,8 @@ impl<'a> Session<'a> {
                     .send(format!("/compact {}", instructions.unwrap_or_default()))
                     .await
             }
-            ("goal", None) => {
-                let line = self.goal_line();
-                self.reply(&line).await
-            }
-            // What the menu of proposed criteria sends.
-            ("goal", Some(choice)) if choice == "approve" => match &self.goal {
-                Some(goal) if !goal.approved => {
-                    input.send(format!("/goal approve {}", goal.revision)).await
-                }
-                _ => self.reply("No criteria wait for approval.").await,
-            },
-            ("goal", Some(choice)) if choice == "change" => {
-                self.reply("Send what to change in the criteria.").await
-            }
+            // The core says the goal as it stands now, with its time and spend.
+            ("goal", None) => input.send("/goal").await,
             ("goal", Some(text)) => input.send(format!("/goal {text}")).await,
             ("new", _) => {
                 self.thread = new_thread(self.launcher, &self.spec.plugin).await?;
@@ -473,15 +450,7 @@ impl<'a> Session<'a> {
 
     fn goal_line(&self) -> String {
         match &self.goal {
-            Some(goal) => {
-                let status = match goal.status {
-                    GoalStatus::Active if goal.approved => "active",
-                    GoalStatus::Active => "draft",
-                    GoalStatus::Paused => "paused",
-                    GoalStatus::Done => "done",
-                };
-                format!("Goal ({status}, round {}): {}", goal.rounds, goal.text)
-            }
+            Some(goal) => goal.status_text(dusk_protocol::system::now_ms()),
             None => "Goal: none".into(),
         }
     }

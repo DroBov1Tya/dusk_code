@@ -21,7 +21,7 @@ pub const PROTOCOL_VERSION: u32 = 39;
 
 /// The oldest protocol the core still accepts from an external client; raised only on a
 /// change that is not additive.
-pub const OLDEST_PROTOCOL: u32 = 36;
+pub const OLDEST_PROTOCOL: u32 = 39;
 
 /// The longest client name, in characters.
 const MAX_CLIENT_NAME: usize = 40;

@@ -5,7 +5,7 @@
 
 use crate::{
     model::ToolCall,
-    thread::{GoalCheck, Task, TaskStatus, duration_words},
+    thread::{GoalCheck, Task, TaskDuty, TaskStatus, duration_words},
 };
 
 use super::{AgentState, Tool, ToolState};
@@ -145,7 +145,13 @@ impl RunCard {
     }
 }
 
-/// The marks of a plan's tasks, in the plan's order.
+/// The marks of a plan's tasks, in the plan's order: the lead's own work only. A review
+/// is its task's (which waits on it meanwhile) and the critic is the core's check at the
+/// end, as the plan's summary counts them.
 pub fn task_marks(tasks: &[Task]) -> Vec<RunMark> {
-    tasks.iter().map(RunMark::of_task).collect()
+    tasks
+        .iter()
+        .filter(|task| task.duty == TaskDuty::Work)
+        .map(RunMark::of_task)
+        .collect()
 }

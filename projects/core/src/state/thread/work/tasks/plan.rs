@@ -1,7 +1,11 @@
 //! The words of a plan: a task's status, its row as the store keeps it, what a lead
 //! writes into one, and the caps.
 
-use dusk_protocol::{config::ModelTier, model::Effort, thread::GoalCheck};
+use dusk_protocol::{
+    config::ModelTier,
+    model::Effort,
+    thread::{GoalCheck, TaskDuty},
+};
 use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{error::PlanError, files::TaskFiles};
@@ -31,6 +35,10 @@ pub const MAX_BRIEF: usize = 1200;
 pub const MAX_NOTE: usize = 600;
 pub const MAX_KEY: usize = 64;
 pub const MAX_MODEL: usize = 200;
+/// A member's report or a reviewer's verdict, as migration 0047 caps it.
+pub const MAX_RESULT: usize = 4000;
+/// The goal a lead runs its team toward.
+pub const MAX_GOAL: usize = 600;
 
 /// The one status of a task; the names are the CHECK list of migration 0036.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -88,6 +96,8 @@ pub enum WaitsOn {
     Message(i64),
     /// A task in review that the core held for the lead whatever its gate says.
     Lead,
+    /// A task in review that a reviewer row, by its id, checks.
+    Review(String),
 }
 
 impl WaitsOn {
@@ -96,6 +106,7 @@ impl WaitsOn {
             Self::Task(id) => format!("task:{id}"),
             Self::Message(id) => format!("message:{id}"),
             Self::Lead => "lead".to_owned(),
+            Self::Review(id) => format!("review:{id}"),
         }
     }
 
@@ -105,6 +116,9 @@ impl WaitsOn {
         }
         if let Some(id) = text.strip_prefix("task:") {
             return Some(Self::Task(id.to_owned()));
+        }
+        if let Some(id) = text.strip_prefix("review:") {
+            return Some(Self::Review(id.to_owned()));
         }
         text.strip_prefix("message:")?
             .parse()
@@ -129,6 +143,11 @@ pub struct PlanTask {
     pub gate: Option<GoalCheck>,
     pub files: TaskFiles,
     pub owner_thread_id: Option<String>,
+    /// The thread that held it when it was last lost or handed back: the next claim
+    /// gives it back to that member when it may (`runtime::team::member::give`).
+    pub last_owner_thread_id: Option<String>,
+    /// How often it was given back to its last owner; names each resume note once.
+    pub resumes: u32,
     pub lease_until: Option<i64>,
     pub attempts: u32,
     pub reworks: u32,
@@ -141,8 +160,22 @@ pub struct PlanTask {
     pub tier: Option<ModelTier>,
     /// The effort the lead picked for the member.
     pub effort: Option<Effort>,
+    /// The member's footer, or a reviewer's verdict; cleaned of secrets. Model text: data.
+    pub result: String,
+    pub duty: TaskDuty,
+    /// For a review: the task it reviews.
+    pub review_of: Option<String>,
+    /// The lead gave it up, so it holds no wave.
+    pub skipped: bool,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+impl PlanTask {
+    /// Done, or given up by the lead: the next wave does not wait for it.
+    pub fn finished(&self) -> bool {
+        self.status == PlanStatus::Done || self.skipped
+    }
 }
 
 /// A task as a lead writes it.
@@ -186,9 +219,9 @@ macro_rules! select_tasks {
         concat!(
             "SELECT t.task_id, t.thread_id, t.description, t.status, t.depends_on, t.role, \
              t.phase, t.acceptance, t.brief, t.gate, t.files, t.owner_thread_id, \
-             t.lease_until, t.attempts, t.reworks, t.waits_on, t.note, t.gate_job, \
-             t.checkpoint, t.model, t.tier, t.effort, t.created_at, t.updated_at \
-             FROM tasks t ",
+             t.last_owner_thread_id, t.resumes, t.lease_until, t.attempts, t.reworks, \
+             t.waits_on, t.note, t.gate_job, t.checkpoint, t.model, t.tier, t.effort, t.result, \
+             t.duty, t.review_of, t.skipped, t.created_at, t.updated_at FROM tasks t ",
             $rest
         )
     };
@@ -212,6 +245,10 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
         .transpose()
         .map_err(PlanError::Store)?
         .flatten();
+    let duty: String = row.try_get("duty")?;
+    let duty = TaskDuty::parse(&duty)
+        .ok_or_else(|| PlanError::Store(anyhow::anyhow!("unknown task duty {duty}")))?;
+    let skipped: i64 = row.try_get("skipped")?;
     let count = |name: &str| -> Result<u32, PlanError> {
         let value: i64 = row.try_get(name)?;
         u32::try_from(value).map_err(|error| PlanError::Store(error.into()))
@@ -229,6 +266,8 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
         gate: gate.as_deref().map(serde_json::from_str).transpose()?,
         files: TaskFiles::new(files)?,
         owner_thread_id: row.try_get("owner_thread_id")?,
+        last_owner_thread_id: row.try_get("last_owner_thread_id")?,
+        resumes: count("resumes")?,
         lease_until: row.try_get("lease_until")?,
         attempts: count("attempts")?,
         reworks: count("reworks")?,
@@ -239,6 +278,10 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
         model: row.try_get("model")?,
         tier: tier.as_deref().and_then(ModelTier::parse),
         effort,
+        result: row.try_get("result")?,
+        duty,
+        review_of: row.try_get("review_of")?,
+        skipped: skipped == 1,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

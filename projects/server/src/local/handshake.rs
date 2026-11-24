@@ -187,8 +187,9 @@ impl Gate {
         // version learns the core's and decides what to do from there.
         if hello.protocol != PROTOCOL_VERSION {
             let reason = format!(
-                "the core speaks {PROTOCOL_VERSION}, this client {}; update duskcode",
-                hello.protocol
+                "the core speaks {PROTOCOL_VERSION}, this client {}; {}",
+                hello.protocol,
+                update(hello.protocol)
             );
             return self.refuse(lines, Refusal::Version, reason).await;
         }
@@ -298,11 +299,21 @@ fn speaks(protocol: u32) -> bool {
 }
 
 /// The refusal of a client of `theirs`, naming both sides.
+/// Why the versions do not meet, and which side to update: an older client cannot be
+/// served by this core, a newer one needs a newer core.
 fn versions(theirs: u32) -> String {
+    let update = update(theirs);
     format!(
-        "the core speaks {OLDEST_PROTOCOL} to {PROTOCOL_VERSION}, this client {theirs}; update \
-         duskcode"
+        "the core speaks {OLDEST_PROTOCOL} to {PROTOCOL_VERSION}, this client {theirs}; {update}"
     )
+}
+
+/// Which side to update: an older client than this core, or the core itself.
+fn update(theirs: u32) -> &'static str {
+    match theirs < PROTOCOL_VERSION {
+        true => "update the client",
+        false => "update duskcode",
+    }
 }
 
 async fn read<S>(lines: &mut Lines<S>) -> Result<String>

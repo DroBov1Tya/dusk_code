@@ -421,10 +421,9 @@ fn the_progress_guards_are_on_and_their_steps_rise() {
 #[test]
 fn the_judge_and_text_guards_are_on_and_bounded() {
     let plain = parse(PROVIDERS).unwrap().limits();
-    assert!(plain.loop_judge && plain.text_loops && plain.monologue);
+    assert!(plain.loop_judge && plain.text_loops);
     assert_eq!(plain.loop_judge_calls, 3);
     assert_eq!(plain.text_loop_repeats, 10);
-    assert_eq!((plain.monologue_note_at, plain.monologue_replan_at), (3, 5));
     let set = parse("limits:\n  loop_judge: false\n  text_loop_repeats: 20\n").unwrap();
     assert!(!set.limits().loop_judge);
     assert_eq!(set.limits().text_loop_repeats, 20);
@@ -433,27 +432,18 @@ fn the_judge_and_text_guards_are_on_and_bounded() {
         "limits:\n  loop_judge_calls: 11\n",
         "limits:\n  text_loop_repeats: 4\n",
         "limits:\n  text_loop_repeats: 101\n",
-        "limits:\n  monologue_note_at: 1\n",
-        "limits:\n  monologue_note_at: 5\n",
-        "limits:\n  monologue_replan_at: 51\n",
     ] {
         assert!(parse(bad).is_err(), "{bad:?}");
     }
 }
 
 #[test]
-fn the_team_parts_are_off_and_its_ceilings_have_defaults() {
+fn the_team_parts_are_off_and_its_settings_have_defaults() {
     let plain = parse(PROVIDERS).unwrap().limits();
     // The team itself is chosen by the mode; `plan_graph` only switches it off.
     assert!(plain.plan_graph && !plain.task_packets && !plain.member_worktrees);
     assert!(!plain.peer_messages && !plain.procedures);
-    let ceilings = (
-        plain.team_at_once,
-        plain.team_max_steps,
-        plain.team_max_tokens,
-        plain.team_max_minutes,
-    );
-    assert_eq!(ceilings, (3, 400, 4_000_000, 120));
+    assert_eq!(plain.team_at_once, 3);
     let set = parse(
         "limits:\n  plan_graph: true\n  task_packets: true\n  member_worktrees: true\n  \
          peer_messages: true\n  procedures: true\n",
@@ -472,19 +462,30 @@ fn the_team_parts_are_off_and_its_ceilings_have_defaults() {
 }
 
 #[test]
-fn the_team_ceilings_accept_their_bounds_and_refuse_beyond() {
+fn the_team_settings_accept_their_bounds_and_refuse_beyond() {
     let limit = |key: &str, value: u64| parse(&format!("limits:\n  {key}: {value}\n"));
     for (key, low, high) in [
         ("team_at_once", 1, 8),
-        ("team_max_steps", 10, 5_000),
-        ("team_max_tokens", 100_000, 100_000_000),
-        ("team_max_minutes", 5, 1_440),
+        ("team_gate_seconds", 10, 600),
+        ("team_max_gate_runs", 1, 1_000),
+        ("team_wrap_seconds", 10, 1_800),
     ] {
         assert!(limit(key, low).is_ok(), "{key} {low}");
         assert!(limit(key, high).is_ok(), "{key} {high}");
         assert!(limit(key, low - 1).is_err(), "{key} {}", low - 1);
         assert!(limit(key, high + 1).is_err(), "{key} {}", high + 1);
     }
+}
+
+/// A config written when teams had budgets still loads; the budget keys are dropped.
+#[test]
+fn an_old_team_budget_in_the_config_is_read_and_dropped() {
+    let old = "limits:\n  team_max_steps: 400\n  team_max_tokens: 4000000\n  \
+               team_max_minutes: 120\n";
+    let limits = parse(old).unwrap().limits();
+    assert_eq!(limits.team_at_once, 3);
+    let written = serde_json::to_string(&limits).unwrap();
+    assert!(!written.contains("team_max_steps"), "{written}");
 }
 
 #[test]
@@ -563,4 +564,10 @@ fn a_config_file_is_read_bounded_and_never_through_a_link() {
     let link = directory.join("linked.yml");
     symlink(&path, &link).unwrap();
     assert!(Config::load_from(&link).is_err());
+}
+
+#[test]
+fn an_old_goal_round_cap_still_loads_and_is_not_written_back() {
+    let old = parse("limits:\n  max_goal_rounds: 10\n").unwrap();
+    assert!(!old.to_yaml().unwrap().contains("max_goal_rounds"));
 }

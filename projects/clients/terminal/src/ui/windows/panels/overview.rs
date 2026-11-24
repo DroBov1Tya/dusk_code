@@ -5,11 +5,11 @@
 use ratatui::text::{Line, Span};
 
 use dusk_protocol::thread::{
-    BUDGET_FIELDS, LogKind, PlanCounts, Team, TeamMember, ThreadTokens, plural, role_name,
+    LogKind, PlanCounts, Team, TeamMember, ThreadTokens, plural, role_name,
 };
 
 use super::context::context;
-use crate::app::{App, BudgetEdit, OverviewView, compact_number};
+use crate::app::{App, AtOnceEdit, OverviewView, compact_number};
 use crate::ui::text::format::printable;
 use crate::ui::windows::theme::{
     ACCENT, DONE, DOT, FAILED, NEGATIVE, ON, POSITIVE, TEXT, TEXT_MUTED, bold, dim, fg, tone_fg,
@@ -21,16 +21,17 @@ pub fn overview(app: &App, view: &OverviewView) -> Vec<Line<'static>> {
         heading(&mut lines, "progress", plan_line(counts));
         if let Some(team) = &app.team {
             lines.push(status_line(team, "   "));
-            if let Some(edit) = &view.budget {
-                lines.extend(budget_lines(edit));
+            if let Some(edit) = &view.at_once {
+                lines.extend(at_once_lines(edit));
             }
-            let parts: Vec<String> = team
-                .budget_parts()
-                .iter()
-                .map(|part| format!("{} {}", part.name.to_lowercase(), part.text()))
-                .collect();
-            let budget = format!("   {}", parts.join(&format!(" {DOT} ")));
-            lines.push(Line::from(Span::styled(budget, dim())));
+            // What it used: shown, never a limit.
+            let used = format!(
+                "   {} {DOT} {} of {} at once",
+                team.used_line(),
+                team.used.at_once,
+                team.at_once
+            );
+            lines.push(Line::from(Span::styled(used, dim())));
         }
     }
     if let Some(team) = app.team.as_ref().filter(|team| !team.members.is_empty()) {
@@ -130,21 +131,13 @@ pub fn member_line(member: &TeamMember, indent: &str) -> Line<'static> {
     ])
 }
 
-/// The budget being changed: a field a line, the chosen one marked, and why the last
-/// save was refused.
-fn budget_lines(edit: &BudgetEdit) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(Span::styled("   budget", bold(TEXT)))];
-    for (index, (name, value)) in BUDGET_FIELDS.iter().zip(&edit.fields).enumerate() {
-        let chosen = index == edit.selected;
-        let mark = if chosen { "\u{203A}" } else { " " };
-        lines.push(Line::from(vec![
-            Span::styled(format!("   {mark} {name:<16}"), dim()),
-            Span::styled(
-                format!("{value}{}", if chosen { "_" } else { "" }),
-                if chosen { bold(ACCENT) } else { fg(TEXT) },
-            ),
-        ]));
-    }
+/// Members at once being changed, between the marks left and right step them by, and
+/// why the last save was refused.
+fn at_once_lines(edit: &AtOnceEdit) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(vec![
+        Span::styled("   members at once  ", bold(TEXT)),
+        Span::styled(format!("\u{2039} {} \u{203A}", edit.at_once), bold(ACCENT)),
+    ])];
     if let Some(error) = &edit.error {
         lines.push(Line::from(Span::styled(
             format!("     {}", printable(error)),

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
   "x-protocol": 39,
-  "x-oldest": 36,
+  "x-oldest": 39,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
     "Hello": {
@@ -1748,7 +1748,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Creates a draft goal; shows, approves, confirms, pauses, resumes or clears it.",
+          "description": "Sets the chat's goal and starts work on it, shows it, or clears it.",
           "properties": {
             "Goal": {
               "properties": {
@@ -2337,7 +2337,7 @@
         },
         {
           "const": "Verified",
-          "description": "A goal's verification passed.",
+          "description": "The evaluator found a goal met.",
           "type": "string"
         }
       ]
@@ -3346,69 +3346,62 @@
       ]
     },
     "Goal": {
+      "description": "One goal per chat, until it is met, found impossible or cleared.",
       "properties": {
-        "approved": {
-          "type": "boolean"
-        },
-        "criteria": {
-          "items": {
-            "$ref": "#/$defs/GoalCriterion"
-          },
-          "type": "array"
-        },
-        "evidence": {
-          "items": {
-            "$ref": "#/$defs/GoalEvidence"
-          },
-          "type": "array"
-        },
         "note": {
+          "description": "Why it is paused.",
           "type": [
             "string",
             "null"
           ]
         },
-        "revision": {
-          "type": "string"
+        "reason": {
+          "description": "The evaluator's newest reason.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "rounds": {
-          "format": "uint32",
-          "minimum": 0,
+        "started_at": {
+          "description": "When it was set, or when the app started again with it: Unix ms.",
+          "format": "int64",
           "type": "integer"
         },
         "status": {
           "$ref": "#/$defs/GoalStatus"
         },
         "text": {
+          "description": "The condition, as the user wrote it.",
           "type": "string"
         },
         "thread_id": {
           "type": "string"
         },
-        "verification": {
-          "type": "string"
+        "tokens": {
+          "description": "Tokens the chat and its agents spent since `started_at`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         },
-        "verification_note": {
-          "type": [
-            "string",
-            "null"
-          ]
+        "turns": {
+          "description": "Turns the evaluator judged since `started_at`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
         "thread_id",
         "text",
         "status",
-        "rounds",
-        "revision",
-        "criteria",
-        "approved",
-        "verification",
-        "evidence"
+        "started_at",
+        "turns",
+        "tokens"
       ],
       "type": "object"
     },
     "GoalCheck": {
+      "description": "What ends a team's task: a command that must exit 0, or the user's confirmation.",
       "oneOf": [
         {
           "additionalProperties": false,
@@ -3442,51 +3435,73 @@
         }
       ]
     },
-    "GoalCriterion": {
-      "additionalProperties": false,
-      "description": "All criteria are mandatory. A command proves exactly the approved check's exit;\na semantic claim always needs a human's review of the saved result.",
+    "GoalEvaluation": {
+      "description": "One verdict as the chat shows it, with what the goal had cost when it was given.",
       "properties": {
-        "check": {
-          "$ref": "#/$defs/GoalCheck"
+        "elapsed_ms": {
+          "format": "int64",
+          "type": "integer"
         },
-        "description": {
+        "reason": {
           "type": "string"
         },
-        "id": {
-          "type": "string"
+        "tokens": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "turn": {
+          "description": "The turn judged, from 1 since the goal started.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verdict": {
+          "$ref": "#/$defs/GoalVerdict"
         }
       },
       "required": [
-        "id",
-        "description",
-        "check"
-      ],
-      "type": "object"
-    },
-    "GoalEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "criterion_id": {
-          "type": "string"
-        },
-        "result_id": {
-          "description": "tool:<saved result message ID> or job:<saved job ID>.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "criterion_id",
-        "result_id"
+        "verdict",
+        "reason",
+        "turn",
+        "tokens",
+        "elapsed_ms"
       ],
       "type": "object"
     },
     "GoalStatus": {
-      "enum": [
-        "Active",
-        "Paused",
-        "Done"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "Active",
+          "description": "Each turn that ends is judged, and the next one starts until the goal is met.",
+          "type": "string"
+        },
+        {
+          "const": "Paused",
+          "description": "Set but not going on by itself, after an error or a stop; the user's next message\nmakes it active again.",
+          "type": "string"
+        }
+      ]
+    },
+    "GoalVerdict": {
+      "description": "What the evaluator said of the goal after a turn.",
+      "oneOf": [
+        {
+          "const": "NotMet",
+          "description": "Another turn starts, with the reason as guidance.",
+          "type": "string"
+        },
+        {
+          "const": "Met",
+          "description": "The goal is cleared as achieved.",
+          "type": "string"
+        },
+        {
+          "const": "Impossible",
+          "description": "The goal is cleared as failed.",
+          "type": "string"
+        }
+      ]
     },
     "Hunk": {
       "properties": {
@@ -4212,14 +4227,23 @@
       "type": "object"
     },
     "MessageRole": {
-      "enum": [
-        "System",
-        "User",
-        "Assistant",
-        "Tool",
-        "Job"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "System",
+            "User",
+            "Assistant",
+            "Tool",
+            "Job"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "Goal",
+          "description": "The evaluator's verdict on the chat's goal after a turn, its content a\n`GoalEvaluation` as JSON. The transcript shows it; the model never reads it.",
+          "type": "string"
+        }
+      ]
     },
     "ModeInfo": {
       "properties": {
@@ -6857,6 +6881,27 @@
             "Settings"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Work on an agent's own branch: making it, committing, merging or removing it.\nA merge into a branch no agent made, and leaving work behind, are asked every\ntime, in every mode.",
+          "properties": {
+            "Git": {
+              "properties": {
+                "action": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Git"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -8180,11 +8225,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "max_goal_rounds": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
         "mcp": {
           "items": {
             "$ref": "#/$defs/McpInfo"
@@ -8249,7 +8289,6 @@
       },
       "required": [
         "max_agents_at_work",
-        "max_goal_rounds",
         "model_timeout_seconds",
         "max_attempts",
         "idle_screen_minutes",
@@ -8315,20 +8354,6 @@
           },
           "required": [
             "IdleScreenMinutes"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "MaxGoalRounds": {
-              "format": "uint32",
-              "minimum": 0,
-              "type": "integer"
-            }
-          },
-          "required": [
-            "MaxGoalRounds"
           ],
           "type": "object"
         },
@@ -9184,11 +9209,6 @@
           "default": null,
           "description": "The rate limits of the current model's account, when its provider reports them."
         },
-        "max_goal_rounds": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
         "mcp": {
           "items": {
             "$ref": "#/$defs/McpStatus"
@@ -9272,7 +9292,6 @@
         "input_limit",
         "mode",
         "approvals",
-        "max_goal_rounds",
         "idle_screen_minutes",
         "notifications",
         "sound_notifications",
@@ -9844,6 +9863,10 @@
         "done": {
           "type": "boolean"
         },
+        "duty": {
+          "$ref": "#/$defs/TaskDuty",
+          "default": "work"
+        },
         "files": {
           "default": [],
           "items": {
@@ -9894,6 +9917,17 @@
           "default": "",
           "type": "string"
         },
+        "result": {
+          "default": "",
+          "type": "string"
+        },
+        "review_of": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "reworks": {
           "default": 0,
           "format": "uint32",
@@ -9906,6 +9940,10 @@
             "string",
             "null"
           ]
+        },
+        "skipped": {
+          "default": false,
+          "type": "boolean"
         },
         "status": {
           "anyOf": [
@@ -9958,6 +9996,26 @@
         "items"
       ],
       "type": "object"
+    },
+    "TaskDuty": {
+      "description": "What a task of a plan is for.",
+      "oneOf": [
+        {
+          "const": "work",
+          "description": "A task of the lead's plan.",
+          "type": "string"
+        },
+        {
+          "const": "review",
+          "description": "The core's independent review of a task that changed files.",
+          "type": "string"
+        },
+        {
+          "const": "critic",
+          "description": "The core's check at the end: what the request asked that no task did or verified.",
+          "type": "string"
+        }
+      ]
     },
     "TaskItem": {
       "properties": {
@@ -10051,8 +10109,11 @@
     },
     "Team": {
       "properties": {
-        "budget": {
-          "$ref": "#/$defs/TeamBudget"
+        "at_once": {
+          "description": "Members at work at once, 1 to the setting's `team_at_once`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "ended_at": {
           "default": null,
@@ -10062,6 +10123,11 @@
             "integer",
             "null"
           ]
+        },
+        "goal": {
+          "default": "",
+          "description": "What the lead ran this team toward: one sentence and how done is told. Empty from\ncores before it was asked for.",
+          "type": "string"
         },
         "members": {
           "description": "Newest first, at most `MAX_TEAM_MEMBERS`.",
@@ -10087,48 +10153,25 @@
           "type": "string"
         },
         "used": {
-          "$ref": "#/$defs/TeamUsed"
+          "$ref": "#/$defs/TeamUsed",
+          "description": "What it has used; shown, never a limit."
+        },
+        "winding_since": {
+          "default": null,
+          "description": "Since when a running team winds down, in Unix milliseconds: it gives out nothing\nnew and waits for its members' hand-overs before it ends. None from older cores.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
         "thread_id",
         "status",
-        "budget",
+        "at_once",
         "used",
         "members"
-      ],
-      "type": "object"
-    },
-    "TeamBudget": {
-      "additionalProperties": false,
-      "description": "How much a team may spend unasked. Built and read only through `new`, so a budget\nthat exists is above zero and within the largest ceilings.",
-      "properties": {
-        "at_once": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "minutes": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "steps": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "tokens": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "at_once",
-        "steps",
-        "tokens",
-        "minutes"
       ],
       "type": "object"
     },
@@ -10137,7 +10180,6 @@
       "oneOf": [
         {
           "enum": [
-            "steps",
             "tokens",
             "time"
           ],
@@ -10146,6 +10188,11 @@
         {
           "const": "done",
           "description": "Every task is done.",
+          "type": "string"
+        },
+        {
+          "const": "steps",
+          "description": "Older cores only: their team ran out of a budget part (steps, tokens or time).",
           "type": "string"
         },
         {
@@ -10189,6 +10236,11 @@
           "$ref": "#/$defs/TaskStatus",
           "description": "The status of its task."
         },
+        "summary": {
+          "default": "",
+          "description": "What it does, in a short line the core writes from its task: the start of the\ntask's text, `review of #77aa01bc` or `completeness check`. Model text, made\nplain. Shown where the plan does not hold its task. Empty from older cores.",
+          "type": "string"
+        },
         "task_id": {
           "type": "string"
         },
@@ -10227,7 +10279,7 @@
       ]
     },
     "TeamUsed": {
-      "description": "What a team has used of its budget, counted by the core; it may pass the budget by\nthe steps already under way.",
+      "description": "What a team has used, counted by the core and shown as is: nothing bounds it.",
       "properties": {
         "at_once": {
           "format": "uint32",
@@ -10419,6 +10471,18 @@
             "null"
           ]
         },
+        "branch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ThreadBranch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The branch the thread works on in a worktree, when it branched off its folder.\n`ThreadEvent::Branch` tells of a change."
+        },
         "created_at": {
           "description": "Unix timestamp in milliseconds.",
           "format": "int64",
@@ -10491,6 +10555,28 @@
         "source",
         "created_at",
         "active_at"
+      ],
+      "type": "object"
+    },
+    "ThreadBranch": {
+      "description": "The branch a thread works on in a worktree of its own, beside the folder it started in,\nuntil it is merged back or abandoned.",
+      "properties": {
+        "base": {
+          "description": "The branch it was made from and is merged back into.",
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "dir": {
+          "description": "The worktree's folder, where the thread's tools work.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "branch",
+        "base",
+        "dir"
       ],
       "type": "object"
     },
@@ -11218,7 +11304,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The team running this thread's plan changed its status, members or budget; at\nmost one a second.",
+          "description": "The team running this thread's plan changed its status, members or members at once; at\nmost one a second.",
           "properties": {
             "Team": {
               "$ref": "#/$defs/Team"
@@ -11360,7 +11446,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The standing goal changed, or the thread opened with one; `note` says what\nhappened in a line.",
+          "description": "The standing goal changed, or the thread opened with one; `note` says what\nhappened in a line, empty when there is nothing to say.",
           "properties": {
             "Goal": {
               "properties": {
@@ -11393,6 +11479,19 @@
           },
           "required": [
             "Goal"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The evaluator judged the goal after a turn.",
+          "properties": {
+            "GoalEvaluated": {
+              "$ref": "#/$defs/GoalEvaluation"
+            }
+          },
+          "required": [
+            "GoalEvaluated"
           ],
           "type": "object"
         },
@@ -11459,6 +11558,26 @@
           },
           "required": [
             "Pulls"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The thread branched off into a worktree (`Some`), or merged or abandoned it and\nworks in its own folder again (`None`): its `Thread::branch` changed.",
+          "properties": {
+            "Branch": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ThreadBranch"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "Branch"
           ],
           "type": "object"
         },
@@ -13334,6 +13453,19 @@
           "const": "lead",
           "description": "A task in review that the core held for the lead's decision.",
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A task in review that a reviewer row, by its id, checks now.",
+          "properties": {
+            "review": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "review"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -14108,12 +14240,14 @@
         },
         {
           "additionalProperties": false,
-          "description": "Sets the running team's budget, within the ceilings of the settings.",
+          "description": "Sets how many members of the running team work at once, 1 to the setting's\n`team_at_once`.",
           "properties": {
-            "SetTeamBudget": {
+            "SetTeamAtOnce": {
               "properties": {
-                "budget": {
-                  "$ref": "#/$defs/TeamBudget"
+                "at_once": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
                 },
                 "thread_id": {
                   "type": "string"
@@ -14121,13 +14255,13 @@
               },
               "required": [
                 "thread_id",
-                "budget"
+                "at_once"
               ],
               "type": "object"
             }
           },
           "required": [
-            "SetTeamBudget"
+            "SetTeamAtOnce"
           ],
           "type": "object"
         }

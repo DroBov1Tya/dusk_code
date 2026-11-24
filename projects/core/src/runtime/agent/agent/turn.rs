@@ -36,7 +36,7 @@ impl Agent {
         }
         self.take_up_mode(&conversation).await;
         let config = self.config_now().await;
-        let specs = self.tools.specs(&self.scope, &config);
+        let specs = self.tools.specs(&self.working_scope(), &config);
         if self.context_too_large(&conversation, &specs, 0).is_some() {
             return Ok(None);
         }
@@ -280,6 +280,14 @@ impl Agent {
                 self.thread_id, turn.turn_id, turn.status
             ),
         }
+        // What the turn changed is counted and its facts marked stale, in the background.
+        if self.config.current().limits().project_graph {
+            crate::project::graph::refresh_soon(
+                std::sync::Arc::clone(&self.state),
+                self.scope.cwd().to_owned(),
+                crate::tools::console::skipped_folders(&self.scope),
+            );
+        }
         let status = turn.status;
         let ended = match status {
             TurnStatus::Completed => Some(AgentPhase::Done),
@@ -306,13 +314,13 @@ impl Agent {
         Ok((stop, status))
     }
 
-    /// Only a chat has a goal: the user and the chat's own model set it.
+    /// Only a chat has a goal, and only the user sets it.
     pub async fn active_goal(&self) -> Result<Option<Goal>> {
         if self.depth > 0 {
             return Ok(None);
         }
         let goal = self.state.goal(&self.thread_id).await?;
-        Ok(goal.filter(|goal| goal.status == GoalStatus::Active && goal.approved))
+        Ok(goal.filter(|goal| goal.status == GoalStatus::Active))
     }
 
     /// Messages from other agents join the running turn, so the next step reads them,

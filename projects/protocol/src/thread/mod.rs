@@ -32,7 +32,7 @@ pub use block::{
 };
 pub use context::{ContextItemDetail, ContextReport, ContextSection, ContextSource};
 pub use event::{EpisodeKind, RepeatRung, ThreadEvent};
-pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
+pub use goal::{Goal, GoalCheck, GoalEvaluation, GoalStatus, GoalVerdict, MAX_GOAL_CHARS};
 pub use job::{JobInfo, JobResult, job_message};
 pub use link::{THREAD_LINK_PREFIX, links_in, thread_link, thread_of_link};
 pub use live::{LiveTurn, STALLED_AFTER_MS, Work, WorkKind, activity};
@@ -49,14 +49,13 @@ pub use pin::{MAX_PINS, PIN_CHARS, Pin, excerpt};
 pub use suggestion::{SUGGEST_NEXT_TOOL, SUGGESTION_CHARS, SuggestNext, Suggestion};
 pub use summary::{Found, Thread};
 pub use task::{
-    PLAN_PAGE_DONE, PlanCounts, PlanPage, Task, TaskItem, TaskOwner, TaskStatus, WaitsOn,
+    PLAN_PAGE_DONE, PlanCounts, PlanPage, Task, TaskDuty, TaskItem, TaskOwner, TaskStatus, WaitsOn,
     current_task,
 };
 pub use team::{
-    BUDGET_FIELDS, BUDGET_NEAR, BudgetPart, GENERAL_ROLE, Joining, KnownAgent, MAX_TEAM_AT_ONCE,
-    MAX_TEAM_MEMBERS, MAX_TEAM_MINUTES, MAX_TEAM_STEPS, MAX_TEAM_TOKENS, MemberRow, TaskCard, Team,
-    TeamBudget, TeamChange, TeamEnd, TeamMember, TeamStatus, TeamUsed, find_task, plan_aside,
-    role_name, short_model, task_card, task_in_work, team_call_id,
+    GENERAL_ROLE, Joining, KnownAgent, MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MemberRow, TaskCard,
+    Team, TeamChange, TeamEnd, TeamMember, TeamStatus, TeamUsed, conditional_remark, find_task,
+    plan_aside, role_name, short_model, task_card, task_in_work, team_call_id,
 };
 pub use tokens::{
     AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, plural, short_count, short_size,

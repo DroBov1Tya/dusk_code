@@ -1,5 +1,5 @@
 //! Writing episodes down from what a turn saw (`limits.episodes`): a loop a pass ended,
-//! a goal whose verification passed, and the model's lesson line. Every failure here is
+//! a goal the evaluator found met, and the model's lesson line. Every failure here is
 //! logged by `project::episodes` and dropped: an episode never fails a turn.
 
 use dusk_protocol::thread::EpisodeKind;
@@ -8,7 +8,7 @@ use super::Agent;
 use crate::project::episodes::{self, Facts, Origin};
 use crate::providers::ToolCall;
 use crate::runtime::{ThreadEvent, agent::repeats::Solved};
-use crate::state::{ChangeQuery, Goal, GoalCheck};
+use crate::state::{ChangeQuery, Goal};
 
 /// Ledger rows read for the files a loop changed; the episode names four of them.
 const MAX_CHANGES: usize = 64;
@@ -35,20 +35,22 @@ impl Agent {
         self.record_episode(Some(turn_id), &call.name, &facts).await
     }
 
-    /// Writes down a goal whose verification just passed: every command check of it
-    /// exited 0, since a pass needs each to.
-    pub async fn record_verified(&self, goal: &Goal) {
+    /// Writes down a goal the evaluator found met, with the commands that passed while
+    /// the agent worked on it.
+    pub async fn record_met(&self, goal: &Goal) {
         if !self.config.current().limits().episodes {
             return;
         }
-        let commands: Vec<String> = goal
-            .criteria
-            .iter()
-            .filter_map(|criterion| match &criterion.check {
-                GoalCheck::Command { command } => Some(command.clone()),
-                GoalCheck::UserConfirmation => None,
-            })
-            .collect();
+        let commands = self
+            .state
+            .goal_commands_since(&self.thread_id, goal.started_at);
+        let commands = match commands.await {
+            Ok(commands) => commands,
+            Err(error) => {
+                tracing::warn!("cannot read the goal's commands: {error:#}");
+                return;
+            }
+        };
         let facts = Facts::Verified {
             objective: &goal.text,
             commands: &commands,
@@ -68,12 +70,14 @@ impl Agent {
             return;
         };
         // Logged where it failed.
-        let _ = episodes::set_lesson(&self.state, self.scope.cwd(), turn_id, lesson).await;
+        let scope = self.working_scope();
+        let _ = episodes::set_lesson(&self.state, scope.project_dir(), turn_id, lesson).await;
     }
 
     /// Records the episode and tells `recall` and the clients; whether it was written.
     async fn record_episode(&self, turn_id: Option<&str>, tool: &str, facts: &Facts<'_>) -> bool {
-        let project = self.scope.cwd();
+        let scope = self.working_scope();
+        let project = scope.project_dir();
         let model = self.model.current().map(|choice| choice.model.id);
         let origin = Origin {
             project,
@@ -100,7 +104,9 @@ impl Agent {
     /// The files the ledger recorded in this turn since `since`, oldest first and each
     /// once, leaving out what the call `passed` changed itself.
     async fn changed_since(&self, turn_id: &str, passed: &str, since: i64) -> Vec<String> {
-        let project = self.scope.cwd().to_string_lossy();
+        // The ledger keeps changes by the folder the tools worked in.
+        let scope = self.working_scope();
+        let project = scope.cwd().to_string_lossy();
         let query = ChangeQuery {
             project: &project,
             thread_id: Some(&self.thread_id),

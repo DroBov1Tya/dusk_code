@@ -143,15 +143,14 @@ impl AppState {
         for thread_id in open {
             spawn_local(async move {
                 let cwd = self.cwd_of(&thread_id);
+                if let Some(chat) = self.chat(&thread_id) {
+                    chat.update(ChatData::reopening);
+                }
                 if api::resume(&thread_id, cwd).await.is_ok()
                     && let Ok(history) = api::messages(&thread_id).await
                     && let Some(chat) = self.chat(&thread_id)
                 {
-                    chat.update(|data| {
-                        let (tasks, access) = (data.tasks.clone(), data.access);
-                        *data = ChatData::from_history(&history);
-                        (data.tasks, data.access) = (tasks, access);
-                    });
+                    chat.update(|data| data.reloaded(&history));
                 }
             });
         }
@@ -200,6 +199,13 @@ impl AppState {
                 let renamed = matches!(*event, ThreadEvent::TitleChanged { .. });
                 if let ThreadEvent::Unread(unread) = *event {
                     crate::chat::seen::heard(self, &thread_id, unread);
+                }
+                if let ThreadEvent::Branch(branch) = &*event {
+                    self.threads.update(|threads| {
+                        if let Some(thread) = threads.iter_mut().find(|t| t.id == thread_id) {
+                            thread.branch = branch.clone();
+                        }
+                    });
                 }
                 // /fork wrote its summary: the new chat starts from it.
                 if let ThreadEvent::Forked { summary } = &*event {

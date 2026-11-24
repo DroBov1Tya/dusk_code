@@ -1,13 +1,16 @@
-//! What a run has used of its budget, counted when asked, the check before each claim and
-//! step, the members, and the plan's counts the stall rule reads.
+//! What a run has used, counted when asked and only shown, the check before each claim
+//! and step, the members, and the plan's counts the stall rule reads.
 
 use dusk_protocol::thread::{
-    MAX_TEAM_MEMBERS, TaskStatus, TeamEnd, TeamMember, TeamStatus, TeamUsed,
+    MAX_TEAM_MEMBERS, TaskDuty, TaskStatus, TeamEnd, TeamMember, TeamStatus, TeamUsed,
 };
 use sqlx::Row;
 
 use super::{MINUTE_MS, State, TeamRun, Tx, error::TeamError, read_run, root_of, stored};
-use crate::state::{PlanStatus, thread::threads::family};
+use crate::{
+    message::plain::plain,
+    state::{PlanStatus, short_task_id, thread::threads::family},
+};
 
 /// What the dispatcher is about to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,22 +21,15 @@ pub enum TeamAsk {
     Step,
 }
 
-/// The budget a run has spent; the team ends with `end()`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Spent {
-    Steps,
-    Tokens,
-    Time,
-}
-
 /// What `team_check` answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TeamCheck {
     Go,
-    /// As many members are at work as the budget allows: wait for one, the team goes on.
+    /// As many members are at work as may be at once: wait for one, the team goes on.
     Full,
-    /// A budget is spent: the team ends.
-    Spent(Spent),
+    /// The team winds down since this Unix ms: nothing new is given out, and a member
+    /// at work may finish its hand-over within the grace.
+    Winding(i64),
     /// The team is not running.
     Ended(TeamEnd),
 }
@@ -44,7 +40,7 @@ pub struct TeamCounts {
     pub total: u32,
     /// Claimed or running.
     pub at_work: u32,
-    /// Open, every dependency done.
+    /// Open, every dependency done, in the current wave.
     pub ready: u32,
     pub review: u32,
     /// In review for the lead: without a gate, or held for it.
@@ -54,16 +50,8 @@ pub struct TeamCounts {
     pub blocked: u32,
     pub failed: u32,
     pub done: u32,
-}
-
-impl Spent {
-    pub fn end(self) -> TeamEnd {
-        match self {
-            Self::Steps => TeamEnd::Steps,
-            Self::Tokens => TeamEnd::Tokens,
-            Self::Time => TeamEnd::Time,
-        }
-    }
+    /// Given up by the lead, whatever their status: they hold no wave.
+    pub skipped: u32,
 }
 
 // T1 (the dispatcher, the stall rule) and R1 (recovery) are the callers; nothing in the
@@ -81,14 +69,9 @@ impl State {
     }
 
     /// Whether the chat's team may give out another task, or let a member take another
-    /// step, at `now`; if not, which budget is spent. Time first, then steps, then tokens;
-    /// members at once count for a claim only.
-    pub async fn team_check(
-        &self,
-        thread: &str,
-        ask: TeamAsk,
-        now: i64,
-    ) -> Result<TeamCheck, TeamError> {
+    /// step. Members at once count for a claim only; a team that winds down gives
+    /// nothing out, and nothing else bounds a running team.
+    pub async fn team_check(&self, thread: &str, ask: TeamAsk) -> Result<TeamCheck, TeamError> {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         let run = read_run(&mut transaction, &root)
@@ -97,19 +80,13 @@ impl State {
         if let TeamStatus::Ended(why) = run.status {
             return Ok(TeamCheck::Ended(why));
         }
-        if now >= run.deadline {
-            return Ok(TeamCheck::Spent(Spent::Time));
+        if let Some(winding) = run.winding {
+            return Ok(TeamCheck::Winding(winding.since));
         }
-        let used = used(&mut transaction, &run, now).await?;
-        Ok(if used.steps >= run.budget.steps() {
-            TeamCheck::Spent(Spent::Steps)
-        } else if used.tokens >= run.budget.tokens() {
-            TeamCheck::Spent(Spent::Tokens)
-        } else if ask == TeamAsk::Claim && used.at_once >= run.budget.at_once() {
-            TeamCheck::Full
-        } else {
-            TeamCheck::Go
-        })
+        if ask == TeamAsk::Claim && at_work(&mut transaction, &root).await? >= run.at_once {
+            return Ok(TeamCheck::Full);
+        }
+        Ok(TeamCheck::Go)
     }
 
     /// The threads that hold a task of the chat's plan, newest first, each with the task
@@ -128,18 +105,15 @@ impl State {
         let row = sqlx::query(
             "SELECT COUNT(*) AS total,
                  COALESCE(SUM(status IN ('claimed', 'running')), 0) AS at_work,
-                 COALESCE(SUM(status = 'open' AND NOT EXISTS (
-                     SELECT 1 FROM json_each(t.depends_on) d
-                     LEFT JOIN tasks dep ON dep.task_id = d.value AND dep.thread_id = t.thread_id
-                     WHERE dep.status IS NOT 'done')), 0) AS ready,
                  COALESCE(SUM(status = 'review'), 0) AS review,
-                 COALESCE(SUM(status = 'review' AND (gate IS NULL OR waits_on = 'lead')), 0)
-                     AS for_lead,
-                 COALESCE(SUM(status = 'review' AND waits_on IS NOT 'lead'
+                 COALESCE(SUM(status = 'review' AND (waits_on = 'lead'
+                     OR (gate IS NULL AND waits_on IS NULL))), 0) AS for_lead,
+                 COALESCE(SUM(status = 'review' AND waits_on IS NULL
                      AND json_extract(gate, '$.kind') = 'user_confirmation'), 0) AS for_user,
-                 COALESCE(SUM(status = 'blocked'), 0) AS blocked,
-                 COALESCE(SUM(status = 'failed'), 0) AS failed,
-                 COALESCE(SUM(status = 'done'), 0) AS done
+                 COALESCE(SUM(status = 'blocked' AND skipped = 0), 0) AS blocked,
+                 COALESCE(SUM(status = 'failed' AND skipped = 0), 0) AS failed,
+                 COALESCE(SUM(status = 'done'), 0) AS done,
+                 COALESCE(SUM(skipped = 1 AND status != 'done'), 0) AS skipped
              FROM tasks t WHERE t.thread_id = ?",
         )
         .bind(&root)
@@ -149,16 +123,20 @@ impl State {
             let value: i64 = row.try_get(column)?;
             u32::try_from(value).map_err(|_| stored(format!("{column} {value} is out of range")))
         };
+        drop(transaction);
+        // The barrier decides what is ready: the same rule the dispatcher gives out by.
+        let ready = self.ready_tasks(thread).await?.len();
         Ok(TeamCounts {
             total: count("total")?,
             at_work: count("at_work")?,
-            ready: count("ready")?,
+            ready: u32::try_from(ready).unwrap_or(u32::MAX),
             review: count("review")?,
             for_lead: count("for_lead")?,
             for_user: count("for_user")?,
             blocked: count("blocked")?,
             failed: count("failed")?,
             done: count("done")?,
+            skipped: count("skipped")?,
         })
     }
 }
@@ -194,7 +172,7 @@ pub(super) async fn used(
         at_once: at_work(transaction, &run.thread_id).await?,
         steps: u32::try_from(steps).map_err(|_| stored(format!("{steps} steps")))?,
         tokens: u64::try_from(tokens).map_err(|_| stored(format!("{tokens} tokens")))?,
-        // A clock that went back counts as no time; past u32 minutes is past any budget.
+        // A clock that went back counts as no time; past u32 minutes shows as the most.
         minutes: u32::try_from(elapsed / MINUTE_MS).unwrap_or(u32::MAX),
     })
 }
@@ -217,8 +195,10 @@ pub(super) async fn members(
     root: &str,
 ) -> Result<Vec<TeamMember>, TeamError> {
     let rows = sqlx::query(
-        "SELECT th.id, COALESCE(th.name, th.id) AS name, t.task_id, t.role, t.model, t.status
-         FROM (SELECT task_id, owner_thread_id, role, model, status,
+        "SELECT th.id, COALESCE(th.name, th.id) AS name, t.task_id, t.role, t.model, t.status,
+             t.description, t.duty, t.review_of
+         FROM (SELECT task_id, owner_thread_id, role, model, status, description, duty,
+                   review_of,
                    ROW_NUMBER() OVER (PARTITION BY owner_thread_id
                        ORDER BY status NOT IN ('done', 'failed') DESC, updated_at DESC,
                                 task_id DESC) AS rank
@@ -237,6 +217,11 @@ pub(super) async fn members(
             let status: String = row.try_get("status")?;
             let status = PlanStatus::parse(&status)
                 .ok_or_else(|| stored(format!("unknown task status {status}")))?;
+            let duty: String = row.try_get("duty")?;
+            let duty = TaskDuty::parse(&duty)
+                .ok_or_else(|| stored(format!("unknown task duty {duty}")))?;
+            let review_of: Option<String> = row.try_get("review_of")?;
+            let description: String = row.try_get("description")?;
             Ok(TeamMember {
                 thread_id: row.try_get("id")?,
                 name: row.try_get("name")?,
@@ -244,9 +229,34 @@ pub(super) async fn members(
                 model: row.try_get("model")?,
                 task_id: row.try_get("task_id")?,
                 status: task_status(status),
+                summary: summary(duty, review_of.as_deref(), &description),
             })
         })
         .collect()
+}
+
+/// Characters of a task's text in a member's summary.
+const SUMMARY_CHARS: usize = 60;
+
+/// What a member does, in a line: what its row is for, else the start of its task's text
+/// made plain, cut at a word where one ends near the cap.
+pub fn summary(duty: TaskDuty, review_of: Option<&str>, description: &str) -> String {
+    match (duty, review_of) {
+        (TaskDuty::Review, Some(of)) => return format!("review of #{}", short_task_id(of)),
+        (TaskDuty::Critic, _) => return "completeness check".to_owned(),
+        _ => {}
+    }
+    let text = plain(description.lines().next().unwrap_or_default());
+    let text = text.trim();
+    if text.chars().count() <= SUMMARY_CHARS {
+        return text.to_owned();
+    }
+    let cut: String = text.chars().take(SUMMARY_CHARS).collect();
+    let cut = match cut.rfind(' ') {
+        Some(space) if space > SUMMARY_CHARS / 2 => &cut[..space],
+        _ => cut.as_str(),
+    };
+    format!("{}…", cut.trim_end_matches([' ', ',', '.', ';', ':']))
 }
 
 fn task_status(status: PlanStatus) -> TaskStatus {

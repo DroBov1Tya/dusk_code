@@ -15,31 +15,32 @@ mod usage;
 
 pub use agents::{AgentPhase, Identity};
 pub use db::State;
+pub use project::graph;
 pub use project::{Episode, Recall};
 pub use project::{EpisodeKind, NewEpisode};
 pub use skill_changes::{NewSkillChange, StoredSkillChange};
-pub(crate) use thread::below;
 pub use thread::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Delivery,
-    Ended, Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt,
+    Ended, Goal, GoalCheck, GoalEvaluation, GoalStatus, GoalVerdict, JobSummary, LastPrompt,
     LocalUnsent, Message, MessageRole, ModelCall, NewStub, PendingMessage, ProviderFailure, Settle,
     ShapedResult, Source, Stub, Task, Thread, Turn, TurnAnswer, TurnFailure, TurnOutcome,
     TurnStatus, UndoPoint, Unfinished, calls_of, estimate_tokens, saved_tokens,
 };
-pub use thread::{MEMBER_SOURCE, short_task_id, slim_pull};
+pub use thread::{MEMBER_SOURCE, ThreadWorktree, short_task_id, slim_pull};
 // The plan's store. Its callers are the team's runtime (T1) and the plan form of the
 // `tasks` tool (L1); until they land only its tests use these.
 #[allow(unused_imports)]
 pub use thread::{
-    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_NOTE,
-    MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
-    PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, overlaps,
+    BlockedOn, Claim, Duty, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_GOAL,
+    MAX_NOTE, MAX_OPEN_TASKS, MAX_RESULT, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy,
+    PlanError, PlanStatus, PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, current_wave,
+    overlaps, waves,
 };
 // The team's store. Its callers are the team's runtime (T1), serving (P1) and recovery
 // (R1); until they land only its tests use these.
 #[allow(unused_imports)]
 pub use thread::{
-    BudgetBy, BudgetPart, Spent, TeamAsk, TeamCeilings, TeamCheck, TeamCounts, TeamError, TeamRun,
+    TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun, WindWhy, Winding, member_summary,
 };
 pub use usage::{ItemUsage, KIND_MCP_TOOL, KIND_SKILL};
 

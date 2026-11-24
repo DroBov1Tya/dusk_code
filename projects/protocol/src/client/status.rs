@@ -44,7 +44,6 @@ pub struct Status {
     pub effort: Option<Effort>,
     pub mode: String,
     pub approvals: ApprovalPolicy,
-    pub max_goal_rounds: u32,
     pub idle_screen_minutes: u32,
     /// Whether clients notify at all.
     pub notifications: bool,

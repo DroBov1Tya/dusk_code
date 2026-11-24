@@ -46,6 +46,18 @@ pub struct Worktree {
     pub branch: Option<String>,
 }
 
+/// The branch a thread works on in a worktree of its own, beside the folder it started in,
+/// until it is merged back or abandoned.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadBranch {
+    pub branch: String,
+    /// The branch it was made from and is merged back into.
+    pub base: String,
+    /// The worktree's folder, where the thread's tools work.
+    pub dir: PathBuf,
+}
+
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChangeKind {

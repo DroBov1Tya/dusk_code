@@ -296,46 +296,70 @@ async fn a_store_that_fails_does_not_fail_the_turn() {
     assert!(!results[3].contains("[this passed after"), "{}", results[3]);
 }
 
+/// A goal the evaluator found met is written down with the commands that passed while
+/// the agent worked on it.
 #[tokio::test]
-async fn a_verification_that_passed_is_written_down() {
+async fn a_goal_met_is_written_down() {
     let state = thread_state("episode_verified").await;
-    let (goal, result_id) = super::goals::verified_fixture(&state).await;
+    state.set_goal("thread", "build it").await.unwrap();
+    state
+        .add_user_message("thread", "proof", "run the check")
+        .await
+        .unwrap();
+    let turn = state.start_turn("thread").await.unwrap().unwrap();
+    let answer = |content: &str| crate::state::TurnAnswer {
+        content: content.into(),
+        reasoning: None,
+    };
+    let call = ToolCall {
+        id: "check".into(),
+        name: "run_command".into(),
+        arguments: json!({"command": "exit 0"}),
+    };
+    state
+        .record_tool_calls(&turn.turn_id, answer(""), vec![call])
+        .await
+        .unwrap();
+    state
+        .record_tool_result_with_outcome(
+            &turn.turn_id,
+            "check",
+            "exit 0".into(),
+            Vec::new(),
+            "succeeded",
+            Some(0),
+        )
+        .await
+        .unwrap();
+    state
+        .finish_turn(
+            &turn.turn_id,
+            crate::state::TurnOutcome::Completed(answer("it ran")),
+        )
+        .await
+        .unwrap();
     let config = Arc::new(temp_live_config_with(
         "episode_verified_config",
         EPISODES_ON,
     ));
     let provider = provider(vec![
-        vec![
-            Step::Tool(
-                "goal".into(),
-                json!({"action":"request_verification","revision":goal.revision,
-                    "evidence":[{"criterion_id":"exit","result_id":result_id}]}),
-            ),
-            Step::Done,
-        ],
-        vec![Step::Text("I think it is done"), Step::Done],
-        vec![Step::Text("thread name"), Step::Done],
+        vec![Step::Text("the check passed"), Step::Done],
+        vec![Step::Text("MET: the check passed"), Step::Done],
     ]);
-    let tool = Box::new(crate::tools::GoalTool::new(
-        Arc::clone(&state),
-        "thread".into(),
-    ));
-    let (runner, input, mut output) = runner_with(&state, &provider, &config, model(None), tool);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
     let project = runner.agent.scope.cwd().to_string_lossy().into_owned();
     state.create_project("p", "P", "", &project).await.unwrap();
     let client = async move {
-        input.send("finish the goal").await.unwrap();
+        input.send("is it done?").await.unwrap();
         let mut recorded = Vec::new();
         while let Some(event) = output.next_event().await {
             match event {
                 ThreadEvent::EpisodeRecorded { kind } => recorded.push(kind),
-                ThreadEvent::Goal {
-                    goal: Some(goal), ..
-                } if goal.status == GoalStatus::Done => return recorded,
+                ThreadEvent::Goal { goal: None, .. } => return recorded,
                 _ => {}
             }
         }
-        panic!("the goal was not verified");
+        panic!("the goal was not met");
     };
     let (_, recorded) = tokio::time::timeout(Duration::from_secs(5), async {
         tokio::join!(runner.run(), client)

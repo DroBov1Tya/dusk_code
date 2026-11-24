@@ -9,7 +9,6 @@ use crate::release::Channel;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     pub max_agents_at_work: usize,
-    pub max_goal_rounds: u32,
     /// Seconds a model call may stay silent before it is given up on.
     pub model_timeout_seconds: u32,
     /// Tries of one model call that wrote nothing, the first included.

@@ -11,18 +11,21 @@ pub use dusk_protocol::thread::Thread;
 /// The `source` of a thread a team made for a task.
 pub const MEMBER_SOURCE: &str = "member";
 
-/// Threads with their folder, when they were last active and their pull requests, then
+/// Threads with their folder, their branch, when they were last active and their pull requests, then
 /// `$rest`. The last message is found by `messages_thread_time`, without reading any.
 macro_rules! select_threads {
     ($rest:literal) => {
         concat!(
             "SELECT threads.*, thread_projects.dir AS project,
+                thread_worktrees.branch AS worktree_branch, thread_worktrees.base AS worktree_base,
+                thread_worktrees.dir AS worktree_dir,
                 MAX(threads.created_at,
                 COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
                 COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at, ",
             crate::state::thread::pulls::pulls_json!("threads.id"),
             " AS pulls
-             FROM threads LEFT JOIN thread_projects ON thread_projects.thread_id = threads.id ",
+             FROM threads LEFT JOIN thread_projects ON thread_projects.thread_id = threads.id
+                LEFT JOIN thread_worktrees ON thread_worktrees.thread_id = threads.id ",
             $rest
         )
     };
@@ -304,6 +307,19 @@ impl State {
         u64::try_from(count).context("negative message count")
     }
 
+    /// The newest message the user wrote to the thread themselves, if any.
+    pub async fn last_user_text(&self, id: &str) -> Result<Option<String>> {
+        sqlx::query_scalar(
+            "SELECT content FROM messages WHERE thread_id = ? AND role = 'user'
+               AND from_thread_id IS NULL AND from_job_id IS NULL
+             ORDER BY sequence DESC LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("read the user's last message")
+    }
+
     /// How many agent threads are above this one; 0 for a chat.
     pub async fn thread_depth(&self, id: &str) -> Result<usize> {
         let depth: i64 = sqlx::query_scalar(
@@ -498,6 +514,14 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         owner: row.try_get("owner")?,
         unread: row.try_get("unread")?,
         pulls: super::pulls::decode_list(&row.try_get::<String, _>("pulls")?),
+        branch: match row.try_get::<Option<String>, _>("worktree_branch")? {
+            Some(branch) => Some(dusk_protocol::project::ThreadBranch {
+                branch,
+                base: row.try_get("worktree_base")?,
+                dir: row.try_get::<String, _>("worktree_dir")?.into(),
+            }),
+            None => None,
+        },
     })
 }
 

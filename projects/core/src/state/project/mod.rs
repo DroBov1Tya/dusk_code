@@ -1,9 +1,10 @@
 //! Projects: named folders. Their chats are found by folder, so none is stored here.
 //! `env` keeps a project's variables, `schedules` its scheduled tasks, `episodes` what
-//! ended a problem in it.
+//! ended a problem in it, `graph` its files and what agents wrote about them.
 
 mod env;
 mod episodes;
+pub mod graph;
 mod schedules;
 
 use std::path::PathBuf;
@@ -58,7 +59,8 @@ impl State {
     /// Changes a project; false when there is none with `id`. A new folder starts with
     /// no episodes: they describe the old folder, and an episode written from one
     /// repository must not be recalled in another. The foreign key would carry them over
-    /// (`ON UPDATE CASCADE`), so they are deleted first, in the same transaction.
+    /// (`ON UPDATE CASCADE`), so they are deleted first, in the same transaction. The
+    /// project graph describes the old folder too and goes the same way.
     pub async fn update_project(
         &self,
         id: &str,
@@ -82,6 +84,7 @@ impl State {
                 .execute(&mut *transaction)
                 .await
                 .context("forget what the old folder held")?;
+            graph::forget(&mut transaction, &old).await?;
         }
         sqlx::query("UPDATE projects SET name = ?, description = ?, dir = ? WHERE id = ?")
             .bind(name)

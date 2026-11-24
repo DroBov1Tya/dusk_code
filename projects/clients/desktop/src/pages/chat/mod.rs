@@ -114,6 +114,7 @@ pub fn render(
                 .children(pins::drawer(ws, cx)),
         )
         .children(dock::plan_strip(ws, window, cx))
+        .children(dock::goal_strip(ws, cx))
         .child(composer::dock_lane(approval::render(ws, window, cx)))
         .child(composer::render(ws, window, cx))
         .child(div().h(px(12.)))

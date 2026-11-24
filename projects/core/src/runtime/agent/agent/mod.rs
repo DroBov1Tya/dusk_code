@@ -7,6 +7,7 @@ mod episodes;
 mod judge;
 mod mode;
 mod pictures;
+mod place;
 mod report;
 mod resume;
 mod retry;
@@ -62,7 +63,11 @@ pub struct Agent {
     pub model: Arc<ModelChoice>,
     pub config: Arc<LiveConfig>,
     pub tools: Arc<ToolRegistry>,
+    /// Where the thread's tools act when it works in its own folder.
     pub scope: Arc<ToolScope>,
+    /// Where they act now: `scope`, or the worktree of a branch the thread works on.
+    /// Read at each step (`follow_worktree`), so a restart finds it again.
+    pub here: Mutex<Arc<ToolScope>>,
     /// Comes right after the prompt in every request.
     pub project: String,
     /// The model that refused pictures; the others still get them.

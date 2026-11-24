@@ -15,7 +15,7 @@ use crate::ui::thread::{
 };
 use dusk_protocol::{
     system::now_ms,
-    thread::{RunCard, RunMark},
+    thread::{GoalVerdict, RunCard, RunMark},
 };
 use ratatui::{
     style::Style,
@@ -155,6 +155,7 @@ pub(super) fn hidden_line(entry: &Entry, text: &str) -> Line<'static> {
         Entry::Reasoning { .. } => "thinking",
         Entry::Tool { .. } => "tool call",
         Entry::Summary { .. } => "summary",
+        Entry::Goal { .. } => "goal verdict",
         Entry::FromAgent { .. } => "agent message",
         Entry::Notice { .. } => "notice",
         Entry::Skill { .. } => "skill change",
@@ -239,6 +240,21 @@ pub(super) fn entry_lines(
             ]);
             folded(header, *open, || {
                 let body = markdown::render(text, width.saturating_sub(2));
+                indent(body, &format!("   {GUTTER} "))
+            })
+        }
+        Entry::Goal { evaluation, open } => {
+            let tint = match evaluation.verdict {
+                GoalVerdict::NotMet => TEXT_SOFT,
+                GoalVerdict::Met => POSITIVE,
+                GoalVerdict::Impossible => NEGATIVE,
+            };
+            let header = Line::from(vec![
+                Span::styled(format!("   {} ", fold_mark(*open)), fg(TEXT_SOFT)),
+                Span::styled(format!("\u{25CE} {}", evaluation.title()), fg(tint)),
+            ]);
+            folded(header, *open, || {
+                let body = plain(&evaluation.reason, width.saturating_sub(5), dim());
                 indent(body, &format!("   {GUTTER} "))
             })
         }

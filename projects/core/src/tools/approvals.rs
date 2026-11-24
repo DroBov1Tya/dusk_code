@@ -70,9 +70,11 @@ impl Approvals {
         progress: Option<Progress>,
         policy: ApprovalPolicy,
     ) -> Result<()> {
-        // In sandbox mode a command needs no yes: the system confines it when it runs.
-        let confined =
-            policy == ApprovalPolicy::Sandbox && matches!(request, Request::Command { .. });
+        // In sandbox mode a command needs no yes: the system confines it when it runs. Work
+        // on an agent's own branch is bounded the same way, by the core: what reaches a
+        // branch of the user's is asked with `ask_always`.
+        let confined = policy == ApprovalPolicy::Sandbox
+            && matches!(request, Request::Command { .. } | Request::Git { .. });
         if policy == ApprovalPolicy::FullAccess || confined || self.grants.lock().covers(&request) {
             return Ok(());
         }
@@ -95,6 +97,19 @@ impl Approvals {
         progress: Option<Progress>,
     ) -> Result<()> {
         self.open(thread_id, request, None, Vec::new(), progress, true)
+            .await
+    }
+
+    /// Asks the user whatever the mode and the session's grants say, offering no grant
+    /// for the session: a step that cannot be taken back the way it was asked, such as a
+    /// merge into the user's own branch. Any client that answers requests may answer it.
+    pub async fn ask_always(
+        &self,
+        thread_id: &str,
+        request: Request,
+        progress: Option<Progress>,
+    ) -> Result<()> {
+        self.open(thread_id, request, None, Vec::new(), progress, false)
             .await
     }
 
@@ -352,6 +367,8 @@ struct Grants {
     screen: bool,
     system_pointer: bool,
     windows: Vec<WindowAccess>,
+    /// Work on the agents' own branches.
+    git: bool,
 }
 
 impl Grants {
@@ -370,6 +387,7 @@ impl Grants {
             Request::Window { grant, .. } => grant
                 .as_ref()
                 .is_some_and(|access| self.windows.contains(access)),
+            Request::Git { .. } => self.git,
         }
     }
 
@@ -383,6 +401,7 @@ impl Grants {
             Request::SystemPointer { .. } => self.system_pointer = true,
             Request::Keyboard { .. } | Request::Settings { .. } => {}
             Request::Window { grant, .. } => self.windows.extend(grant.clone()),
+            Request::Git { .. } => self.git = true,
         }
     }
 }
@@ -395,7 +414,10 @@ fn strictness(request: &Request) -> Option<u8> {
         Request::Window { .. } => Some(1),
         Request::SystemPointer { .. } => Some(2),
         Request::Keyboard { .. } => Some(3),
-        Request::Path { .. } | Request::Command { .. } | Request::Settings { .. } => None,
+        Request::Path { .. }
+        | Request::Command { .. }
+        | Request::Settings { .. }
+        | Request::Git { .. } => None,
     }
 }
 
@@ -417,7 +439,10 @@ fn with_action(kind: &Request, action: String) -> Request {
             grant: grant.clone(),
             action,
         },
-        Request::Path { .. } | Request::Command { .. } | Request::Settings { .. } => kind.clone(),
+        Request::Path { .. }
+        | Request::Command { .. }
+        | Request::Settings { .. }
+        | Request::Git { .. } => kind.clone(),
     }
 }
 
@@ -438,6 +463,7 @@ pub fn session_grant(request: &Request) -> Option<String> {
             }
             None => None,
         },
+        Request::Git { .. } => Some("work on the agents' own branches".into()),
     }
 }
 
@@ -848,6 +874,47 @@ mod tests {
                 .ask("t", screen, None, ApprovalPolicy::Sandbox)
                 .await
                 .is_err()
+        );
+    }
+
+    /// Branch work passes as the mode says, like a command; what reaches the user's own
+    /// branch is asked every time: no mode, grant or session yes lets it through unasked.
+    #[tokio::test]
+    async fn the_users_branch_is_asked_in_every_mode() {
+        let approvals = Approvals::default();
+        let git = |action: &str| Request::Git {
+            action: action.into(),
+        };
+        for policy in [ApprovalPolicy::Sandbox, ApprovalPolicy::FullAccess] {
+            assert!(
+                approvals
+                    .ask("t", git("commit"), None, policy)
+                    .await
+                    .is_ok()
+            );
+        }
+        assert!(
+            approvals
+                .ask("t", git("commit"), None, ApprovalPolicy::Ask)
+                .await
+                .is_err()
+        );
+        decide(&approvals, git("start"), Decision::Session)
+            .await
+            .unwrap();
+        assert!(
+            approvals
+                .ask("t", git("commit"), None, ApprovalPolicy::Ask)
+                .await
+                .is_ok(),
+            "the session's yes holds for branch work"
+        );
+        assert!(
+            approvals
+                .ask_always("t", git("merge into main"), None)
+                .await
+                .is_err(),
+            "nobody to ask, so no merge"
         );
     }
 }

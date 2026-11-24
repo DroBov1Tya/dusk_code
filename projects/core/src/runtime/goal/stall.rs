@@ -7,8 +7,8 @@
 //!
 //! A round is measured by what it did itself, and only where the ledger can be trusted.
 //! A round that changed no file and ran no test (research, a question, a look at a job)
-//! leaves the count as it was (rounds that call no tool at all are counted by
-//! `monologue`), and so does one that may have written where the ledger
+//! leaves the count as it was (turns that call no tool at all are the evaluator's stall
+//! rule, in `rounds`), and so does one that may have written where the ledger
 //! does not look (a background job, a subagent, an MCP tool), or one in a chat the
 //! ledger never recorded a change of (recording off, or a project too large to watch):
 //! there, the same test results say nothing about the code.

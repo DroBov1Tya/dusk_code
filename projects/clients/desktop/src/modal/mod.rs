@@ -119,8 +119,8 @@ pub enum Modal {
     StopTeam {
         thread_id: String,
     },
-    /// The budget of the shown chat's running team, being changed.
-    TeamBudget(team::BudgetForm),
+    /// How many members of the shown chat's running team work at once, being changed.
+    TeamAtOnce(team::AtOnceForm),
     /// Going back to a message of the chat erases it and all after it; asks first.
     Rollback {
         thread_id: String,
@@ -180,7 +180,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             task_card::render(ws, task_id, cx),
         ),
         Modal::StopTeam { .. } => ("Stop team".to_owned(), 480., team::stop(cx)),
-        Modal::TeamBudget(form) => ("Team budget".to_owned(), 520., team::budget(form, cx)),
+        Modal::TeamAtOnce(form) => ("Members at once".to_owned(), 400., team::at_once(form, cx)),
         // It has the whole window, not a panel with a title.
         Modal::Picture { image, size, view } => {
             return Some(picture::render(ws, image, *size, view, window, cx));

@@ -350,13 +350,14 @@ async fn the_team_s_end_returns_work_without_failing_it() {
     let mut returned = state.return_work(LEAD).await.unwrap();
     returned.sort_by(|one, other| one.task_id.cmp(&other.task_id));
     assert_eq!(returned.len(), 2);
-    for (task, attempts) in returned.iter().zip([MAX_ATTEMPTS, 1]) {
+    // The attempt each claim counted is taken back: the end was not the member's.
+    for (task, attempts) in returned.iter().zip([MAX_ATTEMPTS - 1, 0]) {
         assert_eq!(task.status, PlanStatus::Open);
         assert_eq!(
             (task.owner_thread_id.as_deref(), task.lease_until),
             (None, None)
         );
-        assert_eq!(task.attempts, attempts, "attempts are left as they were");
+        assert_eq!(task.attempts, attempts);
     }
     assert_eq!(
         (get(&state, &ids[2]).await, get(&state, &ids[3]).await),
@@ -398,4 +399,38 @@ async fn a_task_comes_back_from_review_twice_and_then_fails() {
     assert_eq!(failed.owner_thread_id.as_deref(), Some("m0"));
     let again = state.reopen_task(LEAD, &id).await.unwrap();
     assert_eq!((again.attempts, again.reworks), (0, 0));
+}
+
+#[tokio::test]
+async fn a_returned_task_does_not_count_the_attempt_and_only_its_owner_returns_it() {
+    let state = team().await;
+    let ids = add(&state, &[task("a"), task("b")]).await;
+    // However often it comes back so, it never fails.
+    for _ in 0..=MAX_ATTEMPTS {
+        drive(&state, &ids[0], "m0", PlanStatus::Running).await;
+        let back = state
+            .return_task("m0", &ids[0], "a restart cut its turn off")
+            .await
+            .unwrap();
+        assert_eq!(
+            (back.status, back.attempts, back.owner_thread_id),
+            (PlanStatus::Open, 0, None)
+        );
+        assert_eq!(back.note, "a restart cut its turn off");
+    }
+    // Another member's, or one no longer at work, is refused and left as it is.
+    drive(&state, &ids[1], "m1", PlanStatus::Claimed).await;
+    assert!(matches!(
+        state.return_task("m2", &ids[1], "no").await,
+        Err(PlanError::NotOwner { .. })
+    ));
+    assert!(matches!(
+        state.return_task("m0", &ids[0], "no").await,
+        Err(PlanError::NotOwner { .. } | PlanError::Illegal { .. })
+    ));
+    let held = get(&state, &ids[1]).await;
+    assert_eq!(
+        (held.status, held.attempts, held.owner_thread_id.as_deref()),
+        (PlanStatus::Claimed, 1, Some("m1"))
+    );
 }

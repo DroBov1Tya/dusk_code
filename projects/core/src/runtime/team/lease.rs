@@ -1,7 +1,7 @@
 //! A member's claim while it works. Its runner moves the lease on every 30 s for as long
 //! as it lives; the statement names the member's thread, so no other thread and no tool
-//! can hold a task it was not given. Before each step the member's team is asked for
-//! budget, which is what stops a run that has spent it.
+//! can hold a task it was not given. Before each step the member's team is asked
+//! whether it still runs, which is what stops a member of a team that ended.
 
 use std::time::Duration;
 
@@ -13,7 +13,7 @@ use super::member::{is_member, lead_policy};
 use crate::{
     config::Config,
     runtime::{Launcher, ThreadEvent, ThreadOutput},
-    state::{Spent, State, TeamAsk, TeamCheck, Thread, timestamp_ms},
+    state::{State, TeamAsk, TeamCheck, Thread, timestamp_ms},
 };
 
 /// How often a living runner moves its lease on; the lease is `LEASE_MS`, four of these.
@@ -82,8 +82,8 @@ pub(super) async fn at_work(state: &State, lead: &str, member: &str) -> Result<O
 
 /// Whether the thread may take another model step. Only a team's member is ever
 /// refused: when it holds no task at work (its task was taken back, or it was written
-/// to after it finished), and when its team ended or has spent a budget. The refusal
-/// fails its turn; the dispatcher's next pass ends a team that is spent.
+/// to after it finished), when its team ended, and when its team winds down and the
+/// grace for its hand-over ran out. The refusal fails its turn.
 pub(crate) async fn may_step(
     state: &State,
     config: &Config,
@@ -113,14 +113,14 @@ pub(crate) async fn may_step(
     if state.thread_approvals(thread_id).await? != Some(policy) {
         state.set_thread_approvals(thread_id, Some(policy)).await?;
     }
-    match state
-        .team_check(lead, TeamAsk::Step, timestamp_ms()?)
-        .await?
-    {
+    match state.team_check(lead, TeamAsk::Step).await? {
         TeamCheck::Go | TeamCheck::Full => Ok(()),
-        TeamCheck::Spent(Spent::Steps) => bail!("the team's steps are spent"),
-        TeamCheck::Spent(Spent::Tokens) => bail!("the team's tokens are spent"),
-        TeamCheck::Spent(Spent::Time) => bail!("the team's time is up"),
+        TeamCheck::Winding(since) => {
+            let grace = config.limits().team_wrap_seconds.saturating_mul(1000);
+            let until = since.saturating_add(i64::try_from(grace).unwrap_or(i64::MAX));
+            ensure!(timestamp_ms()? < until, "the team was stopped");
+            Ok(())
+        }
         TeamCheck::Ended(TeamEnd::Stopped) => bail!("the team was stopped"),
         TeamCheck::Ended(_) => bail!("the team ended"),
     }

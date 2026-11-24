@@ -177,9 +177,9 @@ impl State {
             .collect()
     }
 
-    /// Moves a sent message into the thread, with its effect on the goal: another agent's
-    /// message is new work, so the approved goal's proofs go stale; the user's message
-    /// answers a goal that waits on them; a job's result changes nothing. One transaction
+    /// Moves a sent message into the thread, with its effect on the goal: the user's
+    /// message goes on with a paused goal; another agent's message and a job's result
+    /// change nothing. One transaction
     /// stores the message and removes the pending row, so no reader sees it both waiting
     /// and read. Admitting it again returns the stored message, and the goal changes with
     /// the pending row's removal, so only once.
@@ -215,22 +215,19 @@ impl State {
                 .await?
             }
         };
-        let goal = if removed == 0 || message.from_job_id.is_some() {
-            None
-        } else if message.from_thread_id.is_some() {
-            Some(
-                "UPDATE goals SET work_epoch = work_epoch + 1
-                 WHERE thread_id = ? AND approved_at IS NOT NULL",
+        // The user's message answers what the goal waited on, and goes on with a paused one.
+        if removed > 0 && message.from_job_id.is_none() && message.from_thread_id.is_none() {
+            sqlx::query(
+                // A resume starts the rounds that changed nothing over, as
+                // `set_goal_status` does.
+                "UPDATE goals SET awaiting_user = 0, status = 'active', note = NULL,
+                    same_rounds = CASE WHEN status = 'active' THEN same_rounds ELSE 0 END
+                 WHERE thread_id = ?",
             )
-        } else {
-            Some("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
-        };
-        if let Some(goal) = goal {
-            sqlx::query(goal)
-                .bind(thread_id)
-                .execute(&mut *transaction)
-                .await
-                .context("update the goal for a message")?;
+            .bind(thread_id)
+            .execute(&mut *transaction)
+            .await
+            .context("update the goal for a message")?;
         }
         transaction
             .commit()
@@ -268,37 +265,35 @@ mod tests {
         assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
     }
 
-    /// Another agent's message makes an approved goal's proofs stale, once even if the
-    /// message is admitted again; the user's message ends a goal's wait for them.
+    /// Another agent's message leaves a goal as it is; the user's message ends its wait
+    /// for them and goes on with it when it is paused.
     #[tokio::test]
-    async fn admitting_a_message_updates_the_goal_once() {
+    async fn only_the_users_message_resumes_the_goal() {
         let state = temp_state("pending_goal").await;
         state.create_thread("thread", "test").await.unwrap();
         state.create_thread("agent", "test").await.unwrap();
         state.set_goal("thread", "ship it").await.unwrap();
-        sqlx::query("UPDATE goals SET approved_at = 1, awaiting_user = 1")
+        sqlx::query("UPDATE goals SET status = 'paused', awaiting_user = 1")
             .execute(&state.pool)
             .await
             .unwrap();
         let goal = || {
-            sqlx::query_as::<_, (i64, bool)>(
-                "SELECT work_epoch, awaiting_user FROM goals WHERE thread_id = 'thread'",
+            sqlx::query_as::<_, (String, bool)>(
+                "SELECT status, awaiting_user FROM goals WHERE thread_id = 'thread'",
             )
             .fetch_one(&state.pool)
         };
-        let (epoch, _) = goal().await.unwrap();
 
         let from_agent = state
             .add_pending_from("thread", "found it", Some("agent"))
             .await
             .unwrap();
         state.admit_pending("thread", &from_agent).await.unwrap();
-        state.admit_pending("thread", &from_agent).await.unwrap();
-        assert_eq!(goal().await.unwrap(), (epoch + 1, true));
+        assert_eq!(goal().await.unwrap(), ("paused".into(), true));
 
         let from_user = state.add_pending("thread", "go on").await.unwrap();
         state.admit_pending("thread", &from_user).await.unwrap();
-        assert_eq!(goal().await.unwrap(), (epoch + 1, false));
+        assert_eq!(goal().await.unwrap(), ("active".into(), false));
     }
 
     #[tokio::test]

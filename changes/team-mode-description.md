@@ -1,0 +1,2 @@
+Changed
+TEAM mode now says plainly that the user is not the team lead: the agent leads the project like a product owner or team lead, plans the work and runs a team of agents, each with its own role and task, while the user sets the goal and answers its questions. The mode menu, the mode setting, the README, the feature docs, the Team page's empty state and the TEAM prompt's opening say so, and the terminal's help names team among the modes Tab walks.

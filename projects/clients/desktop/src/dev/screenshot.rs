@@ -368,13 +368,13 @@ fn act(
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
-            // After `fake=team`: the yes Stop team asks for, the budget form and a task's card.
+            // After `fake=team`: the yes Stop team asks for, members at once and a task's card.
             "team-stop" => ws.ask_stop_team(cx),
             // The card of task #4, blocked on the lead with a note.
             "task-card" => ws.open_task_card("t4", cx),
-            "team-budget" => {
+            "team-at-once" => {
                 if let Some(team) = ws.overview.team.clone() {
-                    ws.ask_team_budget(&team, window, cx);
+                    ws.ask_team_at_once(&team, cx);
                 }
             }
             // The arbiter's window, with a few things said so its timeline has rows.
@@ -587,6 +587,30 @@ fn act(
         }
         "fake" if value == "pulls" => fake_pulls(ws, cx),
         "fake" if value == "unread" => fake_unread(ws, cx),
+        // The shown chat works on a branch of its own in a worktree.
+        "fake" if value == "branch" => {
+            // A fake chat not in the list (`fake=pulls` shows one) becomes the first listed.
+            let listed = ws.threads.iter().any(|t| Some(&t.id) == ws.shown.as_ref());
+            if !listed && let Some(first) = ws.threads.first().map(|t| t.id.clone()) {
+                if let Some(chat) = ws.shown.take().and_then(|id| ws.chats.remove(&id)) {
+                    ws.chats.insert(first.clone(), chat);
+                }
+                ws.shown = Some(first);
+            }
+            let shown = ws.shown.clone();
+            if let Some(thread) = ws
+                .threads
+                .iter_mut()
+                .find(|t| Some(&t.id) == shown.as_ref())
+            {
+                thread.branch = Some(dusk_protocol::project::ThreadBranch {
+                    branch: "agent/fix-login".to_owned(),
+                    base: "main".to_owned(),
+                    dir: "/Users/you/code/app-worktrees/agent-fix-login".into(),
+                });
+            }
+            cx.notify();
+        }
         "fake" if value == "forge-signin" || value == "forge-unserved" => {
             fake_forge(ws, value == "forge-signin", cx)
         }
@@ -644,6 +668,7 @@ fn act(
             super::polish::state(ws, value, cx)
         }
         "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
+        "fake" if value.starts_with("goal-") => super::goal::fake(ws, value, cx),
         "fake" if value == "team" || value == "team-ended" => super::team::fake(ws, value, cx),
         "fake" if value == "subagents" || value == "subagents-ended" => {
             super::team::subagents(ws, value, cx)
@@ -673,6 +698,7 @@ fn act(
             match value {
                 "pins" => ws.pins.open = true,
                 "plan" => ws.dock.plan_open = true,
+                "goal" => ws.dock.goal_open = true,
                 "panel" => ws.toggle_panel(cx),
                 "done" => ws.todo_done_open = true,
                 other => eprintln!("no such fold: {other}"),
@@ -1216,6 +1242,7 @@ fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
                 owner: None,
                 unread,
                 pulls: Vec::new(),
+                branch: None,
             },
         );
     }
@@ -1415,6 +1442,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             owner: None,
             unread: false,
             pulls: chat_pulls,
+            branch: None,
         },
     );
     crate::pages::chat::pull_link::show(ws, cx);

@@ -5,8 +5,9 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::ThreadRunner;
-use crate::runtime::{ThreadEvent, agent::Admit};
+use crate::runtime::{ThreadEvent, agent::Admit, goal::command::GoalAction};
 use crate::{message::commands, state::PendingMessage};
+use dusk_protocol::client::Command;
 
 impl ThreadRunner {
     /// Takes in what clients sent, oldest first: messages join the thread, commands run.
@@ -28,15 +29,6 @@ impl ThreadRunner {
     }
 
     async fn take(&mut self, pending: PendingMessage) -> Result<()> {
-        // The user or another agent wrote with the goal's kickoff: the turn answers
-        // them, not the round. A finished job's report is part of the round's work.
-        if pending.from_job_id.is_none()
-            && self
-                .round_queued
-                .is_some_and(|kickoff| kickoff != pending.pending_id)
-        {
-            self.round_queued = None;
-        }
         let state = Arc::clone(&self.agent.state);
         // Another agent's message is never a command, whatever it starts with.
         let command = if pending.from_thread_id.is_some() || pending.from_job_id.is_some() {
@@ -51,7 +43,19 @@ impl ThreadRunner {
             Err(error) => self.agent.emit(ThreadEvent::Rejected {
                 reason: format!("{error:#}"),
             }),
-            Ok(command) => commands::run_in_thread(command, &self.agent, &mut self.inbox).await,
+            Ok(command) => {
+                if let Command::Goal { argument } = &command
+                    && GoalAction::from_command(argument.as_deref())
+                        .is_ok_and(|action| action != GoalAction::Show)
+                {
+                    // A goal set, replaced or cleared starts its counts again: turns of
+                    // a goal before it must not stall or use up the retries of this one.
+                    self.goal_quiet_turns = 0;
+                    self.goal_unjudged_turns = 0;
+                    self.goal_retries = 0;
+                }
+                commands::run_in_thread(command, &self.agent, &mut self.inbox).await
+            }
         }
         // Removed only once done: a command cut short by a crash runs again on restart.
         state.remove_pending(pending.pending_id).await

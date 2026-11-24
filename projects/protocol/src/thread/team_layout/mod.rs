@@ -16,7 +16,9 @@ mod select;
 
 pub use member::MemberState;
 pub use people::{FoldChip, MemberNode, People, people};
-pub use plan::{FOLD_PAST, Folded, Plan, TaskNode, WaveHead, plan, task_word, waves};
+pub use plan::{
+    FOLD_PAST, Folded, Plan, TaskNode, WaveHead, depths, depths_of, plan, task_word, waves,
+};
 pub use select::{Lit, Pick, Related};
 
 /// A point of a layer, in pixels from its top left corner.

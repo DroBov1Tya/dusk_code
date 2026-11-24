@@ -2,7 +2,7 @@
 //! chat leads a team of that many members, for the Team page at each size: two members
 //! on a plan of four, six on eight, and twenty-four on a plan of forty-four whose first
 //! waves are done (so the done members fold by role and the done waves fold); `-ended` is
-//! the large one after it ran out of steps, `team-empty` a TEAM chat with no plan yet.
+//! the large one after it ended as stalled, `team-empty` a TEAM chat with no plan yet.
 //! As the core tells it: `TaskChanged` for every task, `SubagentStarted` and the
 //! members' own events, then `Team`. Made-up data only.
 
@@ -10,8 +10,8 @@ use dusk_protocol::{
     model::{ModelEvent, ToolCall},
     system::now_ms,
     thread::{
-        Task, TaskStatus, Team, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed, ThreadEvent,
-        agent_name, team_call_id,
+        Task, TaskStatus, Team, TeamEnd, TeamMember, TeamStatus, TeamUsed, ThreadEvent, agent_name,
+        team_call_id,
     },
 };
 use gpui_kit::*;
@@ -318,6 +318,7 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
                 role: Some(made.role.into()),
                 model: Some("chatgpt/gpt-5.5".into()),
                 task_id: format!("t{number}"),
+                summary: String::new(),
                 // A member stopped by the end still says what its task was.
                 status: match stopped.contains(number) {
                     true => TaskStatus::Running,
@@ -331,11 +332,13 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         thread_id: lead.clone(),
         started_at: None,
         ended_at: None,
+        winding_since: None,
+        goal: String::new(),
         status: match ended {
-            true => TeamStatus::Ended(TeamEnd::Steps),
+            true => TeamStatus::Ended(TeamEnd::Stalled),
             false => TeamStatus::Running,
         },
-        budget: TeamBudget::new(8, 600, 8_000_000, 180).expect("a budget within the ceilings"),
+        at_once: 8,
         used: TeamUsed {
             at_once: if ended { 0 } else { at_work },
             steps: if ended {

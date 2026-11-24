@@ -558,7 +558,7 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
     Team {
         thread_id: "t".into(),
         status: crate::thread::TeamStatus::Running,
-        budget: crate::thread::TeamBudget::new(2, 100, 1_000_000, 60).unwrap(),
+        at_once: 2,
         used: crate::thread::TeamUsed::default(),
         members: members
             .iter()
@@ -568,11 +568,14 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
                 role: Some("backend-engineer".into()),
                 model: None,
                 task_id: (*task_id).into(),
+                summary: String::new(),
                 status: *status,
             })
             .collect(),
         started_at: None,
         ended_at: None,
+        winding_since: None,
+        goal: String::new(),
     }
 }
 
@@ -866,6 +869,16 @@ fn a_team_card_tells_the_run_it_stands_for() {
             plan_task("t1", TaskStatus::Done),
             plan_task("t2", TaskStatus::Running),
             plan_task("t3", TaskStatus::Open),
+            // The review of t1 and the critic are the core's checks, not squares.
+            Task {
+                duty: crate::thread::TaskDuty::Review,
+                review_of: Some("t1".into()),
+                ..plan_task("r1", TaskStatus::Done)
+            },
+            Task {
+                duty: crate::thread::TaskDuty::Critic,
+                ..plan_task("c", TaskStatus::Open)
+            },
         ]),
         1_000,
     );
@@ -929,4 +942,66 @@ fn a_subagent_keeps_the_model_and_effort_it_was_started_on() {
         agent.role_and_model(),
         "general \u{00B7} openrouter/haiku \u{00B7} low effort"
     );
+}
+
+/// A goal's verdicts are stored in the chat, so a reopened chat shows them where they
+/// came live, each standing alone between the turns.
+#[test]
+fn goal_verdicts_read_the_same_from_history_and_live() {
+    use crate::thread::{GoalEvaluation, GoalVerdict};
+    let verdict = |verdict, turn| GoalEvaluation {
+        verdict,
+        reason: format!("reason {turn}"),
+        turn,
+        tokens: 100,
+        elapsed_ms: 1_000,
+    };
+    let stored = |evaluation: &GoalEvaluation| {
+        message(
+            MessageRole::Goal,
+            &serde_json::to_string(evaluation).unwrap(),
+        )
+    };
+    let (first, last) = (
+        verdict(GoalVerdict::NotMet, 1),
+        verdict(GoalVerdict::Met, 2),
+    );
+    let history = [
+        message(MessageRole::User, "Goal: build it"),
+        message(MessageRole::Assistant, "planned"),
+        stored(&first),
+        message(MessageRole::User, "The goal is not met yet"),
+        message(MessageRole::Assistant, "built"),
+        stored(&last),
+        message(MessageRole::Goal, "not a verdict"),
+    ];
+    let reopened = Chat::from_history(&history);
+
+    let ended = || Turn {
+        status: TurnStatus::Completed,
+        ..turn()
+    };
+    let events = [
+        ThreadEvent::UserMessage(history[0].clone()),
+        ThreadEvent::TurnStarted(turn()),
+        text("planned"),
+        ThreadEvent::TurnFinished(ended()),
+        ThreadEvent::Idle,
+        ThreadEvent::GoalEvaluated(first.clone()),
+        ThreadEvent::UserMessage(history[3].clone()),
+        ThreadEvent::TurnStarted(turn()),
+        text("built"),
+        ThreadEvent::TurnFinished(ended()),
+        ThreadEvent::Idle,
+        ThreadEvent::GoalEvaluated(last.clone()),
+    ];
+    let mut live = Chat::default();
+    for (at, event) in events.into_iter().enumerate() {
+        live.apply(event, at as i64);
+    }
+
+    assert_eq!(live.items, reopened.items);
+    assert_eq!(live.activity_boundaries, reopened.activity_boundaries);
+    assert_eq!(reopened.items[2], Item::Goal(first));
+    assert_eq!(reopened.items.last(), Some(&Item::Goal(last)));
 }

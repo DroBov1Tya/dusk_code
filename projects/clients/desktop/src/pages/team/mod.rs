@@ -3,7 +3,7 @@
 //! whom; **Plan** is the tasks in waves by what they need. The layout is the protocol's
 //! (`team_layout`); this module only draws it, and the narrow module of the right column
 //! (`module`) shows the same team in rows.
-//! - `page`: the page, its header, budget and the layers;
+//! - `page`: the page, its header, what the team used and the layers;
 //! - `graph`: what both layers draw with: a box at its place, the edges, a member's mark;
 //! - `people`, `plan`: the two layers;
 //! - `module`: the right column's Team screen;

@@ -965,11 +965,7 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .ov-segs { display: flex; gap: 2px; margin: 12px 0 4px; }
 .ov-segs i { min-width: 3px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--fg) 14%, transparent); }
 .ov-segs i.done { background: var(--good); } .ov-segs i.run { background: var(--accent); } .ov-segs i.block { background: var(--warn); }
-.ov-budget { display: grid; grid-template-columns: 64px 1fr 96px; gap: 8px; align-items: center; height: 24px; font-size: 12.5px; color: var(--muted); }
-.ov-budget .num { text-align: right; }
-.ov-track { height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--fg) 14%, transparent); overflow: hidden; }
-.ov-track i { display: block; height: 100%; background: var(--fg2); border-radius: 2px; }
-.ov-track i.near { background: var(--warn); }
+.ov-used { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
 .ov-row { height: 32px; display: flex; align-items: center; gap: 8px; font-size: 13.75px; }
 .ov-row + .ov-row { border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
 .ov-row .name { font-weight: 500; }
@@ -980,8 +976,8 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .ov-member-text .name { font-weight: 500; }
 .ov-member-text .cut { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
-.ov-budget-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s2); }
-.ov-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.ov-at-once { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font-size: 12.5px; }
+.ov-at-once b { min-width: 24px; text-align: center; font-weight: 500; }
 .ov-row .live { color: var(--accent); } .ov-row .good { color: var(--good); } .ov-row .warn { color: var(--warn); } .ov-row .bad { color: var(--bad); }
 .ov-glyph { display: flex; } .ov-glyph .glyph { width: 14px; height: 14px; }
 .ov-glyph.muted { color: var(--muted); }
@@ -1056,6 +1052,22 @@ button.link.quiet:hover { color: var(--fg); }
 .plan-field { display: grid; grid-template-columns: 96px 1fr; gap: var(--s2); }
 .plan-field span:last-child { overflow-wrap: anywhere; }
 .plan-card-foot { display: flex; justify-content: flex-end; }
+.goal-strip { width: min(var(--chat-width), 100% - 2 * var(--chat-gutter, 16px)); margin: 0 auto var(--s2); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; flex: none; }
+.goal-head { display: flex; align-items: center; gap: var(--s1); padding-right: var(--s1); }
+.goal-line { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); height: var(--control); padding: 0 var(--s2); background: none; border: 0; text-align: left; font-size: 13px; }
+.goal-head:hover { background: var(--raised); }
+.goal-line .glyph { width: 14px; height: 14px; flex: none; color: var(--muted); transform: rotate(-90deg); transition: transform var(--t-fold) var(--ease); }
+.goal-line[aria-expanded="true"] .glyph { transform: none; }
+.goal-state { flex: none; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.goal-state.warn { display: inline; color: var(--warn); }
+.goal-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-clear { flex: none; height: 26px; font-size: 12px; }
+.goal-card { display: flex; flex-direction: column; gap: 6px; padding: var(--s2) var(--s3, 12px); border-top: 1px solid var(--line); font-size: 13px; max-height: 40vh; overflow: auto; }
+.goal-field { display: grid; grid-template-columns: 96px 1fr; gap: var(--s2); }
+.goal-field span:last-child { overflow-wrap: anywhere; white-space: pre-wrap; }
+.goal-verdict summary { cursor: pointer; }
+.goal-verdict.good summary { color: var(--good); } .goal-verdict.bad summary { color: var(--bad); }
+.goal-reason { margin: 4px 0 0 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .plan-word { width: 64px; text-align: right; font-size: 12px; flex: none; justify-content: flex-end; }
 @media (max-width: 640px) { .plan-bar { display: none; } }
 .done-fold { display: flex; align-items: center; gap: var(--s1); height: 24px; padding: 0 var(--s1); background: none; border: 0; border-radius: 6px; color: var(--muted); font-size: 12px; }

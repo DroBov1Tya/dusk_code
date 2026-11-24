@@ -89,6 +89,8 @@ impl Runtime {
         }
         let initialized = init::initialize(&paths)?;
         let state = Arc::new(State::open(&state_db).await?);
+        // A goal outlives the restart; its turns, time and spend count from now.
+        state.restore_goals().await?;
         let mailboxes = Arc::new(Mailboxes::default());
         let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes), &state_db).await?;
         let config = Arc::new(LiveConfig::load_with(

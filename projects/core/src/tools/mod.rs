@@ -1,8 +1,8 @@
 //! Tools the agent can call: one interface and one registry for every kind of tool.
 
 //!
-//! Each kind of tool has a folder: `files`, `console`, `agents` and `harness`, the tools
-//! about the thread itself. MCP tools come from servers; `mcp` wraps them.
+//! Each kind of tool has a folder: `files`, `console`, `git`, `agents` and `harness`, the
+//! tools about the thread itself. MCP tools come from servers; `mcp` wraps them.
 
 mod agents;
 mod approvals;
@@ -11,6 +11,7 @@ mod builtin;
 mod computer;
 pub mod console;
 mod files;
+mod git;
 mod harness;
 pub mod mcp;
 mod registry;
@@ -29,9 +30,11 @@ pub use computer::{
     Click, ComputerActions, PhysicalInput, PressKeys, Screen, Screenshot, TypeText,
 };
 pub use console::{Jobs, RunCommand, Shaped};
+pub use git::Branch;
+pub(crate) use git::{scope_for as worktree_scope, start as start_branch};
 pub use harness::{
-    AddWorkshopSource, AskUser, DisplayAudio, DisplayImage, DrawDiagram, GatesYes, GoalTool,
-    PlanEdit, Question, ReadHistory, Remember, SearchWorkshop, Show, Started, SuggestFromWorkshop,
+    AddWorkshopSource, AskUser, DisplayAudio, DisplayImage, DrawDiagram, GatesYes, PlanEdit,
+    Question, ReadHistory, Remember, SearchWorkshop, Show, Started, SuggestFromWorkshop,
     SuggestNext, Tasks, TeamRunner, is_sound, save_sound,
 };
 pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_plan};

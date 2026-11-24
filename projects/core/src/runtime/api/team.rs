@@ -4,12 +4,12 @@
 //! failure of the store itself is logged here and answered without its text.
 
 use anyhow::{Result, anyhow};
-use dusk_protocol::thread::{PlanPage, Task, Team, TeamBudget};
+use dusk_protocol::thread::{PlanPage, Task, Team};
 use tracing::warn;
 
 use crate::{
-    runtime::Runtime,
-    state::{BudgetBy, PassedBy, PlanError, TeamCeilings, TeamError, timestamp_ms},
+    runtime::{Runtime, team::at_once_setting},
+    state::{PassedBy, PlanError, TeamError, timestamp_ms},
 };
 
 impl Runtime {
@@ -51,10 +51,9 @@ impl Runtime {
         Ok((chat, task))
     }
 
-    /// Ends the running team as stopped and gives its tasks at work back to open. Answers
-    /// with the team and those tasks.
-    ///
-    /// The members at work are cancelled with it (`Launcher::team_stop`).
+    /// Stops the running team: it winds down while its members at work hand over, then
+    /// ends as stopped; stopped again meanwhile, it ends at once (`Launcher::team_stop`).
+    /// Answers with the team and the tasks that went back to open now.
     pub async fn stop_team(&self, thread_id: &str) -> Result<(Team, Vec<Task>)> {
         let state = self.state_of(thread_id).await;
         let now = timestamp_ms()?;
@@ -73,16 +72,15 @@ impl Runtime {
         Ok((team, tasks))
     }
 
-    /// Sets the running team's budget as the user, up to the ceilings of the settings.
-    pub async fn set_team_budget(&self, thread_id: &str, budget: TeamBudget) -> Result<Team> {
+    /// Sets how many members of the running team work at once, 1 to the setting's.
+    pub async fn set_team_at_once(&self, thread_id: &str, at_once: u32) -> Result<Team> {
         let state = self.state_of(thread_id).await;
-        let ceilings =
-            TeamCeilings::from_limits(&self.config().current().limits()).map_err(team_refusal)?;
+        let ceiling = at_once_setting(&self.config().current().limits());
         state
-            .set_team_budget(thread_id, BudgetBy::User, budget, ceilings)
+            .set_team_at_once(thread_id, at_once, ceiling)
             .await
             .map_err(team_refusal)?;
-        // More members at once, or a budget no longer spent, takes hold now.
+        // More members at once take hold now.
         let chat = state.root_thread(thread_id).await?;
         self.of(thread_id).await.team_changed(&chat).await;
         state

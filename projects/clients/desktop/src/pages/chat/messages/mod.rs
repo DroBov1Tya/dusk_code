@@ -14,6 +14,7 @@ mod command;
 mod cost;
 mod error_row;
 mod feedback;
+mod goal;
 mod picture;
 mod row;
 mod run_card;

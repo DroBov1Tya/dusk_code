@@ -21,6 +21,18 @@ impl Runtime {
         &self.launcher.state
     }
 
+    /// Brings the graph of the project in `dir` up to date in the background, after
+    /// something outside a turn changed its files: a git operation the core served.
+    pub fn refresh_graph(&self, dir: &Path) {
+        if self.launcher.config.current().limits().project_graph {
+            crate::project::graph::refresh_soon(
+                std::sync::Arc::clone(&self.launcher.state),
+                dir.to_owned(),
+                Vec::new(),
+            );
+        }
+    }
+
     /// The stored threads' database, then the one of this run's temporary chats.
     pub fn states(&self) -> [&State; 2] {
         [&self.launcher.state, &self.temporary.state]
@@ -96,6 +108,12 @@ impl Runtime {
     ) -> Result<Option<dusk_protocol::thread::TurnFailure>> {
         let launcher = self.of(thread_id).await;
         launcher.state.last_failure(thread_id).await
+    }
+
+    /// The chat's goal, for a client that joins it to show what the others show.
+    pub async fn goal(&self, thread_id: &str) -> Result<Option<dusk_protocol::thread::Goal>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.goal(thread_id).await
     }
 
     /// An agent below the chat works, so a client joining it shows it at work.

@@ -40,6 +40,7 @@ impl Asked {
                 Request::SystemPointer { .. } => "allow control of the system pointer".into(),
                 Request::Keyboard { .. } | Request::Settings { .. } => String::new(),
                 Request::Window { .. } => format!("allow {grant}"),
+                Request::Git { .. } => format!("allow {grant}"),
             };
             choices.push((Decision::Session, format!("{what} for this session")));
         }

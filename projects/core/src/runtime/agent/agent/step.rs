@@ -11,10 +11,10 @@ use crate::{
         ChatMessage, ChatRequest, ProviderErrorKind, ToolSpec, is_output_limit,
         is_unsupported_pictures, text_calls,
     },
-    runtime::goal::action as goal,
+    runtime::goal::command as goal,
     state::{
-        CallPurpose, GoalStatus, MessageRole, ModelCall, ProviderFailure, Turn, TurnAnswer,
-        TurnFailure, TurnOutcome, estimate_tokens,
+        CallPurpose, MessageRole, ModelCall, ProviderFailure, Turn, TurnAnswer, TurnFailure,
+        TurnOutcome, estimate_tokens,
     },
 };
 use anyhow::{Context, Result};
@@ -42,7 +42,7 @@ impl Agent {
     ) -> Result<StepEnd> {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config_now().await;
-        // A team's member steps only while it holds its task and the team has budget.
+        // A team's member steps only while it holds its task and the team runs.
         crate::runtime::team::may_step(&self.state, &config, &self.thread_id, self.depth).await?;
         let stub_results = config.limits().stub_results;
         let mut conversation = Loaded::take(loaded, self, stub_results).await?;
@@ -58,25 +58,17 @@ impl Agent {
         if newest_user > conversation.answered_through {
             self.state.extend_turn(&turn.turn_id, newest_user).await?;
         }
-        let mut tools = self.tools.specs(&self.scope, &config);
+        self.follow_worktree().await;
+        let scope = self.working_scope();
+        let mut tools = self.tools.specs(&scope, &config);
         let screen = |spec: &ToolSpec| {
             self.tools.kind_of(&spec.name) == Some(crate::tools::ToolKind::Computer)
         };
         if tools.iter().any(screen) && !self.sees_pictures().await {
             tools.retain(|spec| !screen(spec));
         }
-        let standing = if self.depth == 0 {
-            self.state.goal(&self.thread_id).await?
-        } else {
-            None
-        };
-        if standing
-            .as_ref()
-            .is_some_and(|g| !g.approved && g.status != GoalStatus::Done)
-        {
-            tools.retain(|tool| tool.name == "goal");
-        }
-        let workspace = self.scope.workspace();
+        let standing = self.active_goal().await?;
+        let workspace = scope.workspace();
         let with_pictures = self.takes_pictures();
         let sources = ThreadSources {
             state: &self.state,
@@ -106,11 +98,8 @@ impl Agent {
             block.first_time
         });
         // The goal is said last, so it stays in view however long the context grows.
-        if let Some(goal) = standing.filter(|g| {
-            g.status == GoalStatus::Active || (!g.approved && g.status != GoalStatus::Done)
-        }) {
-            let rounds = config.limits().max_goal_rounds;
-            messages.push(ChatMessage::System(goal::reminder(&goal, rounds)));
+        if let Some(goal) = standing {
+            messages.push(ChatMessage::System(goal::reminder(&goal)?));
         }
         if let Some(note) = missing_tools(&messages, &tools) {
             messages.push(ChatMessage::System(note));

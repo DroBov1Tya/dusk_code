@@ -1,43 +1,124 @@
-//! A thread's standing goal, its acceptance criteria and their evidence.
+//! A chat's standing goal: a condition the agent works toward turn after turn, and what
+//! the evaluator said of it after each turn. Also the check that ends a team's task.
 
 use anyhow::{Result, bail, ensure};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::{duration_words, plural, short_count};
+
+/// The longest condition `/goal` takes, in characters.
+pub const MAX_GOAL_CHARS: usize = 4000;
+
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GoalStatus {
+    /// Each turn that ends is judged, and the next one starts until the goal is met.
     Active,
+    /// Set but not going on by itself, after an error or a stop; the user's next message
+    /// makes it active again.
     Paused,
-    Done,
 }
 
+/// One goal per chat, until it is met, found impossible or cleared.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Goal {
     pub thread_id: String,
+    /// The condition, as the user wrote it.
     pub text: String,
     pub status: GoalStatus,
-    pub rounds: u32,
+    /// When it was set, or when the app started again with it: Unix ms.
+    pub started_at: i64,
+    /// Turns the evaluator judged since `started_at`.
+    pub turns: u32,
+    /// Tokens the chat and its agents spent since `started_at`.
+    pub tokens: u64,
+    /// The evaluator's newest reason.
+    pub reason: Option<String>,
+    /// Why it is paused.
     pub note: Option<String>,
-    pub revision: String,
-    pub criteria: Vec<GoalCriterion>,
-    pub approved: bool,
-    pub verification: String,
-    pub verification_note: Option<String>,
-    pub evidence: Vec<GoalEvidence>,
 }
 
-/// All criteria are mandatory. A command proves exactly the approved check's exit;
-/// a semantic claim always needs a human's review of the saved result.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GoalCriterion {
-    pub id: String,
-    pub description: String,
-    pub check: GoalCheck,
+/// What the evaluator said of the goal after a turn.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GoalVerdict {
+    /// Another turn starts, with the reason as guidance.
+    NotMet,
+    /// The goal is cleared as achieved.
+    Met,
+    /// The goal is cleared as failed.
+    Impossible,
 }
 
+/// One verdict as the chat shows it, with what the goal had cost when it was given.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalEvaluation {
+    pub verdict: GoalVerdict,
+    pub reason: String,
+    /// The turn judged, from 1 since the goal started.
+    pub turn: u32,
+    pub tokens: u64,
+    pub elapsed_ms: i64,
+}
+
+impl GoalEvaluation {
+    /// The line every client shows; the reason goes under it.
+    pub fn title(&self) -> String {
+        let cost = format!(
+            "{} \u{00B7} {} \u{00B7} {} tokens",
+            duration_words(self.elapsed_ms),
+            plural(u64::from(self.turn), "turn"),
+            short_count(self.tokens)
+        );
+        match self.verdict {
+            GoalVerdict::NotMet => format!("Goal not met yet (turn {})", self.turn),
+            GoalVerdict::Met => format!("Goal achieved \u{00B7} {cost}"),
+            GoalVerdict::Impossible => format!("Goal failed \u{00B7} {cost}"),
+        }
+    }
+}
+
+impl Goal {
+    /// The indicator: "◎ goal active · 4m 2s", from `now` in Unix ms.
+    pub fn indicator(&self, now: i64) -> String {
+        let state = match self.status {
+            GoalStatus::Active => "active",
+            GoalStatus::Paused => "paused",
+        };
+        format!(
+            "\u{25CE} goal {state} \u{00B7} {}",
+            duration_words(now - self.started_at)
+        )
+    }
+
+    /// What `/goal` shows: the condition, how long and how much it took so far, and the
+    /// evaluator's newest reason.
+    pub fn status_text(&self, now: i64) -> String {
+        let mut text = format!(
+            "Goal ({}): {}\nElapsed {} \u{00B7} {} evaluated \u{00B7} {} tokens",
+            match self.status {
+                GoalStatus::Active => "active",
+                GoalStatus::Paused => "paused",
+            },
+            self.text,
+            duration_words(now - self.started_at),
+            plural(u64::from(self.turns), "turn"),
+            short_count(self.tokens)
+        );
+        if let Some(note) = &self.note {
+            text.push_str(&format!("\nPaused: {note}"));
+        }
+        if let Some(reason) = &self.reason {
+            text.push_str(&format!("\nLatest: {reason}"));
+        }
+        text
+    }
+}
+
+/// What ends a team's task: a command that must exit 0, or the user's confirmation.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum GoalCheck {
@@ -45,44 +126,13 @@ pub enum GoalCheck {
     UserConfirmation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GoalEvidence {
-    pub criterion_id: String,
-    /// tool:<saved result message ID> or job:<saved job ID>.
-    pub result_id: String,
-}
-
-impl GoalCriterion {
-    pub fn validate(criteria: &[Self]) -> Result<()> {
-        ensure!(
-            (1..=20).contains(&criteria.len()),
-            "provide 1 to 20 mandatory criteria"
-        );
-        for (index, criterion) in criteria.iter().enumerate() {
+impl GoalCheck {
+    pub fn validate(&self) -> Result<()> {
+        if let Self::Command { command } = self {
             ensure!(
-                !criterion.id.is_empty()
-                    && criterion.id.len() <= 32
-                    && criterion
-                        .id
-                        .bytes()
-                        .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-'),
-                "criterion IDs need 1 to 32 ASCII letters, digits, underscores or hyphens"
+                !command.trim().is_empty() && command.len() <= 16 * 1024,
+                "the command needs 1 to 16384 bytes"
             );
-            ensure!(
-                !criteria[..index].iter().any(|c| c.id == criterion.id),
-                "duplicate criterion ID"
-            );
-            ensure!(
-                !criterion.description.trim().is_empty() && criterion.description.len() <= 2000,
-                "criterion description needs 1 to 2000 bytes"
-            );
-            if let GoalCheck::Command { command } = &criterion.check {
-                ensure!(
-                    !command.trim().is_empty() && command.len() <= 16 * 1024,
-                    "approved command needs 1 to 16384 bytes"
-                );
-            }
         }
         Ok(())
     }
@@ -93,7 +143,6 @@ impl GoalStatus {
         match self {
             Self::Active => "active",
             Self::Paused => "paused",
-            Self::Done => "done",
         }
     }
 
@@ -101,8 +150,27 @@ impl GoalStatus {
         Ok(match text {
             "active" => Self::Active,
             "paused" => Self::Paused,
-            "done" => Self::Done,
             other => bail!("unknown goal status {other}"),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_verdict_reads_as_one_line() {
+        let evaluation = GoalEvaluation {
+            verdict: GoalVerdict::Met,
+            reason: "tests pass".into(),
+            turn: 3,
+            tokens: 12_400,
+            elapsed_ms: 242_000,
+        };
+        assert_eq!(
+            evaluation.title(),
+            "Goal achieved \u{00B7} 4m 2s \u{00B7} 3 turns \u{00B7} 12.4k tokens"
+        );
     }
 }

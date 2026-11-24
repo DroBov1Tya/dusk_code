@@ -5,7 +5,7 @@
 
 use dusk_protocol::{
     config::ApprovalPolicy,
-    thread::{Applied, ChatLog, Message, Suggestion, ThreadEvent},
+    thread::{Applied, ChatLog, Goal, Message, Suggestion, ThreadEvent},
     tools::QuestionQueue,
 };
 use leptos::prelude::{ArcTrigger, Notify, Track};
@@ -32,6 +32,8 @@ pub struct ChatData {
     pub streamed: ArcTrigger,
     /// Fires when only a subagent's chat changed.
     pub subagents: ArcTrigger,
+    /// The chat's standing goal, as the core last told it.
+    pub goal: Option<Goal>,
 }
 
 impl Default for ChatData {
@@ -46,6 +48,7 @@ impl Default for ChatData {
             suggestion: Suggestion::default(),
             streamed: ArcTrigger::new(),
             subagents: ArcTrigger::new(),
+            goal: None,
         }
     }
 }
@@ -85,6 +88,21 @@ impl ChatData {
         }
     }
 
+    /// The chat is about to be opened again after the stream broke. The goal may have
+    /// ended meanwhile, and the core tells it on opening only when there is one, so the
+    /// old one goes until the opening tells it again.
+    pub fn reopening(&mut self) {
+        self.goal = None;
+    }
+
+    /// The history read again after reopening; the tasks, the access and the goal the
+    /// opening told, which the history does not hold, stay.
+    pub fn reloaded(&mut self, history: &[Message]) {
+        let (tasks, access, goal) = (self.tasks.clone(), self.access, self.goal.take());
+        *self = Self::from_history(history);
+        (self.tasks, self.access, self.goal) = (tasks, access, goal);
+    }
+
     /// The page just sent `text`; it shows as queued until the core takes it in.
     pub fn sent(&mut self, text: String) {
         self.pending.push(text);
@@ -104,6 +122,20 @@ impl ChatData {
                     self.pending.remove(at);
                 }
             }
+            // The core answers a `/goal` with the goal or a rejection, never as a message.
+            ThreadEvent::Goal { ref goal, .. } => {
+                self.goal = goal.clone();
+                self.answered_goal_command();
+            }
+            ThreadEvent::Rejected { .. } => self.answered_goal_command(),
+            // The verdict carries what the goal has cost so far and the newest reason.
+            ThreadEvent::GoalEvaluated(ref evaluation) => {
+                if let Some(goal) = &mut self.goal {
+                    goal.turns = evaluation.turn;
+                    goal.tokens = evaluation.tokens;
+                    goal.reason = Some(evaluation.reason.clone());
+                }
+            }
             // A second question waits behind the one on the page.
             ThreadEvent::Question(question) => {
                 self.questions.ask(question);
@@ -112,6 +144,14 @@ impl ChatData {
             _ => {}
         }
         self.log.apply(event, now_ms())
+    }
+
+    /// The oldest `/goal` this page sent is answered: it no longer waits as queued.
+    fn answered_goal_command(&mut self) {
+        let command = |text: &String| text == "/goal" || text.starts_with("/goal ");
+        if let Some(at) = self.pending.iter().position(command) {
+            self.pending.remove(at);
+        }
     }
 
     /// Tells what `applied` changed to the views that read it: only the item, only the

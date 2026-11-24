@@ -1,25 +1,65 @@
 //! One pass of the dispatcher over a chat's team: everything the core does by itself for
 //! a plan, read from the tables each time, so a pass after a restart goes on where the
-//! last one stopped. In order: the lead that went quiet ends the team; leases past their
+//! last one stopped. A team that winds down only waits for its members' hand-overs and
+//! ends (`end::wound`). Otherwise, in order: the lead that went quiet winds the team
+//! down; leases past their
 //! time are released; members whose card or rework note did not arrive get it; a gate
-//! that a stop cut off runs again; the
-//! budget is checked and ready tasks are given out, lowest phase label first and oldest
-//! first within it; then the end and the stall rule.
+//! that a stop cut off runs again, and a task whose review row is lost waits for the
+//! lead; the critic is added once every other task is finished; ready tasks of the
+//! current wave are given out while members at once allow, lowest phase label first and
+//! oldest first within it; then the end and the stall rule.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use dusk_protocol::thread::{TaskStatus, TeamEnd, TeamStatus};
-use tracing::warn;
+use dusk_protocol::{
+    model::ProviderErrorKind,
+    thread::{TaskDuty, TaskStatus, TeamStatus},
+};
+use tracing::{info, warn};
 
 use super::{
-    clean, end, events, gate, lead_lines, lease,
+    clean, critic, end, events, gate, lead_lines, lease,
     member::{self, Given},
+    review,
 };
 use crate::{
     runtime::{Launcher, agent::MAX_AGENT_MESSAGES},
-    state::{PlanStatus, PlanTask, TeamAsk, TeamCheck, TeamRun, WaitsOn},
+    state::{PlanStatus, PlanTask, TeamAsk, TeamCheck, TeamRun, WaitsOn, WindWhy},
 };
+
+/// Provider failures in a row, across the team's members, that wind it down.
+const MAX_INFRA_LOSSES: u32 = 3;
+
+/// Losses of one task to the provider or the runner that go uncounted. Past them each
+/// counts as the member's: other members' hand-ins keep the team's row short, and a
+/// task the provider fails every time would be given to new members without end.
+const MAX_UNCOUNTED_PER_TASK: u32 = 3;
+
+/// Why a member's turn was lost, which decides whether the loss counts against its
+/// task's attempts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Loss {
+    /// The member's own: its turn failed on what it did, or on a request the provider
+    /// refused. Counted; the third fails the task.
+    Member,
+    /// Cut off from outside: a restart, or a team that winds down. Not counted.
+    Cut,
+    /// The provider or the runner failed under it, with the provider's reason when it
+    /// gave one. Not counted; `MAX_INFRA_LOSSES` in a row, or a key or quota the
+    /// provider refuses, wind the team down.
+    Infra(Option<ProviderErrorKind>),
+}
+
+impl Loss {
+    /// A turn that failed: the provider's fault, or the member's.
+    pub fn of_failure(kind: Option<ProviderErrorKind>) -> Self {
+        match kind {
+            Some(kind) if kind.is_providers_fault() => Self::Infra(Some(kind)),
+            _ => Self::Member,
+        }
+    }
+}
 
 /// Runs one pass at `now`; answers how many tasks it gave out. Nothing happens for a
 /// chat without a running team, or with the switch off.
@@ -35,22 +75,31 @@ pub(super) async fn pass(launcher: &Launcher, lead: &str, now: i64) -> Result<us
     if run.status != TeamStatus::Running {
         return Ok(0);
     }
+    let folder = folder(launcher, lead).await?;
+    if let Some(winding) = run.winding {
+        // The core told the members to stop: a lease that ran out is not counted.
+        expire(launcher, lead, now, false).await?;
+        wake_members(launcher, lead, &folder).await?;
+        end::wound(launcher, &run, winding, &folder, now).await?;
+        return Ok(0);
+    }
     // Past the cap the lead is not woken by a line any more: it could not review, and
     // members would work on with nobody reading.
     if state.agent_messages_since_client(lead).await? >= MAX_AGENT_MESSAGES {
-        end::end(launcher, lead, TeamEnd::Quiet, now).await?;
+        end::wind(launcher, lead, WindWhy::Quiet, now).await?;
         return Ok(0);
     }
-    let folder = folder(launcher, lead).await?;
-    expire(launcher, lead, now).await?;
+    expire(launcher, lead, now, true).await?;
     wake_members(launcher, lead, &folder).await?;
     gate::resume(launcher, lead).await?;
+    review::resume(launcher, lead).await?;
     // A team is led only while its chat is in TEAM mode. In another mode the lead has
     // no plan tool to answer with, so nothing new is given out and the stall rule does
     // not wake it; what is at work finishes, and the team goes on when the mode is back.
     if !super::in_team_mode(launcher, lead).await? {
         return Ok(0);
     }
+    critic::add_if_due(launcher, &run).await?;
     let Some(given) = give_out(launcher, &run, &folder, now).await? else {
         return Ok(0);
     };
@@ -67,11 +116,18 @@ pub(super) async fn folder(launcher: &Launcher, lead: &str) -> Result<PathBuf> {
 }
 
 /// Releases the tasks whose lease ran out before `now`, and stops what is left of their
-/// members: a runner that lives without its heartbeat, a card nobody read.
-async fn expire(launcher: &Launcher, lead: &str, now: i64) -> Result<()> {
+/// members: a runner that lives without its heartbeat, a card nobody read. Such a loss
+/// is `counted` while the team runs: nothing tells a member that hangs from a provider
+/// that does, and uncounted it would be given to new members without end. While the
+/// team winds down it is not: the core told the member to stop.
+async fn expire(launcher: &Launcher, lead: &str, now: i64, counted: bool) -> Result<()> {
     let state = &launcher.state;
     let members = state.team_members(lead).await?;
-    for task in state.release_expired(lead, now).await? {
+    let expired = match counted {
+        true => state.release_expired(lead, now).await?,
+        false => state.return_expired(lead, now).await?,
+    };
+    for task in expired {
         if let Some(member) = members.iter().find(|held| held.task_id == task.task_id) {
             end::cancel_member(launcher, &member.thread_id).await;
         }
@@ -80,14 +136,17 @@ async fn expire(launcher: &Launcher, lead: &str, now: i64) -> Result<()> {
     Ok(())
 }
 
-/// A member's turn was lost: its task goes back to open, or fails at the third time.
-/// Only a task the member holds at work is released; the pass lock keeps a claim from
-/// coming between the look and the release. Answers whether a task moved.
+/// A member's turn was lost: its task goes back to open, or, for a loss of the member's
+/// own, fails at the third time. A loss while the team winds down is never counted: the
+/// core told the member to stop. Only a task the member holds at work is released; the
+/// pass lock keeps a claim from coming between the look and the release. Answers
+/// whether a task moved.
 pub(super) async fn lost(
     launcher: &Launcher,
     lead: &str,
     member: &str,
     note: &str,
+    loss: Loss,
 ) -> Result<bool> {
     let state = &launcher.state;
     let task = {
@@ -95,20 +154,109 @@ pub(super) async fn lost(
         let Some(held) = lease::at_work(state, lead, member).await? else {
             return Ok(false);
         };
+        let winding = state
+            .team_run(lead)
+            .await?
+            .is_some_and(|run| run.winding.is_some());
+        let loss = if winding { Loss::Cut } else { loss };
         let note = clean::note(launcher, lead, note).await;
-        state.release_task(lead, &held.task_id, &note).await?
+        let task = match loss {
+            Loss::Infra(_) if !uncounted(launcher, &held.task_id) => {
+                state.release_task(lead, &held.task_id, &note).await?
+            }
+            Loss::Member => state.release_task(lead, &held.task_id, &note).await?,
+            Loss::Cut | Loss::Infra(_) => state.return_task(member, &held.task_id, &note).await?,
+        };
+        if let Loss::Infra(kind) = loss {
+            provider_failed(launcher, lead, kind).await;
+        }
+        task
     };
     released(launcher, lead, &task).await;
     Ok(true)
 }
 
+/// Counts one more loss of `task` to the provider or the runner; false once it had
+/// `MAX_UNCOUNTED_PER_TASK`, and this one counts.
+fn uncounted(launcher: &Launcher, task: &str) -> bool {
+    let mut losses = launcher.team.task_infra_losses.lock();
+    let count = losses.entry(task.to_owned()).or_default();
+    *count += 1;
+    *count <= MAX_UNCOUNTED_PER_TASK
+}
+
+/// Counts a loss the provider or the runner caused. A key or a quota the provider
+/// refuses winds the team down at once, as do `MAX_INFRA_LOSSES` in a row: every
+/// member would fail the same way, and none of it would count. A hand-in ends the row
+/// (`infra_passed`). The caller holds the pass lock.
+async fn provider_failed(launcher: &Launcher, lead: &str, kind: Option<ProviderErrorKind>) {
+    let in_row = {
+        let mut losses = launcher.team.infra_losses.lock();
+        let count = losses.entry(lead.to_owned()).or_default();
+        *count += 1;
+        *count
+    };
+    let refused = matches!(
+        kind,
+        Some(ProviderErrorKind::Auth | ProviderErrorKind::Quota)
+    );
+    if !refused && in_row < MAX_INFRA_LOSSES {
+        return;
+    }
+    info!("team of thread {lead}: the provider keeps failing ({kind:?}); it winds down");
+    launcher.team.infra_losses.lock().remove(lead);
+    let wound = match crate::state::timestamp_ms() {
+        Ok(now) => end::wind_for(launcher, lead, WindWhy::Provider, kind, now)
+            .await
+            .map(drop)
+            .map_err(anyhow::Error::from),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = wound {
+        warn!("team of thread {lead}: cannot wind it down: {error:#}");
+    }
+}
+
+/// A member handed in `task`: the provider answered, and losses in a row start again.
+pub(super) fn infra_passed(launcher: &Launcher, lead: &str, task: &str) {
+    launcher.team.infra_losses.lock().remove(lead);
+    launcher.team.task_infra_losses.lock().remove(task);
+}
+
 /// After a release: clients hear of the task, and when it failed, of the tasks the
-/// store blocked behind it, and the lead gets its one line.
+/// store blocked behind it, and the lead gets its one line. A review or the critic that
+/// failed is given up instead: it never fails the work it checks.
 pub(super) async fn released(launcher: &Launcher, lead: &str, task: &PlanTask) {
     events::task(launcher, lead, task).await;
     if task.status != PlanStatus::Failed {
         return;
     }
+    let given_up = match task.duty {
+        TaskDuty::Work => return failed(launcher, lead, task).await,
+        TaskDuty::Review => review::failed(launcher, lead, task).await,
+        TaskDuty::Critic => skip(launcher, lead, task).await,
+    };
+    if let Err(error) = given_up {
+        warn!(
+            "team of thread {lead}: cannot give up task {}: {error:#}",
+            task.task_id
+        );
+    }
+}
+
+async fn skip(launcher: &Launcher, lead: &str, task: &PlanTask) -> Result<()> {
+    for skipped in launcher
+        .state
+        .skip_task(lead, &task.task_id, &task.note)
+        .await?
+    {
+        events::task(launcher, lead, &skipped).await;
+    }
+    Ok(())
+}
+
+/// A task of the lead's plan failed: its line, and the tasks blocked behind it.
+async fn failed(launcher: &Launcher, lead: &str, task: &PlanTask) {
     lead_lines::failed(launcher, lead, task).await;
     let behind = WaitsOn::Task(task.task_id.clone());
     match launcher.state.plan(lead).await {
@@ -124,7 +272,7 @@ pub(super) async fn released(launcher: &Launcher, lead: &str, task: &PlanTask) {
 }
 
 /// Members at work get what they were to be woken with, if a stop came between: the card
-/// of a claimed task, the note of a task the lead sent back. Both are stored once under
+/// or the resume note of a claimed task, the note of a task the lead sent back. Both are stored once under
 /// their uid, so this costs a look when nothing is missing.
 async fn wake_members(launcher: &Launcher, lead: &str, folder: &Path) -> Result<()> {
     let state = &launcher.state;
@@ -133,7 +281,7 @@ async fn wake_members(launcher: &Launcher, lead: &str, folder: &Path) -> Result<
         match held.status {
             TaskStatus::Claimed => {
                 let task = state.plan_task(lead, &held.task_id).await?;
-                member::deliver_card(launcher, lead, member, &task, folder).await?;
+                member::deliver_start(launcher, lead, member, &task, folder).await?;
             }
             TaskStatus::Running => {
                 let task = state.plan_task(lead, &held.task_id).await?;
@@ -147,7 +295,7 @@ async fn wake_members(launcher: &Launcher, lead: &str, folder: &Path) -> Result<
     Ok(())
 }
 
-/// Gives out ready tasks while the budget and the members at once allow. `None` when
+/// Gives out ready tasks while the members at once allow. `None` when
 /// the team ended instead.
 async fn give_out(
     launcher: &Launcher,
@@ -161,13 +309,9 @@ async fn give_out(
     // Tasks this pass could not give out; the next pass tries them again.
     let mut passed_over: Vec<String> = Vec::new();
     loop {
-        match state.team_check(lead, TeamAsk::Claim, now).await? {
+        match state.team_check(lead, TeamAsk::Claim).await? {
             TeamCheck::Go => {}
-            TeamCheck::Full => break,
-            TeamCheck::Spent(spent) => {
-                end::end(launcher, lead, spent.end(), now).await?;
-                return Ok(None);
-            }
+            TeamCheck::Full | TeamCheck::Winding(_) => break,
             TeamCheck::Ended(_) => return Ok(None),
         }
         // The store orders them by phase label, then age.

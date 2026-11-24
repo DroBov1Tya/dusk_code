@@ -294,7 +294,7 @@ impl SettingsWindow<'_> {
         rows
     }
 
-    /// How many agents work at once and how far a goal goes by itself.
+    /// How many agents work at once and how long a model call may take.
     pub(super) fn limit_rows(&self, width: usize) -> Vec<Row> {
         let row = |name: &str, value: String, about: &str| {
             let line = right(
@@ -314,11 +314,6 @@ impl SettingsWindow<'_> {
                 "concurrent agents",
                 self.view.max_agents_at_work.to_string(),
                 "    subagents at work across all threads",
-            ),
-            row(
-                "goal rounds",
-                self.view.max_goal_rounds.to_string(),
-                "    turns a goal starts by itself before it pauses",
             ),
             row(
                 "model timeout, s",
@@ -347,18 +342,6 @@ impl SettingsWindow<'_> {
             switch: None,
             lead: 0,
         }];
-        rows.push(Row {
-            lines: vec![right(
-                vec![Span::raw("  goal rounds before a pause")],
-                Span::styled(
-                    format!("\u{2212} {} +  ", self.view.max_goal_rounds),
-                    fg(TEXT),
-                ),
-                width,
-            )],
-            switch: None,
-            lead: 0,
-        });
         rows.extend(self.view.agents.iter().map(|agent| agent_row(agent, width)));
         for problem in &self.view.problems {
             rows.push(Row {

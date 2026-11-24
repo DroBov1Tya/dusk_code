@@ -122,16 +122,10 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   lists, headings, quotes and rules are not read, and each such line forgets what came
   before it. After two cuts in a turn the next step streams whole, so the rule never
   ends a turn or loses its calls.
-- **Goal monologues.** `limits.monologue` (on): goal rounds in a row that called no
-  tool, with no message from the user or another agent between (one that comes with
-  a round's start makes that turn a reply, not a round), get a note in the next round's start at
-  `limits.monologue_note_at` (3), a request for a different plan at
-  `monologue_replan_at` (5), and again every `monologue_note_at` rounds after, as
-  `NoProgress` and `NoProgressReplan` notices; within a turn an answer without a tool
-  call ends it, so only rounds can talk on. With `limits.goal_stall` on, a round that
-  still only talks after the request for a different plan pauses the goal, saying the
-  rounds only wrote text.
-- **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
+- **Goal stalls.** Two rules, one per cause. Turns of a goal that call no tool are the
+  evaluator's: after three in a row no turn is started, and the goal goes on after the
+  user's next message. Turns that do act but change nothing are measured here:
+  `limits.goal_stall` (on, needs `record_changes`): after each round of
   a goal, the state of the files its chat and agents changed and the test results of
   the round (error lines included, so a build failing with fewer errors is another
   result) are stored with it; once `limits.goal_stall_rounds` (3) measured rounds in a row
@@ -143,14 +137,23 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 
 ## Project knowledge
 
-- **File map.** `limits.project_graph` (on): the `project_graph` tool (`tools: { project_graph: false }`
-  hides it) maps the working folder by file and folder names, never their content: an
-  indented tree that folds deeper folders to `name/ (N files)` to stay under 300 lines and
-  12 KiB, one folder of it on `path`, or the paths matching `find` (a part of a path or a
-  glob). It walks as the change ledger does (ignore rules, no `.git`, no links followed) on
-  every call; nothing is indexed or stored. The name is kept from the code graph it replaced.
+- **Project graph.** `limits.project_graph` (on): the `project_graph` tool (`tools: {
+  project_graph: false }` hides it). For a saved project the core keeps every file with its
+  line count (`\n` bytes), size and SHA-256, listed by `git ls-files` in a repository and
+  by the change ledger's walk elsewhere, and refreshed in the background when a thread
+  starts, after each turn and after a git operation the core serves; only files whose size
+  or change time moved are read again, within a time budget. It never reads a language:
+  what files are for is written by agents. Actions: `map` (default; a tree with lines per
+  file and folder and one-line summaries, folded under 300 lines and 12 KiB; by names alone
+  outside a saved project), `about` a file or node (summary, nodes, edges out and in),
+  `find` (names, kinds, paths, summaries), `impact` (files within two edges of a set),
+  `record` (a file's summary, nodes and edges, tied to the file's current hash) and `fix`
+  (the user's correction of one entry, marked as theirs). A fact whose file changed is
+  marked stale and kept; a file that is gone takes its facts along. Records are checked:
+  inside the project, no secret files, closed kinds, size and count caps, texts cleared of
+  secrets, and a team member writes only about its task's files.
 - **Episodes and `recall`.** `limits.episodes` (on): for a saved project, what ended a
-  repeated failure, or a goal's verification that passed, is stored as an episode (at most
+  repeated failure, or a goal the evaluator found met, is stored as an episode (at most
   500 a project). `limits.episode_lesson` (on) adds a one-line lesson from the model. The
   `recall` tool (`tools: { recall: false }` hides it) returns up to three notes.
 
@@ -167,6 +170,11 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   `Working · 2m 14s · 18.4k tokens · step 7`, counted by the core; no switch.
 
 ## Teams (TEAM mode)
+
+In TEAM mode the user is not the team lead. The agent leads the project like a product
+owner or team lead: it plans the work and runs a team of agents, each with its own role
+and task, and owns the delivery; the user is its client, who sets the goal and answers
+its questions.
 
 A team runs only in the chat's TEAM mode; every other mode keeps the board and the agents
 `ask_agent` starts. A chat's mode is the one the user last wrote to it in: a turn the core
@@ -210,13 +218,37 @@ board too and no team runs.
 - **What is forwarded.** A line to the lead (400 bytes at most), a task's note, a gate's
   output and a card are made plain and cleared of the project's variables and of what is
   shaped like a key before they are stored or sent.
-- **Budgets and ends.** `limits.team_max_steps`, `team_max_tokens`, `team_max_minutes`
-  and `team_at_once` are the ceilings; a member takes no step once one is spent. The team
-  ends when all is done, a budget is spent, it is stopped, or nothing can start and the
-  lead changed nothing.
+- **No budget; ends.** A team has no step, token or time budget: what it used is shown,
+  never a limit. `limits.team_at_once` is the most members at work at once; the user may
+  change it while the team runs, from 1 up to that setting. The team ends when all is done, it is stopped, the lead
+  went quiet at the cap of agent messages, its provider keeps failing, or nothing can
+  start and the lead changed nothing. Older configs' `team_max_steps`, `team_max_tokens` and `team_max_minutes` are
+  read and dropped.
+- **Wind-down.** The lead's `stop`, the Team page's Stop, the quiet cap and a provider
+  that keeps failing (a key or quota it refuses, or three member turns in a row lost to
+  it) do not cut members off: the team gives out nothing new, and the core (not the lead)
+  asks each member at work to stop and answer with its footer. A task it finished hands
+  in as usual (its gate runs with the next run); one it did not goes back to open with
+  the footer kept, and the next member's card starts with that hand-over. The team ends
+  once nobody is at work or `limits.team_wrap_seconds` (180) ran out; clients say
+  "wrapping up" meanwhile, and a second stop ends it at once. A stop of the chat or of a
+  member by the user still ends the team at once. A loss that is not the member's (a
+  restart, a provider failure, a turn cut off while winding down or by the team's end)
+  is not counted against the task's three attempts, up to three such losses of one task;
+  a lease that runs out while the team runs still counts. A provider's end reads
+  "stopped" with the provider's reason in the lead's line.
+- **Resume.** A task its member lost goes back to that member: the same thread, with
+  its transcript, gets a short note ("Your last turn on #id stopped: … Continue from where
+  you are") instead of a new card. A turn that failed on a context too long or a request
+  the provider refused, a member that lost the task twice, a turn still being cut off (a
+  lease that ran out), a review, the critic, and a task the lead edited or reopened go
+  to a fresh member instead, whose card says how the last attempt ended. Each member
+  carries a one-line summary of what it does (`TeamMember.summary`), and the lead's lines
+  name the member, its role and its task.
 - **Recovery.** When the chat is opened after a restart, an ended team's work goes back
   to open, a turn still running gets its lease again, a turn that completed is handed in,
-  a lost one is released, and a gate that was cut off runs again.
+  a lost one goes back to open without counting the attempt, and a gate that was cut off
+  runs again.
 
 Not built: a worktree per member, messages between members, procedures (their switches
 `limits.member_worktrees`, `peer_messages`, `procedures` do nothing yet; `task_packets`

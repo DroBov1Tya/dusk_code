@@ -9,13 +9,18 @@
 
 use std::path::Path;
 
+use dusk_protocol::thread::{TaskDuty, TeamStatus};
 use tracing::warn;
 
 use super::clean;
 use crate::{
+    catalog::agents::GENERAL_AGENT,
     message::plain::plain,
     runtime::Launcher,
-    state::{PlanStatus, PlanTask, State, TeamCounts, Thread, short_task_id, timestamp_ms},
+    state::{
+        PlanStatus, PlanTask, State, TeamCounts, Thread, member_summary as summary, short_task_id,
+        timestamp_ms,
+    },
 };
 
 /// The most bytes of one line.
@@ -59,48 +64,96 @@ fn cut(text: &str) -> &str {
     &text[..text.floor_char_boundary(MAX_LINE)]
 }
 
-pub(super) fn review_line(folded: &str, task: &PlanTask, result: &str, why: &str) -> String {
+/// `#77aa01bc`, or with who works on it: `#77aa01bc (Ember-0c, code-writer: add the
+/// login form)`. `who` is `who` of the task, or empty.
+fn named(task: &PlanTask, who: &str) -> String {
+    let id = short_task_id(&task.task_id);
+    match who.is_empty() {
+        true => format!("#{id}"),
+        false => format!("#{id} ({who})"),
+    }
+}
+
+/// Who works on `task`, as a line names it: the member's name when one holds it, its
+/// role and what it does (`Ember-0c, code-writer: add the login form`). Made plain.
+pub(super) fn who(name: Option<&str>, task: &PlanTask) -> String {
+    let role = quoted(task.role.as_deref().unwrap_or(GENERAL_AGENT), 32);
+    let what = summary(task.duty, task.review_of.as_deref(), &task.description);
+    match name {
+        Some(name) => format!("{}, {role}: {what}", quoted(name, 32)),
+        None => format!("{role}: {what}"),
+    }
+}
+
+/// `who` of `task` with the name of its member thread, read from the store.
+async fn who_of(launcher: &Launcher, member: Option<&str>, task: &PlanTask) -> String {
+    let name = match member {
+        Some(member) => match launcher.state.load_thread(member).await {
+            Ok(thread) => thread.and_then(|thread| thread.name),
+            Err(error) => {
+                warn!("cannot read member {member}: {error:#}");
+                None
+            }
+        },
+        None => None,
+    };
+    who(name.as_deref(), task)
+}
+
+pub(super) fn review_line(
+    folded: &str,
+    task: &PlanTask,
+    who: &str,
+    result: &str,
+    why: &str,
+) -> String {
     let head = format!(
-        "{folded}#{} waits for you: {why}. Result: ",
-        short_task_id(&task.task_id)
+        "{folded}{} waits for you: {why}. Result: ",
+        named(task, who)
     );
     let tail = ". Accept or reject with tasks review.";
     line(&head, &quoted(result, MAX_QUOTED), tail)
 }
 
-pub(super) fn confirm_line(folded: &str, task: &PlanTask, result: &str) -> String {
+pub(super) fn confirm_line(folded: &str, task: &PlanTask, who: &str, result: &str) -> String {
     let head = format!(
-        "{folded}#{} waits for the user to confirm it. Result: ",
-        short_task_id(&task.task_id)
+        "{folded}{} waits for the user to confirm it. Result: ",
+        named(task, who)
     );
     let tail = ". Tell the user what to look at; only they can confirm it, the team goes on.";
     line(&head, &quoted(result, MAX_QUOTED), tail)
 }
 
-pub(super) fn failed_line(folded: &str, task: &PlanTask) -> String {
-    let head = format!("{folded}#{} failed: ", short_task_id(&task.task_id));
+pub(super) fn failed_line(folded: &str, task: &PlanTask, who: &str) -> String {
+    let head = format!("{folded}{} failed: ", named(task, who));
     // A task that could not be given out at all failed before any attempt.
     let tail = match task.attempts {
-        0 => ". Reopen it, change the plan, or stop.".to_owned(),
-        attempts => format!(" after {attempts} attempts. Reopen it, change the plan, or stop."),
+        0 => ". Reopen it, edit it, skip it, or stop.".to_owned(),
+        attempts => format!(" after {attempts} attempts. Reopen it, edit it, skip it, or stop."),
     };
     line(&head, &quoted(&task.note, MAX_QUOTED), &tail)
 }
 
-pub(super) fn blocked_line(folded: &str, task: &PlanTask) -> String {
-    let head = format!("{folded}#{} blocked: ", short_task_id(&task.task_id));
-    let tail = ". Answer by reopening it and editing its brief, or fail it.";
+pub(super) fn blocked_line(folded: &str, task: &PlanTask, who: &str) -> String {
+    let head = format!("{folded}{} blocked: ", named(task, who));
+    let tail = ". Answer by reopening it and editing its brief, or skip it.";
     line(&head, &quoted(&task.note, MAX_QUOTED), tail)
 }
 
-/// `Nothing can start: 1 waits for you, 1 failed, 2 behind them.`
-pub(super) fn stall_line(counts: &TeamCounts) -> String {
+/// `Nothing can start: 1 waits for you, 1 failed, 2 behind them; wave 2 waits for wave 1:
+/// #a failed.` `held` names what holds the next wave, or is empty.
+pub(super) fn stall_line(counts: &TeamCounts, held: &str) -> String {
     let waits = |count: u32, whom: &str| match count {
         1 => format!("1 waits for {whom}"),
         count => format!("{count} wait for {whom}"),
     };
     let behind = counts.total.saturating_sub(
-        counts.done + counts.failed + counts.review + counts.at_work + counts.ready,
+        counts.done
+            + counts.skipped
+            + counts.failed
+            + counts.review
+            + counts.at_work
+            + counts.ready,
     );
     let mut parts = Vec::new();
     if counts.for_lead > 0 {
@@ -116,10 +169,14 @@ pub(super) fn stall_line(counts: &TeamCounts) -> String {
     if behind > 0 {
         parts.push(format!("{behind} behind them"));
     }
+    let held = match held.is_empty() {
+        true => String::new(),
+        false => format!("; {held}"),
+    };
     if parts.is_empty() {
-        return "Nothing can start: the plan has no task to give out.".into();
+        return format!("Nothing can start: the plan has no task to give out{held}.");
     }
-    format!("Nothing can start: {}.", parts.join(", "))
+    format!("Nothing can start: {}{held}.", parts.join(", "))
 }
 
 /// A task waits for the lead's review, for the reason `why`.
@@ -132,7 +189,8 @@ pub(super) async fn review(
     why: &str,
 ) {
     let folded = folded(launcher, lead).await;
-    let line = review_line(&folded, task, result, why);
+    let who = who_of(launcher, Some(member), task).await;
+    let line = review_line(&folded, task, &who, result, why);
     tell(launcher, lead, member, &uid(task), &line, true).await;
 }
 
@@ -145,7 +203,8 @@ pub(super) async fn confirm(
     result: &str,
 ) {
     let folded = folded(launcher, lead).await;
-    let line = confirm_line(&folded, task, result);
+    let who = who(member.name.as_deref(), task);
+    let line = confirm_line(&folded, task, &who, result);
     tell(launcher, lead, &member.id, &uid(task), &line, true).await;
 }
 
@@ -154,14 +213,16 @@ pub(super) async fn confirm(
 pub(super) async fn failed(launcher: &Launcher, lead: &str, task: &PlanTask) {
     let folded = folded(launcher, lead).await;
     let from = task.owner_thread_id.as_deref().unwrap_or(lead);
-    let line = failed_line(&folded, task);
+    let who = who_of(launcher, task.owner_thread_id.as_deref(), task).await;
+    let line = failed_line(&folded, task, &who);
     tell(launcher, lead, from, &uid(task), &line, true).await;
 }
 
 /// A member said it cannot go on.
 pub(super) async fn blocked(launcher: &Launcher, lead: &str, member: &Thread, task: &PlanTask) {
     let folded = folded(launcher, lead).await;
-    let line = blocked_line(&folded, task);
+    let who = who(member.name.as_deref(), task);
+    let line = blocked_line(&folded, task, &who);
     tell(launcher, lead, &member.id, &uid(task), &line, true).await;
 }
 
@@ -188,6 +249,13 @@ pub(super) async fn tell(
     wake: bool,
 ) {
     let state = &launcher.state;
+    // A team that winds down wakes its lead with nothing: it was stopped, and a woken
+    // lead could start the work again. The lines wait for its next request.
+    let winding = matches!(
+        state.team_run(lead).await,
+        Ok(Some(run)) if run.status == TeamStatus::Running && run.winding.is_some()
+    );
+    let wake = wake && !winding;
     // The one way a line reaches the lead: a member's or a program's words in it are
     // cleared of secrets here, whoever built the line.
     let cleaned = clean::text(launcher, lead, line).await;
@@ -229,8 +297,8 @@ pub(super) fn last_told(launcher: &Launcher, lead: &str) -> Option<Told> {
     launcher.team.told.lock().get(lead).cloned()
 }
 
-/// `Done meanwhile: #a #b. `: the tasks a gate or the user passed since the lead was
-/// last told anything, which it was not woken for. Empty when there is none. After a
+/// `Done meanwhile: #a (reviewed) #b. `: the tasks a gate, a reviewer or the user passed
+/// since the lead was last told anything, which it was not woken for. Empty when there is none. After a
 /// restart the last line is not known, and the tasks done since the run began are named.
 async fn folded(launcher: &Launcher, lead: &str) -> String {
     let state = &launcher.state;
@@ -244,10 +312,16 @@ async fn folded(launcher: &Launcher, lead: &str) -> String {
     let Ok(plan) = state.plan(lead).await else {
         return String::new();
     };
-    // The lead passes a task without a gate itself, and knows.
+    let reviewed = |task: &PlanTask| {
+        plan.iter()
+            .any(|row| row.review_of.as_deref() == Some(task.task_id.as_str()))
+    };
+    // The lead passes a task without a gate or a review itself, and knows. Reviews and
+    // the critic are the core's own rows.
     let done: Vec<&PlanTask> = plan
         .iter()
-        .filter(|task| task.status == PlanStatus::Done && task.gate.is_some())
+        .filter(|task| task.status == PlanStatus::Done && task.duty == TaskDuty::Work)
+        .filter(|task| task.gate.is_some() || reviewed(task))
         .filter(|task| task.updated_at > since)
         .collect();
     if done.is_empty() {
@@ -256,7 +330,10 @@ async fn folded(launcher: &Launcher, lead: &str) -> String {
     let mut ids: Vec<String> = done
         .iter()
         .take(MAX_FOLDED)
-        .map(|task| format!("#{}", short_task_id(&task.task_id)))
+        .map(|task| match reviewed(task) {
+            true => format!("#{} (reviewed)", short_task_id(&task.task_id)),
+            false => format!("#{}", short_task_id(&task.task_id)),
+        })
         .collect();
     if done.len() > MAX_FOLDED {
         ids.push(format!("and {} more", done.len() - MAX_FOLDED));
