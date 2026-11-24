@@ -255,6 +255,14 @@ pub trait Tool: Send + Sync {
         false
     }
 
+    /// The call may change a file of the project, so a test run after it may find the
+    /// code changed. A call that only reads cannot; nor can a harness tool that keeps the
+    /// chat's own records (its goal, tasks, plan, memory) or speaks to the user or another
+    /// agent, which override this.
+    fn writes_project(&self, arguments: &Value) -> bool {
+        !self.read_only(arguments)
+    }
+
     /// The result as the model is to be sent it when that is shorter than what is
     /// stored (`limits.shape_output`); `None` sends it whole. Decided from the call and
     /// its result alone, so the same call always gives the same text.

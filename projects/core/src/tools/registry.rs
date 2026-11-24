@@ -134,6 +134,13 @@ impl ToolRegistry {
             .is_some_and(|tool| tool.read_only(arguments))
     }
 
+    /// Whether the call may change a file of the project; an unknown tool may.
+    pub fn writes_project(&self, name: &str, arguments: &Value) -> bool {
+        self.tools
+            .get(name)
+            .is_none_or(|tool| tool.writes_project(arguments))
+    }
+
     /// The skill a successful `load_skill` call named; `None` for other tools or when
     /// the arguments do not name one.
     pub fn loaded_skill(&self, name: &str, arguments: &serde_json::Value) -> Option<String> {

@@ -69,16 +69,34 @@ pub struct Notice {
 }
 
 /// What the caller knows of a call that the rules cannot see in it.
-#[derive(Default)]
 pub struct Facts {
     /// The call only reads: it can change nothing.
     pub read_only: bool,
+    /// The call may change a project file (`Tool::writes_project`): not a read, nor a
+    /// harness tool that keeps the chat's own records.
+    pub writes_project: bool,
+    /// The call ran a command whose changes the ledger could not record
+    /// (`State::note_unwatched`).
+    pub unwatched: bool,
     /// The change ledger's count for the thread after the call; read only for a test run
     /// (`is_test_run`) with `limits.test_reruns` and `limits.record_changes` on.
     pub ledger: Option<u64>,
     /// The ledger's rows for the call, as (path, state after); read only for a call that
     /// may write, with `limits.no_progress` and `limits.record_changes` on.
     pub edits: Option<Vec<(String, String)>>,
+}
+
+/// A call that may write anywhere, as an unknown tool may.
+impl Default for Facts {
+    fn default() -> Self {
+        Self {
+            read_only: false,
+            writes_project: true,
+            unwatched: false,
+            ledger: None,
+            edits: None,
+        }
+    }
 }
 
 /// How a test runner's last run in a turn ended.
@@ -208,7 +226,7 @@ impl Repeats {
         let rerun = match tests {
             Some(run) => self.test_runs.run(self.steps, run, facts.ledger, limits),
             None => {
-                self.test_runs.other(call, result, facts.read_only);
+                self.test_runs.other(call, result, facts);
                 None
             }
         };

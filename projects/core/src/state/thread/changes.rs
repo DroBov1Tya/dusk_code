@@ -9,6 +9,9 @@ use uuid::Uuid;
 use crate::project::ledger::Edit;
 use crate::state::{State, timestamp_ms};
 
+/// Calls whose changes went unrecorded, kept for their turns to read.
+const MAX_UNWATCHED: usize = 64;
+
 /// Which rows the `changes` tool asks for; every filter but the project is optional.
 pub struct ChangeQuery<'a> {
     /// The canonical project folder; rows of other projects are never read.
@@ -122,6 +125,27 @@ impl State {
         .fetch_all(&self.pool)
         .await
         .context("list what the task's turns changed")
+    }
+
+    /// Notes that the call `call_id` of the thread may have changed project files the
+    /// ledger did not record: the walk around its command gave up (a project or a change
+    /// past the walk's caps, or out of time), the recording failed, or the command went
+    /// to the background. Only the newest marks are kept.
+    pub fn note_unwatched(&self, thread_id: &str, call_id: &str) {
+        let mut marks = self.unwatched.lock().unwrap_or_else(|e| e.into_inner());
+        if marks.len() >= MAX_UNWATCHED {
+            marks.pop_front();
+        }
+        marks.push_back((thread_id.to_owned(), call_id.to_owned()));
+    }
+
+    /// Whether `note_unwatched` marked the call; the mark is taken.
+    pub fn take_unwatched(&self, thread_id: &str, call_id: &str) -> bool {
+        let mut marks = self.unwatched.lock().unwrap_or_else(|e| e.into_inner());
+        let at = marks
+            .iter()
+            .position(|(thread, call)| thread == thread_id && call == call_id);
+        at.and_then(|at| marks.remove(at)).is_some()
     }
 
     /// How many changes the ledger holds for the thread. Rows are only added, so two

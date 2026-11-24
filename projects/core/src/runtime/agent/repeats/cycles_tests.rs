@@ -45,8 +45,8 @@ fn ran(
     let result = ToolResult::text(output.into());
     let facts = Facts {
         read_only,
-        ledger: None,
         edits: None,
+        ..Facts::default()
     };
     repeats
         .note("t", call, &result, &result.content, &facts, limits)

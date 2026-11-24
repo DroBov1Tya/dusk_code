@@ -19,6 +19,11 @@ use dusk_protocol::tools::{MAX_OPTIONS, MIN_OPTIONS};
 pub struct AskUser;
 
 impl Tool for AskUser {
+    /// Keeps the chat's own records or speaks to someone: no project file changes.
+    fn writes_project(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     fn name(&self) -> &'static str {
         "ask_user"
     }

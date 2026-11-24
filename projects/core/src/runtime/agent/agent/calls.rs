@@ -620,8 +620,12 @@ impl Agent {
             Some(result) => {
                 let limits = config.limits();
                 let read_only = self.tools.read_only(&call.name, &call.arguments);
+                let unwatched = call.name == "run_command"
+                    && self.state.take_unwatched(&self.thread_id, &call.id);
                 let facts = repeats::Facts {
                     read_only,
+                    writes_project: self.tools.writes_project(&call.name, &call.arguments),
+                    unwatched,
                     ledger: self.ledger_count(call, &limits).await,
                     edits: self.call_edits(call, read_only, &limits).await,
                 };

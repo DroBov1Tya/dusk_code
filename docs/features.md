@@ -69,11 +69,14 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   file changed since, as the same command or with the same tests failing, gets a note
   with the step of that run and its failing tests (`limits.test_rerun_note_at`, 2), and a
   request for a different plan at the fourth such run (`test_rerun_replan_at`). A
-  narrower run to look at one failure is not a repeat. Changes are read from the change
-  ledger once it has recorded one in the chat, else any call that may write counts as
-  one; a write the ledger cannot see (a subagent, a background job, an MCP tool) always
-  counts. The command still runs. The failing test ids also stand for a run's
-  error in the failure ladder, so the same failures under another filter climb it.
+  narrower run to look at one failure is not a repeat, nor is the first run that names
+  the one test that failed. Changes are read from the change ledger once it has
+  recorded one in the chat, else any call that may write a project file counts as one
+  (the chat's own goal, tasks, plan and memory, and messages, do not); a write the
+  ledger cannot see (a subagent, a background job, an MCP tool, a command whose walk
+  gave up on a project or change too large or slow to compare) always counts. The
+  command still runs. The failing test ids also stand for a run's error in the failure
+  ladder, so the same failures under another filter climb it.
 - **No progress.** `limits.no_progress` (on): a step makes progress when one of its
   calls changed a project file to a state not seen in the turn (by the change ledger),
   gave a result not seen in the turn (ids and times made alike), read a file, range or
@@ -121,7 +124,8 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   result) are stored with it; once `limits.goal_stall_rounds` (3) measured rounds in a row
   left both as they were, the goal pauses for the user, saying what stayed the same. A
   round that changed no file and ran no test is not measured, nor one that may have
-  written where the ledger does not look (a job, a subagent, an MCP tool), nor any round
+  written where the ledger does not look (a job, a subagent, an MCP tool, a command too
+  large to compare); a look at the goal or the tasks is no write. Nor is any round
   in a chat the ledger never recorded a change of. A resume starts the count over.
 
 ## Project knowledge

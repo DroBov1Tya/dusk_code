@@ -51,9 +51,8 @@ fn run(
 ) -> Option<(RepeatRung, u32, String)> {
     repeats.step("t");
     let facts = Facts {
-        read_only: false,
         ledger,
-        edits: None,
+        ..Facts::default()
     };
     repeats
         .note("t", call, result, &result.content, &facts, limits)
@@ -65,8 +64,8 @@ fn other(repeats: &mut Repeats, text: &str, read_only: bool, limits: &Limits) {
     let result = ToolResult::text(format!("output of {text}"));
     let facts = Facts {
         read_only,
-        ledger: None,
-        edits: None,
+        writes_project: !read_only,
+        ..Facts::default()
     };
     repeats.note(
         "t",
@@ -157,15 +156,15 @@ fn writes_the_ledger_cannot_see_are_changes() {
         name: "run_command".into(),
         arguments: json!({ "command": "./regen.sh", "background": true }),
     };
-    let wait_job = ToolCall {
+    let look_at_job = ToolCall {
         id: "call".into(),
         name: "jobs".into(),
-        arguments: json!({ "action": "wait" }),
+        arguments: json!({ "action": "status" }),
     };
     for between in [
         vec![(&delegate, false)],
         vec![(&start_job, false)],
-        vec![(&wait_job, true)],
+        vec![(&look_at_job, true)],
     ] {
         let mut repeats = Repeats::default();
         // The ledger has seen this thread change a file: it is trusted.
@@ -182,8 +181,8 @@ fn writes_the_ledger_cannot_see_are_changes() {
             let result = ToolResult::text("done".into());
             let facts = Facts {
                 read_only,
-                ledger: None,
-                edits: None,
+                writes_project: !read_only,
+                ..Facts::default()
             };
             repeats.note("t", call, &result, &result.content, &facts, &limits);
         }
@@ -194,6 +193,92 @@ fn writes_the_ledger_cannot_see_are_changes() {
             "{rung:?}"
         );
     }
+}
+
+#[test]
+fn a_command_the_ledger_could_not_watch_is_a_change() {
+    let limits = Limits::default();
+    let failed = exited(101, &cargo_output(&["tests::adds"], "a"));
+    let test = command("cargo test");
+    let mut repeats = Repeats::default();
+    // The ledger has seen this thread change a file: it is trusted.
+    assert!(run(&mut repeats, &test, &failed, Some(1), &limits).is_none());
+    let fix = |repeats: &mut Repeats, unwatched: bool| {
+        repeats.step("t");
+        let result = exited(0, "");
+        let facts = Facts {
+            unwatched,
+            ..Facts::default()
+        };
+        let call = command("sed -i s/a/b/ src/lib.rs");
+        repeats.note("t", &call, &result, &result.content, &facts, &limits);
+    };
+    // The walk around the fix gave up, so the unmoved ledger says nothing.
+    fix(&mut repeats, true);
+    let rung = run(&mut repeats, &test, &failed, Some(1), &limits).map(|notice| notice.0);
+    assert!(
+        matches!(rung, None | Some(RepeatRung::SameError)),
+        "{rung:?}"
+    );
+    assert!(repeats.round("t").unseen_writes);
+    // A command the ledger watched and saw change nothing is no change.
+    fix(&mut repeats, false);
+    let (rung, count, _) = run(&mut repeats, &test, &failed, Some(1), &limits).expect("a note");
+    assert_eq!((rung, count), (RepeatRung::TestRerun, 2));
+}
+
+#[test]
+fn the_chats_own_records_are_no_change() {
+    let limits = Limits::default();
+    let failed = exited(101, &cargo_output(&["tests::adds"], "a"));
+    let test = command("cargo test");
+    let mut repeats = Repeats::default();
+    assert!(run(&mut repeats, &test, &failed, Some(1), &limits).is_none());
+    for (name, arguments) in [
+        ("goal", json!({ "action": "request_verification" })),
+        ("tasks", json!({ "action": "update" })),
+    ] {
+        repeats.step("t");
+        let call = ToolCall {
+            id: "call".into(),
+            name: name.into(),
+            arguments,
+        };
+        let result = ToolResult::text("noted".into());
+        let facts = Facts {
+            writes_project: false,
+            ..Facts::default()
+        };
+        repeats.note("t", &call, &result, &result.content, &facts, &limits);
+    }
+    let (rung, count, _) = run(&mut repeats, &test, &failed, Some(1), &limits).expect("a note");
+    assert_eq!((rung, count), (RepeatRung::TestRerun, 2));
+    assert!(!repeats.round("t").unseen_writes);
+}
+
+#[test]
+fn a_first_look_at_the_one_failing_test_is_not_a_repeat() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let failed = exited(101, &cargo_output(&["tests::adds"], "a"));
+    assert!(
+        run(
+            &mut repeats,
+            &command("cargo test"),
+            &failed,
+            Some(4),
+            &limits
+        )
+        .is_none()
+    );
+    let output = exited(101, &cargo_output(&["tests::adds"], "b"));
+    let focused = command("cargo test adds -- --nocapture");
+    let notice = run(&mut repeats, &focused, &output, Some(4), &limits);
+    assert!(notice.is_none(), "{notice:?}");
+    // Another look of the same kind, with nothing changed, is a repeat.
+    let again = command("cargo test tests::adds -- --exact");
+    let (rung, count, _) = run(&mut repeats, &again, &output, Some(4), &limits).expect("a note");
+    assert_eq!((rung, count), (RepeatRung::TestRerun, 2));
 }
 
 #[test]
@@ -469,6 +554,14 @@ fn a_round_knows_a_write_the_ledger_cannot_see() {
     assert!(
         !repeats.round("t").unseen_writes,
         "a foreground command is seen"
+    );
+    // One killed at its timeout was still walked.
+    repeats.step("t");
+    let killed = ToolResult::text("timed out".into());
+    let _ = repeats.note("t", &echo, &killed, &killed.content, &facts, &limits);
+    assert!(
+        !repeats.round("t").unseen_writes,
+        "a killed command is seen"
     );
     repeats.step("t");
     let call = ToolCall {

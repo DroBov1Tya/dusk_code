@@ -146,6 +146,7 @@ mod tests {
         let state = State {
             pool,
             episodes: Default::default(),
+            unwatched: Default::default(),
         };
         let active = state.goal("active").await.unwrap().unwrap();
         assert_eq!(active.status, GoalStatus::Paused);

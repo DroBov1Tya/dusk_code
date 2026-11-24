@@ -9,10 +9,12 @@
 //! project (an env var, a service) is not seen.
 //!
 //! "Changed" reads the ledger when it can be trusted: recording is on and it has recorded
-//! a change in this thread before. It sees only this thread's foreground commands, so a
-//! call that may write in a way it cannot see (a subagent, a background job, an MCP tool)
-//! is a change too. Without a ledger to trust, any call that may write, other than a test
-//! run, counts as a change, so a project too large to watch never gets a wrong note.
+//! a change in this thread before. It sees only this thread's foreground commands whose
+//! walk did not give up, so a call that may write in a way it cannot see (a subagent, a
+//! background job, an MCP tool, a command too large to compare) is a change too. Without
+//! a ledger to trust, any call that may write a project file, other than a test run,
+//! counts as a change, so a project too large to watch never gets a wrong note. The
+//! chat's own records (goal, tasks, plan, memory) are no project file.
 //!
 //! The failing test ids are read from untrusted output: only its last `OUTPUT_BYTES`,
 //! line by line, with at most `MAX_IDS` kept, each cut to `MAX_ID_CHARS`.
@@ -21,7 +23,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use dusk_protocol::{text::clip_chars, thread::RepeatRung};
 
-use super::signature::{self, RUN_COMMAND, Signature};
+use super::{
+    Facts,
+    signature::{self, RUN_COMMAND, Signature},
+};
 use crate::{
     config::Limits, providers::ToolCall, tools::ToolResult,
     tools::console::command_line::program_name,
@@ -123,10 +128,28 @@ struct Last {
 }
 
 impl Last {
-    /// Whether `run` repeats this one: the same command, or the same tests failing.
+    /// Whether `run` repeats this one: the same command, or the same tests failing. The
+    /// first run that names a failing test to look at it alone is not a repeat of a
+    /// broader run that failed only that test; another look of the same kind is.
     fn repeated_by(&self, run: &TestRun) -> bool {
+        let focused = run.names_failing() && !self.run.names_failing();
         self.run.command == run.command
-            || (!self.run.failing.is_empty() && self.run.failing == run.failing)
+            || (!self.run.failing.is_empty() && self.run.failing == run.failing && !focused)
+    }
+}
+
+impl TestRun {
+    /// Whether a word of the command, other than the runner's own and its flags, names
+    /// one of the failing tests, as `cargo test adds` or `pytest tests/a.py::test_x` do.
+    fn names_failing(&self) -> bool {
+        let runner: Vec<&str> = self.runner.split_whitespace().collect();
+        self.command.split_whitespace().any(|word| {
+            let word = word.trim_matches(|c| c == '\'' || c == '"');
+            word.chars().count() >= 3
+                && !word.starts_with('-')
+                && !runner.contains(&word)
+                && self.failing.iter().any(|id| id.contains(word))
+        })
     }
 }
 
@@ -144,21 +167,21 @@ pub struct TestRuns {
 
 impl TestRuns {
     /// Notes a call that is not a test run.
-    pub fn other(&mut self, call: &ToolCall, result: &ToolResult, read_only: bool) {
+    pub fn other(&mut self, call: &ToolCall, result: &ToolResult, facts: &Facts) {
         let job_call = call.name == JOBS && self.jobs_started;
-        if read_only && !job_call {
+        if !facts.writes_project && !job_call {
             return;
         }
         self.writes += 1;
-        // The ledger records only what a foreground command of this thread changed. A
-        // look at the jobs is when a job's writes show.
-        let foreground = call.name == RUN_COMMAND
-            && call.arguments["background"].as_bool() != Some(true)
-            && result.exit_code.is_some();
-        if !foreground {
+        // The ledger records only what a foreground command of this thread changed, and
+        // only when its walk did not give up. A look at the jobs is when a job's writes
+        // show. A command killed at its timeout was still walked.
+        let command = call.name == RUN_COMMAND;
+        let background = call.arguments["background"].as_bool() == Some(true);
+        if !(command && !background && !facts.unwatched) {
             self.unseen += 1;
-            self.jobs_started |= call.name == RUN_COMMAND;
         }
+        self.jobs_started |= command && (background || result.exit_code.is_none());
     }
 
     /// Whether a call of the turn may have written where the ledger does not look.

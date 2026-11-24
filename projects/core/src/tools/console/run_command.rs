@@ -162,6 +162,8 @@ impl RunCommand {
         let mut result = match ran? {
             Ran::Done(result) => result,
             Ran::Detached(running) => {
+                // The job writes from now on where no walk looks.
+                super::file_changes::unwatched(context);
                 let owner = self
                     .jobs
                     .as_ref()

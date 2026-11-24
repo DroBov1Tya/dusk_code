@@ -65,7 +65,7 @@ async fn the_agent_taps_types_and_sees_the_simulator() {
         &provider,
         &live,
         model(None),
-        Box::new(tool),
+        vec![Box::new(tool)],
         root,
         store,
         true,

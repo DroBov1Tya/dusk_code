@@ -13,6 +13,11 @@ use dusk_protocol::thread::{Block, MAX_CHOICES, MIN_CHOICES, SHOW_TOOL, Show as 
 pub struct Show;
 
 impl Tool for Show {
+    /// Keeps the chat's own records or speaks to someone: no project file changes.
+    fn writes_project(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     fn name(&self) -> &'static str {
         SHOW_TOOL
     }

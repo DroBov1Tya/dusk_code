@@ -129,6 +129,11 @@ fn write(file: &Path, memory: &str) -> Result<()> {
 }
 
 impl Tool for Remember {
+    /// Keeps the chat's own records or speaks to someone: no project file changes.
+    fn writes_project(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     fn name(&self) -> &'static str {
         match self.kind {
             Kind::User => "remember",

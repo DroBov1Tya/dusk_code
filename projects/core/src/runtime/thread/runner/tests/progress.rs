@@ -182,10 +182,17 @@ async fn run_goal_in(
     let propose = state.propose_goal("thread", &draft.revision, vec![criterion]);
     let draft = propose.await.unwrap();
     let provider = provider(scripts);
-    let tool = Box::new(Commands {
-        state: Arc::clone(&state),
-    });
-    let (runner, input, mut output) = runner_with(&state, &provider, &config, model(None), tool);
+    let tools: Vec<Box<dyn Tool>> = vec![
+        Box::new(Commands {
+            state: Arc::clone(&state),
+        }),
+        Box::new(crate::tools::GoalTool::new(
+            Arc::clone(&state),
+            "thread".into(),
+        )),
+    ];
+    let (runner, input, mut output) =
+        runner_with_tools(&state, &provider, &config, model(None), tools);
     let client = async move {
         input
             .send(format!("/goal approve {}", draft.revision))
@@ -263,6 +270,29 @@ async fn a_goal_whose_rounds_change_nothing_pauses_with_why() {
     );
     assert!(note.contains("parser::reads_dates"), "{note}");
     // The first round changed a file; the three after it changed nothing.
+    assert_eq!(turns, 4);
+}
+
+#[tokio::test]
+async fn rounds_that_look_at_the_goal_and_change_nothing_still_pause() {
+    let mut scripts = first_round("h1");
+    for i in 0..8 {
+        // The tests fail as before, then the goal is looked at, as its prompt asks.
+        let look = vec![
+            Step::Named("goal", format!("goal_{i}"), json!({ "action": "show" })),
+            Step::Done,
+        ];
+        let mut round = round(None);
+        round.insert(1, look);
+        scripts.extend(round);
+    }
+    let settings = "limits:\n  max_goal_rounds: 20\n";
+    let (goal, turns) = run_goal("goal_stall_looks", settings, scripts).await;
+    let note = goal.note.unwrap_or_default();
+    assert!(
+        note.starts_with("the last 3 rounds changed nothing"),
+        "{note}"
+    );
     assert_eq!(turns, 4);
 }
 

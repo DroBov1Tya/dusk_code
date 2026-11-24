@@ -61,8 +61,8 @@ fn step(repeats: &mut Repeats, done: Done<'_>, limits: &Limits) -> Option<(Repea
     };
     let facts = Facts {
         read_only: done.read_only,
-        ledger: None,
         edits: done.edits,
+        ..Facts::default()
     };
     repeats
         .note("t", &done.call, &result, &result.content, &facts, limits)
@@ -279,8 +279,8 @@ fn a_note_comes_once_per_step_of_many_calls() {
         };
         let facts = Facts {
             read_only: false,
-            ledger: None,
             edits: Some(Vec::new()),
+            ..Facts::default()
         };
         let call = command(&format!("echo batch {i}"));
         let notice = repeats.note("t", &call, &result, &result.content, &facts, &limits);
