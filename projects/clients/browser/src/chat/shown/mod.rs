@@ -4,6 +4,7 @@
 
 mod checks;
 mod choices;
+mod diagram;
 mod flow;
 
 pub use choices::{ReplyRow, plain, question_labels};
@@ -28,5 +29,6 @@ pub fn ShownBlock(
         Block::Choices(choices) => {
             view! { <choices::ChoicesView choices id chat thread read_only /> }.into_any()
         }
+        Block::Diagram(diagram) => view! { <diagram::DiagramView diagram /> }.into_any(),
     }
 }

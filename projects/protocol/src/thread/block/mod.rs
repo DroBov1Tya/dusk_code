@@ -1,10 +1,11 @@
 //! Structured content a chat shows that is not markdown: a flow of layers, a list of
-//! checks, reply buttons. The model makes a block with one call of the `show` tool; the
+//! checks, reply buttons, a diagram. The model makes a block with one call of the `show` tool; the
 //! call's arguments, which the thread stores with the assistant message, are the block.
 //! Every text in a block is a `Line`: plain, capped, never read as markdown or a link.
 
 mod checks;
 mod choices;
+pub mod diagram;
 mod flow;
 mod line;
 
@@ -12,6 +13,7 @@ pub use checks::{
     CHECK_DETAIL_CHARS, CHECK_NAME_CHARS, Check, CheckState, Checks, Counts, MAX_CHECKS,
 };
 pub use choices::{CHOICE_CHARS, Choices, MAX_CHOICES, MIN_CHOICES};
+pub use diagram::Diagram;
 pub use flow::{
     CARD_LINE_CHARS, CARD_TITLE_CHARS, Flow, FlowCard, LAYER_SUBTITLE_CHARS, LAYER_TITLE_CHARS,
     Layer, MAX_CARDS, MAX_LAYERS, MIN_LAYERS,
@@ -36,6 +38,7 @@ pub enum Block {
     Flow(Flow),
     Checks(Checks),
     Choices(Choices),
+    Diagram(Diagram),
 }
 
 /// The arguments of `show`: exactly one kind. Flat, since providers want one plain
@@ -46,17 +49,19 @@ pub struct Show {
     pub flow: Option<Flow>,
     pub checks: Option<Checks>,
     pub choices: Option<Choices>,
+    pub diagram: Option<Diagram>,
 }
 
 impl TryFrom<Show> for Block {
     type Error = anyhow::Error;
 
     fn try_from(show: Show) -> anyhow::Result<Self> {
-        Ok(match (show.flow, show.checks, show.choices) {
-            (Some(flow), None, None) => Self::Flow(flow),
-            (None, Some(checks), None) => Self::Checks(checks),
-            (None, None, Some(choices)) => Self::Choices(choices),
-            _ => bail!("give exactly one of flow, checks and choices"),
+        Ok(match (show.flow, show.checks, show.choices, show.diagram) {
+            (Some(flow), None, None, None) => Self::Flow(flow),
+            (None, Some(checks), None, None) => Self::Checks(checks),
+            (None, None, Some(choices), None) => Self::Choices(choices),
+            (None, None, None, Some(diagram)) => Self::Diagram(diagram),
+            _ => bail!("give exactly one of flow, checks, choices and diagram"),
         })
     }
 }
@@ -68,6 +73,7 @@ impl Block {
             Self::Flow(_) => "Flow:",
             Self::Checks(_) => "Checks:",
             Self::Choices(_) => "Choices:",
+            Self::Diagram(_) => "Diagram:",
         }
     }
 
@@ -79,6 +85,7 @@ impl Block {
             Self::Flow(flow) => flow.write(&mut text),
             Self::Checks(checks) => checks.write(&mut text),
             Self::Choices(choices) => choices.write(&mut text),
+            Self::Diagram(diagram) => diagram.write(&mut text),
         }
         text.truncate(text.trim_end().len());
         text

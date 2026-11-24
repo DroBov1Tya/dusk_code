@@ -236,6 +236,7 @@ impl Workspace {
             rows: Vec::new(),
             reading_width: 720.,
             replied: None,
+            diagram_hover: None,
             pins: Default::default(),
             list_chat: None,
             texts: Default::default(),

@@ -250,7 +250,7 @@ fn only_one_layer_is_emphasised_and_choices_differ() {
     let both = json!({ "choices": { "labels": ["a", "b"] }, "checks": checks(1)["checks"] });
     assert_eq!(
         read(both).unwrap_err(),
-        "give exactly one of flow, checks and choices"
+        "give exactly one of flow, checks, choices and diagram"
     );
 }
 
