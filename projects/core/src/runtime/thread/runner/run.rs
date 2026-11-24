@@ -96,6 +96,7 @@ impl ThreadRunner {
             project: setup.project,
             pictures_refused: Mutex::new(None),
             effort_refused: Mutex::new(None),
+            judge_effort_refused: Mutex::new(None),
             pace: Mutex::default(),
             repeats: Mutex::default(),
             asking: Mutex::new(Vec::new()),

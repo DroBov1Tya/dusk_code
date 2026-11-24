@@ -112,9 +112,11 @@ impl Agent {
         );
         let mut output = ModelOutput::default();
         // Low effort first; a model that says it takes no effort, as one without
-        // reasoning does, is asked again without one (`RefusedEffort`), and so is a
-        // subagent's model that refused it before.
-        let refused = self.effort_refused.lock().as_deref() == Some(choice.model.id.as_str());
+        // reasoning does, is asked again without one (`RefusedEffort`), and from then on,
+        // as is a subagent's model that refused it before.
+        let model = Some(choice.model.id.as_str());
+        let refused = self.judge_effort_refused.lock().as_deref() == model
+            || self.effort_refused.lock().as_deref() == model;
         let efforts = if refused {
             &[None][..]
         } else {
@@ -139,6 +141,7 @@ impl Agent {
                         && (is_unsupported_effort(&error) || is_refused_effort(&error)) =>
                 {
                     info!("the judge's model takes no reasoning effort; asking without it");
+                    *self.judge_effort_refused.lock() = Some(choice.model.id.clone());
                     continue;
                 }
                 Err(error) => {

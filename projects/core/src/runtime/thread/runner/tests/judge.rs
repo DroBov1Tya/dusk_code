@@ -275,6 +275,21 @@ async fn a_helper_model_that_cannot_be_had_leaves_the_judge_to_the_turns_model()
 /// Refuses a request that carries a reasoning effort as a model without reasoning does,
 /// and answers one without it with a verdict sure the turn is stuck.
 fn no_reasoning(request: &str) -> (&'static str, &'static str, String) {
+    no_reasoning_says(
+        request,
+        r#"{"stuck": true, "confidence": 0.95, "redirect": "Ask the user."}"#,
+    )
+}
+
+/// The same, with a verdict that lets the turn go on.
+fn no_reasoning_unsure(request: &str) -> (&'static str, &'static str, String) {
+    no_reasoning_says(
+        request,
+        r#"{"stuck": false, "confidence": 0.4, "redirect": "Read the log first."}"#,
+    )
+}
+
+fn no_reasoning_says(request: &str, verdict: &str) -> (&'static str, &'static str, String) {
     if request.contains("reasoning_effort") {
         return (
             "400 Bad Request",
@@ -286,10 +301,7 @@ fn no_reasoning(request: &str) -> (&'static str, &'static str, String) {
             .to_owned(),
         );
     }
-    let verdict = serde_json::to_string(
-        r#"{"stuck": true, "confidence": 0.95, "redirect": "Ask the user."}"#,
-    )
-    .unwrap();
+    let verdict = serde_json::to_string(verdict).unwrap();
     let body = format!(
         "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"content\":{verdict}}}}}]}}\n\n\
          data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"stop\"}}]}}\n\n\
@@ -320,4 +332,30 @@ async fn a_helper_model_without_reasoning_is_asked_again_without_an_effort() {
     assert_eq!(asked.len(), 2, "{asked:?}");
     assert!(asked[0].contains("reasoning_effort"), "{}", asked[0]);
     assert!(!asked[1].contains("reasoning_effort"), "{}", asked[1]);
+}
+
+#[tokio::test]
+async fn a_helper_model_that_refused_the_effort_is_asked_without_one_from_then_on() {
+    let (base, seen) = helper_server(no_reasoning_unsure).await;
+    let config = crate::testing::temp_live_config_of(
+        "judge_no_reasoning_again_config",
+        &format!(
+            "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    \
+             api_key: 'sk-test'\n  helper:\n    kind: openai_compatible\n    base_url: '{base}'\n    \
+             api_key: 'sk-test'\narbiter:\n  model: helper/small-judge\n"
+        ),
+    );
+    let mut scripts = cycle(40);
+    scripts.push(vec![Step::Text("done"), Step::Done]);
+    let (_, _, turn) = run_with("judge_no_reasoning_again", config, scripts).await;
+    assert_eq!(turn.status, TurnStatus::Completed);
+    let seen = seen.lock().unwrap();
+    let asked: Vec<&String> = seen.iter().filter(|r| r.starts_with("POST")).collect();
+    // One refused ask, then each judge without the effort.
+    assert!(asked.len() >= 3, "{asked:?}");
+    assert!(asked[0].contains("reasoning_effort"), "{}", asked[0]);
+    assert!(
+        asked[1..].iter().all(|r| !r.contains("reasoning_effort")),
+        "{asked:?}"
+    );
 }
