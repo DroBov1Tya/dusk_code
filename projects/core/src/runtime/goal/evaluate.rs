@@ -34,6 +34,9 @@ const UNJUDGED: &str = "The evaluator could not judge this turn. Keep working, a
 pub struct Judgment {
     pub verdict: GoalVerdict,
     pub reason: String,
+    /// The evaluator gave a verdict; false when every try failed or was unreadable and
+    /// the turn is read as not met without one.
+    pub judged: bool,
 }
 
 impl Agent {
@@ -49,6 +52,7 @@ impl Agent {
         Judgment {
             verdict: GoalVerdict::NotMet,
             reason: UNJUDGED.into(),
+            judged: false,
         }
     }
 
@@ -150,7 +154,11 @@ pub fn parse(answer: &str) -> Option<Judgment> {
         },
         false => clip_chars(reason, REASON_CHARS, "..."),
     };
-    Some(Judgment { verdict, reason })
+    Some(Judgment {
+        verdict,
+        reason,
+        judged: true,
+    })
 }
 
 #[cfg(test)]

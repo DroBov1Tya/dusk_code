@@ -51,6 +51,7 @@ impl ThreadRunner {
                     // A goal set, replaced or cleared starts its counts again: turns of
                     // a goal before it must not stall or use up the retries of this one.
                     self.goal_quiet_turns = 0;
+                    self.goal_unjudged_turns = 0;
                     self.goal_retries = 0;
                 }
                 commands::run_in_thread(command, &self.agent, &mut self.inbox).await

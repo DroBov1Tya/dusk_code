@@ -33,6 +33,8 @@ pub struct ThreadRunner {
     pub goal_waiting: bool,
     /// Turns in a row that called no tool, for a goal's stall rule.
     pub goal_quiet_turns: u32,
+    /// Turns in a row the evaluator could not judge, for a goal's error pause.
+    pub goal_unjudged_turns: u32,
     /// Turns of a goal tried again in a row after a provider error.
     pub goal_retries: u32,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
@@ -116,6 +118,7 @@ impl ThreadRunner {
             ends_when_idle: setup.ends_when_idle,
             goal_waiting: false,
             goal_quiet_turns: 0,
+            goal_unjudged_turns: 0,
             goal_retries: 0,
             left: false,
             deciding,

@@ -14,6 +14,9 @@
 //! tools yet leave the files and test results as they were are `stall`'s: once
 //! `limits.goal_stall_rounds` of them follow each other, the goal pauses.
 //!
+//! An evaluator that cannot judge: a turn it gave no verdict on goes on as not met, but
+//! after `UNJUDGED_TURNS` of them in a row the goal pauses, as for any other error.
+//!
 //! A failed turn: an error the provider may get over is tried again `RETRIES` times, a
 //! spent limit or another failure pauses the goal, and one that no retry fixes clears it.
 
@@ -31,6 +34,8 @@ use crate::{
 
 /// Turns in a row without a tool call after which a goal stops starting turns.
 pub const STALL_TURNS: u32 = 3;
+/// Turns in a row the evaluator could not judge after which a goal pauses.
+pub const UNJUDGED_TURNS: u32 = 3;
 /// Times a turn that failed on an error the provider may get over is tried again.
 pub const RETRIES: u32 = 3;
 
@@ -117,6 +122,7 @@ impl ThreadRunner {
             }
             state.clear_goal(thread_id).await?;
             self.goal_quiet_turns = 0;
+            self.goal_unjudged_turns = 0;
             self.agent.emit(ThreadEvent::Goal {
                 goal: None,
                 note: String::new(),
@@ -131,6 +137,20 @@ impl ThreadRunner {
                 note: String::new(),
                 started: None,
             });
+            return Ok(false);
+        }
+        self.goal_unjudged_turns = match judgment.judged {
+            true => 0,
+            false => self.goal_unjudged_turns + 1,
+        };
+        if self.goal_unjudged_turns >= UNJUDGED_TURNS {
+            // The count starts again, so the user's next message resumes the goal.
+            self.goal_unjudged_turns = 0;
+            self.pause_goal(&format!(
+                "the evaluator could not judge the last {UNJUDGED_TURNS} turns; check the \
+                 model, then send a message to go on"
+            ))
+            .await?;
             return Ok(false);
         }
         if let Some(turn_id) = ended

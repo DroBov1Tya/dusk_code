@@ -153,6 +153,42 @@ async fn an_unreadable_verdict_goes_on_and_an_impossible_goal_ends() {
     assert!(state.goal("thread").await.unwrap().is_none());
 }
 
+/// An evaluator that can never judge does not keep the goal going: after three turns it
+/// gave no verdict on, the goal pauses with why.
+#[tokio::test]
+async fn an_evaluator_that_never_judges_pauses_the_goal() {
+    let state = thread_state("goal_unjudged").await;
+    let config = live_config("goal_unjudged_config");
+    let mut scripts = works().to_vec();
+    scripts.push(said("title"));
+    for turn in 0..3 {
+        if turn > 0 {
+            scripts.extend(works());
+        }
+        scripts.push(said("I cannot say"));
+        scripts.push(said("Still unsure"));
+    }
+    let provider = provider(scripts);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let client = async move {
+        input.send("/goal build it").await.unwrap();
+        next_goal_note(&mut output).await
+    };
+
+    let (_, (note, goal)) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(runner.run(), client)
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        note,
+        "Goal paused: the evaluator could not judge the last 3 turns; check the model, \
+         then send a message to go on"
+    );
+    assert_eq!(goal.unwrap().status, GoalStatus::Paused);
+    assert_eq!(state.count_turns("thread").await.unwrap(), 3);
+}
+
 /// Waits for the stall note and returns the goal it carried.
 async fn next_stall(output: &mut ThreadOutput) -> Goal {
     loop {
