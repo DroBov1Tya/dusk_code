@@ -117,6 +117,11 @@ pub struct Limits {
     /// on how to read it whole. The full output stays stored.
     #[serde(default = "yes")]
     pub shape_output: bool,
+    /// Whether a failed run of `cargo test`, `pytest` or jest through `npm test` gets one
+    /// line naming the command that re-runs only the failing tests, when the command line
+    /// and the output leave no doubt about it.
+    #[serde(default = "yes")]
+    pub rerun_hint: bool,
     /// Whether the model is offered `project_graph`: a map of the project's files and
     /// folders by name. The name is kept from the code graph it replaced.
     #[serde(default = "yes")]
@@ -199,6 +204,7 @@ impl Default for Limits {
             compact_tail_tokens: default_compact_tail_tokens(),
             compact_early: true,
             shape_output: true,
+            rerun_hint: true,
             project_graph: true,
             episodes: true,
             episode_lesson: true,

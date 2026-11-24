@@ -279,6 +279,12 @@ impl Tool for RunCommand {
         super::shape::shape(arguments["command"].as_str()?, &result.content)
     }
 
+    /// Only a command that ended in the foreground and failed has tests to run again.
+    fn rerun(&self, arguments: &Value, result: &crate::tools::ToolResult) -> Option<String> {
+        result.exit_code.filter(|code| *code != 0)?;
+        super::rerun::rerun(arguments["command"].as_str()?, &result.content)
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move { Ok(self.call_result(arguments, context).await?.content) })
     }

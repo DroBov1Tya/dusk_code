@@ -121,6 +121,11 @@ impl ToolRegistry {
         self.tools.get(name)?.shape(arguments, result)
     }
 
+    /// The line naming a narrower command to run next, when the tool has one.
+    pub fn rerun(&self, name: &str, arguments: &Value, result: &ToolResult) -> Option<String> {
+        self.tools.get(name)?.rerun(arguments, result)
+    }
+
     /// Whether the call only reads, so it may run with the read-only calls next to it;
     /// an unknown tool never does.
     pub fn read_only(&self, name: &str, arguments: &Value) -> bool {

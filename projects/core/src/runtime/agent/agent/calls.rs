@@ -567,6 +567,13 @@ impl Agent {
                 content.push_str(&format!("\n\n{note}"));
             }
         }
+        let rerun = finished
+            .as_ref()
+            .filter(|_| config.limits().rerun_hint)
+            .and_then(|result| self.tools.rerun(&call.name, &call.arguments, result));
+        if let Some(line) = rerun {
+            content.push_str(&format!("\n\n{line}"));
+        }
         // Durable usage counts: skills loaded and MCP tools called, when the call
         // ran and did not fail.
         if finished.is_some() && outcome != "failed" {

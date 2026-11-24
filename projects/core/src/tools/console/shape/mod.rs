@@ -7,7 +7,7 @@
 mod cargo;
 mod git;
 mod npm;
-mod program;
+pub(super) mod program;
 mod pytest;
 #[cfg(test)]
 mod tests;

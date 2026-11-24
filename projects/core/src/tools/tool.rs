@@ -262,6 +262,13 @@ pub trait Tool: Send + Sync {
         None
     }
 
+    /// A line added after the result that names a narrower command to run next, such as
+    /// the failing tests alone (`limits.rerun_hint`). Decided from the call and its result
+    /// alone, so the same call always gives the same line.
+    fn rerun(&self, _arguments: &Value, _result: &super::registry::ToolResult) -> Option<String> {
+        None
+    }
+
     /// An error is shown to the model as the result, so it can correct itself.
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String>;
 
