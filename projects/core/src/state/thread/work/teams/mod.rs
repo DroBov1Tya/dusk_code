@@ -42,6 +42,8 @@ pub struct TeamRun {
     /// Members each work in a tree of their own; false shares the project folder.
     pub worktrees: bool,
     pub base_commit: Option<String>,
+    /// What the lead ran it toward; empty before a lead named one.
+    pub goal: String,
 }
 
 // P1 serves `team` and `end_team`; T1 (the team's runtime) is the rest of the callers.
@@ -97,6 +99,20 @@ impl State {
         Ok(run)
     }
 
+    /// Writes the goal the lead runs the chat's team toward. `goal` is checked by the
+    /// caller; the column refuses one over `MAX_GOAL`.
+    pub async fn set_team_goal(&self, thread: &str, goal: &str) -> Result<(), TeamError> {
+        let mut transaction = self.pool.begin().await?;
+        let root = root_of(&mut transaction, thread).await?;
+        sqlx::query("UPDATE teams SET goal = ? WHERE thread_id = ?")
+            .bind(goal)
+            .bind(&root)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
     /// The chats whose team runs, for the dispatcher's tick.
     pub async fn running_teams(&self) -> Result<Vec<String>, TeamError> {
         Ok(
@@ -150,6 +166,7 @@ impl State {
             used,
             members,
             started_at: Some(run.started_at),
+            goal: run.goal,
         }))
     }
 
@@ -200,7 +217,7 @@ impl State {
 async fn read_run(transaction: &mut Tx<'_>, root: &str) -> Result<Option<TeamRun>, TeamError> {
     sqlx::query(
         "SELECT thread_id, status, ended_why, at_once, worktrees, base_commit, started_at,
-             ended_at
+             ended_at, goal
          FROM teams WHERE thread_id = ?",
     )
     .bind(root)
@@ -230,6 +247,7 @@ fn decode(row: &SqliteRow) -> Result<TeamRun, TeamError> {
         ended_at: row.try_get("ended_at")?,
         worktrees: worktrees == 1,
         base_commit: row.try_get("base_commit")?,
+        goal: row.try_get("goal")?,
     })
 }
 

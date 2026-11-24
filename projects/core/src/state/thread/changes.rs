@@ -116,6 +116,26 @@ impl State {
         .context("list what the task's turns changed")
     }
 
+    /// Each change the turns of `member` on `task_id` recorded, oldest first, as its path
+    /// and its diff when one was known: what a reviewer of the task reads. Secret and
+    /// unknown files have no diff.
+    pub async fn task_diffs(
+        &self,
+        member: &str,
+        task_id: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        sqlx::query_as(
+            "SELECT c.path, c.diff FROM changes c JOIN turns t ON t.turn_id = c.turn_id
+             WHERE c.thread_id = ?1 AND t.task_id = ?2
+             ORDER BY c.created_at, c.rowid",
+        )
+        .bind(member)
+        .bind(task_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("read the diffs of the task's turns")
+    }
+
     /// The thread's own changes for a client, newest first, at most `MAX_FILE_CHANGES`.
     pub async fn thread_changes(&self, thread_id: &str) -> Result<Vec<FileChange>> {
         sqlx::query(select!(

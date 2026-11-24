@@ -167,6 +167,12 @@ pub struct Limits {
     /// The most gate commands one team may run; past it a gated task waits for the lead.
     #[serde(default = "default_team_max_gate_runs")]
     pub team_max_gate_runs: u32,
+    /// Whether a fresh reviewer checks each team task that changed files, with one round
+    /// of fixes by its author, and a critic checks the results against the request at
+    /// the end. Off, a task without a gate waits for the lead and the team ends when
+    /// its last task is done.
+    #[serde(default = "yes")]
+    pub team_review: bool,
 }
 
 impl Default for Limits {
@@ -211,6 +217,7 @@ impl Default for Limits {
             team_max_minutes: None,
             team_gate_seconds: default_team_gate_seconds(),
             team_max_gate_runs: default_team_max_gate_runs(),
+            team_review: true,
         }
     }
 }
@@ -360,6 +367,13 @@ pub struct Team {
     /// what every member may have; a role without one keeps them all.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tools: BTreeMap<String, Vec<String>>,
+    /// The role that reviews a task that changed files; `code-reviewer` when not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer: Option<String>,
+    /// The role that checks the results against the request at the end; `code-reviewer`
+    /// when not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub critic: Option<String>,
 }
 
 impl Team {
@@ -385,20 +399,34 @@ impl Team {
                 "team.tools names tools, such as read_file"
             );
         }
-        for role in self.models.keys().chain(self.tools.keys()) {
+        let roles = self.models.keys().chain(self.tools.keys());
+        for role in roles.chain(&self.reviewer).chain(&self.critic) {
             anyhow::ensure!(
                 !role.is_empty()
                     && role.len() <= MAX_ROLE_NAME
                     && role
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-                "team.models and team.tools keys must be role names of up to {MAX_ROLE_NAME} of \
-                 a-z, 0-9, - and _"
+                "team.models and team.tools keys, team.reviewer and team.critic must be role \
+                 names of up to {MAX_ROLE_NAME} of a-z, 0-9, - and _"
             );
         }
         Ok(())
     }
+
+    /// The role a review of a task is given to.
+    pub fn reviewer_role(&self) -> &str {
+        self.reviewer.as_deref().unwrap_or(DEFAULT_CHECK_ROLE)
+    }
+
+    /// The role the completeness check at the end of a team is given to.
+    pub fn critic_role(&self) -> &str {
+        self.critic.as_deref().unwrap_or(DEFAULT_CHECK_ROLE)
+    }
 }
+
+/// The shipped role that reviews and checks when the settings name none.
+const DEFAULT_CHECK_ROLE: &str = "code-reviewer";
 
 /// What the core records about its work. Off, nothing is written or sent at all.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

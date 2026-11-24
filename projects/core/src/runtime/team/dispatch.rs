@@ -2,19 +2,21 @@
 //! a plan, read from the tables each time, so a pass after a restart goes on where the
 //! last one stopped. In order: the lead that went quiet ends the team; leases past their
 //! time are released; members whose card or rework note did not arrive get it; a gate
-//! that a stop cut off runs again; ready tasks are given out while members at once
-//! allow, lowest phase label first and oldest first within it; then the end and the
-//! stall rule.
+//! that a stop cut off runs again, and a task whose review row is lost waits for the
+//! lead; the critic is added once every other task is finished; ready tasks of the
+//! current wave are given out while members at once allow, lowest phase label first and
+//! oldest first within it; then the end and the stall rule.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use dusk_protocol::thread::{TaskStatus, TeamEnd, TeamStatus};
+use dusk_protocol::thread::{TaskDuty, TaskStatus, TeamEnd, TeamStatus};
 use tracing::warn;
 
 use super::{
-    clean, end, events, gate, lead_lines, lease,
+    clean, critic, end, events, gate, lead_lines, lease,
     member::{self, Given},
+    review,
 };
 use crate::{
     runtime::{Launcher, agent::MAX_AGENT_MESSAGES},
@@ -45,12 +47,14 @@ pub(super) async fn pass(launcher: &Launcher, lead: &str, now: i64) -> Result<us
     expire(launcher, lead, now).await?;
     wake_members(launcher, lead, &folder).await?;
     gate::resume(launcher, lead).await?;
+    review::resume(launcher, lead).await?;
     // A team is led only while its chat is in TEAM mode. In another mode the lead has
     // no plan tool to answer with, so nothing new is given out and the stall rule does
     // not wake it; what is at work finishes, and the team goes on when the mode is back.
     if !super::in_team_mode(launcher, lead).await? {
         return Ok(0);
     }
+    critic::add_if_due(launcher, &run).await?;
     let Some(given) = give_out(launcher, &run, &folder, now).await? else {
         return Ok(0);
     };
@@ -103,12 +107,39 @@ pub(super) async fn lost(
 }
 
 /// After a release: clients hear of the task, and when it failed, of the tasks the
-/// store blocked behind it, and the lead gets its one line.
+/// store blocked behind it, and the lead gets its one line. A review or the critic that
+/// failed is given up instead: it never fails the work it checks.
 pub(super) async fn released(launcher: &Launcher, lead: &str, task: &PlanTask) {
     events::task(launcher, lead, task).await;
     if task.status != PlanStatus::Failed {
         return;
     }
+    let given_up = match task.duty {
+        TaskDuty::Work => return failed(launcher, lead, task).await,
+        TaskDuty::Review => review::failed(launcher, lead, task).await,
+        TaskDuty::Critic => skip(launcher, lead, task).await,
+    };
+    if let Err(error) = given_up {
+        warn!(
+            "team of thread {lead}: cannot give up task {}: {error:#}",
+            task.task_id
+        );
+    }
+}
+
+async fn skip(launcher: &Launcher, lead: &str, task: &PlanTask) -> Result<()> {
+    for skipped in launcher
+        .state
+        .skip_task(lead, &task.task_id, &task.note)
+        .await?
+    {
+        events::task(launcher, lead, &skipped).await;
+    }
+    Ok(())
+}
+
+/// A task of the lead's plan failed: its line, and the tasks blocked behind it.
+async fn failed(launcher: &Launcher, lead: &str, task: &PlanTask) {
     lead_lines::failed(launcher, lead, task).await;
     let behind = WaitsOn::Task(task.task_id.clone());
     match launcher.state.plan(lead).await {

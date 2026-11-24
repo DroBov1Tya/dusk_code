@@ -10,6 +10,7 @@ use dusk_protocol::thread::GoalCheck;
 
 use super::{
     State,
+    duties::mark_behind,
     error::{PlanError, Unclaimable},
     graph::{Tx, load, locate, root_of, settle_blocks},
     plan::{
@@ -41,6 +42,8 @@ pub enum PassedBy {
     Lead,
     /// The user's `ConfirmTask`, for a `user_confirmation` gate.
     User,
+    /// The core: a fresh reviewer approved it.
+    Review,
 }
 
 /// Two entries of `files` overlap. The same rule as `files::overlaps`.
@@ -90,6 +93,7 @@ impl State {
             "UPDATE tasks AS t SET status = 'claimed', owner_thread_id = ?3, lease_until = ?4,
                  attempts = attempts + 1, model = ?5, waits_on = NULL, updated_at = ?6
              WHERE t.task_id = ?1 AND t.thread_id = ?2 AND t.status = 'open'
+               AND t.skipped = 0
                AND NOT EXISTS (
                    SELECT 1 FROM json_each(t.depends_on) d
                    LEFT JOIN tasks dep ON dep.task_id = d.value AND dep.thread_id = t.thread_id
@@ -451,7 +455,12 @@ impl State {
             });
         }
         let held = found.waits_on == Some(WaitsOn::Lead);
+        let reviewed = matches!(found.waits_on, Some(WaitsOn::Review(_)));
         let refused = match (by, &found.gate) {
+            (PassedBy::Review, _) if reviewed => None,
+            (PassedBy::Review, _) => Some("no review of it runs"),
+            // A gate run twice, as after a stop, does not pass what a reviewer checks.
+            (PassedBy::Gate, _) if reviewed => Some("a fresh review of it runs"),
             (PassedBy::Gate, Some(GoalCheck::Command { .. })) if !held => None,
             (PassedBy::Gate, Some(GoalCheck::Command { .. })) => {
                 Some("it changed more than its files; the lead decides")
@@ -578,7 +587,7 @@ impl State {
                  attempts = CASE status WHEN 'failed' THEN 0 ELSE attempts END,
                  reworks = CASE status WHEN 'failed' THEN 0 ELSE reworks END,
                  status = 'open', owner_thread_id = NULL, waits_on = NULL, note = '',
-                 updated_at = ?
+                 skipped = 0, updated_at = ?
              WHERE task_id = ? AND thread_id = ? AND status IN ('failed', 'blocked')",
         )
         .bind(now)
@@ -589,6 +598,10 @@ impl State {
         .rows_affected();
         if moved == 0 {
             return Err(refusal(&mut transaction, &root, &task_id, None, PlanStatus::Open).await);
+        }
+        // What a skip of it gave up comes back with it.
+        if found.skipped {
+            mark_behind(&mut transaction, &root, &task_id, false, now).await?;
         }
         settle_blocks(&mut transaction, &root, now).await?;
         finish(transaction, &root, &task_id).await

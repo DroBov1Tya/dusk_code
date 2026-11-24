@@ -34,7 +34,7 @@ pub struct TeamCounts {
     pub total: u32,
     /// Claimed or running.
     pub at_work: u32,
-    /// Open, every dependency done.
+    /// Open, every dependency done, in the current wave.
     pub ready: u32,
     pub review: u32,
     /// In review for the lead: without a gate, or held for it.
@@ -44,6 +44,8 @@ pub struct TeamCounts {
     pub blocked: u32,
     pub failed: u32,
     pub done: u32,
+    /// Given up by the lead, whatever their status: they hold no wave.
+    pub skipped: u32,
 }
 
 // T1 (the dispatcher, the stall rule) and R1 (recovery) are the callers; nothing in the
@@ -93,18 +95,15 @@ impl State {
         let row = sqlx::query(
             "SELECT COUNT(*) AS total,
                  COALESCE(SUM(status IN ('claimed', 'running')), 0) AS at_work,
-                 COALESCE(SUM(status = 'open' AND NOT EXISTS (
-                     SELECT 1 FROM json_each(t.depends_on) d
-                     LEFT JOIN tasks dep ON dep.task_id = d.value AND dep.thread_id = t.thread_id
-                     WHERE dep.status IS NOT 'done')), 0) AS ready,
                  COALESCE(SUM(status = 'review'), 0) AS review,
-                 COALESCE(SUM(status = 'review' AND (gate IS NULL OR waits_on = 'lead')), 0)
-                     AS for_lead,
-                 COALESCE(SUM(status = 'review' AND waits_on IS NOT 'lead'
+                 COALESCE(SUM(status = 'review' AND (waits_on = 'lead'
+                     OR (gate IS NULL AND waits_on IS NULL))), 0) AS for_lead,
+                 COALESCE(SUM(status = 'review' AND waits_on IS NULL
                      AND json_extract(gate, '$.kind') = 'user_confirmation'), 0) AS for_user,
-                 COALESCE(SUM(status = 'blocked'), 0) AS blocked,
-                 COALESCE(SUM(status = 'failed'), 0) AS failed,
-                 COALESCE(SUM(status = 'done'), 0) AS done
+                 COALESCE(SUM(status = 'blocked' AND skipped = 0), 0) AS blocked,
+                 COALESCE(SUM(status = 'failed' AND skipped = 0), 0) AS failed,
+                 COALESCE(SUM(status = 'done'), 0) AS done,
+                 COALESCE(SUM(skipped = 1 AND status != 'done'), 0) AS skipped
              FROM tasks t WHERE t.thread_id = ?",
         )
         .bind(&root)
@@ -114,16 +113,20 @@ impl State {
             let value: i64 = row.try_get(column)?;
             u32::try_from(value).map_err(|_| stored(format!("{column} {value} is out of range")))
         };
+        drop(transaction);
+        // The barrier decides what is ready: the same rule the dispatcher gives out by.
+        let ready = self.ready_tasks(thread).await?.len();
         Ok(TeamCounts {
             total: count("total")?,
             at_work: count("at_work")?,
-            ready: count("ready")?,
+            ready: u32::try_from(ready).unwrap_or(u32::MAX),
             review: count("review")?,
             for_lead: count("for_lead")?,
             for_user: count("for_user")?,
             blocked: count("blocked")?,
             failed: count("failed")?,
             done: count("done")?,
+            skipped: count("skipped")?,
         })
     }
 }

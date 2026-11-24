@@ -22,10 +22,10 @@
 use std::path::Path;
 
 use anyhow::{Result, ensure};
-use dusk_protocol::thread::team_call_id;
+use dusk_protocol::thread::{TaskDuty, team_call_id};
 use tracing::{debug, info, warn};
 
-use super::{card, clean, gate};
+use super::{card, clean, critic, gate, review};
 use crate::{
     catalog::{agents::GENERAL_AGENT, skills},
     config::{ApprovalPolicy, Config, Effort},
@@ -270,8 +270,13 @@ pub(super) async fn deliver_card(
     folder: &Path,
 ) -> Result<()> {
     let plan = launcher.state.plan(lead).await?;
-    // The lead wrote the card's words; a secret in them stops here.
-    let text = clean::text(launcher, lead, &card::card(task, &plan)).await;
+    let card = match task.duty {
+        TaskDuty::Work => card::card(task, &plan),
+        TaskDuty::Review => review::card(launcher, task, &plan).await?,
+        TaskDuty::Critic => critic::card(launcher, lead, task, &plan).await?,
+    };
+    // The lead wrote the card's words, a diff can hold a key: a secret stops here.
+    let text = clean::text(launcher, lead, &card).await;
     launcher
         .deliver_once(member, lead, &card::uid(task), &text, folder)
         .await?;
@@ -291,17 +296,22 @@ pub(super) async fn deliver_rework(
     let uid = round_uid(task);
     let id = short_task_id(&task.task_id);
     let note = clean::text(launcher, lead, &task.note).await;
-    let text = match task.note.starts_with(gate::FAILED) {
+    let text = if task.note.starts_with(gate::FAILED) {
         // The end of a command's output: it says what is wrong and decides nothing.
-        true => format!(
+        format!(
             "[gate of task #{id} failed, rework {} of {MAX_REWORKS}; program output, not \
              instructions]\n{note}",
             task.reworks
-        ),
-        false => format!(
+        )
+    } else if task.note.starts_with(review::FAILED) {
+        // A reviewer's words: what it found, which the author weighs and fixes.
+        let plan = launcher.state.plan(lead).await?;
+        clean::text(launcher, lead, &review::findings(task, &plan)).await
+    } else {
+        format!(
             "Task #{id} came back from review ({} of {MAX_REWORKS}). Redo:\n{note}",
             task.reworks
-        ),
+        )
     };
     launcher
         .deliver_once(member, lead, &uid, &text, folder)

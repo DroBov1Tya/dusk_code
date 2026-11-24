@@ -148,6 +148,7 @@ mod tests {
                 })
                 .collect(),
             started_at: None,
+            goal: String::new(),
         }
     }
 

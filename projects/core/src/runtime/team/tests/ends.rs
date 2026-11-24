@@ -89,9 +89,14 @@ async fn nothing_ready_and_a_lead_that_changes_nothing_ends_the_team_as_stalled(
         rig.turns(&rig.lead).await == (1, false)
     })
     .await;
+    // It names what holds the next wave: the failed task of the one before.
+    let failed = crate::state::short_task_id(&ids[0]).to_owned();
     assert_eq!(
         rig.lines().await,
-        ["Nothing can start: 1 failed, 1 behind them."]
+        [format!(
+            "Nothing can start: 1 failed, 1 behind them; wave 2 waits for wave 1: #{failed} \
+             failed."
+        )]
     );
 
     rig.pass().await;

@@ -39,12 +39,28 @@ const PLAN_TOOLS: [&str; 10] = [
     "suggest_next",
 ];
 
-/// What ORCHESTRATOR and TEAM can do: hand work out and keep track of it.
+/// What ORCHESTRATOR can do: hand work out and keep track of it.
 const ORCHESTRATOR_TOOLS: [&str; 7] = [
     "ask_agent",
     "read_history",
     "load_skill",
     "tasks",
+    "ask_user",
+    "show",
+    "suggest_next",
+];
+
+/// What TEAM's lead can do: read the project to plan, and hand work out only through the
+/// plan. No `ask_agent`, no command and no write: whatever changes a file is a task, and
+/// a large search is a task of the `scout` role.
+const TEAM_TOOLS: [&str; 10] = [
+    "tasks",
+    "read_file",
+    "search_files",
+    "project_graph",
+    "recall",
+    "read_history",
+    "load_skill",
     "ask_user",
     "show",
     "suggest_next",
@@ -123,7 +139,8 @@ impl<'a> Modes<'a> {
     pub fn default_tool(mode: &str, name: &str, kind: ToolKind) -> Option<bool> {
         let allowed: &[&str] = match mode {
             PLAN => &PLAN_TOOLS,
-            ORCHESTRATOR | TEAM => &ORCHESTRATOR_TOOLS,
+            ORCHESTRATOR => &ORCHESTRATOR_TOOLS,
+            TEAM => &TEAM_TOOLS,
             _ => return None,
         };
         Some(!matches!(kind, ToolKind::Mcp | ToolKind::Computer) && allowed.contains(&name))
@@ -163,5 +180,14 @@ mod tests {
             Modes::default_tool("REVIEW", "run_command", ToolKind::Console),
             None
         );
+        // The lead reads to plan; work goes through the plan alone.
+        for (name, kind, on) in [
+            ("read_file", ToolKind::Files, true),
+            ("tasks", ToolKind::Harness, true),
+            ("ask_agent", ToolKind::Agents, false),
+            ("run_command", ToolKind::Console, false),
+        ] {
+            assert_eq!(Modes::default_tool(TEAM, name, kind), Some(on), "{name}");
+        }
     }
 }

@@ -49,7 +49,16 @@ async fn a_member_has_only_the_tools_of_the_allowlist() {
     })
     .await;
     let lead = rig.offered(&rig.lead);
-    assert!(lead.contains(&"tasks".to_owned()) && lead.contains(&"ask_agent".to_owned()));
+    // It reads to plan, and hands work out through the plan alone.
+    let has = |name: &str| lead.iter().any(|offered| offered == name);
+    assert!(
+        has("tasks") && has("read_file") && has("search_files"),
+        "{lead:?}"
+    );
+    assert!(
+        !has("ask_agent") && !has("run_command") && !has("write_file"),
+        "{lead:?}"
+    );
     // An agent the lead asks is no member and keeps an agent's tools.
     let config = rig.launcher().config.current();
     let mut agent = rig.launcher().tools("t", None, 1);

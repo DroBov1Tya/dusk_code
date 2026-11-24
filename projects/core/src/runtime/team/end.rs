@@ -2,13 +2,15 @@
 //! quiet at the cap of agent messages, or it stalled. Whatever the reason, the members
 //! at work are cancelled, their tasks go back to open, and the lead is told once.
 
-use dusk_protocol::thread::{TaskStatus, TeamEnd};
+use dusk_protocol::thread::{TaskDuty, TaskStatus, TeamEnd};
 use tracing::warn;
 
-use super::{allow, events, gate, lead_lines};
+use super::{allow, critic, events, gate, lead_lines};
 use crate::{
     runtime::{Launcher, agent::Input},
-    state::{Delivery, PlanTask, TeamError, TeamRun},
+    state::{
+        Delivery, PlanStatus, PlanTask, TeamError, TeamRun, current_wave, short_task_id, waves,
+    },
 };
 
 /// Ends the chat's running team with `why`; answers the tasks that went back to open.
@@ -68,8 +70,7 @@ pub(super) async fn cancel_member(launcher: &Launcher, thread_id: &str) {
 async fn tell(launcher: &Launcher, run: &TeamRun, why: TeamEnd, now: i64) {
     let lead = &run.thread_id;
     let state = &launcher.state;
-    let (Ok(counts), Ok(Some(team))) = (state.team_counts(lead).await, state.team(lead, now).await)
-    else {
+    let (Ok(plan), Ok(Some(team))) = (state.plan(lead).await, state.team(lead, now).await) else {
         return warn!("cannot read the ended team of thread {lead}");
     };
     let reason = match why {
@@ -84,10 +85,24 @@ async fn tell(launcher: &Launcher, run: &TeamRun, why: TeamEnd, now: i64) {
         TeamEnd::Done => "",
         _ => " Tasks at work went back to open; run goes on from here.",
     };
+    // The lead's own tasks; reviews and the critic are the core's.
+    let work: Vec<&PlanTask> = plan
+        .iter()
+        .filter(|task| task.duty == TaskDuty::Work)
+        .collect();
+    let done = work
+        .iter()
+        .filter(|task| task.status == PlanStatus::Done)
+        .count();
+    let skipped = match work.iter().filter(|task| task.skipped).count() {
+        0 => String::new(),
+        count => format!(", {count} skipped"),
+    };
+    let critic = critic::end_words(&plan, run);
     let line = format!(
-        "Team ended: {reason}. {} of {} tasks; {} steps, {} tokens, {} min.{left}",
-        counts.done,
-        counts.total,
+        "Team ended: {reason}. {done} of {} tasks{skipped}; {} steps, {} tokens, {} min.{left}\
+         {critic}",
+        work.len(),
         team.used.steps,
         tokens(team.used.tokens),
         team.used.minutes
@@ -95,6 +110,37 @@ async fn tell(launcher: &Launcher, run: &TeamRun, why: TeamEnd, now: i64) {
     let uid = format!("team:{lead}:{}:end", run.started_at);
     let wake = why != TeamEnd::Stopped;
     lead_lines::tell(launcher, lead, lead, &uid, &line, wake).await;
+}
+
+/// `wave 2 waits for wave 1: #a failed, #b blocked`: what holds the next wave, when the
+/// current wave's unfinished tasks are failed or blocked and a later wave waits. Empty
+/// otherwise.
+fn held_wave(plan: &[PlanTask]) -> String {
+    let Some(current) = current_wave(plan) else {
+        return String::new();
+    };
+    let waves = waves(plan);
+    let later = plan
+        .iter()
+        .zip(&waves)
+        .any(|(task, wave)| *wave > current && !task.finished());
+    let holding: Vec<String> = plan
+        .iter()
+        .zip(&waves)
+        .filter(|(task, wave)| **wave == current && !task.finished())
+        .filter(|(task, _)| matches!(task.status, PlanStatus::Failed | PlanStatus::Blocked))
+        .take(4)
+        .map(|(task, _)| format!("#{} {}", short_task_id(&task.task_id), task.status.as_str()))
+        .collect();
+    if !later || holding.is_empty() {
+        return String::new();
+    }
+    format!(
+        "wave {} waits for wave {}: {}",
+        current + 2,
+        current + 1,
+        holding.join(", ")
+    )
 }
 
 /// `1.31M`, `212k`, `950`.
@@ -118,7 +164,7 @@ pub(super) async fn settle(launcher: &Launcher, run: &TeamRun, now: i64) -> Resu
     let lead = &run.thread_id;
     let state = &launcher.state;
     let counts = state.team_counts(lead).await?;
-    if counts.total > 0 && counts.done == counts.total {
+    if counts.total > 0 && counts.done + counts.skipped == counts.total {
         end(launcher, lead, TeamEnd::Done, now).await?;
         return Ok(());
     }
@@ -144,7 +190,8 @@ pub(super) async fn settle(launcher: &Launcher, run: &TeamRun, now: i64) -> Resu
         }
         Delivery::Read { answered: false } | Delivery::Waiting => {}
         Delivery::None => {
-            let line = lead_lines::stall_line(&counts);
+            let plan = state.plan(lead).await?;
+            let line = lead_lines::stall_line(&counts, &held_wave(&plan));
             lead_lines::tell(launcher, lead, lead, &stall, &line, true).await;
         }
     }

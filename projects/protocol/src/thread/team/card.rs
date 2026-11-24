@@ -36,6 +36,7 @@ pub fn task_card(tasks: &[Task], task_id: &str) -> Option<TaskCard> {
             WaitsOn::Lead => "the lead's decision".to_owned(),
             WaitsOn::Task(id) => named(id),
             WaitsOn::Message(_) => "an answer to a message".to_owned(),
+            WaitsOn::Review(id) => format!("a fresh review: {}", named(id)),
         };
         fields.push(("Waits on", on));
     }

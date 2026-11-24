@@ -168,7 +168,7 @@ async fn one_yes_at_run_covers_exactly_the_listed_gates() {
     let (progress, asked) = yes_once(&rig);
     let started = rig
         .runner()
-        .run(&rig.lead, Some(progress.clone()))
+        .run(&rig.lead, GOAL, Some(progress.clone()))
         .await
         .unwrap();
     assert_eq!(started.gates, GatesYes::Allowed);
@@ -199,7 +199,11 @@ async fn one_yes_at_run_covers_exactly_the_listed_gates() {
     assert!(held.note.contains("its gate was not run"), "{}", held.note);
 
     // The next run asks for the changed line alone.
-    let again = rig.runner().run(&rig.lead, Some(progress)).await.unwrap();
+    let again = rig
+        .runner()
+        .run(&rig.lead, GOAL, Some(progress))
+        .await
+        .unwrap();
     assert_eq!(again.gates, GatesYes::Allowed);
     assert_eq!(
         asked.lock().unwrap().last().cloned(),

@@ -30,9 +30,10 @@ pub use work::{
     Unfinished,
 };
 pub use work::{
-    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_NOTE,
-    MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
-    PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, overlaps, short_task_id,
+    BlockedOn, Claim, Duty, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_GOAL,
+    MAX_NOTE, MAX_OPEN_TASKS, MAX_RESULT, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy,
+    PlanError, PlanStatus, PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, current_wave,
+    overlaps, short_task_id, waves,
 };
 pub use work::{TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun};
 

@@ -77,8 +77,43 @@ fn write_agent(root: &Path, name: &str) {
     .unwrap();
 }
 
+/// The plan form wants `accept` on every task and `files` on every task but a scout's.
+/// Tests about something else get them filled in: `accept` as a fixed line, `files` as
+/// a file of its own under `auto/` for each task, so no two share one.
+fn with_needs(mut arguments: Value) -> Value {
+    if arguments.get("action") != Some(&json!("add")) {
+        return arguments;
+    }
+    let Some(tasks) = arguments.get_mut("tasks").and_then(Value::as_array_mut) else {
+        return arguments;
+    };
+    for task in tasks.iter_mut() {
+        let Some(task) = task.as_object_mut() else {
+            continue;
+        };
+        // The same text gets the same file, so a call run again finds its twins.
+        let text = task.get("text").and_then(Value::as_str).unwrap_or_default();
+        let name = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        });
+        task.entry("accept").or_insert(json!("it holds"));
+        if task.get("role") != Some(&json!("scout")) {
+            task.entry("files")
+                .or_insert(json!([format!("auto/{name:016x}.rs")]));
+        }
+    }
+    arguments
+}
+
 impl Fixture {
     async fn call(&self, arguments: Value) -> anyhow::Result<String> {
+        self.tasks
+            .call(with_needs(arguments), self.context.clone())
+            .await
+    }
+
+    /// A call as the lead wrote it, nothing filled in.
+    async fn call_as_is(&self, arguments: Value) -> anyhow::Result<String> {
         self.tasks.call(arguments, self.context.clone()).await
     }
 
@@ -168,7 +203,7 @@ async fn the_plan_form_is_offered_only_to_a_chat_in_team_mode() {
 async fn the_plan_form_costs_what_the_design_says() {
     let f = fixture("plan_bytes").await;
     let plan = spec_bytes(&f.tasks, &f.context);
-    assert_eq!(plan, (5, 1110, 737));
+    assert_eq!(plan, (5, 1369, 769));
     let main = ToolContext {
         config: tool_context_with(&f.context.scope, "limits:\n  plan_graph: true\n").config,
         ..f.context.clone()
@@ -177,7 +212,7 @@ async fn the_plan_form_costs_what_the_design_says() {
     let growth = (plan.0 + plan.1 + plan.2) - (board.0 + board.1 + board.2);
     println!("board {board:?}, plan {plan:?}, growth {growth}");
     assert_eq!(board.0 + board.1 + board.2, 1274);
-    assert_eq!(growth, 578);
+    assert_eq!(growth, 869);
 }
 
 fn seven() -> Value {
@@ -185,7 +220,7 @@ fn seven() -> Value {
         { "key": "row", "text": "add the importer row type", "files": ["src/row.rs"] },
         { "key": "dto", "text": "make email optional in UserDto", "after": ["row"],
           "gate": "cargo test -p api user_dto", "files": ["src/dto/"] },
-        { "key": "parse", "text": "parse the CSV", "after": ["row"], "files": ["src"] },
+        { "key": "parse", "text": "parse the CSV", "after": ["row", "dto"], "files": ["src"] },
         { "key": "errors", "text": "show the importer errors", "after": ["dto", "parse"],
           "accept": "a bad row names its line", "phase": "2" },
         { "key": "review", "text": "review the importer", "role": "reviewer",
@@ -398,7 +433,9 @@ async fn an_unknown_role_is_looked_for_once_then_refused_with_the_known_ones() {
     let refused = f
         .tasks
         .call(
-            json!({ "action": "add", "tasks": [{ "text": "three", "role": "tester" }] }),
+            with_needs(
+                json!({ "action": "add", "tasks": [{ "text": "three", "role": "tester" }] }),
+            ),
             off,
         )
         .await
@@ -649,6 +686,7 @@ impl TeamRunner for Recorder {
     fn run<'a>(
         &'a self,
         _lead: &'a str,
+        _goal: &'a str,
         _progress: Option<crate::tools::Progress>,
     ) -> BoxFuture<'a, super::team::Started> {
         *self.runs.lock() += 1;
@@ -673,7 +711,7 @@ impl TeamRunner for Recorder {
 #[tokio::test]
 async fn run_and_stop_reach_the_team_runner() {
     let f = fixture("plan_run").await;
-    let refused = f.refused(json!({ "action": "run" })).await;
+    let refused = f.refused(json!({ "action": "run", "goal": "g" })).await;
     assert!(
         refused.starts_with("the plan has nothing left to do"),
         "{refused}"
@@ -682,13 +720,15 @@ async fn run_and_stop_reach_the_team_runner() {
         .await
         .unwrap();
     let refused = f.refused(json!({ "action": "run" })).await;
+    assert!(refused.starts_with("run needs `goal`"), "{refused}");
+    let refused = f.refused(json!({ "action": "run", "goal": "g" })).await;
     assert!(
-        refused.starts_with("the team runner is not built yet"),
+        refused.starts_with("the team runner is not built"),
         "{refused}"
     );
     let refused = f.refused(json!({ "action": "stop" })).await;
     assert!(
-        refused.starts_with("the team runner is not built yet"),
+        refused.starts_with("the team runner is not built"),
         "{refused}"
     );
 
@@ -696,7 +736,7 @@ async fn run_and_stop_reach_the_team_runner() {
     let tasks = Tasks::new(Arc::clone(&f.state), LEAD.into())
         .lead(Agents::new(f.root.join("agents"), Arc::clone(&f.state)))
         .with_team(Arc::clone(&recorder) as Arc<dyn TeamRunner>);
-    let run = json!({ "action": "run" });
+    let run = json!({ "action": "run", "goal": "it works; the test passes" });
     assert!(tasks.repeatable(&run));
     let answer = tasks.call(run, f.context.clone()).await.unwrap();
     assert_eq!(answer, "running: 2 given out");
@@ -715,4 +755,39 @@ async fn run_and_stop_reach_the_team_runner() {
         .unwrap();
     assert_eq!(answer, "stopped");
     assert_eq!(*recorder.stops.lock(), 1);
+}
+
+#[tokio::test]
+async fn a_task_needs_accept_and_files_and_tasks_at_once_share_none() {
+    let f = fixture("plan_needs").await;
+    let refused = |arguments: Value| {
+        let f = &f;
+        async move { format!("{:#}", f.call_as_is(arguments).await.unwrap_err()) }
+    };
+    assert_eq!(
+        refused(json!({ "action": "add", "tasks": [{ "text": "one", "files": ["src/a.rs"] }] }))
+            .await,
+        "task 1 needs accept: how to tell it is done"
+    );
+    assert_eq!(
+        refused(json!({ "action": "add", "tasks": [{ "text": "one", "accept": "x" }] })).await,
+        "task 1 needs files (Yours); a task that changes nothing is a scout task (role scout)"
+    );
+    let shared = json!({ "action": "add", "tasks": [
+        { "key": "a", "text": "one", "accept": "x", "files": ["src"] },
+        { "key": "b", "text": "two", "accept": "x", "files": ["src/main.rs"] }] });
+    assert_eq!(
+        refused(shared).await,
+        "task a and task b share src/main.rs; give it to one, or put one after the other"
+    );
+    assert!(f.ids().await.is_empty());
+    // One after the other may share; a scout needs no files.
+    write_agent(&f.root, "scout");
+    f.call_as_is(json!({ "action": "add", "tasks": [
+        { "key": "look", "text": "find the callers", "accept": "paths named", "role": "scout" },
+        { "key": "a", "text": "one", "accept": "x", "files": ["src"], "after": ["look"] },
+        { "key": "b", "text": "two", "accept": "x", "files": ["src/main.rs"], "after": ["a"] }] }))
+        .await
+        .unwrap();
+    assert_eq!(f.ids().await.len(), 3);
 }

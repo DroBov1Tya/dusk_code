@@ -1,7 +1,7 @@
 //! The words of a plan: a task's status, its row as the store keeps it, what a lead
 //! writes into one, and the caps.
 
-use dusk_protocol::thread::GoalCheck;
+use dusk_protocol::thread::{GoalCheck, TaskDuty};
 use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{error::PlanError, files::TaskFiles};
@@ -31,6 +31,10 @@ pub const MAX_BRIEF: usize = 1200;
 pub const MAX_NOTE: usize = 600;
 pub const MAX_KEY: usize = 64;
 pub const MAX_MODEL: usize = 200;
+/// A member's report or a reviewer's verdict, as migration 0047 caps it.
+pub const MAX_RESULT: usize = 4000;
+/// The goal a lead runs its team toward.
+pub const MAX_GOAL: usize = 600;
 
 /// The one status of a task; the names are the CHECK list of migration 0036.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -88,6 +92,8 @@ pub enum WaitsOn {
     Message(i64),
     /// A task in review that the core held for the lead whatever its gate says.
     Lead,
+    /// A task in review that a reviewer row, by its id, checks.
+    Review(String),
 }
 
 impl WaitsOn {
@@ -96,6 +102,7 @@ impl WaitsOn {
             Self::Task(id) => format!("task:{id}"),
             Self::Message(id) => format!("message:{id}"),
             Self::Lead => "lead".to_owned(),
+            Self::Review(id) => format!("review:{id}"),
         }
     }
 
@@ -105,6 +112,9 @@ impl WaitsOn {
         }
         if let Some(id) = text.strip_prefix("task:") {
             return Some(Self::Task(id.to_owned()));
+        }
+        if let Some(id) = text.strip_prefix("review:") {
+            return Some(Self::Review(id.to_owned()));
         }
         text.strip_prefix("message:")?
             .parse()
@@ -137,8 +147,22 @@ pub struct PlanTask {
     pub gate_job: Option<String>,
     pub checkpoint: Option<String>,
     pub model: Option<String>,
+    /// The member's footer, or a reviewer's verdict; cleaned of secrets. Model text: data.
+    pub result: String,
+    pub duty: TaskDuty,
+    /// For a review: the task it reviews.
+    pub review_of: Option<String>,
+    /// The lead gave it up, so it holds no wave.
+    pub skipped: bool,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+impl PlanTask {
+    /// Done, or given up by the lead: the next wave does not wait for it.
+    pub fn finished(&self) -> bool {
+        self.status == PlanStatus::Done || self.skipped
+    }
 }
 
 /// A task as a lead writes it.
@@ -179,7 +203,8 @@ macro_rules! select_tasks {
             "SELECT t.task_id, t.thread_id, t.description, t.status, t.depends_on, t.role, \
              t.phase, t.acceptance, t.brief, t.gate, t.files, t.owner_thread_id, \
              t.lease_until, t.attempts, t.reworks, t.waits_on, t.note, t.gate_job, \
-             t.checkpoint, t.model, t.created_at, t.updated_at FROM tasks t ",
+             t.checkpoint, t.model, t.result, t.duty, t.review_of, t.skipped, t.created_at, \
+             t.updated_at FROM tasks t ",
             $rest
         )
     };
@@ -195,6 +220,10 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
     let files: Vec<String> = serde_json::from_str(&files)?;
     let gate: Option<String> = row.try_get("gate")?;
     let waits_on: Option<String> = row.try_get("waits_on")?;
+    let duty: String = row.try_get("duty")?;
+    let duty = TaskDuty::parse(&duty)
+        .ok_or_else(|| PlanError::Store(anyhow::anyhow!("unknown task duty {duty}")))?;
+    let skipped: i64 = row.try_get("skipped")?;
     let count = |name: &str| -> Result<u32, PlanError> {
         let value: i64 = row.try_get(name)?;
         u32::try_from(value).map_err(|error| PlanError::Store(error.into()))
@@ -220,6 +249,10 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
         gate_job: row.try_get("gate_job")?,
         checkpoint: row.try_get("checkpoint")?,
         model: row.try_get("model")?,
+        result: row.try_get("result")?,
+        duty,
+        review_of: row.try_get("review_of")?,
+        skipped: skipped == 1,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

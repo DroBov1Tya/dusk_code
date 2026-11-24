@@ -12,7 +12,7 @@ use crate::state::thread::threads::chat_of;
 use uuid::Uuid;
 
 use super::{
-    State,
+    State, barrier,
     error::PlanError,
     plan::{
         MAX_DEPENDENCIES, MAX_KEY, MAX_OPEN_TASKS, MAX_TASKS_AN_ADD, NewTask, PlanStatus, PlanTask,
@@ -170,7 +170,8 @@ impl State {
         let gate = edit.gate.as_ref().unwrap_or(&found.gate);
         sqlx::query(
             "UPDATE tasks SET description = ?, depends_on = ?, role = ?, phase = ?,
-                 acceptance = ?, brief = ?, gate = ?, files = ?, updated_at = ?
+                 acceptance = ?, brief = ?, gate = ?, files = ?, updated_at = ?,
+                 skipped = CASE status WHEN 'open' THEN 0 ELSE skipped END
              WHERE task_id = ? AND thread_id = ?",
         )
         .bind(
@@ -222,13 +223,14 @@ impl State {
         load(&mut transaction, &root, &task_id).await
     }
 
-    /// The open tasks whose every dependency is done, by phase label, oldest first.
+    /// The open tasks whose every dependency is done and that stand in the current wave
+    /// (`barrier`), by phase label, oldest first. A task the lead skipped is never ready.
     pub async fn ready_tasks(&self, thread: &str) -> Result<Vec<PlanTask>, PlanError> {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         // A dependency whose row is gone counts as not done.
-        sqlx::query(select_tasks!(
-            "WHERE t.thread_id = ? AND t.status = 'open'
+        let ready: Vec<PlanTask> = sqlx::query(select_tasks!(
+            "WHERE t.thread_id = ? AND t.status = 'open' AND t.skipped = 0
                AND NOT EXISTS (
                    SELECT 1 FROM json_each(t.depends_on) d
                    LEFT JOIN tasks dep ON dep.task_id = d.value AND dep.thread_id = t.thread_id
@@ -240,7 +242,29 @@ impl State {
         .await?
         .iter()
         .map(decode)
-        .collect()
+        .collect::<Result<_, _>>()?;
+        if ready.is_empty() {
+            return Ok(ready);
+        }
+        let plan: Vec<PlanTask> = sqlx::query(select_tasks!("WHERE t.thread_id = ?"))
+            .bind(&root)
+            .fetch_all(&mut *transaction)
+            .await?
+            .iter()
+            .map(decode)
+            .collect::<Result<_, _>>()?;
+        let waves = barrier::waves(&plan);
+        let current = barrier::current_wave(&plan);
+        let wave_of = |task_id: &str| {
+            plan.iter()
+                .zip(&waves)
+                .find(|(task, _)| task.task_id == task_id)
+                .map(|(_, wave)| *wave)
+        };
+        Ok(ready
+            .into_iter()
+            .filter(|task| current.is_some() && wave_of(&task.task_id) == current)
+            .collect())
     }
 }
 

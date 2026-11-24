@@ -16,9 +16,10 @@ pub use failure::{ProviderFailure, TurnFailure};
 pub use jobs::{BackgroundJob, JobSummary};
 pub use resume::{CHECK_NOTE, CUT_OFF, Settle, Unfinished};
 pub use tasks::{
-    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_NOTE,
-    MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
-    PlanTask, Task, TaskEdit, TaskFiles, Unclaimable, WaitsOn, overlaps, short_task_id,
+    BlockedOn, Claim, Duty, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_GOAL,
+    MAX_NOTE, MAX_OPEN_TASKS, MAX_RESULT, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy,
+    PlanError, PlanStatus, PlanTask, Task, TaskEdit, TaskFiles, Unclaimable, WaitsOn, current_wave,
+    overlaps, short_task_id, waves,
 };
 pub use teams::{TeamAsk, TeamCheck, TeamCounts, TeamError, TeamRun};
 pub use tokens::{CallPurpose, LastPrompt, ModelCall};

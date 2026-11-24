@@ -175,16 +175,19 @@ async fn ready_is_open_with_every_dependency_done() {
         .pass_task(LEAD, &ids[1], PassedBy::Lead)
         .await
         .unwrap();
-    assert_eq!(ready(&state).await, [ids[2].clone(), ids[0].clone()]);
+    // The barrier: b's dependency is done, but `late` still holds the first wave.
+    assert_eq!(ready(&state).await, [ids[0].clone()]);
+    done(&state, &ids[0], "m2").await;
+    assert_eq!(ready(&state).await, [ids[2].clone()]);
     done(&state, &ids[2], "m1").await;
-    assert_eq!(ready(&state).await, [ids[3].clone(), ids[0].clone()]);
+    assert_eq!(ready(&state).await, [ids[3].clone()]);
     // A dependency whose row is gone is not done either.
     sqlx::query("UPDATE tasks SET depends_on = json_array('gone') WHERE task_id = ?")
         .bind(&ids[3])
         .execute(&state.pool)
         .await
         .unwrap();
-    assert_eq!(ready(&state).await, [ids[0].clone()]);
+    assert!(ready(&state).await.is_empty());
     assert!(state.claim_task(LEAD, &ids[3], claim("m2")).await.is_err());
 }
 

@@ -190,6 +190,7 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
         used,
         members,
         started_at: Some(now_ms() - 23 * 60_000),
+        goal: String::new(),
     }
 }
 

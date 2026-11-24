@@ -18,11 +18,11 @@ use dusk_protocol::thread::TeamStatus;
 use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
-use super::{allow, clean, dispatch, events, lead_lines};
+use super::{allow, clean, dispatch, events, lead_lines, review};
 use crate::{
     message::plain::plain,
     runtime::{Launcher, thread::start},
-    state::{GoalCheck, PassedBy, PlanError, PlanStatus, PlanTask, WaitsOn, timestamp_ms},
+    state::{GoalCheck, PassedBy, PlanError, PlanStatus, PlanTask, timestamp_ms},
     tools::{ToolContext, ToolResult, console::run_check},
 };
 
@@ -186,9 +186,10 @@ fn run(
 /// what a stop of the core, or a team that ended meanwhile, left in review.
 pub(super) async fn resume(launcher: &Launcher, lead: &str) -> Result<()> {
     for task in launcher.state.plan(lead).await? {
+        // A task held for the lead, or whose review runs, passed its gate or needs none.
         let waits = task.status == PlanStatus::Review
             && matches!(task.gate, Some(GoalCheck::Command { .. }))
-            && task.waits_on != Some(WaitsOn::Lead);
+            && task.waits_on.is_none();
         let Some(member) = task.owner_thread_id.as_deref().filter(|_| waits) else {
             continue;
         };
@@ -243,7 +244,21 @@ async fn settle(
         )),
     };
     let moved = match &note {
-        None => state.pass_task(lead, task_id, PassedBy::Gate).await,
+        None => {
+            // A passed gate is checked once more, by a fresh reviewer, when the task
+            // changed files.
+            let task = state.plan_task(lead, task_id).await?;
+            let member = task.owner_thread_id.clone().unwrap_or_default();
+            let reviewed = task.status == PlanStatus::Review
+                && task.waits_on.is_none()
+                && review::due(launcher, &member, &task).await?;
+            match reviewed {
+                true => review::begin(launcher, lead, &task)
+                    .await
+                    .map_err(|error| PlanError::Store(error.context("cannot begin the review"))),
+                false => state.pass_task(lead, task_id, PassedBy::Gate).await,
+            }
+        }
         Some(note) => {
             // A team that ended gives no task back to a member: the gate runs again
             // with the next run.

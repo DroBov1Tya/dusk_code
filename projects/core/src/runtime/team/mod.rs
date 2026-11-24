@@ -8,15 +8,20 @@
 //! yes for the plan's gates, `card` writes its first message, `clean` takes secrets out
 //! of every text that is forwarded, `lease` keeps its claim while its runner lives,
 //! `hand_in` moves its task when its turn ends, `outside` finds what it changed beyond
-//! its files, `gate` is where a command gate starts, `lead_lines` is what the lead is
-//! told, `end` ends a team, `settle` recovers one after a restart, `events` tells the
-//! clients.
+//! its files, `gate` is where a command gate starts, `review` has a fresh member check a
+//! task that changed files, `critic` checks the results against the request at the end,
+//! `lead_lines` is what the lead is told, `end` ends a team, `settle` recovers one after
+//! a restart, `events` tells the clients.
+//!
+//! The store gives out one wave at a time (`state::current_wave`): a wave starts when
+//! the one before is all done or skipped by the lead.
 //!
 //! Everything it needs to go on is in the database. `Teams` holds a lock and a few caches.
 
 mod allow;
 mod card;
 mod clean;
+mod critic;
 mod dispatch;
 mod end;
 mod events;
@@ -26,6 +31,7 @@ mod lead_lines;
 mod lease;
 mod member;
 mod outside;
+mod review;
 mod settle;
 #[cfg(test)]
 mod tests;
@@ -149,13 +155,19 @@ pub(crate) fn at_once_setting(limits: &Limits) -> u32 {
 }
 
 impl TeamRunner for Runner {
-    fn run<'a>(&'a self, lead: &'a str, progress: Option<Progress>) -> BoxFuture<'a, Started> {
+    fn run<'a>(
+        &'a self,
+        lead: &'a str,
+        goal: &'a str,
+        progress: Option<Progress>,
+    ) -> BoxFuture<'a, Started> {
         Box::pin(async move {
             self.may_lead(lead).await?;
             // Before the start, so no member works before the user answered.
             let gates = allow::ask(&self.launcher, lead, progress).await?;
             let now = timestamp_ms()?;
             self.start(lead, now).await?;
+            self.launcher.state.set_team_goal(lead, goal).await?;
             events::team(&self.launcher, lead, now, true).await;
             let given = dispatch::pass(&self.launcher, lead, now).await?;
             Ok(Started { given, gates })

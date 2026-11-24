@@ -6,6 +6,7 @@ mod ends;
 mod gates;
 mod limits;
 mod recovery;
+mod reviews;
 mod runs;
 mod text;
 
@@ -37,8 +38,10 @@ use crate::{
 };
 
 /// What a member answers when the script has nothing else for it.
-pub(super) const DONE: &str =
-    "Made the change.\n\nStatus: done\nResult: it works now\nChecked: not run\nOpen: nothing";
+pub(super) const DONE: &str = "Made the change.\n\nStatus: done\nResult: it works now\nChecked: \
+                               not run\nNot checked: nothing\nOpen: nothing";
+/// The goal every test runs its team toward.
+pub(super) const GOAL: &str = "the plan is done; each task's accept holds";
 
 /// What the scripted model does with one call.
 pub(super) enum Out {
@@ -185,9 +188,12 @@ pub(super) struct Rig {
     pub input: ThreadInput,
 }
 
-/// The settings every test starts from: the mode that offers the plan and runs a team.
+/// The settings every test starts from: the mode that offers the plan and runs a team,
+/// without the reviews and the critic, which their own tests switch on (`CHECKED`).
 // Tests add their own `limits` lines to it.
-pub(super) const ON: &str = "mode: TEAM\nlimits:\n  plan_graph: true\n";
+pub(super) const ON: &str = "mode: TEAM\nlimits:\n  plan_graph: true\n  team_review: false\n";
+/// The settings as shipped: a fresh reviewer for every change, and the critic.
+pub(super) const CHECKED: &str = "mode: TEAM\nlimits:\n  plan_graph: true\n";
 
 impl Rig {
     pub async fn new(name: &str, script: impl Fn(&Asked) -> Out + Send + Sync + 'static) -> Self {
@@ -277,7 +283,7 @@ impl Rig {
     }
 
     pub async fn try_run(&self) -> anyhow::Result<usize> {
-        let started = self.runner().run(&self.lead, None).await?;
+        let started = self.runner().run(&self.lead, GOAL, None).await?;
         Ok(started.given)
     }
 

@@ -9739,6 +9739,10 @@
         "done": {
           "type": "boolean"
         },
+        "duty": {
+          "$ref": "#/$defs/TaskDuty",
+          "default": "work"
+        },
         "files": {
           "default": [],
           "items": {
@@ -9789,6 +9793,17 @@
           "default": "",
           "type": "string"
         },
+        "result": {
+          "default": "",
+          "type": "string"
+        },
+        "review_of": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "reworks": {
           "default": 0,
           "format": "uint32",
@@ -9801,6 +9816,10 @@
             "string",
             "null"
           ]
+        },
+        "skipped": {
+          "default": false,
+          "type": "boolean"
         },
         "status": {
           "anyOf": [
@@ -9853,6 +9872,26 @@
         "items"
       ],
       "type": "object"
+    },
+    "TaskDuty": {
+      "description": "What a task of a plan is for.",
+      "oneOf": [
+        {
+          "const": "work",
+          "description": "A task of the lead's plan.",
+          "type": "string"
+        },
+        {
+          "const": "review",
+          "description": "The core's independent review of a task that changed files.",
+          "type": "string"
+        },
+        {
+          "const": "critic",
+          "description": "The core's check at the end: what the request asked that no task did or verified.",
+          "type": "string"
+        }
+      ]
     },
     "TaskItem": {
       "properties": {
@@ -9951,6 +9990,11 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "goal": {
+          "default": "",
+          "description": "What the lead ran this team toward: one sentence and how done is told. Empty from\ncores before it was asked for.",
+          "type": "string"
         },
         "members": {
           "description": "Newest first, at most `MAX_TEAM_MEMBERS`.",
@@ -13155,6 +13199,19 @@
           "const": "lead",
           "description": "A task in review that the core held for the lead's decision.",
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A task in review that a reviewer row, by its id, checks now.",
+          "properties": {
+            "review": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "review"
+          ],
+          "type": "object"
         }
       ]
     },

@@ -4,6 +4,8 @@ use super::super::{
     hand_in::Report,
     lead_lines::{MAX_LINE, blocked_line, failed_line, quoted, review_line, stall_line},
 };
+use dusk_protocol::thread::TaskDuty;
+
 use crate::state::{PlanStatus, PlanTask, TaskFiles, TeamCounts};
 
 fn task(note: &str) -> PlanTask {
@@ -28,6 +30,10 @@ fn task(note: &str) -> PlanTask {
         gate_job: None,
         checkpoint: None,
         model: None,
+        result: String::new(),
+        duty: TaskDuty::Work,
+        review_of: None,
+        skipped: false,
         created_at: 1,
         updated_at: 2,
     }
@@ -113,7 +119,7 @@ fn a_hostile_answer_cannot_forge_or_flood_a_line() {
         assert!(line.contains("#77aa01bc "));
     }
     assert!(lines[0].ends_with(". Accept or reject with tasks review."));
-    assert!(lines[1].ends_with(" after 3 attempts. Reopen it, change the plan, or stop."));
+    assert!(lines[1].ends_with(" after 3 attempts. Reopen it, edit it, skip it, or stop."));
     assert_eq!(quoted("a\nb\u{0}c.", 10), "a b c");
 }
 
@@ -135,7 +141,7 @@ fn the_lines_read_as_the_design_writes_them() {
     assert_eq!(
         blocked,
         "#77aa01bc blocked: needs the staging URL of the importer. Answer by reopening it and \
-         editing its brief, or fail it."
+         editing its brief, or skip it."
     );
     let counts = TeamCounts {
         total: 4,
@@ -146,8 +152,13 @@ fn the_lines_read_as_the_design_writes_them() {
         ..TeamCounts::default()
     };
     assert_eq!(
-        stall_line(&counts),
+        stall_line(&counts, ""),
         "Nothing can start: 1 waits for you, 1 failed, 2 behind them."
+    );
+    assert_eq!(
+        stall_line(&counts, "wave 2 waits for wave 1: #77aa01bc failed"),
+        "Nothing can start: 1 waits for you, 1 failed, 2 behind them; wave 2 waits for wave \
+         1: #77aa01bc failed."
     );
 }
 

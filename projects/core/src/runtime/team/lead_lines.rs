@@ -9,6 +9,7 @@
 
 use std::path::Path;
 
+use dusk_protocol::thread::TaskDuty;
 use tracing::warn;
 
 use super::clean;
@@ -81,26 +82,32 @@ pub(super) fn failed_line(folded: &str, task: &PlanTask) -> String {
     let head = format!("{folded}#{} failed: ", short_task_id(&task.task_id));
     // A task that could not be given out at all failed before any attempt.
     let tail = match task.attempts {
-        0 => ". Reopen it, change the plan, or stop.".to_owned(),
-        attempts => format!(" after {attempts} attempts. Reopen it, change the plan, or stop."),
+        0 => ". Reopen it, edit it, skip it, or stop.".to_owned(),
+        attempts => format!(" after {attempts} attempts. Reopen it, edit it, skip it, or stop."),
     };
     line(&head, &quoted(&task.note, MAX_QUOTED), &tail)
 }
 
 pub(super) fn blocked_line(folded: &str, task: &PlanTask) -> String {
     let head = format!("{folded}#{} blocked: ", short_task_id(&task.task_id));
-    let tail = ". Answer by reopening it and editing its brief, or fail it.";
+    let tail = ". Answer by reopening it and editing its brief, or skip it.";
     line(&head, &quoted(&task.note, MAX_QUOTED), tail)
 }
 
-/// `Nothing can start: 1 waits for you, 1 failed, 2 behind them.`
-pub(super) fn stall_line(counts: &TeamCounts) -> String {
+/// `Nothing can start: 1 waits for you, 1 failed, 2 behind them; wave 2 waits for wave 1:
+/// #a failed.` `held` names what holds the next wave, or is empty.
+pub(super) fn stall_line(counts: &TeamCounts, held: &str) -> String {
     let waits = |count: u32, whom: &str| match count {
         1 => format!("1 waits for {whom}"),
         count => format!("{count} wait for {whom}"),
     };
     let behind = counts.total.saturating_sub(
-        counts.done + counts.failed + counts.review + counts.at_work + counts.ready,
+        counts.done
+            + counts.skipped
+            + counts.failed
+            + counts.review
+            + counts.at_work
+            + counts.ready,
     );
     let mut parts = Vec::new();
     if counts.for_lead > 0 {
@@ -116,10 +123,14 @@ pub(super) fn stall_line(counts: &TeamCounts) -> String {
     if behind > 0 {
         parts.push(format!("{behind} behind them"));
     }
+    let held = match held.is_empty() {
+        true => String::new(),
+        false => format!("; {held}"),
+    };
     if parts.is_empty() {
-        return "Nothing can start: the plan has no task to give out.".into();
+        return format!("Nothing can start: the plan has no task to give out{held}.");
     }
-    format!("Nothing can start: {}.", parts.join(", "))
+    format!("Nothing can start: {}{held}.", parts.join(", "))
 }
 
 /// A task waits for the lead's review, for the reason `why`.
@@ -229,8 +240,8 @@ pub(super) fn last_told(launcher: &Launcher, lead: &str) -> Option<Told> {
     launcher.team.told.lock().get(lead).cloned()
 }
 
-/// `Done meanwhile: #a #b. `: the tasks a gate or the user passed since the lead was
-/// last told anything, which it was not woken for. Empty when there is none. After a
+/// `Done meanwhile: #a (reviewed) #b. `: the tasks a gate, a reviewer or the user passed
+/// since the lead was last told anything, which it was not woken for. Empty when there is none. After a
 /// restart the last line is not known, and the tasks done since the run began are named.
 async fn folded(launcher: &Launcher, lead: &str) -> String {
     let state = &launcher.state;
@@ -244,10 +255,16 @@ async fn folded(launcher: &Launcher, lead: &str) -> String {
     let Ok(plan) = state.plan(lead).await else {
         return String::new();
     };
-    // The lead passes a task without a gate itself, and knows.
+    let reviewed = |task: &PlanTask| {
+        plan.iter()
+            .any(|row| row.review_of.as_deref() == Some(task.task_id.as_str()))
+    };
+    // The lead passes a task without a gate or a review itself, and knows. Reviews and
+    // the critic are the core's own rows.
     let done: Vec<&PlanTask> = plan
         .iter()
-        .filter(|task| task.status == PlanStatus::Done && task.gate.is_some())
+        .filter(|task| task.status == PlanStatus::Done && task.duty == TaskDuty::Work)
+        .filter(|task| task.gate.is_some() || reviewed(task))
         .filter(|task| task.updated_at > since)
         .collect();
     if done.is_empty() {
@@ -256,7 +273,10 @@ async fn folded(launcher: &Launcher, lead: &str) -> String {
     let mut ids: Vec<String> = done
         .iter()
         .take(MAX_FOLDED)
-        .map(|task| format!("#{}", short_task_id(&task.task_id)))
+        .map(|task| match reviewed(task) {
+            true => format!("#{} (reviewed)", short_task_id(&task.task_id)),
+            false => format!("#{}", short_task_id(&task.task_id)),
+        })
         .collect();
     if done.len() > MAX_FOLDED {
         ids.push(format!("and {} more", done.len() - MAX_FOLDED));

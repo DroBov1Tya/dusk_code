@@ -543,6 +543,11 @@ mod tests {
              DROP INDEX tasks_one_at_work;
              DROP INDEX turns_task;
              ALTER TABLE turns DROP COLUMN task_id;
+             DROP INDEX tasks_review_of;
+             ALTER TABLE tasks DROP COLUMN result;
+             ALTER TABLE tasks DROP COLUMN duty;
+             ALTER TABLE tasks DROP COLUMN review_of;
+             ALTER TABLE tasks DROP COLUMN skipped;
              ALTER TABLE tasks DROP COLUMN status;
              ALTER TABLE tasks DROP COLUMN depends_on;
              ALTER TABLE tasks DROP COLUMN role;
@@ -621,6 +626,11 @@ mod tests {
              DROP INDEX tasks_one_at_work;
              DROP INDEX turns_task;
              ALTER TABLE turns DROP COLUMN task_id;
+             DROP INDEX tasks_review_of;
+             ALTER TABLE tasks DROP COLUMN result;
+             ALTER TABLE tasks DROP COLUMN duty;
+             ALTER TABLE tasks DROP COLUMN review_of;
+             ALTER TABLE tasks DROP COLUMN skipped;
              ALTER TABLE tasks DROP COLUMN status;
              ALTER TABLE tasks DROP COLUMN depends_on;
              ALTER TABLE tasks DROP COLUMN role;
@@ -739,7 +749,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls', 'team no budget'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls', 'team no budget', 'team flow'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

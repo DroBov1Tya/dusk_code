@@ -45,6 +45,10 @@ pub struct Team {
     /// before runs were told apart.
     #[serde(default)]
     pub started_at: Option<i64>,
+    /// What the lead ran this team toward: one sentence and how done is told. Empty from
+    /// cores before it was asked for.
+    #[serde(default)]
+    pub goal: String,
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -172,6 +176,7 @@ mod tests {
                     status: TaskStatus::Review,
                 }],
                 started_at: None,
+                goal: String::new(),
             };
             let text = serde_json::to_string(&team).unwrap();
             assert_eq!(serde_json::from_str::<Team>(&text).unwrap(), team);
@@ -205,6 +210,7 @@ mod tests {
                 })
                 .collect(),
             started_at: None,
+            goal: String::new(),
         }
     }
 

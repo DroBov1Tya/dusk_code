@@ -571,6 +571,7 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
             })
             .collect(),
         started_at: None,
+        goal: String::new(),
     }
 }
 

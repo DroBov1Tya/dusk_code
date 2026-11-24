@@ -15,8 +15,8 @@ use super::{
 use crate::{
     catalog::agents::Agents,
     state::{
-        MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
-        PlanTask, State, TaskEdit, short_task_id, timestamp_ms,
+        MAX_GOAL, MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError,
+        PlanStatus, PlanTask, State, TaskEdit, short_task_id, timestamp_ms,
     },
     tools::ToolContext,
 };
@@ -36,6 +36,7 @@ pub struct PlanArguments {
     id: Option<String>,
     ids: Option<Vec<String>>,
     text: Option<String>,
+    goal: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +49,7 @@ enum PlanAction {
     Edit,
     Fail,
     Reopen,
+    Skip,
     Stop,
 }
 
@@ -74,6 +76,7 @@ impl PlanAction {
             Self::Edit => "edit",
             Self::Fail => "fail",
             Self::Reopen => "reopen",
+            Self::Skip => "skip",
             Self::Stop => "stop",
         }
     }
@@ -82,11 +85,12 @@ impl PlanAction {
     fn fields(self) -> &'static [&'static str] {
         match self {
             Self::Add => &["tasks"],
-            Self::Run | Self::Stop => &[],
+            Self::Run => &["goal"],
+            Self::Stop => &[],
             Self::Review => &["id", "ids", "text"],
             Self::Show | Self::Reopen => &["id"],
             Self::Edit => &["id", "tasks", "text"],
-            Self::Fail => &["id", "text"],
+            Self::Fail | Self::Skip => &["id", "text"],
         }
     }
 }
@@ -99,6 +103,7 @@ impl PlanArguments {
             ("id", self.id.is_some()),
             ("ids", self.ids.is_some()),
             ("text", self.text.is_some()),
+            ("goal", self.goal.is_some()),
         ];
         for (field, present) in given {
             ensure!(
@@ -135,6 +140,7 @@ impl Lead {
             id,
             ids,
             text,
+            goal,
         } = arguments;
         let name = action.name();
         match action {
@@ -153,7 +159,11 @@ impl Lead {
             PlanAction::Review => review(state, thread, id, ids, text).await,
             PlanAction::Fail => fail(state, thread, &needed(id, "id", name)?, text).await,
             PlanAction::Reopen => reopen(state, thread, &needed(id, "id", name)?).await,
-            PlanAction::Run => self.run(state, thread, context).await,
+            PlanAction::Skip => skip(state, thread, &needed(id, "id", name)?, text).await,
+            PlanAction::Run => {
+                let goal = needed(goal, "goal", name)?;
+                self.run(state, thread, &goal, context).await
+            }
             PlanAction::Stop => {
                 self.team.stop(thread).await?;
                 Ok(changed("stopped".into()))
@@ -240,14 +250,32 @@ impl Lead {
         })
     }
 
-    async fn run(&self, state: &State, thread: &str, context: &ToolContext) -> Result<Answer> {
+    async fn run(
+        &self,
+        state: &State,
+        thread: &str,
+        goal: &str,
+        context: &ToolContext,
+    ) -> Result<Answer> {
+        let goal = goal.trim();
+        ensure!(
+            !goal.is_empty(),
+            "run needs `goal`: one sentence, and how you will know it is done"
+        );
+        ensure!(
+            goal.chars().count() <= MAX_GOAL,
+            "the goal is longer than {MAX_GOAL} characters; write it shorter"
+        );
         let plan = state.plan(thread).await.map_err(explain)?;
         ensure!(
-            plan.iter()
-                .any(|task| !matches!(task.status, PlanStatus::Done | PlanStatus::Failed)),
+            plan.iter().any(|task| !task.skipped
+                && !matches!(task.status, PlanStatus::Done | PlanStatus::Failed)),
             "the plan has nothing left to do; add tasks first, or reopen a failed one"
         );
-        let started = self.team.run(thread, context.progress.clone()).await?;
+        let started = self
+            .team
+            .run(thread, goal, context.progress.clone())
+            .await?;
         let gates = match started.gates {
             GatesYes::Refused => {
                 "; the user did not allow its gate commands, so a gated task waits for your \
@@ -463,6 +491,35 @@ async fn fail(state: &State, thread: &str, id: &str, note: Option<String>) -> Re
         Err(error) => return Err(explain(error)),
     };
     Ok(changed(format!("failed #{}", short_task_id(&task_id))))
+}
+
+/// Gives up a failed or blocked task, so the wave after it can start. Run again on a
+/// skipped task, it is already so.
+async fn skip(state: &State, thread: &str, id: &str, note: Option<String>) -> Result<Answer> {
+    let note = note.unwrap_or_default();
+    let skipped = match state.skip_task(thread, id, &note).await {
+        Ok(skipped) => skipped,
+        Err(PlanError::Illegal { task, from, .. }) => {
+            let found = state.plan_task(thread, &task).await.map_err(explain)?;
+            ensure!(
+                found.skipped,
+                "task #{} is {}; skip takes a failed or blocked task",
+                short_task_id(&task),
+                from.as_str()
+            );
+            vec![found]
+        }
+        Err(error) => return Err(explain(error)),
+    };
+    let ids: Vec<String> = skipped
+        .iter()
+        .map(|task| format!("#{}", short_task_id(&task.task_id)))
+        .collect();
+    Ok(changed(match ids.as_slice() {
+        [one] => format!("skipped {one}"),
+        [first, behind @ ..] => format!("skipped {first}, and {} behind it", behind.join(" ")),
+        [] => "skipped nothing".into(),
+    }))
 }
 
 /// Run again on an open task, it is already so.

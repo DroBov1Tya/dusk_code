@@ -304,6 +304,19 @@ impl State {
         u64::try_from(count).context("negative message count")
     }
 
+    /// The newest message the user wrote to the thread themselves, if any.
+    pub async fn last_user_text(&self, id: &str) -> Result<Option<String>> {
+        sqlx::query_scalar(
+            "SELECT content FROM messages WHERE thread_id = ? AND role = 'user'
+               AND from_thread_id IS NULL AND from_job_id IS NULL
+             ORDER BY sequence DESC LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("read the user's last message")
+    }
+
     /// How many agent threads are above this one; 0 for a chat.
     pub async fn thread_depth(&self, id: &str) -> Result<usize> {
         let depth: i64 = sqlx::query_scalar(
