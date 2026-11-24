@@ -65,12 +65,7 @@ impl Task {
         let last = reviews
             .iter()
             .max_by_key(|row| (row.created_at, &row.task_id))?;
-        let verdict = last
-            .result
-            .lines()
-            .rev()
-            .find_map(|line| line.strip_prefix("Verdict:"))
-            .map(|word| word.trim().trim_end_matches('.').to_ascii_lowercase());
+        let verdict = last.result.lines().rev().find_map(verdict_word);
         let word = match (last.status, verdict.as_deref()) {
             (TaskStatus::Done, Some("approve" | "approved")) => "reviewed",
             (TaskStatus::Done, Some("fix")) => "review: fix",
@@ -106,9 +101,70 @@ pub fn find_task<'a>(tasks: &'a [Task], task_id: &str) -> Option<(usize, &'a Tas
         .map(|(index, task)| (index + 1, task))
 }
 
+/// The word of a stored review's `Verdict:` line, written as the reviewer wrote it:
+/// `Verdict: approve`, `- **Verdict:** Approve.`, `verdict: fix (two problems)`. None for
+/// another line, or a value that is not one word.
+fn verdict_word(line: &str) -> Option<String> {
+    let line = line.trim();
+    let line = ["- ", "* ", "+ ", "\u{2022} "]
+        .iter()
+        .find_map(|marker| line.strip_prefix(marker))
+        .unwrap_or(line)
+        .trim_start_matches(['*', '_', '#', ' ']);
+    let head = line.get(..7)?;
+    if !head.eq_ignore_ascii_case("verdict") {
+        return None;
+    }
+    let value = line[7..].trim_start_matches(['*', '_']).trim_start();
+    let value = value
+        .strip_prefix(':')?
+        .trim()
+        .trim_matches(['*', '_', '`'])
+        .trim();
+    let cut = value
+        .find(|c: char| c.is_whitespace() || matches!(c, '(' | ':'))
+        .unwrap_or(value.len());
+    let (word, rest) = value.split_at(cut);
+    let rest = rest.trim_start();
+    let remark = rest.is_empty()
+        || rest.starts_with(['(', '-', '\u{2013}', '\u{2014}', ':'])
+        || word.ends_with('.');
+    remark.then(|| {
+        word.trim_matches(['*', '_', '`'])
+            .trim_end_matches('.')
+            .to_ascii_lowercase()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_review_chip_reads_a_verdict_in_markdown() {
+        let task = Task {
+            task_id: "t1".into(),
+            ..Task::default()
+        };
+        let review = |result: &str| Task {
+            task_id: "r1".into(),
+            duty: TaskDuty::Review,
+            review_of: Some("t1".into()),
+            status: TaskStatus::Done,
+            result: result.into(),
+            ..Task::default()
+        };
+        for (result, word) in [
+            ("Verdict: approve\nChecked: x", "reviewed"),
+            ("- **Verdict:** Approve.\n- **Checked:** x", "reviewed"),
+            ("**Verdict**: fix (two problems)\nChecked: x", "review: fix"),
+            ("Verdict: approve or fix\nChecked: x", "review: no verdict"),
+            ("Checked: x", "review: no verdict"),
+        ] {
+            let tasks = [task.clone(), review(result)];
+            assert_eq!(task.review_word(&tasks).as_deref(), Some(word), "{result}");
+        }
+    }
 
     #[test]
     fn a_task_says_what_it_spent() {
