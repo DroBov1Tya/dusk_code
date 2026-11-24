@@ -177,6 +177,10 @@ branches after end-to-end testing. Entries of unreleased changes live in `change
   a team that ended on a budget under an older core still reads with that reason. Clients
   older than protocol 39 are no longer accepted.
 
+### Security
+
+- Updated `url` to 2.5.9, which fixes a stack overflow on nested `blob:` addresses (RUSTSEC-2026-0592).
+
 ## 0.77.0 - 2026-11-20
 
 ### Added

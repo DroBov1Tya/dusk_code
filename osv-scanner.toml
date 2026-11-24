@@ -8,11 +8,6 @@ ignoreUntil = 2027-02-17
 reason = "libsqlite3-sys: fix needs a sqlx release; databases are written only by duskcode (see deny.toml)"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0462"
-ignoreUntil = 2026-12-17
-reason = "rmcp: fix is cargo update -p rmcp >= 3.9.0, landing as its own change (see deny.toml)"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2026-0543"
 ignoreUntil = 2027-02-17
 reason = "chrono unmaintained: direct dependency, replacement tracked separately (see deny.toml)"
