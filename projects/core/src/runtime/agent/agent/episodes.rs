@@ -70,12 +70,14 @@ impl Agent {
             return;
         };
         // Logged where it failed.
-        let _ = episodes::set_lesson(&self.state, self.scope.cwd(), turn_id, lesson).await;
+        let scope = self.working_scope();
+        let _ = episodes::set_lesson(&self.state, scope.project_dir(), turn_id, lesson).await;
     }
 
     /// Records the episode and tells `recall` and the clients; whether it was written.
     async fn record_episode(&self, turn_id: Option<&str>, tool: &str, facts: &Facts<'_>) -> bool {
-        let project = self.scope.cwd();
+        let scope = self.working_scope();
+        let project = scope.project_dir();
         let model = self.model.current().map(|choice| choice.model.id);
         let origin = Origin {
             project,
@@ -102,7 +104,9 @@ impl Agent {
     /// The files the ledger recorded in this turn since `since`, oldest first and each
     /// once, leaving out what the call `passed` changed itself.
     async fn changed_since(&self, turn_id: &str, passed: &str, since: i64) -> Vec<String> {
-        let project = self.scope.cwd().to_string_lossy();
+        // The ledger keeps changes by the folder the tools worked in.
+        let scope = self.working_scope();
+        let project = scope.cwd().to_string_lossy();
         let query = ChangeQuery {
             project: &project,
             thread_id: Some(&self.thread_id),

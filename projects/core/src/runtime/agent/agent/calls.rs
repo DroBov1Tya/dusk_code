@@ -483,7 +483,8 @@ impl Agent {
             let start = self.skill_watch.before().await;
             *baseline.lock() = start;
         }
-        let mut result = self.tools.call(call, &self.scope, config, progress).await;
+        let scope = self.working_scope();
+        let mut result = self.tools.call(call, &scope, config, progress).await;
         // The notice is the core's alone: a marker a tool printed is not believed.
         if result
             .content

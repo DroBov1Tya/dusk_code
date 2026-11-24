@@ -229,6 +229,9 @@ pub enum ThreadEvent {
     /// title or size. All of them, as `Thread::pulls`. Every client listing the chat
     /// hears it.
     Pulls(Vec<crate::project::ThreadPull>),
+    /// The thread branched off into a worktree (`Some`), or merged or abandoned it and
+    /// works in its own folder again (`None`): its `Thread::branch` changed.
+    Branch(Option<crate::project::ThreadBranch>),
     /// A skill file changed by a tool call of this thread, or such a change was undone.
     SkillChanged(crate::catalog::SkillChange),
     /// /fork wrote its summary; a client opens a new thread that starts from it.

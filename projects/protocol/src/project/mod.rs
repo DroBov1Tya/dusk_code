@@ -44,7 +44,7 @@ pub use forge::{
     Check, CheckStage, CheckState, Checks, Forge, ForgeOffer, ForgeSignIn, ForgeStatus, PullState,
     PullStatus, PullSummary, RepositoryStatus, ThreadPull, pull_number, pull_numbers,
 };
-pub use git::{Change, ChangeKind, GitInfo, GitOutcome, GitSummary, Worktree};
+pub use git::{Change, ChangeKind, GitInfo, GitOutcome, GitSummary, ThreadBranch, Worktree};
 pub use ledger::{EditKind, FileChange, MAX_FILE_CHANGES};
 pub use path::{PathCompletion, PathEntry};
 pub use schedule::{

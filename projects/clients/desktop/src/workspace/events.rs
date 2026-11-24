@@ -63,6 +63,13 @@ impl Workspace {
                 if let dusk_protocol::thread::ThreadEvent::Pulls(pulls) = &*event {
                     self.pulls_heard(&thread_id, pulls);
                 }
+                if let dusk_protocol::thread::ThreadEvent::Branch(branch) = &*event {
+                    if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                        thread.branch = branch.clone();
+                    }
+                    // A worktree came or went: the repository's list changed.
+                    self.load_git(cx);
+                }
                 let titled = matches!(
                     *event,
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }

@@ -86,6 +86,7 @@ mod tests {
             owner: None,
             unread,
             pulls: Vec::new(),
+            branch: None,
         }
     }
 

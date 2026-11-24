@@ -90,13 +90,21 @@ pub async fn discard(project: &Project, path: &str) -> Result<GitOutcome> {
 /// Merges `branch` into the current branch. Conflicts are an answer, not an error: the
 /// files are listed and the merge waits to be finished or aborted.
 pub async fn merge(project: &Project, branch: &str) -> Result<GitOutcome> {
+    merge_with(project, branch, &[]).await
+}
+
+/// `merge`, always as a merge commit (`--no-ff`), so the branch's work stays one unit
+/// in the history that can be found and reverted.
+pub async fn merge_recorded(project: &Project, branch: &str) -> Result<GitOutcome> {
+    merge_with(project, branch, &["--no-ff"]).await
+}
+
+async fn merge_with(project: &Project, branch: &str, options: &[&str]) -> Result<GitOutcome> {
     let branch = check::branch(branch)?;
-    let output = run(
-        &project.dir,
-        &["merge", "--no-edit", "--end-of-options", branch],
-        LOCAL,
-    )
-    .await?;
+    let mut args = vec!["merge", "--no-edit"];
+    args.extend_from_slice(options);
+    args.extend(["--end-of-options", branch]);
+    let output = run(&project.dir, &args, LOCAL).await?;
     let conflicts = conflicts(project).await?;
     ensure!(
         output.success || !conflicts.is_empty(),

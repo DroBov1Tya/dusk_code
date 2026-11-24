@@ -151,7 +151,7 @@ impl Tool for Remember {
 
     fn description(&self, context: &ToolContext) -> String {
         let (_, max_chars) = self.settings(context);
-        let memory = read(&self.file(context.scope.cwd()), max_chars);
+        let memory = read(&self.file(context.scope.project_dir()), max_chars);
         let memory = if memory.is_empty() {
             "(empty)".to_owned()
         } else {
@@ -192,7 +192,7 @@ impl Tool for Remember {
                 chars <= max_chars,
                 "the memory is {chars} characters, over {max_chars}; make it shorter"
             );
-            write(&self.file(context.scope.cwd()), memory)?;
+            write(&self.file(context.scope.project_dir()), memory)?;
             Ok(if memory.is_empty() {
                 "memory cleared".to_owned()
             } else {

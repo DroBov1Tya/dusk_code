@@ -200,6 +200,13 @@ impl AppState {
                 if let ThreadEvent::Unread(unread) = *event {
                     crate::chat::seen::heard(self, &thread_id, unread);
                 }
+                if let ThreadEvent::Branch(branch) = &*event {
+                    self.threads.update(|threads| {
+                        if let Some(thread) = threads.iter_mut().find(|t| t.id == thread_id) {
+                            thread.branch = branch.clone();
+                        }
+                    });
+                }
                 // /fork wrote its summary: the new chat starts from it.
                 if let ThreadEvent::Forked { summary } = &*event {
                     self.fork(thread_id.clone(), summary.clone());

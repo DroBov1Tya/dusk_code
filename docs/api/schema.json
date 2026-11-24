@@ -6881,6 +6881,27 @@
             "Settings"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Work on an agent's own branch: making it, committing, merging or removing it.\nA merge into a branch no agent made, and leaving work behind, are asked every\ntime, in every mode.",
+          "properties": {
+            "Git": {
+              "properties": {
+                "action": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Git"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -10450,6 +10471,18 @@
             "null"
           ]
         },
+        "branch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ThreadBranch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The branch the thread works on in a worktree, when it branched off its folder.\n`ThreadEvent::Branch` tells of a change."
+        },
         "created_at": {
           "description": "Unix timestamp in milliseconds.",
           "format": "int64",
@@ -10522,6 +10555,28 @@
         "source",
         "created_at",
         "active_at"
+      ],
+      "type": "object"
+    },
+    "ThreadBranch": {
+      "description": "The branch a thread works on in a worktree of its own, beside the folder it started in,\nuntil it is merged back or abandoned.",
+      "properties": {
+        "base": {
+          "description": "The branch it was made from and is merged back into.",
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "dir": {
+          "description": "The worktree's folder, where the thread's tools work.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "branch",
+        "base",
+        "dir"
       ],
       "type": "object"
     },
@@ -11503,6 +11558,26 @@
           },
           "required": [
             "Pulls"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The thread branched off into a worktree (`Some`), or merged or abandoned it and\nworks in its own folder again (`None`): its `Thread::branch` changed.",
+          "properties": {
+            "Branch": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ThreadBranch"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "Branch"
           ],
           "type": "object"
         },

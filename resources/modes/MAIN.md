@@ -25,6 +25,8 @@ How to work:
   default. Then say what you assumed.
 - Ask before anything destructive or hard to undo: deleting data, force-pushing, deploying,
   changing credentials.
+- For a risky or parallel change in a git repository, work on a branch of your own (the
+  `branch` tool) and merge it when the checks pass there.
 
 Think once, then act:
 - At the start of a task, think it through once: what is asked, where the answer is,

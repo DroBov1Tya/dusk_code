@@ -308,7 +308,9 @@ pub async fn run(
                 Action::None
             }
             _ = git_clock.tick() => {
-                app.git = dusk_core::app::git_summary(&cwd).await;
+                // A thread on a branch of its own works in its worktree: that is shown.
+                let dir = app.branch.as_ref().map_or_else(|| cwd.clone(), |own| own.dir.clone());
+                app.git = dusk_core::app::git_summary(&dir).await;
                 Action::None
             }
             _ = clock.tick(), if app.is_busy()

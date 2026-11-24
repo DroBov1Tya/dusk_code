@@ -143,6 +143,48 @@ impl ToolContext {
     }
 }
 
+impl ToolContext {
+    /// Work on an agent's own branch, asked as the mode says: like a command, which
+    /// sandbox mode lets through since the core bounds it.
+    pub async fn approve_git(&self, action: &str) -> Result<()> {
+        let Some(approvals) = &self.approvals else {
+            return Ok(());
+        };
+        let request = Request::Git {
+            action: action.to_owned(),
+        };
+        let policy = self.approvals_policy().await;
+        approvals
+            .ask(&self.thread_id, request, self.progress.clone(), policy)
+            .await
+    }
+
+    /// A step on the user's own work, asked every time in every mode
+    /// (`Approvals::ask_always`). Refused at once where nobody can answer: no approvals
+    /// here, or a chat the timetable or a headless run started.
+    pub async fn ask_always(&self, action: &str) -> Result<()> {
+        let nobody = format!(
+            "git: {action} needs the user's yes, and nobody can answer in this chat; leave \
+             it to the user"
+        );
+        let approvals = self.approvals.as_ref().context(nobody.clone())?;
+        if let Some(state) = &self.state {
+            let chat = state.root_thread(&self.thread_id).await?;
+            let thread = state
+                .load_thread(&chat)
+                .await?
+                .with_context(|| format!("no chat {chat}"))?;
+            anyhow::ensure!(!UNATTENDED.contains(&thread.source.as_str()), "{nobody}");
+        }
+        let request = Request::Git {
+            action: action.to_owned(),
+        };
+        approvals
+            .ask_always(&self.thread_id, request, self.progress.clone())
+            .await
+    }
+}
+
 /// The sources of chats nobody who may change the settings is there to answer: the
 /// timetable's runs, a headless `duskcode run` (`cli`) and the evals' tasks.
 pub(crate) const UNATTENDED: [&str; 3] = ["schedule", "cli", "evals"];
