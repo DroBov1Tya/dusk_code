@@ -13,6 +13,8 @@ use dusk_protocol::{
 };
 use leptos::prelude::*;
 
+use super::model_tiers::ModelTiers;
+
 #[component]
 pub fn ModelPage() -> impl IntoView {
     let app = state();
@@ -99,6 +101,7 @@ pub fn ModelPage() -> impl IntoView {
                 }
             }).collect_view()}
         </Section>
+        <ModelTiers providers />
         <ConnectProvider done=load />
     }
 }

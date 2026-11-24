@@ -193,6 +193,19 @@ impl Drop for ProcessGroup {
     }
 }
 
+/// The line `HeadTail::text` puts where it cut `dropped` bytes out of a stream.
+fn cut_line(dropped: usize) -> String {
+    format!("[{dropped} bytes cut]")
+}
+
+/// Whether `line` is the line `HeadTail::text` puts where it cut a stream, so a reader
+/// of the output knows that what it counts there may be missing.
+pub fn is_cut_line(line: &str) -> bool {
+    line.strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(" bytes cut]"))
+        .is_some_and(|count| !count.is_empty() && count.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// The first `HEAD_BYTES` and the last `TAIL_BYTES` of a stream, and how much fell
 /// between them.
 #[derive(Default)]
@@ -234,7 +247,7 @@ impl HeadTail {
         // pieces go too.
         let head = self.without_partial_end(self.mask(head));
         let tail = self.without_partial_start(self.mask(tail));
-        format!("{head}\n[{} bytes cut]\n{tail}", self.dropped)
+        format!("{head}\n{}\n{tail}", cut_line(self.dropped))
     }
 
     fn mask(&self, text: String) -> String {
@@ -306,7 +319,7 @@ mod tests {
         let text = kept.text();
         assert!(text.starts_with("start\n"));
         assert!(text.ends_with("error: the end"));
-        assert!(text.contains("bytes cut]"));
+        assert!(text.lines().any(is_cut_line), "{text}");
         assert!(text.len() < HEAD_BYTES + TAIL_BYTES + 64);
     }
 

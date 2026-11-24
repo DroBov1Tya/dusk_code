@@ -245,6 +245,14 @@ fn stubs_are_on_and_their_limits_stay_inside_their_bounds() {
 }
 
 #[test]
+fn the_rerun_hint_is_on_until_unset() {
+    assert!(parse(PROVIDERS).unwrap().limits().rerun_hint);
+    let set = parse("limits:\n  rerun_hint: false\n").unwrap().limits();
+    assert!(!set.rerun_hint);
+    assert!(parse("limits:\n  rerun_hint: 1\n").is_err());
+}
+
+#[test]
 fn shaped_output_is_on_until_unset() {
     assert!(parse(PROVIDERS).unwrap().limits().shape_output);
     let set = parse("limits:\n  shape_output: false\n").unwrap().limits();

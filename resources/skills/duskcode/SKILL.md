@@ -1,6 +1,6 @@
 ---
 name: duskcode
-description: "Extending duskcode itself: add an agent, a skill or an MCP server. Use when asked to add or change dusk's agents, skills or MCP servers."
+description: "Where dusk's own agents, skills, MCP servers and memory live and the front matter or YAML each takes. Use when asked to add, change or configure one of them in dusk itself; not for the user's project code."
 source: "dusk_code"
 author: "Neil Ermak"
 license: MIT
@@ -30,9 +30,12 @@ tags: [git, release]   # optional, shown in /settings
 links: [other-skill]   # optional, skills to load after this one
 entry: false           # optional; hides it from the first list, reached by links only
 ---
-Short imperative steps, each checked in practice. Only Markdown files belong in the skill folder. Put longer instructions in linked
-references/<topic>.md files; keep executable helpers and generated artifacts outside it.
+Short imperative steps, each checked in practice.
 ```
+
+Only Markdown files belong in the skill folder: put longer instructions in linked
+`references/<topic>.md` files and keep helpers and generated files outside it. To write
+or revise a skill well, load `skill-creator`.
 
 ## Agent
 
@@ -52,8 +55,9 @@ You are ... How you work: ...
 Dusk adds the common rules to every agent's prompt: how to treat what it reads, the format
 of its final report, and how to delegate. Write only what is particular to this agent.
 
-Tools: `read_file`, `search_files`, `run_command`, `jobs`, `read_history`, `tasks`,
-`load_skill`, `ask_agent`, and MCP tools as `<server>__<tool>`. A list leaves out MCP
+Tools: `read_file`, `search_files`, `changes`, `project_graph`, `recall`, `run_command`,
+`jobs`, `read_history`, `tasks`, `load_skill`, `ask_agent`, and MCP tools as
+`<server>__<tool>`. Give an agent only the tools its work needs. A list leaves out MCP
 tools it does not name. Files change only through `run_command`: an agent without it
 can read but not write.
 
@@ -85,15 +89,16 @@ docs:
 - Either `command` with optional `args` and `env`, or `url` (HTTPS, or HTTP to
   `127.0.0.1`) with optional `headers`. Never both.
 - `enabled: false` keeps a server without starting it.
-- No other fields: an unknown one makes the whole config invalid.
+- No other fields but `icon`: an unknown one makes the whole config invalid.
 - Leave `<token>` for the user; never ask for a secret in the chat.
 
 If the user edits `config.yml` by hand: change only `mcp:`. Leave `providers` (API keys),
 `model`, `mode`, `effort`, `limits`, `thread` and the `tools`, `modes`, `skills`, `agents`
-switches alone; dusk
-rewrites the file and drops comments.
+switches alone; dusk rewrites the file and drops comments.
+
+## Memory
 
 `<rules>/MEMORY.md` is what you remember about the user, and
-`~/Documents/duskcode/projects/<folder>/MEMORY.md` what you remember about a project. Change them only
-with the `remember` and `remember_project` tools, never by hand; the user switches them
-in `/settings` -> personalize.
+`~/Documents/duskcode/projects/<folder>/MEMORY.md` what you remember about a project.
+Change them only with the `remember` and `remember_project` tools, never by hand; the
+user switches them in `/settings` -> personalize.

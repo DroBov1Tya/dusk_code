@@ -18,6 +18,7 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
         .and_then(|choice| config.providers().get(&choice.provider_name));
     Status {
         model: model.as_ref().map(|choice| choice.name()),
+        model_tiers: runtime.model_tiers(),
         discovering_model: runtime.discovering_model(),
         input_limit: runtime.input_limit(),
         context_policy: runtime.context_policy(),
@@ -51,6 +52,7 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
 pub fn blank_status() -> Status {
     Status {
         model: None,
+        model_tiers: Default::default(),
         discovering_model: false,
         input_limit: 0,
         context_policy: None,

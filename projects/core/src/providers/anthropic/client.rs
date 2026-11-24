@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::{
     config::{Effort, ProviderConfig},
     providers::{
-        errors::{UnsupportedEffort, UnsupportedPictures},
+        errors::{RefusedEffort, UnsupportedEffort, UnsupportedPictures},
         limits::{Account, Headers},
         registry::Model,
         request::{ChatMessage, ChatRequest},
@@ -109,7 +109,8 @@ impl Anthropic {
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<MessageStream> {
-        let effort_off = request.effort == Some(Effort::Off);
+        let effort = request.effort;
+        let effort_off = effort == Some(Effort::Off);
         let has_pictures = request
             .messages
             .iter()
@@ -132,6 +133,14 @@ impl Anthropic {
             let reason = reason.unwrap_or_default().to_ascii_lowercase();
             if effort_off && status == StatusCode::BAD_REQUEST && reason.contains("thinking") {
                 bail!(UnsupportedEffort);
+            }
+            // A model without the effort setting names it in its refusal.
+            if effort.is_some()
+                && !effort_off
+                && status == StatusCode::BAD_REQUEST
+                && reason.contains("effort")
+            {
+                bail!(RefusedEffort(failure.into()));
             }
             if has_pictures && status == StatusCode::BAD_REQUEST && reason.contains("image") {
                 bail!(UnsupportedPictures);

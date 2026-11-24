@@ -136,6 +136,7 @@ mod tests {
         let team = Team {
             thread_id: "lead".into(),
             started_at: None,
+            ended_at: None,
             status: TeamStatus::Running,
             budget: TeamBudget::new(3, 10, 10, 10).unwrap(),
             used: TeamUsed::default(),

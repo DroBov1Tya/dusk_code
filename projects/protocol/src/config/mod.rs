@@ -10,6 +10,7 @@ mod plugin;
 mod policy;
 mod provider;
 mod secrets;
+mod tiers;
 mod version_control;
 mod voice;
 mod voice_models;
@@ -23,6 +24,7 @@ pub use plugin::PluginInfo;
 pub use policy::{ApprovalPolicy, ContextPolicy, ContextPreset, UNKNOWN_WINDOW};
 pub use provider::ProviderKind;
 pub use secrets::{HUGGINGFACE, SecretInfo, SecretsInfo};
+pub use tiers::{ModelTier, ModelTiers, TierState, TierStates, is_model_name};
 pub use version_control::VersionControl;
 pub use voice::{
     MAX_RECORDING_BYTES, MAX_SPEECH_CHARS, STT_KEY, TTS_KEY, VoiceEndpoint, VoiceSettings,

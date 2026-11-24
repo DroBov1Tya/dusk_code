@@ -339,6 +339,8 @@ fn same(new: &NewTask, old: &PlanTask) -> bool {
         && new.brief == old.brief
         && new.gate == old.gate
         && new.files == old.files
+        && new.tier == old.tier
+        && new.effort == old.effort
 }
 
 /// The member that holds a task, by the name its thread goes by.

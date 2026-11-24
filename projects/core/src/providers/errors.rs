@@ -66,6 +66,30 @@ pub fn is_unsupported_effort(error: &anyhow::Error) -> bool {
         .any(|cause| cause.downcast_ref::<UnsupportedEffort>().is_some())
 }
 
+/// The provider explicitly rejected the level of reasoning effort a request carried
+/// (a level other than off), as a model without reasoning does. It wraps the provider's
+/// own failure, so a caller that does not drop the effort sees that failure unchanged.
+#[derive(Debug)]
+pub struct RefusedEffort(pub anyhow::Error);
+
+impl fmt::Display for RefusedEffort {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, formatter)
+    }
+}
+
+impl std::error::Error for RefusedEffort {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref())
+    }
+}
+
+pub fn is_refused_effort(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.downcast_ref::<RefusedEffort>().is_some())
+}
+
 /// The provider refused a request that carried pictures. It may say nothing about why,
 /// so the same request without them tells.
 #[derive(Debug)]

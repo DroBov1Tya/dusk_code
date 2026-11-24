@@ -262,9 +262,13 @@ async fn an_edit_is_for_a_task_nobody_started() {
         gate: Some(Some(dusk_protocol::thread::GoalCheck::UserConfirmation)),
         files: Some(TaskFiles::new(["src/"]).unwrap()),
         after: Some(vec![ids[1].clone()]),
+        tier: Some(dusk_protocol::config::ModelTier::Strong),
+        effort: Some(dusk_protocol::model::Effort::High),
     };
     let edited = state.edit_plan_task(LEAD, &ids[0], &edit).await.unwrap();
     assert_eq!(edited.description, "other words");
+    assert_eq!(edited.tier, Some(dusk_protocol::config::ModelTier::Strong));
+    assert_eq!(edited.effort, Some(dusk_protocol::model::Effort::High));
     assert_eq!(edited.role.as_deref(), Some("reviewer"));
     assert_eq!(edited.files.entries(), ["src/"]);
     assert_eq!(edited.depends_on, [ids[1].clone()]);

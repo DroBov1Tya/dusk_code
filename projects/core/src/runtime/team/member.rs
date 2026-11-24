@@ -7,7 +7,8 @@
 //! | tools | `MEMBER_TOOLS`, cut by its role and by `team.tools` | `limit_tools`, when its runner is built |
 //! | folder | the lead's project folder | `give`, as the folder its card is delivered in |
 //! | approval mode | the lead thread's, copied | `give`, before the claim; again before each step (`lease::may_step`) |
-//! | model | `team.models[role]`, else `team.model`, else the chat's | `model_name`, into the claim; `model`, when its runner is built |
+//! | model | `team.models[role]`, else `team.model`, else the task's tier, else the chat's | `model_name`, into the claim; `model`, when its runner is built |
+//! | effort | the task's, else the agents' usual | `give`, after the claim |
 //! | depth | 1, and no `ask_agent` | the thread's parent is the lead; `MEMBER_TOOLS` |
 //!
 //! The order of `give`, and what a stop between two steps leaves:
@@ -34,6 +35,7 @@ use crate::{
         Launcher, ThreadEvent,
         model_choice::Choice,
         thread::start::{read_prompt, start_member_thread},
+        tiers::{self, Tier},
     },
     state::{
         Claim, MAX_REWORKS, MEMBER_SOURCE, PlanError, PlanTask, State, TeamRun, Thread,
@@ -84,11 +86,21 @@ fn named_model<'a>(config: &'a Config, role: &str) -> Option<&'a String> {
 }
 
 /// The model a member of `role` answers on, as `provider/model`: the user's setting for
-/// the role, else for the team, else the chat's. Recorded with the claim, so a member
-/// keeps one model for its life whatever the settings say later.
-pub(super) fn model_name(config: &Config, role: &str, chat: Option<&Choice>) -> Option<String> {
+/// the role, else for the team, else the model of the tier the lead picked, else the
+/// chat's. Recorded with the claim, so a member keeps one model for its life whatever the
+/// settings say later.
+pub(super) fn model_name(
+    config: &Config,
+    role: &str,
+    tier: Option<Tier>,
+    chat: Option<&Choice>,
+) -> Option<String> {
     named_model(config, role)
         .cloned()
+        .or_else(|| {
+            tier.and_then(|tier| tiers::named(tier, config))
+                .map(str::to_owned)
+        })
         .or_else(|| chat.map(Choice::name))
 }
 
@@ -181,7 +193,7 @@ pub(super) async fn give(
     // Copied, never raised: a member asks for no more than its lead may do unasked.
     let policy = lead_policy(state, &config, lead).await?;
     state.set_thread_approvals(&member, Some(policy)).await?;
-    let model = model_name(&config, role, launcher.model.current().as_ref());
+    let model = model_name(&config, role, task.tier, launcher.model.current().as_ref());
     let claim = Claim {
         owner: &member,
         at_once: run.budget.at_once(),
@@ -197,6 +209,9 @@ pub(super) async fn give(
         Err(PlanError::Illegal { .. }) => return Ok(Given::Lost),
         Err(error) => return Err(error.into()),
     };
+    if let Some(effort) = task.effort {
+        state.set_agent_effort(&member, effort).await?;
+    }
     info!(
         "task {} given to member {member} as {role}, attempt {}",
         claimed.task_id, claimed.attempts

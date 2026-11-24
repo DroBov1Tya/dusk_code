@@ -2,7 +2,8 @@
 //! members on a plan of eight tasks, one in each status, as the core tells it: a `Team`
 //! event, `TaskChanged` for every task and the members' own events. `team-ended` is the
 //! same team after it ran out of steps. The Overview and the plan strip get the answers
-//! their requests would give. Made-up data only.
+//! their requests would give. `fake=subagents|subagents-ended` asks three subagents in one
+//! step, one done, one at work and one failed, or all ended. Made-up data only.
 
 use dusk_protocol::{
     model::{ModelEvent, ToolCall},
@@ -189,7 +190,8 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
         budget: TeamBudget::new(3, 400, 4_000_000, 120).expect("a budget within the ceilings"),
         used,
         members,
-        started_at: Some(now_ms() - 23 * 60_000),
+        started_at: Some(now_ms() - if ended { 60 } else { 23 } * 60_000),
+        ended_at: ended.then(|| now_ms() - 3 * 60_000),
     }
 }
 
@@ -239,6 +241,16 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     let tasks: Vec<Task> = made.iter().map(|made| task(made, now)).collect();
     if let Some(chat) = ws.chats.get_mut(&lead) {
         chat.tasks.clear();
+        // The lead's call that set the team to work: the chat's card of the run.
+        chat.apply(ThreadEvent::ToolStarted(ToolCall {
+            id: "call-run".into(),
+            name: "tasks".into(),
+            arguments: serde_json::json!({ "action": "run" }),
+        }));
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: "call-run".into(),
+            result: dusk_protocol::tools::ToolResult::text("The team started.".into()),
+        });
         for task in &tasks {
             chat.apply(ThreadEvent::TaskChanged(task.clone()));
         }
@@ -304,5 +316,63 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     });
     ws.overview.plan = Some(counts);
     ws.overview.team = Some(team);
+    cx.notify();
+}
+
+/// `fake=subagents|subagents-ended`: the shown chat asks three subagents in one step, as
+/// the core tells it; they started 40 seconds ago.
+pub fn subagents(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
+    let ended = value == "subagents-ended";
+    let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) else {
+        eprintln!("fake=subagents needs a shown chat: fake=chat first");
+        return;
+    };
+    let asked = [
+        ("Read the cache module", ThreadEvent::Idle),
+        (
+            "Measure memory growth",
+            match ended {
+                true => ThreadEvent::Idle,
+                false => ThreadEvent::Model(ModelEvent::Text("Measuring".into())),
+            },
+        ),
+        (
+            "Check the cache key handling",
+            ThreadEvent::Failed("the provider is unavailable".into()),
+        ),
+    ];
+    for (index, (task, _)) in asked.iter().enumerate() {
+        chat.apply(ThreadEvent::ToolStarted(ToolCall {
+            id: format!("ask-{index}"),
+            name: "ask_agent".into(),
+            arguments: serde_json::json!({ "task": task }),
+        }));
+    }
+    for (index, (task, last)) in asked.into_iter().enumerate() {
+        let thread_id = format!("0000010{index}-fake");
+        chat.apply(ThreadEvent::SubagentStarted {
+            call_id: format!("ask-{index}"),
+            thread_id: thread_id.clone(),
+            agent: "general".into(),
+            task: task.into(),
+            effort: None,
+            model: Some("chatgpt/gpt-5.5".into()),
+            task_id: None,
+        });
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: format!("ask-{index}"),
+            result: dusk_protocol::tools::ToolResult::text("sent".into()),
+        });
+        let started = ThreadEvent::Model(ModelEvent::Text("Reading the task.".into()));
+        for event in [started, last] {
+            chat.apply(ThreadEvent::Subagent {
+                thread_id: thread_id.clone(),
+                event: Box::new(event),
+            });
+        }
+        if let Some(agent) = chat.agents.get_mut(&thread_id) {
+            agent.started_at -= 40_000;
+        }
+    }
     cx.notify();
 }

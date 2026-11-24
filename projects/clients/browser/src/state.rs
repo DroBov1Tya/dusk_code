@@ -55,6 +55,10 @@ pub struct AppState {
     pub speaking: RwSignal<bool>,
     /// The last repository status the core sent, and the project it is of.
     pub repository: RwSignal<Option<(String, RepositoryStatus)>>,
+    /// The tab the chat's right column shows; a run's card in the chat opens its own.
+    pub inspector_tab: RwSignal<crate::chat::inspector::Tab>,
+    /// Counts the asks to show the right column, so a narrow page opens its drawer.
+    pub inspector_asked: RwSignal<u64>,
 }
 
 thread_local! {
@@ -93,7 +97,15 @@ impl AppState {
             subagent: RwSignal::new(None),
             speaking: RwSignal::new(false),
             repository: RwSignal::new(None),
+            inspector_tab: RwSignal::new(crate::chat::inspector::Tab::Tasks),
+            inspector_asked: RwSignal::new(0),
         }
+    }
+
+    /// Shows `tab` in the chat's right column, opening its drawer on a narrow page.
+    pub fn show_inspector(self, tab: crate::chat::inspector::Tab) {
+        self.inspector_tab.set(tab);
+        self.inspector_asked.update(|asked| *asked += 1);
     }
 
     /// Opens the stream to the core and keeps the lists fresh.

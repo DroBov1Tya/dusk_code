@@ -10,17 +10,18 @@
 //! thinking stopped being blank, or a turn boundary was drawn.
 
 mod history;
+mod run;
 mod team;
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{AgentState, Note, Tool, ToolState, TurnSpend};
+use super::{AgentState, Note, Run, Tool, ToolState, TurnSpend};
 use super::{note, turn_spend};
 use crate::{
     catalog::SkillChange,
-    model::{ModelEvent, ToolCall},
+    model::{Effort, ModelEvent, ToolCall},
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
         Block, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens,
@@ -66,6 +67,9 @@ pub enum Item<L = Infallible> {
     /// The Workshop listings a `suggest_from_workshop` call put in the chat, in place of
     /// that call's step.
     Suggestion(Suggestion),
+    /// A team or subagents the chat started, in place of the steps that started them;
+    /// `ChatLog::run_card` says what its card shows.
+    Run(Run),
     /// A picture a tool or a message carries. `aside`: a picture the model took to see,
     /// such as a screenshot, which a client may keep beside the chat instead of in it;
     /// those `display_image` shows and those of a message are not aside.
@@ -112,6 +116,9 @@ pub struct Subagent {
     pub role: String,
     /// The model it answers on, `provider/model`; none when the core did not say.
     pub model: Option<String>,
+    /// How hard it reasons; none is the provider's default, and what a team's own event
+    /// does not say.
+    pub effort: Option<Effort>,
     /// The `ask_agent` call that started it, or `team:<task_id>` for a team member.
     pub call_id: String,
     pub task: String,
@@ -130,12 +137,17 @@ impl Subagent {
         self.state.working()
     }
 
-    /// `general · chatgpt/gpt-5.5`: what it works as and on which model.
+    /// `general · chatgpt/gpt-5.5 · high effort`: what it works as, on which model and how
+    /// hard it reasons, each part only when known.
     pub fn role_and_model(&self) -> String {
-        match &self.model {
-            Some(model) => format!("{} \u{00B7} {model}", self.role),
-            None => self.role.clone(),
-        }
+        let effort = self
+            .effort
+            .map(|effort| format!("{} effort", effort.name()));
+        [Some(self.role.clone()), self.model.clone(), effort]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" \u{00B7} ")
     }
 
     /// How long it worked, until `now` while it still does.
@@ -234,6 +246,8 @@ pub struct ChatLog<L = Infallible> {
     /// The blocks `show` calls ask for, by call, until their results say whether they
     /// were shown.
     showing: BTreeMap<String, Block>,
+    /// The subagents' run of the step under way, which its next `ask_agent` joins.
+    batch: Option<usize>,
 }
 
 impl<L> Default for ChatLog<L> {
@@ -270,6 +284,7 @@ impl<L> Default for ChatLog<L> {
             rollback_at: None,
             asked: Asked::default(),
             showing: BTreeMap::new(),
+            batch: None,
         }
     }
 }
@@ -405,6 +420,7 @@ impl<L> ChatLog<L> {
         }
         self.meta.remove(index);
         let item = self.items.remove(index);
+        self.batch = None;
         for boundary in &mut self.activity_boundaries {
             if *boundary > index {
                 *boundary -= 1;
@@ -539,6 +555,10 @@ impl<L> ChatLog<L> {
         // The piece that answers a call tried again changes what the indicator says.
         let retried = self.live.retrying();
         self.live.apply(&event, now);
+        // A model call opens a new step: its `ask_agent` calls are a run of their own.
+        if matches!(event, ThreadEvent::Model(_) | ThreadEvent::TurnStarted(_)) {
+            self.batch = None;
+        }
         // The hot path: a streamed piece of the answer that moves no row.
         if let ThreadEvent::Model(ModelEvent::Text(piece) | ModelEvent::Reasoning(piece)) = &event
             && !retried
@@ -565,6 +585,9 @@ impl<L> ChatLog<L> {
             let changed = self
                 .agent_mut(thread_id)
                 .is_some_and(|agent| agent.follow(event, now));
+            if changed && let Some(call_id) = self.agent(thread_id).map(|a| a.call_id.clone()) {
+                self.touch_agent_run(&call_id);
+            }
             let chat = self.agent_chats.entry(thread_id.clone()).or_default();
             chat.apply((**event).clone(), now);
             return match changed {
@@ -685,6 +708,7 @@ impl<L> ChatLog<L> {
             ThreadEvent::ToolFinished { call_id, result } => {
                 let shown = !result.is_error && self.suggestion(&call_id, &result.content);
                 if !shown
+                    && !self.finish_run(&call_id, &result)
                     && !self.show_block(&call_id, &result.content)
                     && let Some(index) = self.tool_index(&call_id)
                 {
@@ -704,8 +728,12 @@ impl<L> ChatLog<L> {
                 let used = self.tokens.map_or(0, |(used, _)| used);
                 self.tokens = Some((used, input_limit));
             }
-            ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::Tasks(tasks) => {
+                self.tasks = tasks;
+                self.touch_team_run();
+            }
             ThreadEvent::TaskChanged(task) => {
+                self.touch_team_run();
                 match self
                     .tasks
                     .iter_mut()
@@ -720,16 +748,18 @@ impl<L> ChatLog<L> {
                 thread_id,
                 agent,
                 task,
+                effort,
                 model,
                 task_id,
-                ..
             } => {
+                self.touch_agent_run(&call_id);
                 // Asking the same thread again brings it back to work.
                 let agent = Subagent {
                     name: agent_name(&thread_id),
                     thread_id: thread_id.clone(),
                     role: agent,
                     model,
+                    effort,
                     call_id,
                     task,
                     task_id,
@@ -741,7 +771,10 @@ impl<L> ChatLog<L> {
                 self.agents.insert(thread_id, agent);
             }
             ThreadEvent::AgentsWorking(on) => self.agents_working = on,
-            ThreadEvent::Team(team) => self.set_team(team, now),
+            ThreadEvent::Team(team) => {
+                self.set_team(team, now);
+                self.touch_team_runs();
+            }
             // An agent not started in this chat still has its chat followed.
             ThreadEvent::Subagent { thread_id, event } => {
                 self.agent_chats
@@ -790,6 +823,23 @@ impl<L> ChatLog<L> {
             }
             self.touch(index);
         }
+        let in_runs: Vec<String> = self
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Run(run) => Some(run),
+                _ => None,
+            })
+            .flat_map(|run| &run.tools)
+            .filter(|tool| tool.state == ToolState::Running)
+            .map(|tool| tool.call_id.clone())
+            .collect();
+        for call_id in in_runs {
+            self.finish_run_call(&call_id, |tool| {
+                tool.finish_stored(why);
+                tool.state = ToolState::Failed;
+            });
+        }
     }
 
     /// Cuts the items at `at`, as an /undo the core confirmed does.
@@ -801,6 +851,7 @@ impl<L> ChatLog<L> {
         self.meta.truncate(at);
         self.asked = Asked::default();
         self.showing.clear();
+        self.batch = None;
         let kept = self
             .activity_boundaries
             .iter()
@@ -924,7 +975,10 @@ impl<L> ChatLog<L> {
         if let Some(block) = Block::asked(call) {
             self.showing.insert(call.id.clone(), block);
         }
-        self.push(Item::Tool(Tool::new(call, state)), at);
+        let tool = Tool::new(call, state);
+        if !self.start_run(call, tool.clone(), at) {
+            self.push(Item::Tool(tool), at);
+        }
     }
 
     /// Puts the block of a finished `show` call in place of its step, when `result` says

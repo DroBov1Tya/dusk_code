@@ -29,7 +29,7 @@ use crate::{
     release::update::Channel,
 };
 use anyhow::{Context, Result, anyhow, ensure};
-use dusk_protocol::config::VoiceSettings;
+use dusk_protocol::config::{ModelTiers, VoiceSettings};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -95,6 +95,10 @@ pub struct Config {
     /// provider when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
+    /// The models a thread may hand a subagent by tier, as `provider/model`; an unset tier
+    /// is the asking chat's model.
+    #[serde(default, skip_serializing_if = "ModelTiers::is_default")]
+    models: ModelTiers,
     /// The chat's mode, by its file in `modes/`; MAIN when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mode: Option<String>,
@@ -171,6 +175,7 @@ impl fmt::Debug for Config {
             .field("skill_packs", &self.skill_packs)
             .field("agents", &self.agents)
             .field("model", &self.model)
+            .field("models", &self.models)
             .field("mcp", &self.mcp.keys().collect::<Vec<_>>())
             .field("logging", &self.logging.enabled)
             .finish()
@@ -433,6 +438,7 @@ impl Config {
              {MAX_TEAM_MAX_GATE_RUNS}"
         );
         self.team.validate()?;
+        self.models.validate().map_err(|error| anyhow!(error))?;
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,
             "appearance.idle_screen_minutes must be at most {}",

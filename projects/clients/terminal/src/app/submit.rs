@@ -1,6 +1,9 @@
 //! Sending what is typed: commands, messages, the queue and recall.
 
-use dusk_protocol::client::{Command, parse};
+use dusk_protocol::{
+    client::{Command, parse},
+    config::ModelTier,
+};
 
 use super::{Action, Activity, App, Connection, Panel, TabMove, Tone, schedule::ScheduleAction};
 
@@ -98,6 +101,17 @@ impl App {
         if let Some(name) = trimmed.strip_prefix("/disconnect ") {
             return Action::Disconnect(name.trim().to_owned());
         }
+        if trimmed == "/tier" || trimmed.starts_with("/tier ") {
+            return match parse_tier(&trimmed["/tier".len()..]) {
+                Some(ask) => Action::Tier(ask),
+                None => {
+                    self.flash = Some(
+                        "Use /tier, /tier strong|default|weak provider/model, or unset".into(),
+                    );
+                    Action::None
+                }
+            };
+        }
         if trimmed == "/access" || trimmed.starts_with("/access ") {
             let name = trimmed["/access".len()..].trim();
             return Action::Access((!name.is_empty()).then(|| name.to_lowercase()));
@@ -179,9 +193,47 @@ impl App {
     }
 }
 
+/// `/tier`'s arguments: none shows the tiers; a tier and `provider/model` sets it, a
+/// tier and `unset` puts it back on the chat's model. `None` is a misspelling.
+fn parse_tier(arguments: &str) -> Option<Option<(ModelTier, Option<String>)>> {
+    let mut words = arguments.split_whitespace();
+    let Some(tier) = words.next() else {
+        return Some(None);
+    };
+    let tier = ModelTier::parse(&tier.to_lowercase())?;
+    let model = match (words.next()?, words.next()) {
+        ("unset", None) => None,
+        (model, None) => Some(model.to_owned()),
+        _ => return None,
+    };
+    Some(Some((tier, model)))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::app::{Action, Panel, test_app};
+    use dusk_protocol::config::ModelTier;
+
+    #[test]
+    fn tier_sets_shows_or_unsets_a_subagent_model() {
+        let mut app = test_app();
+        app.input.set("/tier".into());
+        assert!(matches!(app.submit(false), Action::Tier(None)));
+        app.input.set("/tier Strong big/fable".into());
+        assert!(matches!(
+            app.submit(false),
+            Action::Tier(Some((ModelTier::Strong, Some(model)))) if model == "big/fable"
+        ));
+        app.input.set("/tier weak unset".into());
+        assert!(matches!(
+            app.submit(false),
+            Action::Tier(Some((ModelTier::Weak, None)))
+        ));
+        for wrong in ["/tier fast big/x", "/tier weak", "/tier weak a/b c"] {
+            app.input.set(wrong.into());
+            assert!(matches!(app.submit(false), Action::None), "{wrong}");
+        }
+    }
 
     /// What a Workshop card in the chat tells the user to type opens the Workshop
     /// narrowed to the name; installing still waits for Enter and its box.

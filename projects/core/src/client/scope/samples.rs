@@ -203,6 +203,10 @@ fn settings() -> Vec<S> {
         },
         S::BranchPrefix(word()),
         S::Arbiter(Default::default()),
+        S::ModelTier {
+            tier: dusk_protocol::config::ModelTier::Weak,
+            model: Some(word()),
+        },
         S::NextMode,
         S::Mode(word()),
         S::Connect {

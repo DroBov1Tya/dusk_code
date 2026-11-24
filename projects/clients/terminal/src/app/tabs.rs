@@ -299,6 +299,7 @@ pub(crate) mod tests {
     pub(crate) fn app() -> App {
         App::new(Status {
             model: None,
+            model_tiers: Default::default(),
             discovering_model: false,
             input_limit: 0,
             context_policy: None,

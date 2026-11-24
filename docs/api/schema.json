@@ -4378,6 +4378,26 @@
         }
       ]
     },
+    "ModelTier": {
+      "description": "One of the three tiers an asker picks for a subagent. Its schema is in the tools'\nparameters too, so it derives `JsonSchema` whatever the features.",
+      "oneOf": [
+        {
+          "const": "strong",
+          "description": "Design, review and hard debugging.",
+          "type": "string"
+        },
+        {
+          "const": "default",
+          "description": "Everything else.",
+          "type": "string"
+        },
+        {
+          "const": "weak",
+          "description": "Mechanical work and read-only scouting.",
+          "type": "string"
+        }
+      ]
+    },
     "NodeText": {
       "description": "A skill's or an agent's file as a client edits it.",
       "properties": {
@@ -8422,6 +8442,33 @@
           "type": "object"
         },
         {
+          "additionalProperties": false,
+          "description": "Chooses the model of a subagent tier as `provider/model` of a connected provider;\n`None` unsets it, which is the asking chat's model. New chats keep their model.",
+          "properties": {
+            "ModelTier": {
+              "properties": {
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tier": {
+                  "$ref": "#/$defs/ModelTier"
+                }
+              },
+              "required": [
+                "tier"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "ModelTier"
+          ],
+          "type": "object"
+        },
+        {
           "const": "NextMode",
           "description": "Answers with the mode switched to.",
           "type": "string"
@@ -9160,6 +9207,24 @@
             "string",
             "null"
           ]
+        },
+        "model_tiers": {
+          "$ref": "#/$defs/TierStates",
+          "default": {
+            "default": {
+              "chosen": null,
+              "missing": false
+            },
+            "strong": {
+              "chosen": null,
+              "missing": false
+            },
+            "weak": {
+              "chosen": null,
+              "missing": false
+            }
+          },
+          "description": "The models of the subagent tiers strong, default and weak; an unset one is the\nasking chat's model."
         },
         "notifications": {
           "description": "Whether clients notify at all.",
@@ -9988,6 +10053,15 @@
       "properties": {
         "budget": {
           "$ref": "#/$defs/TeamBudget"
+        },
+        "ended_at": {
+          "default": null,
+          "description": "When this run ended, in Unix milliseconds; none while it runs, and from cores\nbefore it was told.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "members": {
           "description": "Newest first, at most `MAX_TEAM_MEMBERS`.",
@@ -12199,6 +12273,46 @@
           "type": "string"
         }
       ]
+    },
+    "TierState": {
+      "description": "How one tier stands now.",
+      "properties": {
+        "chosen": {
+          "description": "What the settings name, as `provider/model`; `None` when unset, which is the\nasking chat's model.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "missing": {
+          "description": "The chosen model's provider is not connected (removed or switched off), so the\ntier is the asking chat's model until it is.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "missing"
+      ],
+      "type": "object"
+    },
+    "TierStates": {
+      "description": "Every tier as it stands, for the settings.",
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/TierState"
+        },
+        "strong": {
+          "$ref": "#/$defs/TierState"
+        },
+        "weak": {
+          "$ref": "#/$defs/TierState"
+        }
+      },
+      "required": [
+        "strong",
+        "default",
+        "weak"
+      ],
+      "type": "object"
     },
     "TokenCounts": {
       "description": "Estimated tokens by who wrote them.",

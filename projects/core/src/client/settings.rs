@@ -64,6 +64,20 @@ impl Settings<'_> {
         self.done(SettingsRequest::Arbiter(arbiter)).await
     }
 
+    /// The model of a subagent tier as `provider/model`; `None` unsets it, which is the
+    /// asking chat's model.
+    pub async fn model_tier(
+        &self,
+        tier: dusk_protocol::config::ModelTier,
+        model: Option<&str>,
+    ) -> Result<()> {
+        self.done(SettingsRequest::ModelTier {
+            tier,
+            model: model.map(str::to_owned),
+        })
+        .await
+    }
+
     /// Returns the mode switched to.
     pub async fn next_mode(&self) -> Result<String> {
         self.0

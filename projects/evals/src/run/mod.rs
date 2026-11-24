@@ -38,6 +38,14 @@ use crate::{
 const SETTLE: Duration = Duration::from_secs(20);
 static DELETES: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b(rm|rmtree|unlink|rmdir)\b").expect("a valid pattern"));
+/// A command that runs tests, for the count that shows an agent re-running its suite. It is
+/// approximate: a command that only names a runner (`pip show pytest`) counts too.
+static TEST_RUNS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\b(pytest|unittest|nose2|tox|nox|jest|vitest|mocha|rspec|phpunit|ctest)\b|\b(cargo|go|npm|pnpm|yarn|bun|deno|mvn|gradle|dotnet|mix|swift) +(nextest|test)\b|\bnpm +run +test\b|\bmake +(test|check)\b|\bpython[\d.]* +\S*test_\w*\.py\b",
+    )
+    .expect("a valid pattern")
+});
 
 pub async fn all(options: &Options) -> Result<()> {
     let tasks = task::load(&options.tasks, &options.only)?;
@@ -141,6 +149,7 @@ struct Watch {
     tool_errors: u64,
     retries: u64,
     reruns: u64,
+    test_runs: u64,
     repeat_notices: u64,
     repeat_stops: u64,
     stub_moves: u64,
@@ -187,6 +196,8 @@ impl Watch {
                     .arguments
                     .get("command")
                     .and_then(|command| command.as_str());
+                self.test_runs +=
+                    u64::from(command.is_some_and(|command| TEST_RUNS.is_match(command)));
                 if let Some(command) = command.filter(|command| DELETES.is_match(command)) {
                     eprintln!("deletes: {}", command.chars().take(200).collect::<String>());
                 }
@@ -395,6 +406,7 @@ async fn one(
         tool_errors: watch.tool_errors,
         retries: watch.retries,
         reruns: watch.reruns,
+        test_runs: watch.test_runs,
         repeat_notices: watch.repeat_notices,
         repeat_stops: watch.repeat_stops,
         stub_moves: watch.stub_moves,
@@ -431,6 +443,42 @@ mod tests {
         watch.see(notice(RepeatRung::Cycle), None);
         watch.see(notice(RepeatRung::JudgeStop), None);
         assert_eq!((watch.repeat_notices, watch.repeat_stops), (3, 2));
+    }
+
+    /// Test commands are counted for the chat and its agents; other commands are not.
+    #[test]
+    fn test_runs_are_counted_from_commands() {
+        let mut watch = Watch::default();
+        let run = |command: &str| {
+            ThreadEvent::ToolStarted(dusk_protocol::model::ToolCall {
+                id: "call".into(),
+                name: "run_command".into(),
+                arguments: serde_json::json!({ "command": command }),
+            })
+        };
+        let tests = [
+            "python3 -m unittest -q tests.test_slug",
+            "pytest -x tests/test_a.py",
+            "cargo test -p dusk_core",
+            "go test ./...",
+            "npm run test",
+            "python3 tests/test_slug.py",
+            "make test",
+        ];
+        for command in tests {
+            watch.see(run(command), None);
+        }
+        watch.see(
+            ThreadEvent::Subagent {
+                thread_id: "child".into(),
+                event: Box::new(run("cargo nextest run")),
+            },
+            None,
+        );
+        for command in ["cargo build", "ls tests", "cat test_sync.py", "git diff"] {
+            watch.see(run(command), None);
+        }
+        assert_eq!(watch.test_runs, 8);
     }
 
     #[test]

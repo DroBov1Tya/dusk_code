@@ -28,6 +28,8 @@ fn task(note: &str) -> PlanTask {
         gate_job: None,
         checkpoint: None,
         model: None,
+        tier: None,
+        effort: None,
         created_at: 1,
         updated_at: 2,
     }

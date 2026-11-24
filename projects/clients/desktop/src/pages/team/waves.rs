@@ -6,7 +6,8 @@
 use std::{collections::HashMap, time::Instant};
 
 use dusk_protocol::thread::{
-    GoalCheck, Subagent, Task, TaskStatus, duration_words, role_name, short_model, team_layout,
+    GoalCheck, RunMark, Subagent, Task, TaskStatus, duration_words, role_name, short_model,
+    team_layout,
 };
 use gpui_kit::{
     component::{
@@ -182,18 +183,23 @@ pub fn breathe<E: IntoElement + Styled + 'static>(mark: E) -> impl IntoElement {
     })
 }
 
-/// Done is a quiet fill, running the accent; open is a hollow outline, waiting for a
-/// decision an accent ring, failed the danger's fill, blocked the warning's ring.
 fn square(task: &Task, cx: &App) -> Div {
+    mark_square(RunMark::of_task(task), cx)
+}
+
+/// Done is a quiet fill, running the accent; open is a hollow outline, waiting for a
+/// decision an accent ring, failed the danger's fill, blocked the warning's ring. The
+/// chat's run cards draw their tasks and agents with it too.
+pub fn mark_square(mark: RunMark, cx: &App) -> Div {
     let theme = cx.theme();
     let square = div().flex_none().size(px(SQUARE)).rounded(px(2.5));
-    match task.status {
-        TaskStatus::Done => square.bg(theme.foreground.opacity(0.26)),
-        TaskStatus::Running => square.bg(theme.primary),
-        TaskStatus::Failed => square.bg(theme.danger),
-        TaskStatus::Claimed | TaskStatus::Review => square.border_1().border_color(theme.primary),
-        TaskStatus::Blocked => square.border_1().border_color(theme.warning),
-        TaskStatus::Open => square
+    match mark {
+        RunMark::Done => square.bg(theme.foreground.opacity(0.26)),
+        RunMark::Running => square.bg(theme.primary),
+        RunMark::Failed => square.bg(theme.danger),
+        RunMark::Waiting | RunMark::Confirm => square.border_1().border_color(theme.primary),
+        RunMark::Blocked => square.border_1().border_color(theme.warning),
+        RunMark::Open => square
             .border_1()
             .border_color(theme.foreground.opacity(0.3)),
     }
@@ -456,6 +462,8 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
             let meta = [
                 Some(role_name(task.role.as_deref()).to_owned()),
                 model,
+                run.and_then(|run| run.effort)
+                    .map(|effort| format!("{} effort", effort.name())),
                 (task.attempts > 0).then(|| format!("attempt {}", task.attempts)),
             ]
             .into_iter()

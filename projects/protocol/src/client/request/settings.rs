@@ -3,7 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::client::Secret;
-use crate::config::{ApprovalPolicy, Arbiter, ContextPolicy, ProviderKind, VoiceSettings};
+use crate::config::{
+    ApprovalPolicy, Arbiter, ContextPolicy, ModelTier, ProviderKind, VoiceSettings,
+};
 /// What `/settings` changes.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,6 +31,12 @@ pub enum SettingsRequest {
     BranchPrefix(String),
     /// How auto mode's arbiter judges; empty fields go back to the defaults.
     Arbiter(Arbiter),
+    /// Chooses the model of a subagent tier as `provider/model` of a connected provider;
+    /// `None` unsets it, which is the asking chat's model. New chats keep their model.
+    ModelTier {
+        tier: ModelTier,
+        model: Option<String>,
+    },
     /// Answers with the mode switched to.
     NextMode,
     /// Switches to the mode of this name.

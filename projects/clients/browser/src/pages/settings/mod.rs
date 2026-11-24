@@ -90,6 +90,7 @@ mod appearance;
 mod chat;
 mod memory;
 mod model;
+mod model_tiers;
 mod notifications;
 mod secrets;
 mod system;

@@ -155,6 +155,7 @@ impl State {
             used,
             members,
             started_at: Some(run.started_at),
+            ended_at: run.ended_at,
         }))
     }
 

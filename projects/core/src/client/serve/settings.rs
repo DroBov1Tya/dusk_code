@@ -41,6 +41,7 @@ impl Server {
             SettingsRequest::Switch { switch, on } => self.switch(switch, on)?,
             SettingsRequest::BranchPrefix(prefix) => runtime.set_branch_prefix(&prefix)?,
             SettingsRequest::Arbiter(arbiter) => runtime.set_arbiter(arbiter)?,
+            SettingsRequest::ModelTier { tier, model } => runtime.set_model_tier(tier, model)?,
             SettingsRequest::NextMode => return Ok(Response::Text(runtime.next_mode()?)),
             SettingsRequest::Mode(name) => runtime.set_mode(&name)?,
             SettingsRequest::Connect {

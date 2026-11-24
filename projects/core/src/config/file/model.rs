@@ -2,6 +2,7 @@
 
 use super::Config;
 use crate::config::{ContextPolicy, Effort};
+use dusk_protocol::config::{ModelTier, ModelTiers};
 
 impl Config {
     pub fn model(&self) -> Option<&str> {
@@ -10,6 +11,15 @@ impl Config {
 
     pub fn set_model(&mut self, name: String) {
         self.model = Some(name);
+    }
+
+    /// What the settings name for each subagent tier; `runtime::tiers` resolves them.
+    pub fn model_tiers(&self) -> &ModelTiers {
+        &self.models
+    }
+
+    pub fn set_model_tier(&mut self, tier: ModelTier, name: Option<String>) {
+        self.models.set(tier, name);
     }
 
     pub fn effort(&self) -> Option<Effort> {

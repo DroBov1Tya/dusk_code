@@ -46,6 +46,12 @@ fn signature(transcript: &crate::app::Transcript, index: usize, browsed: Option<
     (browsed == Some(index)).hash(&mut hash);
     (index > 0 && is_meta(&entries[index - 1]) && is_meta(&entries[index])).hash(&mut hash);
     ends_turn(entries, index).hash(&mut hash);
+    // A running card's clock moves once a second.
+    if let Entry::Run { card, .. } = &entries[index]
+        && card.running
+    {
+        (dusk_protocol::system::now_ms() / 1000).hash(&mut hash);
+    }
     if matches!(entries[index], Entry::Activity { .. }) {
         // The activity line counts its run and names what goes on while it is the newest.
         transcript.current_step(index).hash(&mut hash);
