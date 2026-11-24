@@ -967,7 +967,16 @@ fn act(
             inner.push(
                 Item::Assistant {
                     text: "Entries now expire after the time set in `ttl`; the tests pass.".into(),
-                    reasoning: String::new(),
+                    // Long enough to scroll, so the copy button rides down the open block.
+                    reasoning: (1..=30)
+                        .map(|line| {
+                            format!(
+                                "Line {line}: the entry keeps its deadline beside the value, \
+                                 so a read can drop it without a second lookup."
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
                 },
                 0,
             );
@@ -978,6 +987,7 @@ fn act(
             use crate::pages::chat::messages::{RUN, STEP};
             ws.unfolded.insert(("fake-agent".into(), 1 | RUN));
             ws.unfolded.insert(("fake-agent".into(), 1 | STEP));
+            ws.unfolded.insert(("fake-agent".into(), 6));
             ws.modal = Some(Modal::AgentChat {
                 agent: "fake-agent".into(),
                 name: "backend-engineer".into(),
