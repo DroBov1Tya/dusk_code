@@ -126,6 +126,7 @@ impl App {
             ThreadEvent::TurnFailed(failure) => tracing::warn!("{}", failure.text()),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Pins(pins) => self.pins = pins,
+            ThreadEvent::Branch(branch) => self.branch = branch,
             ThreadEvent::CompactionStarted => {
                 self.compacting = true;
                 self.activity = Activity::Compacting;

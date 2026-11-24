@@ -53,11 +53,26 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
             .and_then(|id| app.project_by_id(&id))
             .map(|p| p.name)
     };
+    // The branch the chat works on in a worktree of its own, when it branched off.
+    let branch_id = id.clone();
+    let branch = Memo::new(move |_| {
+        let id = branch_id.as_deref()?;
+        app.threads.with(|threads| {
+            let own = threads.iter().find(|t| t.id == id)?.branch.as_ref()?;
+            Some((
+                format!("on {}", own.branch),
+                format!("from {} in {}", own.base, own.dir.display()),
+            ))
+        })
+    });
     view! {
         <div class="chat">
             <Show when=move || open || project_name().is_some()>
                 <header class="chat-head">
                     <span class="chat-project muted">{move || project_name().unwrap_or_default()}</span>
+                    {move || branch.get().map(|(name, place)| view! {
+                        <span class="chat-project muted" title=place>{name}</span>
+                    })}
                     {menu_id.clone().map(|id| view! { <ChatMenu id /> })}
                 </header>
             </Show>

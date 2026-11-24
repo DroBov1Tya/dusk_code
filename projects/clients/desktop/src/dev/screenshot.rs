@@ -584,6 +584,30 @@ fn act(
         }
         "fake" if value == "pulls" => fake_pulls(ws, cx),
         "fake" if value == "unread" => fake_unread(ws, cx),
+        // The shown chat works on a branch of its own in a worktree.
+        "fake" if value == "branch" => {
+            // A fake chat not in the list (`fake=pulls` shows one) becomes the first listed.
+            let listed = ws.threads.iter().any(|t| Some(&t.id) == ws.shown.as_ref());
+            if !listed && let Some(first) = ws.threads.first().map(|t| t.id.clone()) {
+                if let Some(chat) = ws.shown.take().and_then(|id| ws.chats.remove(&id)) {
+                    ws.chats.insert(first.clone(), chat);
+                }
+                ws.shown = Some(first);
+            }
+            let shown = ws.shown.clone();
+            if let Some(thread) = ws
+                .threads
+                .iter_mut()
+                .find(|t| Some(&t.id) == shown.as_ref())
+            {
+                thread.branch = Some(dusk_protocol::project::ThreadBranch {
+                    branch: "agent/fix-login".to_owned(),
+                    base: "main".to_owned(),
+                    dir: "/Users/you/code/app-worktrees/agent-fix-login".into(),
+                });
+            }
+            cx.notify();
+        }
         "fake" if value == "forge-signin" || value == "forge-unserved" => {
             fake_forge(ws, value == "forge-signin", cx)
         }
