@@ -91,8 +91,10 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   (`limits.no_progress_note_at`, 12), then a request for a different plan
   (`no_progress_replan_at`, 30), and again every `no_progress_note_at` steps after. Until
   the ledger records a change in the turn, and for writes it cannot see (a subagent, a
-  job, an MCP tool), a new call that may write counts as progress; a step of only looks
-  at background jobs is not counted. Notes only: after the re-plan the turn is a stall
+  job, an MCP tool, a command whose walk gave up), a new call that may write a project
+  file counts as progress (the chat's goal, tasks, plan and memory are no project
+  file); a step of only looks at background jobs, or of plain waits (`sleep 30`) once
+  a job started in the turn, is not counted. Notes only: after the re-plan the turn is a stall
   candidate for a judge, and goes on.
 - **Loop judge.** `limits.loop_judge` (on): a turn still without progress after the
   no-progress re-plan, a cycle asked twice for a different plan, or the same failing

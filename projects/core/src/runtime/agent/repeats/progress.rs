@@ -21,7 +21,8 @@
 //!
 //! A look at the background jobs is neither: a build or a run going on shows little more
 //! than a counter between two looks, which is not news, yet the job is moving. A step of
-//! nothing but such looks is not counted.
+//! nothing but such looks, and plain waits (`sleep 30`) once a job started in the turn,
+//! is not counted.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -45,6 +46,10 @@ pub struct Call<'a> {
     pub call_hash: u64,
     pub result_hash: u64,
     pub read_only: bool,
+    /// The call may change a project file (`Facts::writes_project`).
+    pub writes_project: bool,
+    /// The call ran a command whose changes the ledger could not record.
+    pub unwatched: bool,
     /// The ledger's rows for the call, as (path, state after); None when the ledger was
     /// not read for it.
     pub edits: Option<&'a [(String, String)]>,
@@ -88,6 +93,8 @@ pub struct Progress {
     moved: bool,
     /// The running step made a call other than a look at the jobs.
     counted: bool,
+    /// A command of the turn went on in the background: waiting on it is no idle step.
+    jobs_started: bool,
     /// Finished steps in a row that brought nothing new.
     idle: u32,
     /// The count the next notice waits for; 0 before the first since progress.
@@ -117,7 +124,16 @@ impl Progress {
     /// Notes a finished call; the rung, count and note when the steps before brought
     /// nothing new and neither has the step so far.
     pub fn note(&mut self, done: &Call<'_>, limits: &Limits) -> Option<(RepeatRung, u32, String)> {
-        if !limits.no_progress || done.call.name == JOBS {
+        if !limits.no_progress {
+            return None;
+        }
+        if done.call.name == signature::RUN_COMMAND
+            && (done.call.arguments["background"].as_bool() == Some(true)
+                || done.result.exit_code.is_none())
+        {
+            self.jobs_started = true;
+        }
+        if done.call.name == JOBS || (self.jobs_started && is_wait(done.call)) {
             return None;
         }
         self.counted = true;
@@ -178,7 +194,8 @@ impl Progress {
             }
         }
         let passed = self.passed(done.call, done.result);
-        let unseen_write = !done.read_only && (!self.ledger_seen || ledger_blind(done));
+        let may_write = done.writes_project && !done.read_only;
+        let unseen_write = may_write && (!self.ledger_seen || ledger_blind(done));
         result || edited || passed || (asked && (done.read_only || unseen_write))
     }
 
@@ -199,12 +216,25 @@ impl Progress {
 }
 
 /// Whether the call may write where the ledger does not look: it records only what a
-/// foreground command of this thread changed, not a subagent, a job or an MCP tool.
+/// foreground command of this thread changed, and only when its walk did not give up;
+/// not a subagent, a job or an MCP tool.
 fn ledger_blind(done: &Call<'_>) -> bool {
     let foreground = done.call.name == signature::RUN_COMMAND
         && done.call.arguments["background"].as_bool() != Some(true)
         && done.result.exit_code.is_some();
-    !foreground
+    !foreground || done.unwatched
+}
+
+/// Whether `call` only waits, as `sleep 30` does.
+fn is_wait(call: &ToolCall) -> bool {
+    if call.name != signature::RUN_COMMAND {
+        return false;
+    }
+    let Some(command) = call.arguments["command"].as_str() else {
+        return false;
+    };
+    let words: Vec<&str> = command.split_whitespace().collect();
+    matches!(words.as_slice(), ["sleep", time] if time.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | 's' | 'm' | 'h')))
 }
 
 fn note(count: u32) -> String {

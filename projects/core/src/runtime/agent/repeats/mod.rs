@@ -211,6 +211,8 @@ impl Repeats {
                 call_hash,
                 result_hash: alike.unwrap_or(result_hash),
                 read_only: facts.read_only,
+                writes_project: facts.writes_project,
+                unwatched: facts.unwatched,
                 edits: facts.edits.as_deref(),
             },
             limits,

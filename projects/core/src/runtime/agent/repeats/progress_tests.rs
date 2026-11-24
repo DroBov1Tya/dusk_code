@@ -29,6 +29,8 @@ struct Done<'a> {
     output: &'a str,
     failed: bool,
     read_only: bool,
+    writes_project: bool,
+    unwatched: bool,
     /// The ledger's rows of the call; None when not read.
     edits: Option<Vec<(String, String)>>,
 }
@@ -39,6 +41,8 @@ fn quiet(call: ToolCall) -> Done<'static> {
         output: "done",
         failed: false,
         read_only: false,
+        writes_project: true,
+        unwatched: false,
         edits: Some(Vec::new()),
     }
 }
@@ -53,14 +57,21 @@ fn edit(file: &str, state: &str) -> Done<'static> {
 /// Runs `done` as its own step; the rung and count of its notice.
 fn step(repeats: &mut Repeats, done: Done<'_>, limits: &Limits) -> Option<(RepeatRung, u32)> {
     repeats.step("t");
+    // A command sent to the background has no exit code yet.
+    let exit_code = match done.call.arguments["background"].as_bool() {
+        Some(true) => None,
+        _ => Some(i32::from(done.failed)),
+    };
     let result = ToolResult {
         content: done.output.to_owned(),
         is_error: done.failed,
-        exit_code: Some(i32::from(done.failed)),
+        exit_code,
         artifacts: Vec::new(),
     };
     let facts = Facts {
         read_only: done.read_only,
+        writes_project: done.writes_project,
+        unwatched: done.unwatched,
         edits: done.edits,
         ..Facts::default()
     };
@@ -316,7 +327,7 @@ fn looks_at_a_running_job_are_not_counted() {
             output: &format!("job 1 running: [{i}/300] Compiling"),
             read_only: true,
             edits: None,
-            ..quiet(call("jobs", json!({ "action": "wait", "job_id": "1" })))
+            ..quiet(call("jobs", json!({ "action": "status", "job_id": "1" })))
         };
         assert_eq!(step(&mut repeats, done, &limits), None, "look {i}");
     }
@@ -324,6 +335,69 @@ fn looks_at_a_running_job_are_not_counted() {
     let done = quiet(command("echo one"));
     assert_eq!(step(&mut repeats, done, &limits), None);
     let done = quiet(command("echo two"));
+    assert_eq!(
+        step(&mut repeats, done, &limits).map(|n| n.0),
+        Some(RepeatRung::NoProgress)
+    );
+}
+
+#[test]
+fn waits_on_a_job_started_in_the_turn_are_not_counted() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let _ = idle_after_edit(&mut repeats, 10, &limits);
+    let build = call(
+        "run_command",
+        json!({ "command": "cargo build --release", "background": true }),
+    );
+    assert_eq!(step(&mut repeats, quiet(build), &limits), None);
+    // A long build polled: a wait, then a look, again and again.
+    for i in 0..40 {
+        let wait = Done {
+            output: "",
+            ..quiet(command("sleep 30"))
+        };
+        let idle = |rung: Option<(RepeatRung, u32)>| {
+            rung.is_some_and(|(rung, _)| {
+                matches!(rung, RepeatRung::NoProgress | RepeatRung::NoProgressReplan)
+            })
+        };
+        assert!(!idle(step(&mut repeats, wait, &limits)), "wait {i}");
+        let look = Done {
+            output: "job 1 running",
+            read_only: true,
+            edits: None,
+            ..quiet(call("jobs", json!({ "action": "output", "job_id": "1" })))
+        };
+        assert!(!idle(step(&mut repeats, look, &limits)), "look {i}");
+    }
+    // The waits did not add up: a step that brings nothing after them is the first.
+    let done = quiet(command("echo one"));
+    assert_eq!(step(&mut repeats, done, &limits), None);
+}
+
+#[test]
+fn a_write_whose_walk_gave_up_is_progress_and_a_harness_record_is_not() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let _ = idle_after_edit(&mut repeats, 11, &limits);
+    // Edits on a project too large to compare in time: the ledger shows no row.
+    for i in 0..20 {
+        let done = Done {
+            output: "",
+            unwatched: true,
+            ..quiet(command(&format!("sed -i 's/{i}/x/' src/lib.rs")))
+        };
+        assert_eq!(step(&mut repeats, done, &limits), None, "edit {i}");
+    }
+    // The chat's task list is no project file.
+    let mut repeats = Repeats::default();
+    let _ = idle_after_edit(&mut repeats, 12, &limits);
+    let done = Done {
+        output: "done",
+        writes_project: false,
+        ..quiet(call("tasks", json!({ "action": "update", "id": "t9" })))
+    };
     assert_eq!(
         step(&mut repeats, done, &limits).map(|n| n.0),
         Some(RepeatRung::NoProgress)
