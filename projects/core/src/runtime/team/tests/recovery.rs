@@ -26,8 +26,12 @@ async fn stopped_after_the_thread(rig: &Rig) -> (String, String) {
     (ids[0].clone(), made.thread_id)
 }
 
-/// A launcher as a new process has it: nothing of the team in memory.
+/// A launcher as a new process has it: nothing of the team in memory. The old
+/// process's tick stops with it: its pass, every 30 seconds, would still remember
+/// nothing of the lines the new one wrote and tell the lead of a stall, which in a
+/// slow full run came between the settle and the asserts.
 fn restarted(rig: &Rig) -> Launcher {
+    rig.runtime.team_tick.abort();
     Launcher {
         team: Arc::default(),
         ..rig.launcher().clone()
