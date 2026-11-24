@@ -12,7 +12,7 @@ use crate::{
     state::{artifacts::Card, thread::threads::family},
 };
 
-pub use dusk_protocol::thread::{Message, MessageRole};
+pub use dusk_protocol::thread::{GoalEvaluation, Message, MessageRole};
 
 /// A message about to be stored. The constructors allow only valid combinations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +51,22 @@ impl State {
         let mut transaction = self.pool.begin().await.context("begin user message")?;
         let message = message_from(&mut transaction, thread_id, request_uid, content, from).await?;
         transaction.commit().await.context("commit user message")?;
+        Ok(message)
+    }
+
+    /// Stores the evaluator's verdict on the chat's goal, for the transcript only.
+    pub async fn add_goal_verdict(
+        &self,
+        thread_id: &str,
+        evaluation: &GoalEvaluation,
+    ) -> Result<Message> {
+        let content = serde_json::to_string(evaluation).context("encode goal verdict")?;
+        let timestamp = timestamp_ms()?;
+        let mut transaction = self.pool.begin().await.context("begin goal verdict")?;
+        ensure_thread_exists(&mut transaction, thread_id).await?;
+        let new = NewMessage::plain(MessageRole::Goal, &content);
+        let message = insert_message(&mut transaction, thread_id, &new, None, timestamp).await?;
+        transaction.commit().await.context("commit goal verdict")?;
         Ok(message)
     }
 
@@ -393,7 +409,11 @@ pub async fn insert_message(
         [] => None,
         calls => Some(serde_json::to_string(calls).context("encode tool calls")?),
     };
-    let content_tokens = content_tokens(&message.content);
+    // The model never reads a verdict, so it takes no room in the context.
+    let content_tokens = match message.role {
+        MessageRole::Goal => 0,
+        _ => content_tokens(&message.content),
+    };
     let tool_calls_tokens = tool_calls.as_deref().map_or(0, estimate_tokens);
     let reasoning_tokens = message.reasoning.as_deref().map_or(0, estimate_tokens);
     let artifacts = if message.artifacts.is_empty() {
@@ -404,9 +424,10 @@ pub async fn insert_message(
     let row = sqlx::query(
         "INSERT INTO messages (message_id, thread_id, sequence, role, content, reasoning,
             tool_calls_json, tool_call_id, request_uid, content_tokens, tool_calls_tokens,
-            reasoning_tokens, created_at, from_thread_id, artifacts_json, from_job_id)
+            reasoning_tokens, created_at, from_thread_id, artifacts_json, from_job_id,
+            goal_verdict)
          VALUES (?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?),
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(Uuid::now_v7().to_string())
     .bind(thread_id)
@@ -424,6 +445,7 @@ pub async fn insert_message(
     .bind(&message.from_thread_id)
     .bind(artifacts)
     .bind(&message.from_job_id)
+    .bind(message.role == MessageRole::Goal)
     .fetch_one(&mut **transaction)
     .await
     .context("store message")?;
@@ -446,8 +468,10 @@ async fn ensure_thread_exists(
 pub fn decode_message(row: SqliteRow) -> Result<Message> {
     let role: String = row.try_get("role")?;
     let from_job_id: Option<String> = row.try_get("from_job_id")?;
+    let goal_verdict: bool = row.try_get("goal_verdict")?;
     let role = match role.as_str() {
         "system" if from_job_id.is_some() => MessageRole::Job,
+        "system" if goal_verdict => MessageRole::Goal,
         "system" => MessageRole::System,
         "user" => MessageRole::User,
         "assistant" => MessageRole::Assistant,

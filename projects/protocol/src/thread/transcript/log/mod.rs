@@ -631,9 +631,7 @@ impl<L> ChatLog<L> {
             ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
                 self.add_message(&message, now);
             }
-            ThreadEvent::GoalEvaluated(evaluation) => {
-                self.push(Item::Goal(evaluation), now);
-            }
+            ThreadEvent::GoalEvaluated(evaluation) => self.goal_verdict(evaluation, now),
             ThreadEvent::TurnStarted(_) => {
                 self.boundary(now);
                 self.working = true;
@@ -850,6 +848,13 @@ impl<L> ChatLog<L> {
         }
         self.skill_changes
             .sort_by_key(|change| (change.changed_at_ms, change.id));
+    }
+
+    /// A verdict on the goal, live or stored: it comes between turns and stands alone.
+    fn goal_verdict(&mut self, evaluation: GoalEvaluation, at: i64) {
+        self.boundary(at);
+        self.push(Item::Goal(evaluation), at);
+        self.boundary(at);
     }
 
     /// Draws a boundary after the last item; false when there is one there already.

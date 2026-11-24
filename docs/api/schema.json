@@ -4227,14 +4227,23 @@
       "type": "object"
     },
     "MessageRole": {
-      "enum": [
-        "System",
-        "User",
-        "Assistant",
-        "Tool",
-        "Job"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "System",
+            "User",
+            "Assistant",
+            "Tool",
+            "Job"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "Goal",
+          "description": "The evaluator's verdict on the chat's goal after a turn, its content a\n`GoalEvaluation` as JSON. The transcript shows it; the model never reads it.",
+          "type": "string"
+        }
+      ]
     },
     "ModeInfo": {
       "properties": {

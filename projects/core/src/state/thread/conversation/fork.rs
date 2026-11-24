@@ -11,10 +11,10 @@ use super::{State, messages::estimate_tokens};
 /// lookup by (thread_id, sequence).
 const COPY_MESSAGES: &str = "INSERT INTO messages (message_id, thread_id, sequence, role, content,
         reasoning, tool_calls_json, tool_call_id, content_tokens, tool_calls_tokens,
-        reasoning_tokens, created_at, from_thread_id, artifacts_json)
+        reasoning_tokens, created_at, from_thread_id, artifacts_json, goal_verdict)
      SELECT json_extract(pair.value, '$[1]'), ?1, pair.key + 1, m.role, m.content, m.reasoning,
         m.tool_calls_json, m.tool_call_id, m.content_tokens, m.tool_calls_tokens,
-        m.reasoning_tokens, m.created_at, m.from_thread_id, m.artifacts_json
+        m.reasoning_tokens, m.created_at, m.from_thread_id, m.artifacts_json, m.goal_verdict
      FROM json_each(?3) pair CROSS JOIN messages m
      WHERE m.thread_id = ?2 AND m.sequence = json_extract(pair.value, '$[0]')
      ORDER BY pair.key";
@@ -68,7 +68,8 @@ impl State {
         // The system prompts, then what the summary does not cover.
         let sequences: Vec<i64> = sqlx::query_scalar(
             "SELECT sequence FROM messages WHERE thread_id = ? AND from_job_id IS NULL
-             AND ((role = 'system' AND sequence <= ?) OR (sequence > ? AND sequence <= ?))
+             AND ((role = 'system' AND goal_verdict = 0 AND sequence <= ?)
+                OR (sequence > ? AND sequence <= ?))
              ORDER BY sequence",
         )
         .bind(source)

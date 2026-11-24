@@ -75,6 +75,11 @@ impl<L> ChatLog<L> {
             MessageRole::Job => {
                 self.push(Item::Job(JobResult::read(&message.content)), at);
             }
+            MessageRole::Goal => {
+                if let Ok(evaluation) = serde_json::from_str(&message.content) {
+                    self.goal_verdict(evaluation, at);
+                }
+            }
             MessageRole::Assistant => {
                 if !message.content.is_empty() || message.reasoning.is_some() {
                     let item = Item::Assistant {

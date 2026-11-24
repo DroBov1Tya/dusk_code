@@ -1,6 +1,8 @@
 //! A goal's turns: after each turn of a chat with an active goal, the evaluator judges it,
 //! and a goal not met starts the next turn with the evaluator's reason. There is no cap:
-//! a user who wants a bound writes it into the goal, and the evaluator judges it.
+//! a user who wants a bound writes it into the goal, and the evaluator judges it. Each
+//! verdict is stored in the chat as a `MessageRole::Goal` message the model never reads,
+//! so a reopened transcript shows it.
 //!
 //! A turn is judged only once nothing runs in the background: while a job, an agent or
 //! a question to the user is under way, the goal waits for its result and the turn it
@@ -97,13 +99,16 @@ impl ThreadRunner {
         let Some(goal) = state.count_goal_turn(thread_id, &judgment.reason).await? else {
             return Ok(false);
         };
-        self.agent.emit(ThreadEvent::GoalEvaluated(GoalEvaluation {
+        let evaluation = GoalEvaluation {
             verdict: judgment.verdict,
             reason: judgment.reason.clone(),
             turn: goal.turns,
             tokens: goal.tokens,
             elapsed_ms: now_ms() - goal.started_at,
-        }));
+        };
+        // Kept in the chat, so a reopened transcript still says how the goal went.
+        state.add_goal_verdict(thread_id, &evaluation).await?;
+        self.agent.emit(ThreadEvent::GoalEvaluated(evaluation));
         if judgment.verdict != GoalVerdict::NotMet {
             if judgment.verdict == GoalVerdict::Met {
                 self.agent.record_met(&goal).await;

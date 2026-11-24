@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::state::{GoalEvaluation, GoalVerdict};
+use dusk_protocol::thread::transcript::{ChatLog, Item};
 
 fn said(text: &'static str) -> Vec<Step> {
     vec![Step::Text(text), Step::Done]
@@ -81,6 +82,17 @@ async fn a_goal_goes_on_until_the_evaluator_finds_it_met() {
             "The goal is not met yet: run the tests and show their output\nKeep working toward it.",
         ]
     );
+    let history = state.list_messages("thread").await.unwrap();
+    let reopened: ChatLog = ChatLog::from_history(&history);
+    let shown: Vec<_> = reopened
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Goal(evaluation) => Some(evaluation.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(shown, verdicts);
     let requests = provider.requests.lock().unwrap();
     // The agent hears the goal last at every step.
     assert!(matches!(
@@ -98,6 +110,11 @@ async fn a_goal_goes_on_until_the_evaluator_finds_it_met() {
         provider.efforts.lock().unwrap().len(),
         4,
         "agent steps only"
+    );
+    // The verdicts are kept in the chat for a reopened transcript, and never sent.
+    assert!(
+        !format!("{requests:?}").contains("\\\"verdict\\\""),
+        "a stored verdict reached the model"
     );
 }
 
