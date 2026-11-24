@@ -177,9 +177,9 @@ impl State {
             .collect()
     }
 
-    /// Moves a sent message into the thread, with its effect on the goal: another agent's
-    /// message is new work, so the approved goal's proofs go stale; the user's message
-    /// answers a goal that waits on them; a job's result changes nothing. One transaction
+    /// Moves a sent message into the thread, with its effect on the goal: the user's
+    /// message goes on with a paused goal; another agent's message and a job's result
+    /// change nothing. One transaction
     /// stores the message and removes the pending row, so no reader sees it both waiting
     /// and read. Admitting it again returns the stored message, and the goal changes with
     /// the pending row's removal, so only once.
