@@ -4,6 +4,7 @@ pub mod approval;
 mod blocks;
 mod composer;
 mod controls;
+mod goal;
 mod markdown;
 mod panel;
 mod pictures;
@@ -66,6 +67,7 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
             <approval::Approvals chat id=id.clone() />
             <approval::AskUser chat id=id.clone() />
             {id.clone().map(|id| view! { <plan::PlanStrip id chat /> })}
+            {id.clone().map(|id| view! { <goal::GoalStrip id chat /> })}
             <Composer id chat />
         </div>
     }

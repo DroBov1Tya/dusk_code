@@ -13,7 +13,7 @@ use crate::{
     state::{Chat, state},
     ui::{Icon, IconName},
 };
-use dusk_protocol::thread::{ChatLog, Tool, ToolState, labelled};
+use dusk_protocol::thread::{ChatLog, GoalVerdict, Tool, ToolState, labelled};
 use dusk_protocol::tools::Card;
 use leptos::{html, prelude::*};
 use std::collections::HashMap;
@@ -127,7 +127,8 @@ fn opens_turn(item: &Item) -> bool {
 }
 
 /// What a finished turn folds away: all but its answer, the user's words, the blocks and
-/// Workshop cards the agent showed, the runs it started, and errors.
+/// Workshop cards the agent showed, the runs it started, the goal's verdict on it, and
+/// errors.
 fn folds(item: &Item) -> bool {
     !matches!(
         item,
@@ -136,6 +137,7 @@ fn folds(item: &Item) -> bool {
             | Item::Block(_)
             | Item::Suggestion(_)
             | Item::Run(_)
+            | Item::Goal(_)
             | Item::Error(_)
     )
 }
@@ -442,11 +444,21 @@ fn item_view(
         Item::Audio(card) => view! { <AudioCard card /> }.into_any(),
         Item::Run(_) => view! { <RunCardView id source /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),
-        // The evaluator's verdict on the goal, with its reason under it.
-        Item::Goal(evaluation) => view! {
-            <div class="notice">{evaluation.title()}<div class="muted">{evaluation.reason}</div></div>
+        // The evaluator's verdict on the goal; its reason unfolds under it.
+        Item::Goal(evaluation) => {
+            let tone = match evaluation.verdict {
+                GoalVerdict::NotMet => "",
+                GoalVerdict::Met => "good",
+                GoalVerdict::Impossible => "bad",
+            };
+            view! {
+                <details class=format!("notice goal-verdict {tone}")>
+                    <summary>{format!("\u{25CE} {}", evaluation.title())}</summary>
+                    <div class="goal-reason">{evaluation.reason}</div>
+                </details>
+            }
+            .into_any()
         }
-        .into_any(),
         Item::Error(text) => view! { <ErrorRow id text source thread /> }.into_any(),
     }
 }
@@ -944,6 +956,28 @@ mod tests {
         let blocks = blocks(&chat);
         let texts: Vec<String> = blocks.iter().filter_map(|b| said(&chat, b)).collect();
         assert_eq!(texts, ["first", "second"]);
+    }
+
+    /// The goal's verdict comes after a turn and is the user's to read: the finished
+    /// turn's fold must not take it in, where nothing draws it.
+    #[test]
+    fn a_goal_verdict_stays_out_of_the_finished_turn() {
+        use dusk_protocol::thread::GoalEvaluation;
+        let mut chat = ChatLog::default();
+        chat.add_user("go".into(), Some(1), 1);
+        chat.apply(ThreadEvent::Model(ModelEvent::Reasoning("hm".into())), 2);
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("done".into())), 2);
+        let verdict = GoalEvaluation {
+            verdict: GoalVerdict::NotMet,
+            reason: "run the tests".into(),
+            turn: 1,
+            tokens: 10,
+            elapsed_ms: 10,
+        };
+        chat.apply(ThreadEvent::GoalEvaluated(verdict.clone()), 3);
+        let blocks = blocks(&chat);
+        assert!(blocks.iter().any(|block| matches!(block, Block::One(id, _)
+            if chat.items[chat.index_of(*id).unwrap()] == Item::Goal(verdict.clone()))));
     }
 
     /// A block is what the agent showed, not a step on its way: a finished turn keeps it

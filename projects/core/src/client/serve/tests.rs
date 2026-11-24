@@ -106,6 +106,64 @@ async fn a_client_that_joins_a_waiting_turn_gets_the_wait_and_the_question() {
     );
 }
 
+/// A client that joins a chat another client keeps open is told its goal, as the first
+/// was when the chat opened.
+#[tokio::test]
+async fn a_client_that_joins_an_open_chat_gets_its_goal() {
+    let root = temp_dir("serve_join_goal");
+    let cwd = root.join("project");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let paths = Paths::new(root.join("config"), root.join("work"));
+    let runtime = Runtime::start(paths, Some(root.join("state.db")))
+        .await
+        .unwrap();
+    let state = runtime.state();
+    state.create_thread("chat", "test").await.unwrap();
+    state.set_goal("chat", "all tests pass").await.unwrap();
+
+    let subscribers = Subscribers::default();
+    let subscriber = |client, queue| Subscriber {
+        client,
+        scope: Scope::full(),
+        queue,
+    };
+    let (first, mut heard_first) = mpsc::unbounded_channel();
+    subscribers.lock().push(subscriber(1, first));
+    let (mut server, _) = Server::new(runtime, Arc::clone(&subscribers));
+    for client in [1, 2] {
+        let attached = Attached::new("test".into(), Scope::full());
+        server.clients.insert(client, attached);
+    }
+    let resume = || ThreadRequest::Resume {
+        thread_id: "chat".into(),
+        cwd: cwd.clone(),
+    };
+    let goal_of = |event| match event {
+        ThreadEvent::Goal { goal, .. } => Some(goal),
+        _ => None,
+    };
+    let goal_heard = async |queue: &mut mpsc::UnboundedReceiver<Event>| loop {
+        if let Some(goal) = goal_of(next_thread_event(queue).await) {
+            break goal;
+        }
+    };
+    server.caller = 1;
+    server.thread(resume()).await.unwrap();
+    let opened = tokio::time::timeout(Duration::from_secs(10), goal_heard(&mut heard_first))
+        .await
+        .expect("the opening tells the goal");
+
+    let (second, mut heard_second) = mpsc::unbounded_channel();
+    subscribers.lock().push(subscriber(2, second));
+    server.caller = 2;
+    server.thread(resume()).await.unwrap();
+    let joined = tokio::time::timeout(Duration::from_secs(10), goal_heard(&mut heard_second))
+        .await
+        .expect("the join tells the goal");
+    assert_eq!(joined, opened);
+    assert_eq!(joined.expect("set").text, "all tests pass");
+}
+
 /// Stop kills the command and its children at once, and the run answers that it stopped.
 #[tokio::test]
 async fn a_stopped_run_is_killed_with_what_it_started() {
