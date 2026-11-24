@@ -430,6 +430,7 @@ async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
         .collect()
 }
 
+mod chant;
 mod episodes;
 mod goals;
 mod judge;

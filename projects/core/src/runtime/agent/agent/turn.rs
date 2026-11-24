@@ -19,6 +19,9 @@ const MAX_SHRINKS: u32 = 2;
 /// cannot spend the turn.
 const MAX_STRANDED: u32 = 2;
 
+/// Steps taken again after the model's text went round, for the same reason.
+const MAX_CHANTED: u32 = 2;
+
 impl Agent {
     /// Starts a turn when something is queued and the context fits the input limit.
     pub async fn start_turn(&self) -> Result<Option<Turn>> {
@@ -106,6 +109,8 @@ impl Agent {
         // Steps taken again for a call written as text, and the note for the next one.
         let mut stranded = 0;
         let mut note = None;
+        // Steps taken again for text that went round.
+        let mut chanted = 0;
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
             let step = match first.take() {
@@ -239,6 +244,16 @@ impl Agent {
                     );
                 }
                 StepEnd::Stranded(_, answer) => outcome = TurnOutcome::Completed(answer),
+                StepEnd::Chanted(text, _) if chanted < MAX_CHANTED => {
+                    chanted += 1;
+                    waiting_since = None;
+                    note = Some(text);
+                    continue;
+                }
+                StepEnd::Chanted(_, answer) if answer.content.trim().is_empty() => {
+                    outcome = TurnOutcome::failed("the model kept repeating itself");
+                }
+                StepEnd::Chanted(_, answer) => outcome = TurnOutcome::Completed(answer),
                 StepEnd::Answered(answer) => outcome = answer,
                 StepEnd::Stopped(reason, partial) => {
                     stop = Some(reason);

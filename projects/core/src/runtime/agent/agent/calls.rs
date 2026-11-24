@@ -13,7 +13,8 @@ use crate::{
     },
     config::{Config, Effort, Limits},
     providers::{
-        ChatRequest, ModelOutput, ProviderError, ToolCall, is_unsupported_effort, provider_error,
+        ChatRequest, ModelEvent, ModelOutput, ProviderError, ToolCall, is_unsupported_effort,
+        provider_error,
     },
     state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, NewSkillChange, Turn, TurnOutcome},
     tools::{Progress, ToolKind, ToolResult},
@@ -97,17 +98,22 @@ pub struct Called {
     pub generated: Result<Result<Vec<ToolCall>>, Stop>,
     /// How many times the request was sent, the first included.
     pub attempts: u32,
+    /// The text went round and the stream was cut: the characters of it to keep.
+    pub chanted: Option<usize>,
 }
 
 impl Agent {
     /// Streams the model's response, trying again when the call fails in a way that may
     /// pass and nothing reached the user yet. The `Err` means the user stopped it during
     /// a pause between attempts. The last failure comes back as it was.
+    /// With `chant`, the answer's text is read as it streams and cut once one piece of
+    /// it came back that many times (`repeats::Chant`).
     pub async fn call_model(
         &self,
         choice: &Choice,
         request: ChatRequest<'_>,
         requested_config: &Config,
+        chant: Option<u32>,
         inbox: &mut Inbox,
     ) -> Result<Called, Stop> {
         let limits = self.config.current().limits();
@@ -118,17 +124,32 @@ impl Agent {
             let mut output = ModelOutput::default();
             let events = self.events.clone();
             let mut meter = crate::runtime::agent::rate::RateMeter::default();
-            let streamed =
-                generation::generate(&*choice.provider, request, &mut output, idle, |event| {
-                    if let Some(tokens_per_sec) = meter.observe(event, Instant::now()) {
-                        self.emit(ThreadEvent::OutputRate {
-                            tokens_per_sec,
-                            window_ms: crate::runtime::agent::rate::WINDOW.as_millis() as u64,
-                        });
-                    }
-                    let _ = events.send(ThreadEvent::Model(event.clone()));
-                });
+            let mut chant = chant.map(repeats::Chant::new);
+            // Wakes the call below once the text went round, which ends the stream.
+            let went_round = tokio::sync::Notify::new();
+            let streamed = async {
+                let generating =
+                    generation::generate(&*choice.provider, request, &mut output, idle, |event| {
+                        if let Some(tokens_per_sec) = meter.observe(event, Instant::now()) {
+                            self.emit(ThreadEvent::OutputRate {
+                                tokens_per_sec,
+                                window_ms: crate::runtime::agent::rate::WINDOW.as_millis() as u64,
+                            });
+                        }
+                        let _ = events.send(ThreadEvent::Model(event.clone()));
+                        if let (Some(chant), ModelEvent::Text(text)) = (chant.as_mut(), event)
+                            && chant.push(text)
+                        {
+                            went_round.notify_one();
+                        }
+                    });
+                tokio::select! {
+                    generated = generating => generated,
+                    () = went_round.notified() => Err(anyhow!("the model's text went round")),
+                }
+            };
             let mut generated = inbox.race(streamed).await;
+            let chanted = chant.as_ref().and_then(repeats::Chant::cut);
             if let Some(tokens_per_sec) = meter.current(Instant::now()) {
                 self.emit(ThreadEvent::OutputRate {
                     tokens_per_sec,
@@ -175,6 +196,7 @@ impl Agent {
                     output,
                     generated,
                     attempts: attempt,
+                    chanted,
                 });
             };
             let kind = failure.kind;

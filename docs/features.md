@@ -90,6 +90,12 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   the redirect is the next step's note (`JudgeRedirect`) and the next candidate waits
   for one more mark than the last did. At most `limits.loop_judge_calls` (3) a turn; an
   answer that cannot be read lets the turn go on.
+- **Text loops.** `limits.text_loops` (on): the model's answer is read as it streams in
+  50-character pieces; one that comes back `limits.text_loop_repeats` (10) times close
+  together (on average within 250 characters) cuts the stream, and the step is taken
+  again with a note (`Cycle`). Code (fenced or indented), tables, lists, headings,
+  quotes and rules are not read, and each such line forgets what came before it. After
+  two cuts in a turn the turn ends with the text up to where the piece came back.
 - **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
   a goal, the state of the files its chat and agents changed and the test results of
   the round (error lines included, so a build failing with fewer errors is another

@@ -9,6 +9,8 @@
 //! - steps in a row that bring nothing new (`progress`, `limits.no_progress`), which also
 //!   mark the turn a stall candidate for a judge, as a cycle asked twice for a different
 //!   plan does (`judge` has what the judge reads and how its answer is taken);
+//! - the model's text going round, one piece written again and again (`chant`,
+//!   `limits.text_loops`), read as it streams so the answer is cut short;
 //! - when `limits.failure_ladder` is on, the same error through calls that differ
 //!   (`ladder`, with `signature` saying when two errors are the same, and a test run's
 //!   failing ids standing for its error). The same count tells, with `limits.episodes`
@@ -19,6 +21,9 @@
 //! and whether it wrote where the change ledger does not look, are kept too, for a goal
 //! to tell whether its rounds still change anything (`Round`).
 
+mod chant;
+#[cfg(test)]
+mod chant_tests;
 mod cycles;
 #[cfg(test)]
 mod cycles_tests;
@@ -50,6 +55,7 @@ use dusk_protocol::thread::RepeatRung;
 
 use crate::{config::Limits, providers::ToolCall, tools::ToolResult};
 
+pub use chant::{Chant, note as chant_note};
 pub use judge::{Verdict, digest, judge_note, judge_stop, verdict};
 pub use solved::{Solved, lesson, lesson_note};
 pub use test_runs::is_test_run;
