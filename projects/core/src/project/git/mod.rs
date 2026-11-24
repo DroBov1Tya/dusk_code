@@ -21,4 +21,4 @@ pub use write::{
 
 pub(super) use check::{branch as check_branch, message as check_message};
 pub(super) use read::web_page;
-pub(super) use run::{Output, command, finish, git, git_differs};
+pub(super) use run::{Output, command, finish, git, git_differs, run};

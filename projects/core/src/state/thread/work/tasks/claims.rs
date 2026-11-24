@@ -12,6 +12,7 @@ use super::{
     State,
     duties::mark_behind,
     error::{PlanError, Unclaimable},
+    files::TaskFiles,
     graph::{Tx, load, locate, root_of, settle_blocks},
     plan::{
         BlockedOn, LEASE_MS, MAX_ATTEMPTS, MAX_MODEL, MAX_NOTE, MAX_REWORKS, PlanStatus, PlanTask,
@@ -197,6 +198,23 @@ impl State {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// The files of the task `owner` holds now; `None` when it holds none. What a
+    /// member may write about outside its own work (the project graph) is cut to these.
+    pub async fn held_task_files(&self, owner: &str) -> Result<Option<TaskFiles>, PlanError> {
+        let files: Option<String> = sqlx::query_scalar(
+            "SELECT files FROM tasks
+             WHERE owner_thread_id = ? AND status IN ('claimed', 'running') LIMIT 1",
+        )
+        .bind(owner)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(files) = files else {
+            return Ok(None);
+        };
+        let entries: Vec<String> = serde_json::from_str(&files)?;
+        Ok(Some(TaskFiles::new(entries)?))
     }
 
     /// Moves the lease on, for the owner's runner alone: the statement names the thread,

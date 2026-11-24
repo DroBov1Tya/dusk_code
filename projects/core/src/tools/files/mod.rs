@@ -3,13 +3,13 @@
 //! goes through `run_command`, which the sandbox confines to the same folders.
 
 mod changes;
-mod map;
+mod graph;
 mod read;
 mod search;
 mod text;
 
 pub use changes::Changes;
-pub use map::ProjectMap;
+pub use graph::ProjectGraph;
 pub use read::ReadFile;
 pub use search::SearchFiles;
 pub use text::read_text;

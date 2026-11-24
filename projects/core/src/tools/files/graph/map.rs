@@ -1,106 +1,86 @@
-//! `project_graph`: what lies where in the project, by file and folder names only. What
-//! a file holds is for `read_file` and `search_files`. The name is kept from the code
-//! graph this replaced, so saved configs that switch the tool still apply.
-
-#[cfg(test)]
-mod tests;
-mod text;
+//! `map`: what lies where. In a saved project it is the stored graph, with lines and
+//! summaries; elsewhere, or while nothing is stored yet, a walk by names alone.
 
 use std::{path::Path, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use ignore::overrides::{Override, OverrideBuilder};
-use schemars::JsonSchema;
-use serde::Deserialize;
-use serde_json::Value;
 
-use super::changes::project_path;
+use super::{
+    Arguments, Graph,
+    text::{self, Entry},
+};
 use crate::{
-    BoxFuture,
     project::ledger,
     tools::{
-        console::skipped_folders,
-        schema::{self, parse_arguments},
-        scope::ToolScope,
-        tool::{Tool, ToolContext, ToolKind},
+        console::skipped_folders, files::changes::project_path, scope::ToolScope, tool::ToolContext,
     },
 };
 
 /// Longest `path` taken, in characters.
-const MAX_PATH_CHARS: usize = 1024;
+pub(super) const MAX_PATH_CHARS: usize = 1024;
 /// Longest `find` taken, in characters.
 const MAX_FIND_CHARS: usize = 256;
 /// One walk may take this long; the ledger's cap on files holds too.
 const WALK_BUDGET: Duration = Duration::from_secs(2);
 
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct Arguments {
-    /// A folder of the project; the whole project when left out.
-    path: Option<String>,
-    /// Part of a path, or a glob such as `*.rs`.
-    find: Option<String>,
+pub(super) async fn answer(
+    context: &ToolContext,
+    graph: Option<&Graph<'_>>,
+    arguments: &Arguments,
+) -> Result<String> {
+    let scope = &context.scope;
+    let matcher = match arguments.find.as_deref() {
+        Some(find) => Some(Matcher::new(scope.cwd(), find)?),
+        None => None,
+    };
+    let folder = match arguments.path.as_deref() {
+        Some(path) => folder_of(scope, path).await?,
+        None => None,
+    };
+    let stored = match graph {
+        Some(graph) => {
+            graph
+                .state
+                .graph_map(&graph.project, folder.as_deref())
+                .await?
+        }
+        None => Vec::new(),
+    };
+    let entries: Vec<Entry> = if stored.is_empty() {
+        walk(scope, folder.as_deref())
+            .await?
+            .into_iter()
+            .map(|path| Entry::named(full(folder.as_deref(), path)))
+            .collect()
+    } else {
+        stored.into_iter().map(Entry::from).collect()
+    };
+    let mut answer = match (matcher, arguments.find.as_deref()) {
+        (Some(matcher), Some(find)) => {
+            let found = entries
+                .into_iter()
+                .filter(|entry| matcher.matches(&entry.path))
+                .collect();
+            text::found(found, find.trim())
+        }
+        _ => text::tree(folder.as_deref(), entries),
+    };
+    if let Some(graph) = graph
+        && graph.pending > 0
+    {
+        answer.push_str(&format!(
+            "[{} new or changed files not counted yet]\n",
+            graph.pending
+        ));
+    }
+    Ok(answer)
 }
 
-pub struct ProjectMap;
-
-impl Tool for ProjectMap {
-    fn name(&self) -> &'static str {
-        "project_graph"
-    }
-
-    fn kind(&self) -> ToolKind {
-        ToolKind::Files
-    }
-
-    fn description(&self, _context: &ToolContext) -> String {
-        "Map of this project's folders and files by name, without their content. A tree; \
-         deep folders fold to `name/ (N files)`, give `path` to open one. `find` lists the \
-         paths containing the text or matching a glob such as `*.rs`. Ignored files are \
-         left out."
-            .into()
-    }
-
-    fn parameters(&self) -> Value {
-        schema::of::<Arguments>()
-    }
-
-    fn available(&self, context: &ToolContext) -> bool {
-        context.config.limits().project_graph
-    }
-
-    fn repeatable(&self, _arguments: &Value) -> bool {
-        true
-    }
-
-    fn read_only(&self, _arguments: &Value) -> bool {
-        true
-    }
-
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
-        Box::pin(async move {
-            let Arguments { path, find } = parse_arguments(arguments)?;
-            let matcher = match find.as_deref() {
-                Some(find) => Some(Matcher::new(context.scope.cwd(), find)?),
-                None => None,
-            };
-            let folder = match path.as_deref() {
-                Some(path) => folder_of(&context.scope, path).await?,
-                None => None,
-            };
-            let paths = walk(&context.scope, folder.as_deref()).await?;
-            let (Some(matcher), Some(find)) = (matcher, find) else {
-                return Ok(text::tree(folder.as_deref().unwrap_or("."), paths));
-            };
-            let found = paths
-                .into_iter()
-                .map(|path| match &folder {
-                    Some(folder) => format!("{folder}/{path}"),
-                    None => path,
-                })
-                .filter(|path| matcher.matches(path));
-            Ok(text::found(found.collect(), find.trim()))
-        })
+fn full(folder: Option<&str>, path: String) -> String {
+    match folder {
+        Some(folder) => format!("{folder}/{path}"),
+        None => path,
     }
 }
 
@@ -128,6 +108,19 @@ async fn walk(scope: &ToolScope, folder: Option<&str>) -> Result<Vec<String>> {
 /// An absolute path is taken when it is inside the project; then it passes the checks
 /// of the other file tools: no `..`, no link that leads out.
 async fn folder_of(scope: &ToolScope, path: &str) -> Result<Option<String>> {
+    let folder = inside(scope, path).await?;
+    if let Some(folder) = &folder {
+        let is_dir = tokio::fs::metadata(scope.cwd().join(folder))
+            .await
+            .is_ok_and(|meta| meta.is_dir());
+        ensure!(is_dir, "no folder `{folder}` in the project");
+    }
+    Ok(folder)
+}
+
+/// `path` relative to the project with `/`, checked as the other file tools check it;
+/// `None` for the project itself.
+pub(super) async fn inside(scope: &ToolScope, path: &str) -> Result<Option<String>> {
     ensure!(
         path.chars().count() <= MAX_PATH_CHARS,
         "`path` is longer than {MAX_PATH_CHARS} characters"
@@ -173,4 +166,16 @@ impl Matcher {
             Self::Glob(glob) => glob.matched(path, false).is_whitelist(),
         }
     }
+}
+
+/// Checks `find` as `map` does, for the `find` action.
+pub(super) fn check_find(find: Option<&str>) -> Result<&str> {
+    let find = find.context("give `find`: the text to look for")?;
+    ensure!(
+        find.chars().count() <= MAX_FIND_CHARS,
+        "`find` is longer than {MAX_FIND_CHARS} characters"
+    );
+    let find = find.trim();
+    ensure!(!find.is_empty(), "`find` is empty");
+    Ok(find)
 }

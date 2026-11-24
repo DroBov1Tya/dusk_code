@@ -40,8 +40,17 @@ impl Server {
 
 async fn answer(runtime: &Runtime, id: &str, request: GitRequest) -> Result<Response> {
     let project = project::find(runtime.state(), id).await?;
-    let project = &project;
-    Ok(Response::GitDone(match request {
+    let done = change(&project, request).await;
+    // A failed merge or pull can still have changed files.
+    runtime.refresh_graph(&project.dir);
+    Ok(Response::GitDone(done?))
+}
+
+async fn change(
+    project: &dusk_protocol::project::Project,
+    request: GitRequest,
+) -> Result<dusk_protocol::project::GitOutcome> {
+    Ok(match request {
         GitRequest::CreateBranch { name, base, switch } => {
             git::create_branch(project, &name, base.as_deref(), switch).await?
         }
@@ -59,5 +68,5 @@ async fn answer(runtime: &Runtime, id: &str, request: GitRequest) -> Result<Resp
         GitRequest::Fetch => git::fetch(project).await?,
         GitRequest::Pull => git::pull(project).await?,
         GitRequest::Push => git::push(project).await?,
-    }))
+    })
 }

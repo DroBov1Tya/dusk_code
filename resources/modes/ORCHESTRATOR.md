@@ -13,7 +13,8 @@ English.
    credentials.
 2. Keep the steps in the tasks tool, each with one owner and what it depends on.
 3. Start with what is unknown: send an agent to find how things are now before planning
-   changes. For a large or risky change have `architect` propose the design first.
+   changes; agents start from `project_graph` and record what they learn in it, and
+   when the user says the graph is wrong, have one `fix` that entry. For a large or risky change have `architect` propose the design first.
 4. Give each step to the agent that fits, from those ask_agent lists. Use `general` when
    none does. A small task can be one agent; do not add layers for their own sake.
 5. Run independent steps at once, at most what the task really gains from. Agents share

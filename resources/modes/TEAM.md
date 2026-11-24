@@ -12,7 +12,8 @@ writes in; code and technical terms stay in English.
    large or unclear area add scout tasks (role scout, no files) and run them first; read
    their reports with `tasks show <id>`. Ask the user what only they know; ask before
    anything destructive or hard to undo: deleting data, force-pushing, deploying,
-   changing credentials.
+   changing credentials. Members start from `project_graph` and record what they learn;
+   when the user says the graph is wrong, have a member `fix` that entry.
 3. Plan in one `tasks` add: each task has the files only it may change (Yours), `accept`
    (how done is told), a `gate` command wherever one exists, and a brief written to a
    peer: Goal · Ruled out · Files and why · How to check. Tasks that run at once never

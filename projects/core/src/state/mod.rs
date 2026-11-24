@@ -15,6 +15,7 @@ mod usage;
 
 pub use agents::{AgentPhase, Identity};
 pub use db::State;
+pub use project::graph;
 pub use project::{Episode, Recall};
 pub use project::{EpisodeKind, NewEpisode};
 pub use skill_changes::{NewSkillChange, StoredSkillChange};

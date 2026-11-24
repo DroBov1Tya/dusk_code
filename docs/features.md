@@ -137,12 +137,21 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 
 ## Project knowledge
 
-- **File map.** `limits.project_graph` (on): the `project_graph` tool (`tools: { project_graph: false }`
-  hides it) maps the working folder by file and folder names, never their content: an
-  indented tree that folds deeper folders to `name/ (N files)` to stay under 300 lines and
-  12 KiB, one folder of it on `path`, or the paths matching `find` (a part of a path or a
-  glob). It walks as the change ledger does (ignore rules, no `.git`, no links followed) on
-  every call; nothing is indexed or stored. The name is kept from the code graph it replaced.
+- **Project graph.** `limits.project_graph` (on): the `project_graph` tool (`tools: {
+  project_graph: false }` hides it). For a saved project the core keeps every file with its
+  line count (`\n` bytes), size and SHA-256, listed by `git ls-files` in a repository and
+  by the change ledger's walk elsewhere, and refreshed in the background when a thread
+  starts, after each turn and after a git operation the core serves; only files whose size
+  or change time moved are read again, within a time budget. It never reads a language:
+  what files are for is written by agents. Actions: `map` (default; a tree with lines per
+  file and folder and one-line summaries, folded under 300 lines and 12 KiB; by names alone
+  outside a saved project), `about` a file or node (summary, nodes, edges out and in),
+  `find` (names, kinds, paths, summaries), `impact` (files within two edges of a set),
+  `record` (a file's summary, nodes and edges, tied to the file's current hash) and `fix`
+  (the user's correction of one entry, marked as theirs). A fact whose file changed is
+  marked stale and kept; a file that is gone takes its facts along. Records are checked:
+  inside the project, no secret files, closed kinds, size and count caps, texts cleared of
+  secrets, and a team member writes only about its task's files.
 - **Episodes and `recall`.** `limits.episodes` (on): for a saved project, what ended a
   repeated failure, or a goal the evaluator found met, is stored as an episode (at most
   500 a project). `limits.episode_lesson` (on) adds a one-line lesson from the model. The
