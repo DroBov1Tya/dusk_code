@@ -1,2 +1,0 @@
-Changed
-The built-in skills say more precisely when to load them and name only what exists: `computer-use` covers `computer_actions` limits, regions and one-window pictures, and scrolling by keys before the real mouse; `duskcode` lists the tools an agent can be given and the MCP `icon` field; `skill-creator` says how to write a description that gets the skill picked; `skill-evolve` finds earlier occasions with `recall` too and tells a shipped skill by either of its `source` values; `token-thrift` names `background: true` for long commands.

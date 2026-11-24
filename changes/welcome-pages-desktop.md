@@ -1,3 +1,0 @@
-Changed
-The desktop welcome of a first run is four pages turned sideways: hello, connecting a model, the tools that stay off until switched on (using the screen and moving your real pointer, each with what it does and risks, plus the way to Voice and the Workshop), and ready. Back, Next, the dots, the arrow keys and a sideways trackpad swipe turn them; "Skip setup" in the corner or Escape finishes it. It stays until Start or "Skip setup" even after a model connects, and once finished it does not come back.
-In a short window the welcome's page scrolls between "Skip setup" and the pinned Back and Next, which no longer move as the pages turn. The Model page's step button reads "Skip for now" until a model connects, and Escape in one of its boxes only leaves the box.

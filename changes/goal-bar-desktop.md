@@ -1,2 +1,0 @@
-Added
-The desktop shows a chat's standing goal: a quiet "◎ goal active · 12m" over the composer (in the warning colour while paused) opens a small card with the condition (cut to three lines, whole under the pointer), the time, the turns evaluated, the tokens, the evaluator's latest reason and a Clear goal button that sends `/goal clear`. Each verdict of the evaluator is a row of the chat, achieved in green, failed in red, not met yet as a quiet step, that unfolds to its reason.

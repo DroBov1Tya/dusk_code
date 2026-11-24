@@ -1,3 +1,0 @@
-Added
-- The web page shows the chat's goal as the terminal does: a strip above the box with "◎ goal active · elapsed" (paused in the warning colour) and the condition, which unfolds into the condition, time, turns evaluated, tokens, why it is paused and the evaluator's latest reason, with a Clear button that sends `/goal clear`. Each verdict is a line in the transcript whose reason unfolds under it; a finished turn no longer folds the verdict away out of sight. A `/goal` typed in the box leaves the queue once the core answers it, and a goal that ended while the page was offline goes when it reconnects.
-- A client that joins a chat another client keeps open is told the chat's goal, as one that opens it is.
