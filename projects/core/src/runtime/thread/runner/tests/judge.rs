@@ -42,8 +42,17 @@ async fn run(
     settings: &str,
     scripts: Vec<Vec<Step>>,
 ) -> (Arc<FakeProvider>, Vec<ThreadEvent>, Turn) {
+    let config = temp_live_config_with(&format!("{name}_config"), settings);
+    run_with(name, config, scripts).await
+}
+
+async fn run_with(
+    name: &str,
+    config: LiveConfig,
+    scripts: Vec<Vec<Step>>,
+) -> (Arc<FakeProvider>, Vec<ThreadEvent>, Turn) {
     let state = thread_state(name).await;
-    let config = Arc::new(temp_live_config_with(&format!("{name}_config"), settings));
+    let config = Arc::new(config);
     let provider = provider(scripts);
     let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
     input.send("tidy the repo").await.unwrap();
@@ -156,4 +165,100 @@ async fn varied_work_and_batch_edits_are_never_judged() {
     assert_eq!(turn.status, TurnStatus::Completed);
     assert!(judge_requests(&provider).is_empty());
     assert_eq!(notices(&events), []);
+}
+
+/// A provider server on this machine that keeps every request it is sent and refuses
+/// each chat, so the turn goes on without a verdict.
+async fn helper_server() -> (String, Arc<Mutex<Vec<String>>>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let kept = Arc::clone(&seen);
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 8192];
+            // The head, then as much body as it announces.
+            while let Ok(read) = socket.read(&mut buffer).await {
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                let text = String::from_utf8_lossy(&request);
+                let Some(end) = text.find("\r\n\r\n") else {
+                    continue;
+                };
+                let length = text[..end]
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                    .unwrap_or(0);
+                if request.len() >= end + 4 + length {
+                    break;
+                }
+            }
+            let text = String::from_utf8_lossy(&request).into_owned();
+            let (status, body) = if text.starts_with("GET") {
+                ("200 OK", r#"{"data":[]}"#)
+            } else {
+                (
+                    "400 Bad Request",
+                    r#"{"error":{"message":"refused in the test"}}"#,
+                )
+            };
+            kept.lock().unwrap().push(text);
+            let reply = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = socket.write_all(reply.as_bytes()).await;
+        }
+    });
+    (base, seen)
+}
+
+#[tokio::test]
+async fn the_arbiters_helper_model_judges_when_the_user_set_one() {
+    let (base, seen) = helper_server().await;
+    let config = crate::testing::temp_live_config_of(
+        "judge_helper_config",
+        &format!(
+            "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    \
+             api_key: 'sk-test'\n  helper:\n    kind: openai_compatible\n    base_url: '{base}'\n    \
+             api_key: 'sk-test'\narbiter:\n  model: helper/small-judge\n"
+        ),
+    );
+    let mut scripts = cycle(11);
+    scripts.push(vec![Step::Text("done"), Step::Done]);
+    let (provider, _, turn) = run_with("judge_helper", config, scripts).await;
+    // The helper refused, so the turn went on without a verdict.
+    assert_eq!(turn.status, TurnStatus::Completed);
+    assert!(judge_requests(&provider).is_empty());
+    let seen = seen.lock().unwrap();
+    let asked: Vec<&String> = seen.iter().filter(|r| r.starts_with("POST")).collect();
+    assert!(!asked.is_empty(), "{seen:?}");
+    assert!(asked.iter().all(|r| r.contains("small-judge")), "{asked:?}");
+    assert!(
+        asked.iter().all(|r| r.contains("review a coding agent")),
+        "{asked:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_helper_model_that_cannot_be_had_leaves_the_judge_to_the_turns_model() {
+    let mut scripts = cycle(11);
+    scripts.push(judge(
+        r#"{"stuck": false, "confidence": 0.3, "redirect": "Commit, then look at the log."}"#,
+    ));
+    scripts.push(vec![Step::Text("done"), Step::Done]);
+    let settings = "arbiter:\n  model: nowhere/small-judge\n";
+    let (provider, events, turn) = run("judge_helper_missing", settings, scripts).await;
+    assert_eq!(turn.status, TurnStatus::Completed);
+    assert_eq!(judge_requests(&provider).len(), 1);
+    assert!(notices(&events).contains(&(RepeatRung::JudgeRedirect, 5)));
 }

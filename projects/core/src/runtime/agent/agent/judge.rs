@@ -1,22 +1,25 @@
 //! The judge of a stall candidate: one call to a model, without tools, that reads a
-//! digest of the turn and says whether it is stuck (`repeats::judge`). There is no
-//! smaller helper model in the config to send it to (titles and summaries use the chat's
-//! model too), so it goes to the turn's own model, at no extra effort.
+//! digest of the turn and says whether it is stuck (`repeats::judge`). It goes to the
+//! helper model the user set for the arbiter (`arbiter.model`), as a smaller model will
+//! do, and to the turn's own model when none is set or it cannot be had. It thinks at low
+//! effort where the model takes one, so its thinking leaves room for the answer.
 
 use super::{Agent, Pace};
 use crate::{
-    providers::{ChatMessage, ChatRequest, ModelOutput},
+    config::Effort,
+    providers::{ChatMessage, ChatRequest, ModelOutput, is_unsupported_effort},
     runtime::{
         ThreadEvent,
         agent::{Inbox, Stop, generation, repeats},
+        model_choice::Choice,
     },
     state::{MessageRole, Turn},
 };
 use dusk_protocol::thread::RepeatRung;
 use tracing::{info, warn};
 
-/// The judge answers with one short JSON object.
-const MAX_JUDGE_TOKENS: u64 = 300;
+/// The judge answers with one short JSON object; the rest is room for its thinking.
+const MAX_JUDGE_TOKENS: u64 = 2048;
 
 /// What the judge made of a stall candidate.
 pub(super) enum Judged {
@@ -82,7 +85,7 @@ impl Agent {
         digest: &repeats::Digest,
         inbox: &mut Inbox,
     ) -> Result<Option<repeats::Verdict>, Stop> {
-        let Some(choice) = self.model.current() else {
+        let Some(choice) = self.judge_model().await else {
             warn!("no model to judge a stall with");
             return Ok(None);
         };
@@ -104,25 +107,37 @@ impl Agent {
             ChatMessage::System(prompt.trim().to_owned()),
             ChatMessage::User(repeats::digest(&request, stall, digest)),
         ];
-        let request = ChatRequest {
-            model: &choice.model.id,
-            messages: &messages,
-            tools: &[],
-            max_output_tokens: Some(MAX_JUDGE_TOKENS),
-            effort: None,
-            cache_key: None,
-        };
         let idle = std::time::Duration::from_secs(
             self.config.current().limits().model_timeout_seconds.into(),
         );
         let mut output = ModelOutput::default();
-        let generated = generation::generate(&*choice.provider, request, &mut output, idle, |_| {});
-        if let Err(error) = inbox.race(generated).await? {
-            warn!("the judge's call failed: {error:#}");
-            return Ok(None);
+        // Low effort first; a model that takes no effort is asked again without one.
+        for effort in [Some(Effort::Low), None] {
+            let request = ChatRequest {
+                model: &choice.model.id,
+                messages: &messages,
+                tools: &[],
+                max_output_tokens: Some(MAX_JUDGE_TOKENS),
+                effort,
+                cache_key: None,
+            };
+            output = ModelOutput::default();
+            let generated =
+                generation::generate(&*choice.provider, request, &mut output, idle, |_| {});
+            match inbox.race(generated).await? {
+                Ok(_) => break,
+                Err(error) if effort.is_some() && is_unsupported_effort(&error) => continue,
+                Err(error) => {
+                    warn!("the judge's call failed: {error:#}");
+                    return Ok(None);
+                }
+            }
         }
+        // Not in the usage ledger: its purposes are fixed by the table (answer, compact,
+        // title), and an answer would count as a step of the turn.
         if let Some(usage) = output.usage {
             info!(
+                model = %choice.model.id,
                 prompt = usage.prompt_tokens,
                 completion = usage.completion_tokens,
                 "judge call"
@@ -133,6 +148,19 @@ impl Agent {
             warn!("the judge's answer could not be read");
         }
         Ok(verdict)
+    }
+
+    /// The arbiter's helper model when the user set one and it can be had, else the
+    /// turn's own.
+    async fn judge_model(&self) -> Option<Choice> {
+        let config = self.config.current();
+        if let Some(name) = &config.arbiter().model {
+            match Choice::pick(&config, Some(name)).await {
+                Ok(choice) => return Some(choice),
+                Err(error) => warn!("cannot judge on {name}, the turn's model will: {error:#}"),
+            }
+        }
+        self.model.current()
     }
 
     /// The newest message from the user, or another agent, the turn answers.
