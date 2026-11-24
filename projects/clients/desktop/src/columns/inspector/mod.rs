@@ -20,7 +20,7 @@ mod todo;
 pub mod touched;
 
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName},
+    component::{ActiveTheme, Icon, IconName, Sizable, button::ButtonVariants},
     *,
 };
 
@@ -437,9 +437,14 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(div().flex_1().text_color(muted).child(format!(
             "{asked} asked · {allowed} allowed · {denied} denied"
         )))
+        // The module stays a light tally; the full view with the agents, the sphere and
+        // the timeline is one small button away.
         .child(
             gpui_kit::component::button::Button::new("arbiter-open")
-                .label("Open")
+                .ghost()
+                .xsmall()
+                .icon(Icon::default().path(crate::ui::icons::MAXIMIZE))
+                .tooltip("Open the full arbiter view")
                 .on_click(cx.listener(|ws, _, _, cx| {
                     if let Some(thread_id) = ws.shown.clone() {
                         ws.modal = Some(crate::modal::Modal::Arbiter { thread_id });

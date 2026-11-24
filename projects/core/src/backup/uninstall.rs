@@ -42,10 +42,9 @@ impl Uninstall {
     pub fn plan(paths: &Paths, files: bool, wait: bool) -> Result<Uninstall> {
         let guard = acquire(wait)?;
         let home = PathBuf::from(env::var_os("HOME").context("HOME is not set")?);
-        let exe = env::current_exe().context("cannot find this binary")?;
-        let exe = fs::canonicalize(&exe).unwrap_or(exe);
-        let links = links_to(&exe, &home);
+        let exe = this_program()?;
         let install_dir = crate::release::resources::data_root()?;
+        let links = links_to(&exe, &install_dir, &home);
         guard.validate_application_data_root(&install_dir)?;
         let config = paths.config_root();
         ensure!(
@@ -60,7 +59,7 @@ impl Uninstall {
             }
             Err(_) => None,
         };
-        let extras = desktop_leftovers(&home, &install_dir);
+        let extras = desktop_leftovers(&home, &install_dir, &exe);
         let workspace = paths.workspace_root();
         if files {
             ensure!(
@@ -118,8 +117,13 @@ impl Uninstall {
             );
         }
         if failures.is_empty() {
-            return fs::remove_file(&self.exe)
-                .with_context(|| format!("cannot remove {}", self.exe.display()));
+            // It may already be gone with the app bundle or the data folder it was in.
+            return match fs::remove_file(&self.exe) {
+                Err(error) if error.kind() != io::ErrorKind::NotFound => {
+                    Err(error).with_context(|| format!("cannot remove {}", self.exe.display()))
+                }
+                _ => Ok(()),
+            };
         }
         // Started by the desktop client nobody reads this process's output, so what
         // failed is also kept beside the lock, which stays.
@@ -144,19 +148,48 @@ fn acquire(wait: bool) -> Result<RemovalGuard> {
     }
 }
 
-/// The app bundle on a Mac, the desktop entry and the icon elsewhere. Only what exists
-/// is listed.
-fn desktop_leftovers(home: &Path, install_dir: &Path) -> Vec<PathBuf> {
+/// This program, resolved. Run from an AppImage it is the image, not the copy mounted
+/// while it runs, which is read-only and gone once it ends.
+fn this_program() -> Result<PathBuf> {
+    let image = env::var_os("APPIMAGE")
+        .map(PathBuf::from)
+        .filter(|image| image.is_absolute() && image.is_file());
+    let exe = match image {
+        Some(image) => image,
+        None => env::current_exe().context("cannot find this binary")?,
+    };
+    Ok(fs::canonicalize(&exe).unwrap_or(exe))
+}
+
+/// The app bundle on a Mac, the one this program runs from wherever it was put too, the
+/// desktop entry and the icon elsewhere. Only what exists is listed.
+fn desktop_leftovers(home: &Path, install_dir: &Path, exe: &Path) -> Vec<PathBuf> {
     let data_home = install_dir.parent().unwrap_or(home);
     let candidates = [
-        home.join("Applications/Duskcode.app"),
-        data_home.join("applications/duskcode.desktop"),
-        data_home.join("icons/hicolor/512x512/apps/duskcode.png"),
+        Some(home.join("Applications/Duskcode.app")),
+        own_bundle(exe),
+        Some(data_home.join("applications/duskcode.desktop")),
+        Some(data_home.join("icons/hicolor/512x512/apps/duskcode.png")),
     ];
-    candidates
-        .into_iter()
-        .filter(|path| fs::symlink_metadata(path).is_ok())
-        .collect()
+    let mut found: Vec<PathBuf> = Vec::new();
+    for path in candidates.into_iter().flatten() {
+        if fs::symlink_metadata(&path).is_ok() && !found.contains(&path) {
+            found.push(path);
+        }
+    }
+    found
+}
+
+/// `Duskcode.app` when `exe` is its `Contents/MacOS` program, such as an app dragged
+/// from the disk image into /Applications. Only that name, so nothing else is taken.
+fn own_bundle(exe: &Path) -> Option<PathBuf> {
+    let macos = exe.parent()?;
+    let contents = macos.parent()?;
+    let bundle = contents.parent()?;
+    let named = macos.file_name()? == "MacOS"
+        && contents.file_name()? == "Contents"
+        && bundle.file_name()? == "Duskcode.app";
+    named.then(|| bundle.to_path_buf())
 }
 
 /// A file, a link or a folder, links not followed.
@@ -183,8 +216,11 @@ fn remove_path(path: &Path) -> Result<()> {
     }
 }
 
-/// Links named duskcode on PATH and in the usual places that lead to `exe`.
-fn links_to(exe: &Path, home: &Path) -> Vec<PathBuf> {
+/// Links named duskcode on PATH and in the usual places that lead to `exe` or into the
+/// install folder: run from the desktop client, `exe` is not the terminal client, whose
+/// link would be left pointing at nothing.
+fn links_to(exe: &Path, install_dir: &Path, home: &Path) -> Vec<PathBuf> {
+    let installed = fs::canonicalize(install_dir).ok();
     let mut folders = vec![PathBuf::from("/usr/local/bin"), home.join(".local/bin")];
     if let Some(path) = env::var_os("PATH") {
         folders.extend(env::split_paths(&path));
@@ -193,9 +229,36 @@ fn links_to(exe: &Path, home: &Path) -> Vec<PathBuf> {
     for link in folders.into_iter().map(|folder| folder.join(BINARY)) {
         let is_link = fs::symlink_metadata(&link).is_ok_and(|meta| meta.file_type().is_symlink());
         let target = fs::canonicalize(&link).ok();
-        if is_link && target.as_deref() == Some(exe) && !links.contains(&link) {
+        let ours = target.as_deref().is_some_and(|target| {
+            target == exe
+                || installed
+                    .as_deref()
+                    .is_some_and(|installed| target.starts_with(installed))
+        });
+        if is_link && ours && !links.contains(&link) {
             links.push(link);
         }
     }
     links
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_bundle_named_duskcode_is_taken_along() {
+        let bundle = own_bundle(Path::new(
+            "/Applications/Duskcode.app/Contents/MacOS/duskcode-gui",
+        ));
+        assert_eq!(bundle, Some(PathBuf::from("/Applications/Duskcode.app")));
+        for exe in [
+            "/Applications/Other.app/Contents/MacOS/duskcode-gui",
+            "/Users/me/.local/share/duskcode/bin/duskcode-gui",
+            "/Duskcode.app/MacOS/duskcode-gui",
+            "duskcode-gui",
+        ] {
+            assert_eq!(own_bundle(Path::new(exe)), None, "{exe}");
+        }
+    }
 }

@@ -16,7 +16,7 @@ use super::{
 use crate::{
     pages::chat::{links, transcript::Item},
     ui::{
-        Type,
+        Type, sticky,
         widgets::{self, Focusable},
     },
     workspace::Workspace,
@@ -301,30 +301,40 @@ fn text_row(
                     .aria_label(title.to_owned())
                     .child(widgets::icon(icon, muted))
                     .child(div().flex_1().min_w_0().truncate().child(title.to_owned()))
-                    // Inside the row, before its chevron, so the chevrons of a turn's
-                    // rows stand in one column whether a row can be copied or not.
-                    .child({
+                    // Folded, inside the row before its chevron, so the chevrons of a
+                    // turn's rows stand in one column; unfolded, it moves into the text.
+                    .when(!open, |row| {
                         let id = SharedString::from(format!("activity-text-copy-{shown}-{index}"));
-                        if copy_shown {
+                        row.child(if copy_shown {
                             widgets::copy_shown(id, text, cx)
                         } else {
                             widgets::copy(id, &group, text, cx)
-                        }
+                        })
                     })
                     .child(disclosure_icon(open, muted))
                     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index, cx))),
                 ),
         )
         .when(open, |block| {
+            // The copy button rides at the top-right of what is in sight of the text, so
+            // it is at hand wherever the reading is, not only at the heading.
+            let copy = SharedString::from(format!("activity-text-copy-{shown}-{index}"));
             block.child(
                 div()
+                    .relative()
                     .ml_4()
                     .pl_3()
+                    .pr_8()
                     .border_l_1()
                     .border_color(cx.theme().border)
                     .small()
                     .text_color(muted)
-                    .child(body()),
+                    .child(body())
+                    .child(sticky::top_right(
+                        widgets::copy_shown(copy, text, cx)
+                            .rounded_md()
+                            .bg(cx.theme().background),
+                    )),
             )
         })
         .when(open && long, |block| {

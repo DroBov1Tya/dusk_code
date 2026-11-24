@@ -185,6 +185,13 @@ const GRIP_SVG: &[u8] = lucide!(
     r#"<circle cx="9" cy="12" r="1" /><circle cx="9" cy="5" r="1" /><circle cx="9" cy="19" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="5" r="1" /><circle cx="15" cy="19" r="1" />"#
 );
 
+/// Two arrows apart: a small module opened into its full view.
+pub const MAXIMIZE: &str = "icons/dusk/maximize.svg";
+
+const MAXIMIZE_SVG: &[u8] = lucide!(
+    r#"<path d="M15 3h6v6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /><path d="M9 21H3v-6" />"#
+);
+
 pub const HOME: &str = "icons/dusk/home.svg";
 pub const LOCK: &str = "icons/dusk/lock.svg";
 pub const POWER: &str = "icons/dusk/power.svg";
@@ -230,6 +237,7 @@ impl AssetSource for Assets {
             TIER_LOCAL => return Ok(Some(Cow::Borrowed(TIER_LOCAL_SVG))),
             FILTER => return Ok(Some(Cow::Borrowed(FILTER_SVG))),
             GRIP => return Ok(Some(Cow::Borrowed(GRIP_SVG))),
+            MAXIMIZE => return Ok(Some(Cow::Borrowed(MAXIMIZE_SVG))),
             KIND_PLUGIN => return Ok(Some(Cow::Borrowed(KIND_PLUGIN_SVG))),
             KIND_PACK => return Ok(Some(Cow::Borrowed(KIND_PACK_SVG))),
             KIND_SKILL => return Ok(Some(Cow::Borrowed(KIND_SKILL_SVG))),
