@@ -82,11 +82,14 @@ pub(super) fn end_words(plan: &[PlanTask], run: &TeamRun) -> String {
     if critic.status != PlanStatus::Done {
         return " The critic did not finish; nothing checked the results as a whole.".into();
     }
-    let (missing, unverified) = super::review::gaps(&critic.result);
     let id = short_task_id(&critic.task_id);
-    match (missing, unverified) {
-        (0, 0) => format!(" Critic: nothing missing or unverified (#{id})."),
-        _ => format!(
+    match super::review::gaps(&critic.result) {
+        None => format!(
+            " Critic: its answer could not be read; show #{id}, then add tasks and run, or \
+             report what it names as open."
+        ),
+        Some((0, 0)) => format!(" Critic: nothing missing or unverified (#{id})."),
+        Some((missing, unverified)) => format!(
             " Critic: {missing} missing, {unverified} unverified; show #{id}. Add tasks and \
              run, or report them as open."
         ),

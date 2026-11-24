@@ -229,6 +229,9 @@ async fn a_verdict_in_markdown_is_read_and_an_unclear_one_is_not() {
         "**Verdict**: **approve**\nChecked:\n- cargo test: 40 passed\n- read src/a.rs\n\
          Not checked: nothing",
         "VERDICT: approved\nChecked: x",
+        "Verdict: approve \u{2705}\nChecked: x",
+        "Verdict: **Approve!**\nChecked: x",
+        "Verdict: approve - looks right\nChecked: x",
     ] {
         let verdict = Verdict::of(answer).unwrap_or_else(|| panic!("no verdict: {answer}"));
         assert!(!verdict.fix, "{answer}");
@@ -245,8 +248,61 @@ async fn a_verdict_in_markdown_is_read_and_an_unclear_one_is_not() {
         "Verdict: approve or fix\nChecked: x",
         "Verdict: approve, mostly\nChecked: x",
         "> Verdict: approve\nChecked: x",
+        "Verdict: approve - but fix the docs first\nChecked: x",
+        "Verdict: approve (once the tests pass)\nChecked: x",
+        "Verdict: approve \u{2705} but fix the docs\nChecked: x",
     ] {
         assert_eq!(Verdict::of(unclear), None, "{unclear}");
+    }
+    // A high problem in markdown is high: the approval becomes a fix.
+    let high = Verdict::of("Problem: **high** | a.rs | wrong | fix\nVerdict: approve\nChecked: x")
+        .unwrap();
+    assert!(high.fix);
+    assert_eq!(high.summary(), "1 high");
+}
+
+/// However a critic lays out its gaps, each is counted; an answer that cannot be read
+/// is never taken for one that names no gap.
+#[test]
+fn a_critic_s_gaps_are_counted_however_they_are_laid_out() {
+    use super::super::review::{gaps, kept};
+
+    const END: &str = "Status: done\nResult: most\nChecked: x\nNot checked: nothing\nOpen: nothing";
+    for (body, counted) in [
+        ("Missing: the docs\nUnverified: the build\n", (1, 1)),
+        (
+            "Missing:\n- the docs\n- the tests\nUnverified:\n- the build\n",
+            (2, 1),
+        ),
+        (
+            "**Missing:**\n\n* the docs\n* the tests\n\n**Unverified:**\n1. the build\n",
+            (2, 1),
+        ),
+        (
+            "## Missing\n- the docs\n- the tests\n\n## Unverified\n- the build\n",
+            (2, 1),
+        ),
+        ("**Missing**\n- the docs\n", (1, 0)),
+        ("Missing: nothing\nUnverified: none\n", (0, 0)),
+        ("## Missing\nNothing, all of it was done.\n", (0, 0)),
+        ("All of it was done and checked.\n", (0, 0)),
+    ] {
+        let answer = format!("I compared the request with the results.\n\n{body}\n{END}");
+        assert_eq!(gaps(&kept(&answer)), Some(counted), "{answer}");
+    }
+    let long: String = (0..20).map(|i| format!("- part {i}\n")).collect();
+    assert_eq!(
+        gaps(&kept(&format!("## Missing\n{long}{END}"))),
+        Some((20, 0))
+    );
+    for unread in [
+        // A gap with prose under it that the footer cannot take in.
+        format!("Missing: the docs\nThey were asked for in the second message.\n{END}"),
+        // No footer at all.
+        "Missing:\n- the docs".to_owned(),
+        "The docs are missing.".to_owned(),
+    ] {
+        assert_eq!(gaps(&kept(&unread)), None, "{unread}");
     }
 }
 
@@ -260,8 +316,11 @@ async fn stored_answers_are_read_by_their_labels_in_markdown() {
                   - **Unverified:** the Windows build\n* missing: a changelog entry\n\n\
                   **Status:** done\n**Result:** most of it\n**Checked:** read the diff\n\
                   **Not checked:** nothing\n**Open:** nothing";
-    assert_eq!(gaps(&kept(critic)), (2, 1));
-    assert_eq!(gaps(&kept("Status: done\nResult: all\nChecked: x")), (0, 0));
+    assert_eq!(gaps(&kept(critic)), Some((2, 1)));
+    assert_eq!(
+        gaps(&kept("Status: done\nResult: all\nChecked: x")),
+        Some((0, 0))
+    );
     assert_eq!(
         result_line("- **Result:** most of it\nStatus: done"),
         "most of it"

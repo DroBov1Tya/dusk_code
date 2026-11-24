@@ -17,7 +17,7 @@
 //! A review row that fails holds its task for the lead; it never fails the task.
 
 use anyhow::Result;
-use dusk_protocol::thread::TaskDuty;
+use dusk_protocol::thread::{TaskDuty, conditional_remark};
 
 use super::{card, clean, dispatch, events, footer, lead_lines, outside};
 use crate::{
@@ -51,6 +51,8 @@ const FOOTER: [&str; 6] = [
 /// The labels of the finding lines just above the footer: a reviewer's problems, the
 /// critic's gaps.
 pub(super) const ITEMS: [&str; 3] = ["Problem:", "Missing:", "Unverified:"];
+/// The critic's gaps among `ITEMS`.
+const GAPS: [&str; 2] = ["Missing:", "Unverified:"];
 
 /// A reviewer's answer as the core reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,10 +74,14 @@ pub(super) struct Problem {
 impl Verdict {
     /// The verdict of an answer, read from its footer and the problem lines right above
     /// or among it (`footer`). A `Problem:` line further up, such as in a file the
-    /// reviewer quotes, says nothing. `None` when the footer names no verdict, or two.
+    /// reviewer quotes, says nothing. `None` when the footer names no verdict, or two, or
+    /// an approval with a condition (`approve - but fix the docs first`).
     pub fn of(answer: &str) -> Option<Self> {
         let footer = footer::read(answer, &FOOTER, &ITEMS);
         let fix = footer.word("Verdict:", &["approve", "approved", "fix"])? == "fix";
+        if !fix && conditional_remark(footer.remark("Verdict:").unwrap_or_default()) {
+            return None;
+        }
         let problems: Vec<Problem> = footer
             .items
             .iter()
@@ -116,8 +122,10 @@ impl Problem {
     fn of(line: &str) -> Self {
         let mut parts = line.split('|').map(str::trim);
         let mut next = || parts.next().unwrap_or_default().to_owned();
+        // `**high**` is high: the markdown around a severity is no part of it.
+        let severity = next().trim_matches(['*', '_', '`']).trim().to_owned();
         Self {
-            severity: next(),
+            severity,
             path: next(),
             what: next(),
             fix: next(),
@@ -126,19 +134,27 @@ impl Problem {
 }
 
 /// What a duty row keeps of its member's answer: the finding lines and the footer, each
-/// made plain, else its last lines. The caller cleans it of secrets.
+/// made plain, else its last lines. A critic's gap the footer could not take in is kept
+/// with all after it, so `gaps` sees it was not read. The caller cleans it of secrets.
 pub(super) fn kept(answer: &str) -> String {
     let footer = footer::read(answer, &FOOTER, &ITEMS);
+    let all: Vec<&str> = answer
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
     let lines: Vec<&str> = match footer.lines.is_empty() {
-        false => footer.lines,
-        true => {
-            let all: Vec<&str> = answer
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .collect();
-            all[all.len().saturating_sub(MAX_FOOTER)..].to_vec()
+        false => {
+            let end = footer.top + footer.lines.len();
+            let first_gap = all[..footer.top]
+                .iter()
+                .position(|line| footer::item_of(line, &GAPS).is_some());
+            match first_gap {
+                Some(gap) => all[gap..end].to_vec(),
+                None => footer.lines,
+            }
         }
+        true => all[all.len().saturating_sub(MAX_FOOTER)..].to_vec(),
     };
     let kept: Vec<String> = lines.iter().map(|line| plain(line)).collect();
     tail(&kept.join("\n"))
@@ -158,17 +174,46 @@ pub(super) fn tail(text: &str) -> String {
     }
 }
 
-/// The gaps a critic's stored answer names: its `Missing:` and its `Unverified:` lines.
-pub(super) fn gaps(result: &str) -> (usize, usize) {
+/// The gaps a critic's stored answer names: its `Missing:` and its `Unverified:`
+/// findings, one a line or a list under a heading, each that says nothing left out.
+/// `None` when the answer cannot be read: it has no footer, or names a gap where the
+/// footer does not reach.
+pub(super) fn gaps(result: &str) -> Option<(usize, usize)> {
+    let footer = footer::read(result, &FOOTER, &ITEMS);
+    if footer.fields.is_empty() {
+        return None;
+    }
+    let named = |lines: &mut dyn Iterator<Item = &str>| {
+        lines
+            .filter(|line| footer::item_of(line, &GAPS).is_some())
+            .count()
+    };
+    if named(&mut result.lines()) != named(&mut footer.lines.iter().copied()) {
+        return None;
+    }
     let mut gaps = (0, 0);
-    for line in result.lines() {
-        match footer::label_of(line, &ITEMS) {
-            Some(("Missing:", _)) => gaps.0 += 1,
-            Some(("Unverified:", _)) => gaps.1 += 1,
+    for (label, value) in &footer.items {
+        if says_nothing(value) {
+            continue;
+        }
+        match *label {
+            "Missing:" => gaps.0 += 1,
+            "Unverified:" => gaps.1 += 1,
             _ => {}
         }
     }
-    gaps
+    Some(gaps)
+}
+
+/// `none`, `nothing.`, `Nothing, all of it was checked`: a finding that names no gap.
+fn says_nothing(value: &str) -> bool {
+    let first = value
+        .split(|c: char| !c.is_alphanumeric() && c != '/')
+        .find(|word| !word.is_empty())
+        .unwrap_or_default();
+    ["nothing", "none", "n/a", "nil"]
+        .iter()
+        .any(|word| first.eq_ignore_ascii_case(word))
 }
 
 /// Whether `task`, which its member just handed in, is reviewed before it passes: review

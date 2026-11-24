@@ -32,6 +32,8 @@ pub(super) struct Footer<'a> {
     pub items: Vec<(&'static str, String)>,
     /// The finding lines and the footer as written, trimmed and without blank lines.
     pub lines: Vec<&'a str>,
+    /// Where `lines` starts among the answer's lines, trimmed and without blank ones.
+    pub top: usize,
     /// One label stands twice in a row with two different words.
     pub ambiguous: bool,
 }
@@ -52,6 +54,15 @@ impl Footer<'_> {
         let field = self.fields.iter().find(|field| field.label == label)?;
         let said = word(field.parts.first()?);
         words.contains(&said.as_str()).then_some(said)
+    }
+}
+
+impl Footer<'_> {
+    /// The remark `label` makes after its one word (`approve - but fix the docs`), empty
+    /// when it makes none.
+    pub fn remark(&self, label: &str) -> Option<&str> {
+        let field = self.fields.iter().find(|field| field.label == label)?;
+        Some(said(field.parts.first()?).1)
     }
 }
 
@@ -99,16 +110,27 @@ pub(super) fn read<'a>(
             parts.extend(under.drain(..).rev().map(|line| unlisted(line).to_owned()));
             footer.fields.insert(0, Field { label, parts });
             top = at - 1;
-        } else if let Some((label, value)) = labelled(line, items) {
-            // A finding line stands alone: lines under it are no part of it.
-            if !under.is_empty() {
+        } else if let Some((label, value)) = item_of(line, items) {
+            if value.is_empty() {
+                // A heading of findings (`Missing:`, `## Missing`): each line under it
+                // is one finding.
+                let found: Vec<_> = under
+                    .drain(..)
+                    .rev()
+                    .map(|line| (label, unlisted(line).to_owned()))
+                    .collect();
+                footer.items.splice(0..0, found);
+            } else if !under.is_empty() {
+                // A finding line stands alone: lines under it are no part of it.
                 break;
+            } else {
+                footer.items.insert(0, (label, value.to_owned()));
             }
-            footer.items.insert(0, (label, value.to_owned()));
             top = at - 1;
         } else {
             under.push(line);
-            if under.len() > MAX_UNDER {
+            // A long list may still be the findings of a heading further up.
+            if under.len() > MAX_UNDER && !under.iter().all(|line| listed(line)) {
                 break;
             }
         }
@@ -119,6 +141,7 @@ pub(super) fn read<'a>(
         return footer;
     }
     footer.lines = lines[top..end].to_vec();
+    footer.top = top;
     footer
 }
 
@@ -145,6 +168,31 @@ fn labelled<'a>(line: &'a str, labels: &[&'static str]) -> Option<(&'static str,
         let rest = rest.strip_prefix(':')?;
         Some((label, rest.trim_start_matches(['*', '_']).trim()))
     })
+}
+
+/// A finding line among `items` and its value, or a heading of findings with no value:
+/// `Missing:` on its own, `## Missing`, `**Missing**`.
+pub(super) fn item_of<'a>(
+    line: &'a str,
+    items: &[&'static str],
+) -> Option<(&'static str, &'a str)> {
+    let line = line.trim();
+    if let Some(found) = labelled(line, items) {
+        return Some(found);
+    }
+    let bold =
+        line.starts_with(['*', '_']) && line.trim_end_matches([':', ' ']).ends_with(['*', '_']);
+    if !line.starts_with('#') && !bold {
+        return None;
+    }
+    let name = line
+        .trim_start_matches(['#', '*', '_', ' '])
+        .trim_end_matches(['*', '_', ':', ' ']);
+    let first = name.split_whitespace().next()?;
+    items
+        .iter()
+        .find(|label| first.eq_ignore_ascii_case(label.trim_end_matches(':')))
+        .map(|&label| (label, ""))
 }
 
 /// A list item: `- x`, `* x`, `+ x`, `• x` or `1. x`.
@@ -177,26 +225,42 @@ pub(super) fn label_of<'a>(
 
 /// A value as one word: without markdown around it or a full stop after it, lowercase.
 /// Words after it set apart by a bracket, a dash, a colon or a full stop are a remark
-/// (`done (all tests pass)`, `done - tests pass`); any other words make it no one word
-/// (`done or blocked`).
+/// (`done (all tests pass)`, `done - tests pass`); an emoji or a `!` after it is no part
+/// of it; any other words make it no one word (`done or blocked`).
 fn word(value: &str) -> String {
+    said(value).0
+}
+
+/// A value as its one word, as `word` reads it, and the remark after that word, empty
+/// when it has none.
+pub(super) fn said(value: &str) -> (String, &str) {
     let value = value.trim().trim_matches(['*', '_', '`']).trim();
     let cut = value
         .find(|c: char| c.is_whitespace() || matches!(c, '(' | ':'))
         .unwrap_or(value.len());
     let (head, rest) = value.split_at(cut);
-    let remark = rest
-        .trim_start()
-        .starts_with(['(', '-', '\u{2013}', '\u{2014}', ':'])
+    let rest = rest.trim();
+    let remark = rest.starts_with(['(', '-', '\u{2013}', '\u{2014}', ':'])
         || head.trim_end_matches(['*', '_', '`']).ends_with('.');
-    let value = match !head.is_empty() && remark {
-        true => head,
-        false => value,
-    };
-    value
-        .trim()
+    let adorned = rest.chars().all(adornment);
+    match !head.is_empty() && (remark || adorned) {
+        true => (bare(head), if adorned { "" } else { rest }),
+        false => (bare(value), ""),
+    }
+}
+
+/// An emoji, a mark, a `!` or a `.` after a word: no part of what it says.
+fn adornment(c: char) -> bool {
+    c.is_whitespace()
+        || matches!(c, '!' | '.' | '*' | '_' | '`')
+        || !c.is_ascii() && !c.is_alphanumeric()
+}
+
+/// A word without the markdown and adornment around it, lowercase.
+fn bare(word: &str) -> String {
+    word.trim()
         .trim_matches(['*', '_', '`'])
-        .trim_end_matches('.')
+        .trim_end_matches(adornment)
         .trim_matches(['*', '_', '`'])
         .trim()
         .to_ascii_lowercase()
@@ -240,6 +304,8 @@ mod tests {
             "Status: **done** \u{2014} tests pass",
             "Status: done: tests pass",
             "Status: Done. All tests pass.",
+            "Status: done \u{2705}",
+            "Status: **Done!**",
         ] {
             let footer = read(answer, &LABELS, &[]);
             assert_eq!(
@@ -337,6 +403,25 @@ mod tests {
             .map(|(_, value)| value.as_str())
             .collect();
         assert_eq!(found, ["high | a | b | c", "low | d | e | f"]);
+        // A heading of findings takes the lines under it, one finding each.
+        let gaps = ["Missing:", "Unverified:"];
+        for answer in [
+            "Missing:\n- a\n- b\nUnverified:\n- c\nStatus: done",
+            "## Missing\n- a\n- b\n## Unverified:\n- c\nStatus: done",
+            "**Missing**\na\nb\n**Unverified:**\n* c\nStatus: done",
+        ] {
+            let footer = read(answer, &LABELS, &gaps);
+            assert_eq!(
+                footer.items,
+                [
+                    ("Missing:", "a".to_owned()),
+                    ("Missing:", "b".to_owned()),
+                    ("Unverified:", "c".to_owned())
+                ],
+                "{answer}"
+            );
+            assert_eq!(footer.top, 0, "{answer}");
+        }
         // Without a label there is no footer, and no finding either.
         assert_eq!(
             read("Problem: high | a", &LABELS, &items),

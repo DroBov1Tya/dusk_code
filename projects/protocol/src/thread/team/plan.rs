@@ -66,6 +66,12 @@ impl Task {
             .iter()
             .max_by_key(|row| (row.created_at, &row.task_id))?;
         let verdict = last.result.lines().rev().find_map(verdict_word);
+        // An approval that names a high problem sends the task back all the same.
+        let high = last.result.lines().any(high_problem);
+        let verdict = match verdict.as_deref() {
+            Some("approve" | "approved") if high => Some("fix".to_owned()),
+            _ => verdict,
+        };
         let word = match (last.status, verdict.as_deref()) {
             (TaskStatus::Done, Some("approve" | "approved")) => "reviewed",
             (TaskStatus::Done, Some("fix")) => "review: fix",
@@ -101,39 +107,85 @@ pub fn find_task<'a>(tasks: &'a [Task], task_id: &str) -> Option<(usize, &'a Tas
         .map(|(index, task)| (index + 1, task))
 }
 
-/// The word of a stored review's `Verdict:` line, written as the reviewer wrote it:
-/// `Verdict: approve`, `- **Verdict:** Approve.`, `verdict: fix (two problems)`. None for
-/// another line, or a value that is not one word.
-fn verdict_word(line: &str) -> Option<String> {
+/// Words that make a remark after an approval a condition on it (`approve - but fix
+/// the docs first`): such an approval is no clear verdict. The core reads it the same.
+const CONDITIONS: [&str; 16] = [
+    "but", "if", "once", "after", "before", "unless", "until", "provided", "pending", "except",
+    "assuming", "when", "though", "although", "however", "first",
+];
+
+/// Whether the remark after a verdict's word puts a condition on it.
+pub fn conditional_remark(remark: &str) -> bool {
+    remark.split(|c: char| !c.is_alphanumeric()).any(|word| {
+        CONDITIONS
+            .iter()
+            .any(|cond| word.eq_ignore_ascii_case(cond))
+    })
+}
+
+/// The value of a stored line labelled `name`, written as a member wrote it:
+/// `Verdict: approve`, `- **Verdict:** Approve.`. None for another line.
+fn label_value<'a>(line: &'a str, name: &str) -> Option<&'a str> {
     let line = line.trim();
     let line = ["- ", "* ", "+ ", "\u{2022} "]
         .iter()
         .find_map(|marker| line.strip_prefix(marker))
         .unwrap_or(line)
         .trim_start_matches(['*', '_', '#', ' ']);
-    let head = line.get(..7)?;
-    if !head.eq_ignore_ascii_case("verdict") {
+    let head = line.get(..name.len())?;
+    if !head.eq_ignore_ascii_case(name) {
         return None;
     }
-    let value = line[7..].trim_start_matches(['*', '_']).trim_start();
-    let value = value
-        .strip_prefix(':')?
-        .trim()
-        .trim_matches(['*', '_', '`'])
-        .trim();
+    let value = line[name.len()..]
+        .trim_start_matches(['*', '_'])
+        .trim_start();
+    Some(
+        value
+            .strip_prefix(':')?
+            .trim()
+            .trim_matches(['*', '_', '`'])
+            .trim(),
+    )
+}
+
+/// Whether a stored line is a `Problem:` of high severity, its severity in markdown or not.
+fn high_problem(line: &str) -> bool {
+    label_value(line, "problem").is_some_and(|value| {
+        let severity = value.split('|').next().unwrap_or_default();
+        severity
+            .trim()
+            .trim_matches(['*', '_', '`'])
+            .eq_ignore_ascii_case("high")
+    })
+}
+
+/// The word of a stored review's `Verdict:` line, written as the reviewer wrote it:
+/// `Verdict: approve`, `- **Verdict:** Approve.`, `verdict: fix (two problems)`,
+/// `Verdict: approve \u{2705}`. None for another line, a value that is not one word, or
+/// an approval with a condition (`approve - but fix the docs first`).
+fn verdict_word(line: &str) -> Option<String> {
+    let value = label_value(line, "verdict")?;
     let cut = value
         .find(|c: char| c.is_whitespace() || matches!(c, '(' | ':'))
         .unwrap_or(value.len());
     let (word, rest) = value.split_at(cut);
-    let rest = rest.trim_start();
-    let remark = rest.is_empty()
-        || rest.starts_with(['(', '-', '\u{2013}', '\u{2014}', ':'])
-        || word.ends_with('.');
-    remark.then(|| {
-        word.trim_matches(['*', '_', '`'])
-            .trim_end_matches('.')
-            .to_ascii_lowercase()
-    })
+    let rest = rest.trim();
+    let adorned = rest.chars().all(adornment);
+    let remark =
+        adorned || rest.starts_with(['(', '-', '\u{2013}', '\u{2014}', ':']) || word.ends_with('.');
+    let word = word
+        .trim_matches(['*', '_', '`'])
+        .trim_end_matches(adornment)
+        .to_ascii_lowercase();
+    let unclear = matches!(word.as_str(), "approve" | "approved") && conditional_remark(rest);
+    (remark && !unclear).then_some(word)
+}
+
+/// An emoji, a mark, a `!` or a `.` after a word: no part of what it says.
+fn adornment(c: char) -> bool {
+    c.is_whitespace()
+        || matches!(c, '!' | '.' | '*' | '_' | '`')
+        || !c.is_ascii() && !c.is_alphanumeric()
 }
 
 #[cfg(test)]
@@ -160,6 +212,16 @@ mod tests {
             ("**Verdict**: fix (two problems)\nChecked: x", "review: fix"),
             ("Verdict: approve or fix\nChecked: x", "review: no verdict"),
             ("Checked: x", "review: no verdict"),
+            ("Verdict: approve \u{2705}\nChecked: x", "reviewed"),
+            ("Verdict: **Approve!**\nChecked: x", "reviewed"),
+            (
+                "Verdict: approve - but fix the docs first\nChecked: x",
+                "review: no verdict",
+            ),
+            (
+                "Problem: **high** | a.rs | wrong | fix\nVerdict: approve\nChecked: x",
+                "review: fix",
+            ),
         ] {
             let tasks = [task.clone(), review(result)];
             assert_eq!(task.review_word(&tasks).as_deref(), Some(word), "{result}");

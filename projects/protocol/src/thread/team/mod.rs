@@ -10,7 +10,7 @@ mod status;
 
 pub use card::{TaskCard, task_card};
 pub use members::{MemberRow, short_model};
-pub use plan::find_task;
+pub use plan::{conditional_remark, find_task};
 pub use roster::{GENERAL_ROLE, Joining, KnownAgent, TeamChange, role_name};
 pub use status::{plan_aside, task_in_work};
 

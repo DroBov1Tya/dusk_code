@@ -53,8 +53,8 @@ pub use task::{
 };
 pub use team::{
     GENERAL_ROLE, Joining, KnownAgent, MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MemberRow, TaskCard,
-    Team, TeamChange, TeamEnd, TeamMember, TeamStatus, TeamUsed, find_task, plan_aside, role_name,
-    short_model, task_card, task_in_work, team_call_id,
+    Team, TeamChange, TeamEnd, TeamMember, TeamStatus, TeamUsed, conditional_remark, find_task,
+    plan_aside, role_name, short_model, task_card, task_in_work, team_call_id,
 };
 pub use tokens::{
     AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, plural, short_count, short_size,
