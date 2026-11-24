@@ -60,7 +60,7 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   glob). It walks as the change ledger does (ignore rules, no `.git`, no links followed) on
   every call; nothing is indexed or stored. The name is kept from the code graph it replaced.
 - **Episodes and `recall`.** `limits.episodes` (on): for a saved project, what ended a
-  repeated failure, or a goal's verification that passed, is stored as an episode (at most
+  repeated failure, or a goal the evaluator found met, is stored as an episode (at most
   500 a project). `limits.episode_lesson` (on) adds a one-line lesson from the model. The
   `recall` tool (`tools: { recall: false }` hides it) returns up to three notes.
 

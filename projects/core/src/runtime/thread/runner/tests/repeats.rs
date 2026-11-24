@@ -272,35 +272,23 @@ async fn an_agent_that_stops_ends_its_turn_as_failed() {
     assert_eq!(notices(&events).last(), Some(&(RepeatRung::Stop, 8)));
 }
 
-/// A failed turn would fail again: the goal pauses instead of starting another round.
+/// A turn the ladder stopped would fail again: the goal pauses instead of going on.
 #[tokio::test]
 async fn a_goal_pauses_after_the_stop_instead_of_another_round() {
     let state = thread_state("ladder_goal").await;
     let config = Arc::new(temp_live_config_with("ladder_goal_config", LADDER_ON));
-    let draft = state.set_goal("thread", "find it").await.unwrap();
-    let criterion = crate::state::GoalCriterion {
-        id: "result".into(),
-        description: "the config is found".into(),
-        check: crate::state::GoalCheck::UserConfirmation,
-    };
-    let propose = state.propose_goal("thread", &draft.revision, vec![criterion]);
-    let draft = propose.await.unwrap();
     let mut scripts: Vec<_> = (1..=8).map(missing).collect();
     scripts.push(vec![Step::Text("another round"), Step::Done]);
     let provider = provider(scripts);
     let (runner, input, mut output) =
         runner_with(&state, &provider, &config, model(None), Box::new(Failing));
     let client = async move {
-        input
-            .send(format!("/goal approve {}", draft.revision))
-            .await
-            .unwrap();
+        input.send("/goal find it").await.unwrap();
         loop {
             if let Some(ThreadEvent::Goal {
                 goal: Some(goal), ..
             }) = output.next_event().await
                 && goal.status == GoalStatus::Paused
-                && goal.approved
             {
                 return goal;
             }
@@ -308,7 +296,7 @@ async fn a_goal_pauses_after_the_stop_instead_of_another_round() {
     };
     let (_, goal) = tokio::join!(runner.run(), client);
     assert_eq!(goal.note.as_deref(), Some("the last turn failed"));
-    assert_eq!(goal.rounds, 0);
+    assert_eq!(goal.turns, 0, "a failed turn is not judged");
     assert_eq!(state.count_turns("thread").await.unwrap(), 1);
     assert_eq!(provider.efforts.lock().unwrap().len(), 8);
 }

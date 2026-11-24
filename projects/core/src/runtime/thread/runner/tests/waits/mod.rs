@@ -327,48 +327,41 @@ async fn with_waits_off_the_turn_fails_as_before() {
     assert_eq!(steps, 1, "the title aside, one call");
 }
 
-/// A goal's turn that waits for its provider is still the same round: the rounds go on
-/// as they would have without the wait.
+/// A goal's turn that waits for its provider is still the same turn: it is judged once,
+/// after the wait, as it would have been without it.
 #[tokio::test]
 async fn a_goal_does_not_count_a_waiting_turn_as_a_round() {
     let state = thread_state("wait_goal").await;
     let config = config("wait_goal_config", "");
-    let draft = state.set_goal("thread", "build it").await.unwrap();
-    let criterion = crate::state::GoalCriterion {
-        id: "result".into(),
-        description: "review result".into(),
-        check: crate::state::GoalCheck::UserConfirmation,
-    };
-    let draft = state
-        .propose_goal("thread", &draft.revision, vec![criterion])
-        .await
-        .unwrap();
-    let approve = format!("/goal approve {}", draft.revision);
-    // Each turn calls a tool, so the stall rule never stops the rounds.
+    // Each turn calls a tool, so the stall rule never stops the goal.
     let call = vec![Step::Call("working"), Step::Done];
     let worked = answered("worked");
+    let not_met = answered("NOT_MET: keep going");
     let provider = super::provider(vec![
         rate_limited(50),
         call.clone(),
         worked.clone(),
         answered("title"),
+        not_met.clone(),
         call.clone(),
         worked.clone(),
+        not_met.clone(),
         call,
         worked,
-        // The third round fails, which pauses the goal.
+        not_met,
+        // The fourth turn fails, which pauses the goal.
         vec![Step::Reject],
     ]);
     let (runner, input, mut output) = super::runner(&state, &provider, &config, model(None));
     let client = async move {
-        input.send(approve).await.unwrap();
+        input.send("/goal build it").await.unwrap();
         let mut waited = false;
         loop {
             match output.next_event().await.expect("the thread ended") {
                 ThreadEvent::TurnWaiting(_) => waited = true,
                 ThreadEvent::Goal {
                     goal: Some(goal), ..
-                } if goal.status == GoalStatus::Paused && goal.approved => return (goal, waited),
+                } if goal.status == GoalStatus::Paused => return (goal, waited),
                 _ => {}
             }
         }
@@ -376,7 +369,7 @@ async fn a_goal_does_not_count_a_waiting_turn_as_a_round() {
 
     let (_, (goal, waited)) = tokio::join!(runner.run(), client);
     assert!(waited);
-    assert_eq!(goal.rounds, 3);
+    assert_eq!(goal.turns, 3);
     let users: Vec<_> = transcript(&state)
         .await
         .into_iter()
@@ -387,9 +380,9 @@ async fn a_goal_does_not_count_a_waiting_turn_as_a_round() {
         users,
         [
             "Goal: build it",
-            "Continue toward the goal (round 1): build it",
-            "Continue toward the goal (round 2): build it",
-            "Continue toward the goal (round 3): build it",
+            "The goal is not met yet: keep going\nKeep working toward it.",
+            "The goal is not met yet: keep going\nKeep working toward it.",
+            "The goal is not met yet: keep going\nKeep working toward it.",
         ]
     );
 }

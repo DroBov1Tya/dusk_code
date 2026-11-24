@@ -1,10 +1,10 @@
-//! `/goal` manages a user-owned acceptance contract. Drafts only request a proposal;
-//! approval/resume queues execution, confirmation queues deterministic evidence review.
+//! `/goal <condition>` sets the chat's goal and starts a turn on it at once; `/goal`
+//! alone shows it, and `/goal clear` (or stop, off, reset, none, cancel) removes it.
 
-use crate::{
-    runtime::goal::action::{self as goal, GoalAction},
-    runtime::{ThreadEvent, agent::Agent},
-    state::GoalStatus,
+use crate::runtime::{
+    ThreadEvent,
+    agent::Agent,
+    goal::command::{self as goal, GoalAction},
 };
 
 pub async fn run(agent: &Agent, argument: Option<&str>) {
@@ -17,26 +17,18 @@ pub async fn run(agent: &Agent, argument: Option<&str>) {
             return;
         }
     };
-    let starts = action.starts_work();
     let applied = async {
-        let (goal, note) = goal::apply(&agent.state, &agent.thread_id, action).await?;
-        let mut started = None;
-        if starts
-            && let Some(goal) = goal
-                .as_ref()
-                .filter(|goal| !goal.approved || goal.status == GoalStatus::Active)
-        {
-            let kickoff = goal::kickoff(goal);
-            agent.state.add_pending(&agent.thread_id, &kickoff).await?;
-            started = Some(kickoff);
+        let applied = goal::apply(&agent.state, &agent.thread_id, action).await?;
+        if let Some(started) = &applied.started {
+            agent.state.add_pending(&agent.thread_id, started).await?;
         }
-        anyhow::Ok((goal, note, started))
+        anyhow::Ok(applied)
     };
     match applied.await {
-        Ok((goal, note, started)) => agent.emit(ThreadEvent::Goal {
-            goal,
-            note,
-            started,
+        Ok(applied) => agent.emit(ThreadEvent::Goal {
+            goal: applied.goal,
+            note: applied.note,
+            started: applied.started,
         }),
         Err(error) => agent.emit(ThreadEvent::Rejected {
             reason: format!("{error:#}"),

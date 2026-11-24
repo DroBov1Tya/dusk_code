@@ -23,8 +23,8 @@ use crate::{
     model::{ModelEvent, ToolCall},
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
-        Block, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens,
-        TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
+        Block, GoalEvaluation, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team,
+        ThreadEvent, ThreadTokens, TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind},
 };
@@ -75,6 +75,8 @@ pub enum Item<L = Infallible> {
         aside: bool,
     },
     Audio(Card),
+    /// What the evaluator said of the chat's goal after a turn.
+    Goal(GoalEvaluation),
     Notice(String),
     Error(String),
     Local(L),
@@ -628,6 +630,9 @@ impl<L> ChatLog<L> {
             }
             ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
                 self.add_message(&message, now);
+            }
+            ThreadEvent::GoalEvaluated(evaluation) => {
+                self.push(Item::Goal(evaluation), now);
             }
             ThreadEvent::TurnStarted(_) => {
                 self.boundary(now);

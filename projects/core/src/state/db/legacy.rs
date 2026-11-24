@@ -377,7 +377,10 @@ mod tests {
     /// and schema must agree, just as they did in those releases.
     async fn before_goal_verification(state: &State) {
         sqlx::raw_sql(
-            "ALTER TABLE model_usage DROP COLUMN cache_write_tokens;
+            "ALTER TABLE goals DROP COLUMN started_at;
+            ALTER TABLE goals DROP COLUMN reason;
+            DELETE FROM _sqlx_migrations WHERE version = 46;
+            ALTER TABLE model_usage DROP COLUMN cache_write_tokens;
             ALTER TABLE model_usage DROP COLUMN cost_micro_usd;
             ALTER TABLE model_usage DROP COLUMN cost_source;
             DELETE FROM _sqlx_migrations WHERE version = 23;
@@ -739,7 +742,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls', 'goal evaluator'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

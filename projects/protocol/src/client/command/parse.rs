@@ -41,7 +41,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "/goal",
-        "a verified goal: review criteria, approve <revision>, confirm evidence; pause, resume, clear",
+        "keep working until a condition holds, judged after each turn; alone it shows the goal; clear",
     ),
     (
         "/jobs",

@@ -3,10 +3,10 @@
 use super::InputView;
 use crate::app::{App, GoalButton, GoalHit};
 use crate::ui::thread::{
-    theme::{ACCENT, NEGATIVE, POSITIVE, RAISED, TEXT_SOFT, bold, fg},
+    theme::{ACCENT, NEGATIVE, RAISED, TEXT_SOFT, bold, fg},
     wrap,
 };
-use dusk_protocol::thread::GoalStatus;
+use dusk_protocol::{system::now_ms, thread::GoalStatus};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -20,9 +20,8 @@ pub(super) fn goal_rows(app: &App) -> u16 {
 }
 
 impl InputView<'_> {
-    /// The messages waiting for the turn to end, each with its buttons; the newest are shown
-    /// when there are more than fit.
-    /// The standing goal in a line: its state, the round and the text, then its buttons.
+    /// The standing goal in a line: whether it goes on, for how long, the turns judged and
+    /// the condition, then its button.
     pub(super) fn draw_goal(&mut self, frame: &mut Frame, area: Rect) {
         self.app.goal_hits.clear();
         if area.is_empty() {
@@ -32,21 +31,14 @@ impl InputView<'_> {
             return;
         };
         let color = match goal.status {
-            _ if !goal.approved => ACCENT,
+            GoalStatus::Active => TEXT_SOFT,
             GoalStatus::Paused => ACCENT,
-            GoalStatus::Active | GoalStatus::Done => TEXT_SOFT,
         };
-        let state = match goal.status {
-            _ if !goal.approved && goal.criteria.is_empty() => "drafting criteria",
-            _ if !goal.approved => "waiting for approval",
-            _ => goal.verification.as_str(),
-        };
-        let name = if goal.approved {
-            goal.status.name()
-        } else {
-            "draft"
-        };
-        let head = format!("   \u{25CE} goal {name} [{state}]  round {}  ", goal.rounds);
+        let mut head = format!("   {}", goal.indicator(now_ms()));
+        if goal.turns > 0 {
+            head.push_str(&format!(" \u{00B7} turn {}", goal.turns));
+        }
+        head.push_str("  ");
         let offered = crate::app::goal_buttons(goal);
         let buttons: usize = offered
             .iter()
@@ -65,8 +57,6 @@ impl InputView<'_> {
             let label = button.label();
             let tint = match button {
                 GoalButton::Clear => NEGATIVE,
-                GoalButton::Approve => POSITIVE,
-                _ => color,
             };
             self.app.goal_hits.push(GoalHit {
                 row: area.y,
@@ -80,5 +70,47 @@ impl InputView<'_> {
         }
         let line = Line::from(spans);
         frame.render_widget(Paragraph::new(line), area);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::test_app;
+    use dusk_protocol::thread::Goal;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    /// The goal's row drawn `width` columns wide, as text.
+    fn row(app: &mut App, width: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, 1)).expect("test terminal");
+        terminal
+            .draw(|frame| InputView { app }.draw_goal(frame, frame.area()))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        (0..width).map(|x| buffer[(x, 0)].symbol()).collect()
+    }
+
+    #[test]
+    fn the_row_says_the_goal_is_active_for_how_long_and_clears_it() {
+        let mut app = test_app();
+        app.goal = Some(Goal {
+            thread_id: "t".into(),
+            text: "all tests pass".into(),
+            status: GoalStatus::Active,
+            started_at: dusk_protocol::system::now_ms() - 125_000,
+            turns: 2,
+            tokens: 9_000,
+            reason: Some("run the tests".into()),
+            note: None,
+        });
+        assert_eq!(goal_rows(&app), 1);
+        let drawn = row(&mut app, 80);
+        println!("{}", drawn.trim_end());
+        assert!(
+            drawn.contains("\u{25CE} goal active \u{00B7} 2m 5s \u{00B7} turn 2  all tests pass"),
+            "{drawn}"
+        );
+        assert!(drawn.trim_end().ends_with('\u{00D7}'), "{drawn}");
+        assert_eq!(app.goal_hits.len(), 1);
     }
 }

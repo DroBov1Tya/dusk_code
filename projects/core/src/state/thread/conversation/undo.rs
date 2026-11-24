@@ -78,10 +78,11 @@ impl State {
                 .await
                 .context("undo")?;
         }
-        sqlx::query("UPDATE goals SET status = 'paused', verification = 'unverified',
-            verification_note = 'Thread history changed; fresh evidence is required.',
-            work_epoch = work_epoch + 1, awaiting_user = 0 WHERE thread_id = ? AND approved_at IS NOT NULL")
-            .bind(thread_id).execute(&mut *transaction).await?;
+        // A question the undo took back no longer holds the goal.
+        sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
+            .bind(thread_id)
+            .execute(&mut *transaction)
+            .await?;
         transaction.commit().await.context("commit undo")?;
         Ok(text)
     }

@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::agent::AgentPhase;
 use crate::model::{Effort, ModelEvent, ProviderErrorKind, ToolCall};
 use crate::thread::{
-    Compaction, Goal, LocalUnsent, Message, Pin, Task, Team, ThreadTokens, Turn, TurnFailure,
+    Compaction, Goal, GoalEvaluation, LocalUnsent, Message, Pin, Task, Team, ThreadTokens, Turn,
+    TurnFailure,
 };
 use crate::tools::{ApprovalRequest, Question, ToolResult};
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -202,13 +203,15 @@ pub enum ThreadEvent {
     /// A background process result joined this thread at a safe execution boundary.
     FromJob(Message),
     /// The standing goal changed, or the thread opened with one; `note` says what
-    /// happened in a line.
+    /// happened in a line, empty when there is nothing to say.
     Goal {
         goal: Option<Goal>,
         note: String,
         /// The message queued to start work on it, for a client to show as sent.
         started: Option<String>,
     },
+    /// The evaluator judged the goal after a turn.
+    GoalEvaluated(GoalEvaluation),
     /// /undo took the thread back; `text` is the message it went back to, for the
     /// client to offer again.
     Undone {
@@ -265,7 +268,7 @@ pub enum RepeatRung {
 pub enum EpisodeKind {
     /// An error that came back ended with a call that passed.
     Fixed,
-    /// A goal's verification passed.
+    /// The evaluator found a goal met.
     Verified,
 }
 

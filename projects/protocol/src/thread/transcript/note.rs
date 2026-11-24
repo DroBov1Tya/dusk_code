@@ -44,7 +44,7 @@ pub fn note(event: &ThreadEvent) -> Option<Note> {
             let verdict = if *allow { "allowed" } else { "denied" };
             Notice(format!("Arbiter {verdict} {what}: {reason}"))
         }
-        ThreadEvent::Goal { note, .. } => Notice(note.clone()),
+        ThreadEvent::Goal { note, .. } if !note.is_empty() => Notice(note.clone()),
         ThreadEvent::Forked { .. } => Notice("Forked into a new chat.".into()),
         _ => return None,
     })

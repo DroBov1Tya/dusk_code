@@ -266,6 +266,11 @@ impl Workspace {
                     Item::Notice(text) | Item::Summary(text) => {
                         notice(&key, div().meta().text_color(muted), text, cx).into_any_element()
                     }
+                    // The evaluator's verdict on the goal, with its reason under it.
+                    Item::Goal(evaluation) => {
+                        let text = format!("{}\n{}", evaluation.title(), evaluation.reason);
+                        notice(&key, div().meta().text_color(muted), &text, cx).into_any_element()
+                    }
                     Item::Error(text) => {
                         // Only the error the chat ends with can be answered by sending
                         // again, and only while no turn runs.

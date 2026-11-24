@@ -24,8 +24,8 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State},
     tools::{
-        AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
-        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, SearchWorkshop, Show,
+        AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, Jobs, McpTool,
+        MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, SearchWorkshop, Show,
         SuggestFromWorkshop, SuggestNext, Tasks, ToolRegistry, ToolScope,
     },
 };
@@ -186,10 +186,6 @@ impl Launcher {
             tools.add(Box::new(SearchWorkshop::new(self.paths.clone())));
             tools.add(Box::new(SuggestFromWorkshop::new(self.paths.clone())));
             tools.add(Box::new(SuggestNext));
-            tools.add(Box::new(GoalTool::new(
-                Arc::clone(&self.state),
-                thread_id.to_owned(),
-            )));
             tools.add(Box::new(PlanEdit::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
@@ -336,7 +332,6 @@ mod tests {
         ("computer_actions", false, false),
         ("display_audio", true, false),
         ("display_image", true, false),
-        ("goal", false, false), // true for the show action only; see `argument_dependent_tools`
         ("jobs", false, false), // true for list, status and output only, both ways
         ("load_skill", true, true),
         ("message_parent", false, false),
@@ -413,10 +408,7 @@ mod tests {
     #[tokio::test]
     async fn argument_dependent_tools_repeat_only_for_reads() {
         let (chat, _) = registries("arguments").await;
-        let cases: [(&str, Value, bool); 8] = [
-            ("goal", json!({"action": "show"}), true),
-            ("goal", json!({"action": "propose"}), false),
-            ("goal", json!({"action": "request_verification"}), false),
+        let cases: [(&str, Value, bool); 5] = [
             ("jobs", json!({"action": "list"}), true),
             ("jobs", json!({"action": "status", "job_id": "j"}), true),
             ("jobs", json!({"action": "output", "job_id": "j"}), true),

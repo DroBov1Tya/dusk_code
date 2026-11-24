@@ -257,3 +257,37 @@ fn a_workshop_card_lists_its_rows_and_says_how_to_add_one() {
     // Narrow, every line still fits.
     screen(&transcript, 20);
 }
+
+/// A verdict on the goal is one line with its cost; opened, its reason shows under it.
+#[test]
+fn a_goal_verdict_folds_its_reason() {
+    use dusk_protocol::thread::{GoalEvaluation, GoalVerdict};
+    let mut transcript = Transcript::default();
+    transcript.add_user("/goal the tests pass");
+    transcript.apply(ThreadEvent::GoalEvaluated(GoalEvaluation {
+        verdict: GoalVerdict::Met,
+        reason: "cargo test ran and every test passed".into(),
+        turn: 3,
+        tokens: 12_400,
+        elapsed_ms: 242_000,
+    }));
+    let folded = screen(&transcript, 80);
+    let index = transcript.entries.len() - 1;
+    assert!(transcript.is_foldable(index));
+    let verdict = folded.iter().find(|row| row.contains("Goal achieved"));
+    let verdict = verdict.expect("no verdict line").trim_end().to_owned();
+    assert!(
+        verdict.ends_with("Goal achieved \u{00B7} 4m 2s \u{00B7} 3 turns \u{00B7} 12.4k tokens"),
+        "{verdict}"
+    );
+    assert!(!folded.iter().any(|row| row.contains("every test passed")));
+    transcript.toggle(index);
+    let open = screen(&transcript, 80);
+    assert!(
+        open.iter().any(|row| row.contains("every test passed")),
+        "{open:#?}"
+    );
+    for row in &open {
+        println!("{}", row.trim_end());
+    }
+}
