@@ -168,6 +168,18 @@ enum Ended {
 /// how it ended, the chat's state and the turns run. Each round's scripts end with the
 /// evaluator's answer.
 async fn run_goal(name: &str, settings: &str, scripts: Vec<Vec<Step>>) -> (Ended, u64) {
+    let (mut ends, turns) = run_goal_resumed(name, settings, scripts, 0).await;
+    (ends.remove(0), turns[0])
+}
+
+/// As `run_goal`, but the user answers each of the first `resumes` pauses with a message;
+/// each end and the turns run by then.
+async fn run_goal_resumed(
+    name: &str,
+    settings: &str,
+    scripts: Vec<Vec<Step>>,
+    resumes: usize,
+) -> (Vec<Ended>, Vec<u64>) {
     let state = thread_state(name).await;
     let config = Arc::new(temp_live_config_with(&format!("{name}_config"), settings));
     let provider = provider(scripts);
@@ -176,24 +188,36 @@ async fn run_goal(name: &str, settings: &str, scripts: Vec<Vec<Step>>) -> (Ended
     })];
     let (runner, input, mut output) =
         runner_with_tools(&state, &provider, &config, model(None), tools);
-    let client = async move {
-        input.send("/goal make the tests pass").await.unwrap();
-        loop {
-            match output.next_event().await.expect("the thread ended") {
-                ThreadEvent::Goal {
-                    goal: Some(goal), ..
-                } if goal.status == GoalStatus::Paused => {
-                    return Ended::Paused(goal.note.unwrap_or_default());
+    let client = {
+        let state = Arc::clone(&state);
+        async move {
+            input.send("/goal make the tests pass").await.unwrap();
+            let mut ends = Vec::new();
+            let mut turns = Vec::new();
+            loop {
+                let ended = match output.next_event().await.expect("the thread ended") {
+                    ThreadEvent::Goal {
+                        goal: Some(goal), ..
+                    } if goal.status == GoalStatus::Paused => {
+                        Ended::Paused(goal.note.unwrap_or_default())
+                    }
+                    ThreadEvent::Goal { note, .. } if note.starts_with("Goal stalled") => {
+                        Ended::Stalled
+                    }
+                    ThreadEvent::GoalEvaluated(evaluation)
+                        if evaluation.verdict == crate::state::GoalVerdict::Met =>
+                    {
+                        Ended::Met
+                    }
+                    _ => continue,
+                };
+                let paused = matches!(ended, Ended::Paused(_));
+                ends.push(ended);
+                turns.push(state.count_turns("thread").await.unwrap());
+                if !paused || ends.len() > resumes {
+                    return (ends, turns);
                 }
-                ThreadEvent::Goal { note, .. } if note.starts_with("Goal stalled") => {
-                    return Ended::Stalled;
-                }
-                ThreadEvent::GoalEvaluated(evaluation)
-                    if evaluation.verdict == crate::state::GoalVerdict::Met =>
-                {
-                    return Ended::Met;
-                }
-                _ => {}
+                input.send("go on").await.unwrap();
             }
         }
     };
@@ -202,8 +226,7 @@ async fn run_goal(name: &str, settings: &str, scripts: Vec<Vec<Step>>) -> (Ended
     })
     .await
     .unwrap();
-    let turns = state.count_turns("thread").await.unwrap();
-    (ended, turns)
+    ended
 }
 
 /// The evaluator's answer that keeps the goal going.
@@ -274,6 +297,30 @@ async fn a_goal_whose_rounds_change_nothing_pauses_with_why() {
     assert!(note.contains("parser::reads_dates"), "{note}");
     // The first round changed a file; the three after it changed nothing.
     assert_eq!(turns, 4);
+}
+
+/// The user's message after the pause starts the count over: the goal does not pause
+/// again on the first unchanged round after it.
+#[tokio::test]
+async fn a_message_after_the_pause_starts_the_count_over() {
+    let mut scripts = first_round("h1");
+    for _ in 0..12 {
+        scripts.extend(round(None));
+    }
+    let (ends, turns) = run_goal_resumed("goal_stall_resume", "", scripts, 1).await;
+    let [Ended::Paused(first), Ended::Paused(second)] = &ends[..] else {
+        panic!("{ends:?}");
+    };
+    assert!(
+        first.starts_with("the last 3 rounds changed nothing"),
+        "{first}"
+    );
+    assert!(
+        second.starts_with("the last 3 rounds changed nothing"),
+        "{second}"
+    );
+    // The user's turn sets the count to one again; three unchanged rounds after it pause.
+    assert_eq!(turns, [4, 8]);
 }
 
 #[tokio::test]

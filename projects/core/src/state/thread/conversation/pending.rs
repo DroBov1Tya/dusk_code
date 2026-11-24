@@ -218,7 +218,10 @@ impl State {
         // The user's message answers what the goal waited on, and goes on with a paused one.
         if removed > 0 && message.from_job_id.is_none() && message.from_thread_id.is_none() {
             sqlx::query(
-                "UPDATE goals SET awaiting_user = 0, status = 'active', note = NULL
+                // A resume starts the rounds that changed nothing over, as
+                // `set_goal_status` does.
+                "UPDATE goals SET awaiting_user = 0, status = 'active', note = NULL,
+                    same_rounds = CASE WHEN status = 'active' THEN same_rounds ELSE 0 END
                  WHERE thread_id = ?",
             )
             .bind(thread_id)

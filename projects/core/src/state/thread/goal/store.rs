@@ -74,8 +74,10 @@ impl State {
     }
 
     /// Notes how a round of the goal ended, as `fingerprint`; the rounds in a row that
-    /// ended so, this one included. A new goal or a resume starts the count over. None
-    /// when the chat has no goal.
+    /// ended so, this one included. A new goal or a resume starts the count over: the
+    /// user's message to a paused goal (`admit`) or `set_goal_status` making it active.
+    /// The approval migration 0047 also names is gone with the evaluator. None when the
+    /// chat has no goal.
     pub async fn note_goal_round(&self, thread_id: &str, fingerprint: &str) -> Result<Option<u32>> {
         let same: Option<i64> = sqlx::query_scalar(
             "UPDATE goals SET
