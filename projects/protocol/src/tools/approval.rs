@@ -29,6 +29,10 @@ pub enum Request {
     /// Changing the settings, such as adding a Workshop source: asked every time, in
     /// every mode, and answered only by a client that may change them itself.
     Settings { change: String },
+    /// Work on an agent's own branch: making it, committing, merging or removing it.
+    /// A merge into a branch no agent made, and leaving work behind, are asked every
+    /// time, in every mode.
+    Git { action: String },
 }
 
 impl Request {
@@ -47,6 +51,7 @@ impl Request {
                 format!("{who} wants to use window tools: {action}")
             }
             Self::Settings { change } => format!("{who} wants to change your settings: {change}"),
+            Self::Git { action } => format!("{who} wants to {action}"),
         }
     }
 
@@ -60,6 +65,7 @@ impl Request {
             Self::Keyboard { action } => format!("using the keyboard: {action}"),
             Self::Window { action, .. } => format!("using window tools: {action}"),
             Self::Settings { change } => format!("changing your settings: {change}"),
+            Self::Git { action } => format!("git: {action}"),
         }
     }
 }

@@ -1202,6 +1202,7 @@ fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
                 owner: None,
                 unread,
                 pulls: Vec::new(),
+                branch: None,
             },
         );
     }
@@ -1401,6 +1402,7 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             owner: None,
             unread: false,
             pulls: chat_pulls,
+            branch: None,
         },
     );
     crate::pages::chat::pull_link::show(ws, cx);
