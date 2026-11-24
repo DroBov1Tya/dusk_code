@@ -314,7 +314,9 @@ pub(super) async fn completed(
             None => format!("no gate; {outside}"),
             Some(_) => format!("its gate was not run: it {outside}"),
         }),
-        (None, Status::Missing) => Some("its answer gives no clear status in its footer".to_owned()),
+        (None, Status::Missing) => {
+            Some("its answer gives no clear status in its footer".to_owned())
+        }
         (None, _) => None,
     };
     let task = match (held_why, &task.gate) {
