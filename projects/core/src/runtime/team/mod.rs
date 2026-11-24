@@ -25,6 +25,7 @@ mod critic;
 mod dispatch;
 mod end;
 mod events;
+mod footer;
 mod gate;
 mod hand_in;
 mod lead_lines;

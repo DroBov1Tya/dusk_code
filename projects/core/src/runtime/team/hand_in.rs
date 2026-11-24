@@ -15,7 +15,7 @@ use tracing::warn;
 use super::{
     clean,
     dispatch::{self, Loss},
-    events, gate, lead_lines, lease, outside, review,
+    events, footer, gate, lead_lines, lease, outside, review,
 };
 use crate::{
     message::plain::plain,
@@ -23,9 +23,8 @@ use crate::{
     state::{GoalCheck, MAX_RESULT, PlanError, PlanTask, Thread, Turn, TurnStatus},
 };
 
-/// The lines at the end of an answer that are read: `Status:`, `Result:`, `Checked:`,
-/// `Not checked:` and `Open:`, as the card asks for them.
-const FOOTER_LINES: usize = 5;
+/// The labels of the lines that end a member's answer, as the card asks for them.
+const LABELS: [&str; 5] = ["Status:", "Result:", "Checked:", "Not checked:", "Open:"];
 /// The most characters of a member's words kept as a task's note.
 const MAX_NOTE: usize = 300;
 
@@ -36,12 +35,13 @@ pub(super) enum Status {
     Blocked,
     /// It stopped half way; only a wind-down asks for it, and it counts as blocked.
     Partial,
-    /// No `Status:` line among the last lines: nobody can tell what it claims.
+    /// No `Status:` line in the footer, or one that is not one of the words asked for:
+    /// nobody can tell what it claims.
     Missing,
 }
 
-/// What a member's final answer says, read from its last lines only: a `Status:` line
-/// anywhere above them, such as in a file it quotes, says nothing.
+/// What a member's final answer says, read from its footer only (`footer`): a `Status:`
+/// line above it, such as in a file it quotes, says nothing.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Report {
     pub status: Status,
@@ -57,42 +57,45 @@ pub(super) struct Report {
 
 impl Report {
     pub fn of(answer: &str) -> Self {
-        let mut footer: Vec<&str> = answer
-            .lines()
-            .rev()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .take(FOOTER_LINES)
-            .collect();
-        footer.reverse();
-        let field = |name: &str| {
-            footer
-                .iter()
-                .rev()
-                .find_map(|line| line.strip_prefix(name))
-                .map(str::trim)
-        };
-        let status = match field("Status:").map(|status| status.trim_end_matches('.')) {
+        let footer = footer::read(answer, &LABELS, &[]);
+        let status = match footer.word("Status:", &["done", "blocked", "partial"]) {
+            Some(word) if word == "done" => Status::Done,
+            Some(word) if word == "blocked" => Status::Blocked,
+            Some(_) => Status::Partial,
             None => Status::Missing,
-            Some(word) if word.eq_ignore_ascii_case("blocked") => Status::Blocked,
-            Some(word) if word.eq_ignore_ascii_case("partial") => Status::Partial,
-            Some(_) => Status::Done,
         };
         let blocked = matches!(status, Status::Blocked | Status::Partial).then(|| {
-            let open = field("Open:").filter(|open| !open.is_empty());
-            lead_lines::quoted(open.unwrap_or("it did not say what it needs"), MAX_NOTE)
+            let open = footer.text("Open:").filter(|open| !open.is_empty());
+            let open = open.as_deref().unwrap_or("it did not say what it needs");
+            lead_lines::quoted(open, MAX_NOTE)
         });
-        let result = field("Result:")
-            .or(footer.last().copied())
-            .unwrap_or("(no answer)");
-        let not_checked = field("Not checked:")
+        let last = answer.lines().map(str::trim).rfind(|line| !line.is_empty());
+        let result = footer
+            .text("Result:")
+            .filter(|result| !result.is_empty())
+            .or(last.map(str::to_owned))
+            .unwrap_or_else(|| "(no answer)".to_owned());
+        let not_checked = footer
+            .text("Not checked:")
             .filter(|said| !is_nothing(said))
-            .map(|said| lead_lines::quoted(said, MAX_NOTE / 2));
-        let kept: Vec<String> = footer.iter().map(|line| plain(line)).collect();
+            .map(|said| lead_lines::quoted(&said, MAX_NOTE / 2));
+        // Without a footer, the last lines are what the lead reads under the task.
+        let lines = match footer.lines.is_empty() {
+            false => footer.lines,
+            true => {
+                let all: Vec<&str> = answer
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .collect();
+                all[all.len().saturating_sub(LABELS.len())..].to_vec()
+            }
+        };
+        let kept: Vec<String> = lines.iter().map(|line| plain(line)).collect();
         Self {
             status,
             blocked,
-            result: lead_lines::quoted(result, MAX_NOTE),
+            result: lead_lines::quoted(&result, MAX_NOTE),
             not_checked,
             footer: kept.join("\n").chars().take(MAX_RESULT).collect(),
         }
@@ -311,7 +314,7 @@ pub(super) async fn completed(
             None => format!("no gate; {outside}"),
             Some(_) => format!("its gate was not run: it {outside}"),
         }),
-        (None, Status::Missing) => Some("its answer has no footer with a status".to_owned()),
+        (None, Status::Missing) => Some("its answer gives no clear status in its footer".to_owned()),
         (None, _) => None,
     };
     let task = match (held_why, &task.gate) {

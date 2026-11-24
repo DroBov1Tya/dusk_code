@@ -19,7 +19,7 @@
 use anyhow::Result;
 use dusk_protocol::thread::TaskDuty;
 
-use super::{card, clean, dispatch, events, lead_lines, outside};
+use super::{card, clean, dispatch, events, footer, lead_lines, outside};
 use crate::{
     message::plain::plain,
     runtime::Launcher,
@@ -36,9 +36,8 @@ pub(super) const FAILED: &str = "review found";
 const ROUNDS: usize = 2;
 /// Characters of the reviewed task's text in the review row's.
 const TITLE_CHARS: usize = 80;
-/// Lines a footer block holds at most, and finding lines above it.
+/// Lines kept of an answer without a footer.
 const MAX_FOOTER: usize = 8;
-const MAX_ITEMS: usize = 64;
 
 /// The labels of the lines that end an answer.
 const FOOTER: [&str; 6] = [
@@ -71,27 +70,23 @@ pub(super) struct Problem {
 }
 
 impl Verdict {
-    /// The verdict of an answer, read from its last lines only: the footer, and the
-    /// problem lines right above it. A `Problem:` line further up, such as in a file the
-    /// reviewer quotes, says nothing. `None` when the footer names no verdict.
+    /// The verdict of an answer, read from its footer and the problem lines right above
+    /// or among it (`footer`). A `Problem:` line further up, such as in a file the
+    /// reviewer quotes, says nothing. `None` when the footer names no verdict, or two.
     pub fn of(answer: &str) -> Option<Self> {
-        let (items, footer) = block(answer);
-        let word = footer
-            .iter()
-            .rev()
-            .find_map(|line| line.strip_prefix("Verdict:"))?
-            .trim()
-            .trim_end_matches('.')
-            .to_ascii_lowercase();
-        let fix = match word.as_str() {
-            "approve" | "approved" => false,
+        let footer = footer::read(answer, &FOOTER, &ITEMS);
+        let fix = match footer
+            .word("Verdict:", &["approve", "approved", "fix"])?
+            .as_str()
+        {
             "fix" => true,
-            _ => return None,
+            _ => false,
         };
-        let problems: Vec<Problem> = items
+        let problems: Vec<Problem> = footer
+            .items
             .iter()
-            .filter_map(|line| line.strip_prefix("Problem:"))
-            .map(Problem::of)
+            .filter(|(label, _)| *label == "Problem:")
+            .map(|(_, problem)| Problem::of(problem))
             .collect();
         // An approval that names a high problem is not one.
         let high = problems
@@ -136,33 +131,12 @@ impl Problem {
     }
 }
 
-/// The finding lines right above an answer's footer, and the footer: the trailing lines
-/// whose label is one of `FOOTER`, then the lines above them whose label is one of
-/// `ITEMS`. Both in the answer's order.
-fn block(answer: &str) -> (Vec<&str>, Vec<&str>) {
-    let lines: Vec<&str> = answer
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect();
-    let labelled = |line: &str, labels: &[&str]| labels.iter().any(|label| line.starts_with(label));
-    let mut footer = lines.len();
-    while footer > 0 && lines.len() - footer < MAX_FOOTER && labelled(lines[footer - 1], &FOOTER) {
-        footer -= 1;
-    }
-    let mut items = footer;
-    while items > 0 && footer - items < MAX_ITEMS && labelled(lines[items - 1], &ITEMS) {
-        items -= 1;
-    }
-    (lines[items..footer].to_vec(), lines[footer..].to_vec())
-}
-
 /// What a duty row keeps of its member's answer: the finding lines and the footer, each
 /// made plain, else its last lines. The caller cleans it of secrets.
 pub(super) fn kept(answer: &str) -> String {
-    let (items, footer) = block(answer);
-    let lines: Vec<&str> = match footer.is_empty() {
-        false => items.into_iter().chain(footer).collect(),
+    let footer = footer::read(answer, &FOOTER, &ITEMS);
+    let lines: Vec<&str> = match footer.lines.is_empty() {
+        false => footer.lines,
         true => {
             let all: Vec<&str> = answer
                 .lines()

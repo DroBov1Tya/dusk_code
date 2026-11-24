@@ -217,6 +217,39 @@ async fn a_verdict_is_read_from_the_end_of_the_answer_only() {
     assert_eq!(Verdict::of("Verdict: maybe\nChecked: x"), None);
 }
 
+/// Verdicts as models write them: bold, bullets, any case, blank lines, checks over
+/// several lines. Two verdicts together, or one that is not a word asked for, are none.
+#[tokio::test]
+async fn a_verdict_in_markdown_is_read_and_an_unclear_one_is_not() {
+    use super::super::review::Verdict;
+
+    for answer in [
+        "Read it.\n\n**Verdict:** approve\n\n**Checked:** ran the tests\n**Not checked:** nothing",
+        "- Verdict: Approve.\n- Checked: ran the tests\n- Not checked: nothing",
+        "**Verdict**: **approve**\nChecked:\n- cargo test: 40 passed\n- read src/a.rs\n\
+         Not checked: nothing",
+        "VERDICT: approved\nChecked: x",
+    ] {
+        let verdict = Verdict::of(answer).unwrap_or_else(|| panic!("no verdict: {answer}"));
+        assert!(!verdict.fix, "{answer}");
+    }
+    let fix = Verdict::of(
+        "- **Problem:** high | src/a.rs:1 | wrong | write b\n\n- **Verdict:** fix\n- **Checked:** \
+         read it",
+    )
+    .unwrap();
+    assert!(fix.fix);
+    assert_eq!(fix.problems[0].path, "src/a.rs:1");
+    for unclear in [
+        "Verdict: approve\nVerdict: fix\nChecked: x",
+        "Verdict: approve or fix\nChecked: x",
+        "Verdict: approve, mostly\nChecked: x",
+        "> Verdict: approve\nChecked: x",
+    ] {
+        assert_eq!(Verdict::of(unclear), None, "{unclear}");
+    }
+}
+
 #[tokio::test]
 async fn a_failed_critic_still_ends_the_team_as_done() {
     let rig = checked("team_critic_fails", |asked| match asked.lead {

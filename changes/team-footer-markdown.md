@@ -1,0 +1,2 @@
+Fixed
+A team member's or reviewer's closing lines are read as models write them: bullets, bold labels (`**Verdict:** approve`), any case, blank lines between, and a value on the lines under its label (`Checked:` then a list). A task was held before when its footer used markdown. What is still no answer: a status or verdict that is not one of the words asked for (`done or blocked`, `approve, mostly`), and two that disagree; such a task is held for the lead.
