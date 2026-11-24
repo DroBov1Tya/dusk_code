@@ -2,9 +2,10 @@
 //! lost its way does, burning the output cap on a loop no tool rule sees. As Gemini CLI
 //! does, the streamed answer is read in 50-character pieces, each piece's places kept,
 //! and a piece that comes back `limits.text_loop_repeats` times close together (on
-//! average within `MAX_GAP` characters of the one before) is a loop. Only places that do
-//! not overlap count, so a run of one character or a short pattern is a loop only once
-//! it is ten pieces long.
+//! average within `MAX_GAP` characters of the one before) is a loop when what lies
+//! between its places is mostly the same too: a list of paths or links that share a
+//! long start says something new after each. Only places that do not overlap count, so
+//! a run of one character or a short pattern is a loop only once it is ten pieces long.
 //!
 //! Text that repeats by its nature is not read: code (inside a fence or indented),
 //! tables, lists, headings, quotes and rules. Such a line also forgets what came
@@ -49,6 +50,8 @@ pub struct Chant {
     piece: VecDeque<char>,
     /// Where each piece started, its newest `repeats` places, by the piece's hash.
     places: HashMap<u64, VecDeque<usize>>,
+    /// The newest prose characters with their places, as far back as a loop reaches.
+    recent: VecDeque<(usize, char)>,
     /// Characters of the answer read so far.
     read: usize,
     /// Prose characters read so far.
@@ -66,6 +69,7 @@ impl Chant {
             in_code: false,
             piece: VecDeque::with_capacity(CHUNK + 1),
             places: HashMap::new(),
+            recent: VecDeque::new(),
             read: 0,
             fed: 0,
             cut: None,
@@ -166,6 +170,7 @@ impl Chant {
     fn forget(&mut self) {
         self.piece.clear();
         self.places.clear();
+        self.recent.clear();
     }
 
     fn prose(&mut self, c: char, at: usize) {
@@ -173,6 +178,10 @@ impl Chant {
         if self.piece.len() > CHUNK {
             self.piece.pop_front();
         }
+        if self.recent.len() > self.reach().saturating_add(CHUNK) {
+            self.recent.pop_front();
+        }
+        self.recent.push_back((at, c));
         self.fed += 1;
         if self.fed.is_multiple_of(SWEEP_EVERY) {
             self.sweep(at);
@@ -181,7 +190,8 @@ impl Chant {
             return;
         }
         let start = at + 1 - CHUNK;
-        let places = self.places.entry(hash(&self.piece)).or_default();
+        let key = hash(&self.piece);
+        let places = self.places.entry(key).or_default();
         // Only places that do not overlap count: inside a run of one character, or of a
         // short pattern, every piece is the same one place later, and a long hash, a
         // rule after a word or a bar of blocks is no loop.
@@ -195,19 +205,47 @@ impl Chant {
         if places.len() < self.repeats {
             return;
         }
-        let (Some(first), Some(last), Some(second)) =
+        let (Some(&first), Some(&last), Some(&second)) =
             (places.front(), places.back(), places.get(1))
         else {
             return;
         };
-        if last.saturating_sub(*first) <= MAX_GAP * (self.repeats - 1) {
-            self.cut = Some(*second);
+        let close = last.saturating_sub(first) <= MAX_GAP * (self.repeats - 1);
+        if close && self.places.get(&key).is_some_and(|places| self.spans_alike(places)) {
+            self.cut = Some(second);
         }
+    }
+
+    /// Whether most of the text between `places` of a piece that came back is the same:
+    /// a loop says one thing again, a list says a new thing after a shared start.
+    fn spans_alike(&self, places: &VecDeque<usize>) -> bool {
+        let spans: Vec<String> = places
+            .iter()
+            .zip(places.iter().skip(1))
+            .map(|(from, to)| self.text(*from, *to))
+            .collect();
+        let Some(newest) = spans.last() else {
+            return false;
+        };
+        let alike = spans.iter().filter(|span| *span == newest).count();
+        alike * 2 > spans.len()
+    }
+
+    /// The prose characters kept from place `from` up to `to`.
+    fn text(&self, from: usize, to: usize) -> String {
+        let start = self.recent.partition_point(|(at, _)| *at < from);
+        let end = self.recent.partition_point(|(at, _)| *at < to);
+        self.recent.range(start..end).map(|(_, c)| *c).collect()
+    }
+
+    /// Characters a loop may span: its places on average `MAX_GAP` apart.
+    fn reach(&self) -> usize {
+        MAX_GAP.saturating_mul(self.repeats)
     }
 
     /// Forgets pieces too far back to make a loop with anything still to come.
     fn sweep(&mut self, at: usize) {
-        let reach = MAX_GAP * self.repeats;
+        let reach = self.reach();
         self.places
             .retain(|_, places| places.back().is_some_and(|last| last + reach >= at));
     }

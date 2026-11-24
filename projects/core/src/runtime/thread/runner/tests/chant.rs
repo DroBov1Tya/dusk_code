@@ -1,6 +1,6 @@
-//! Text that goes round in real turns: the stream is cut, the step taken again with a
-//! note, and what it said is kept once if it keeps at it; long answers that repeat by
-//! their nature (code, lists) stream whole.
+//! Text that goes round in real turns: the stream is cut and the step taken again with
+//! a note, twice at most, then it streams whole; long answers that repeat by their
+//! nature (code, lists) stream whole.
 
 use super::*;
 use dusk_protocol::thread::RepeatRung;
@@ -89,14 +89,15 @@ async fn text_going_round_is_cut_and_the_step_taken_again_with_a_note() {
 }
 
 #[tokio::test]
-async fn text_that_keeps_going_round_ends_the_turn_with_it_said_once() {
+async fn after_two_cuts_the_text_streams_whole_and_the_turn_goes_on() {
+    // A rule may read healthy text as a loop: it never ends the turn or cuts its calls.
     let scripts = vec![going_round(), going_round(), going_round()];
     let (state, _, events, turn) = run("chant_always", "", scripts).await;
     assert_eq!(turn.status, TurnStatus::Completed);
-    assert_eq!(notices(&events).len(), 3);
+    assert_eq!(notices(&events).len(), 2);
     let kept = answer(&state).await;
     assert!(kept.starts_with("First I read the parser."), "{kept}");
-    assert!(kept.matches("once more").count() <= 2, "{kept}");
+    assert_eq!(kept.matches("once more").count(), 40, "{kept}");
 }
 
 #[tokio::test]

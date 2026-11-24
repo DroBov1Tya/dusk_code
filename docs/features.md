@@ -113,11 +113,13 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   50-character pieces; one that comes back `limits.text_loop_repeats` (10) times close
   together (on average within 250 characters) cuts the stream, and the step is taken
   again with a note (`Cycle`: the protocol has no rung of its own for text, so a text
-  loop is told as the cycle it is). Only places that do not overlap count, so a long
-  hash, a dotted leader or a bar of one character is no loop. Code (fenced or
-  indented), tables, lists, headings, quotes and rules are not read, and each such line
-  forgets what came before it. After two cuts in a turn the turn ends with the text up
-  to where the piece came back.
+  loop is told as the cycle it is). It is a loop only when the text between the
+  piece's places is mostly the same too, so a list of paths or links sharing a long
+  start is prose. Only places that do not overlap count, so a long hash, a dotted
+  leader or a bar of one character is no loop. Code (fenced or indented), tables,
+  lists, headings, quotes and rules are not read, and each such line forgets what came
+  before it. After two cuts in a turn the next step streams whole, so the rule never
+  ends a turn or loses its calls.
 - **Goal monologues.** `limits.monologue` (on): goal rounds in a row that called no
   tool, with no message from the user or another agent between (one that comes with
   a round's start makes that turn a reply, not a round), get a note in the next round's start at

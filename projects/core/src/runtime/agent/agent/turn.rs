@@ -19,7 +19,8 @@ const MAX_SHRINKS: u32 = 2;
 /// cannot spend the turn.
 const MAX_STRANDED: u32 = 2;
 
-/// Steps taken again after the model's text went round, for the same reason.
+/// Steps taken again after the model's text went round; the step after them streams
+/// whole, so text read wrongly as a loop never ends the turn or loses its calls.
 const MAX_CHANTED: u32 = 2;
 
 impl Agent {
@@ -117,7 +118,9 @@ impl Agent {
                 Some(end) => Ok(end),
                 None => {
                     let waited = waiting_since.is_some();
-                    self.step(turn, inbox, waited, loaded.take(), note.clone())
+                    let reads_text = chanted < MAX_CHANTED;
+                    let loaded = loaded.take();
+                    self.step(turn, inbox, waited, loaded, note.clone(), reads_text)
                         .await
                 }
             };
@@ -244,16 +247,12 @@ impl Agent {
                     );
                 }
                 StepEnd::Stranded(_, answer) => outcome = TurnOutcome::Completed(answer),
-                StepEnd::Chanted(text, _) if chanted < MAX_CHANTED => {
+                StepEnd::Chanted(text) => {
                     chanted += 1;
                     waiting_since = None;
                     note = Some(text);
                     continue;
                 }
-                StepEnd::Chanted(_, answer) if answer.content.trim().is_empty() => {
-                    outcome = TurnOutcome::failed("the model kept repeating itself");
-                }
-                StepEnd::Chanted(_, answer) => outcome = TurnOutcome::Completed(answer),
                 StepEnd::Answered(answer) => outcome = answer,
                 StepEnd::Stopped(reason, partial) => {
                     stop = Some(reason);

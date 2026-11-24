@@ -28,7 +28,8 @@ const SHORT_ANSWER: usize = 200;
 impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     /// `waited` says the turn's provider wait is stored, to end once the model answers.
-    /// `note` goes to the model last, for this step only.
+    /// `note` goes to the model last, for this step only. With `reads_text`, the
+    /// answer is cut once its text goes round (`limits.text_loops`).
     #[tracing::instrument(name = "step", skip_all)]
     pub(super) async fn step(
         &self,
@@ -37,6 +38,7 @@ impl Agent {
         waited: bool,
         loaded: Option<Loaded>,
         note: Option<String>,
+        reads_text: bool,
     ) -> Result<StepEnd> {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config_now().await;
@@ -118,7 +120,7 @@ impl Agent {
         }
         let choice = self.model.current().context("provider is unavailable")?;
         let limits = config.limits();
-        let chant = limits.text_loops.then_some(limits.text_loop_repeats);
+        let chant = (reads_text && limits.text_loops).then_some(limits.text_loop_repeats);
         let set = self.effort(&config).await;
         let effort = self.pace.lock().effort(set);
         let request = ChatRequest {
@@ -195,9 +197,9 @@ impl Agent {
             }
             self.report_progress(&turn.turn_id).await;
         }
-        // The answer went round: what it said once is kept, and the step is taken again.
-        // A stream that ended before the cut took effect went round all the same.
-        if let (Some(cut), Ok(_), Some(repeats)) = (chanted, &generated, chant) {
+        // The answer went round: the step is taken again. A stream that ended before the
+        // cut took effect went round all the same.
+        if let (Some(_), Ok(_), Some(repeats)) = (chanted, &generated, chant) {
             info!("thread {}: the model's text went round", self.thread_id);
             // Told as a cycle: the rungs were fixed for all of the loop guards in one
             // protocol version, with none for text. The log line above tells them apart.
@@ -208,12 +210,7 @@ impl Agent {
             if waited {
                 self.state.end_wait(&turn.turn_id).await?;
             }
-            let kept: String = output.text.chars().take(cut).collect();
-            let answer = TurnAnswer {
-                reasoning: recorded_reasoning(&config, &output),
-                content: kept.trim_end().to_owned(),
-            };
-            return Ok(StepEnd::Chanted(repeats::chant_note(repeats), answer));
+            return Ok(StepEnd::Chanted(repeats::chant_note(repeats)));
         }
         let mut reasoning = recorded_reasoning(&config, &output);
         let mut stranded = None;

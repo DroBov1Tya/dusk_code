@@ -113,8 +113,8 @@ enum StepEnd {
     /// step again with this note, or ends with the answer as it is.
     Stranded(String, TurnAnswer),
     /// The model's text went round and was cut: the turn takes the step again with this
-    /// note, or ends with what it said once.
-    Chanted(String, TurnAnswer),
+    /// note.
+    Chanted(String),
 }
 
 /// What a stopped step keeps: the text written so far, if any.

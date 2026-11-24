@@ -145,3 +145,29 @@ fn a_short_sentence_said_many_times_is_still_cut() {
     let text = "Trying again. ".repeat(60);
     assert!(read(&text, 4).is_some());
 }
+
+#[test]
+fn a_list_of_paths_or_links_with_a_long_shared_start_is_prose() {
+    let package = "src/main/java/com/example/shop/service/impl/";
+    let names = [
+        "Order", "Payment", "Cart", "Invoice", "Customer", "Shipping", "Stock", "Price",
+        "Coupon", "Review", "Refund", "Report",
+    ];
+    let lines: Vec<String> = names
+        .iter()
+        .map(|name| format!("{package}{name}ServiceImpl.java"))
+        .collect();
+    let plain = format!("I changed these files:\n{}\nAll tests pass.", lines.join("\n"));
+    let ticked: Vec<String> = lines.iter().map(|line| format!("`{line}`")).collect();
+    let ticked = format!("Changed:\n{}\n", ticked.join("\n"));
+    let links: Vec<String> = names
+        .iter()
+        .map(|name| format!("https://github.com/example/shop/blob/main/{package}{name}.java"))
+        .collect();
+    let inline = format!("See {} for the details.", links.join(", "));
+    for text in [plain, ticked, inline] {
+        for part in [1, 7, 400] {
+            assert_eq!(read(&text, part), None, "{text}");
+        }
+    }
+}
