@@ -370,7 +370,7 @@ impl ThreadRunner {
         Ok(true)
     }
 
-    async fn has_pending(&self) -> Result<bool> {
+    pub(crate) async fn has_pending(&self) -> Result<bool> {
         self.agent.state.has_pending(&self.agent.thread_id).await
     }
 }

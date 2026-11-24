@@ -31,10 +31,11 @@ pub const STALL_TURNS: u32 = 3;
 pub const RETRIES: u32 = 3;
 
 impl ThreadRunner {
-    /// Counts a turn that called no tool toward the stall rule; one that called a tool
-    /// starts the count again.
+    /// Counts a turn of an active goal that called no tool toward the stall rule; one
+    /// that called a tool, or a turn without an active goal, starts the count again.
     pub async fn count_quiet_turn(&mut self, turn_id: &str) -> Result<()> {
-        if self.agent.depth > 0 {
+        if self.agent.active_goal().await?.is_none() {
+            self.goal_quiet_turns = 0;
             return Ok(());
         }
         self.goal_quiet_turns = match self.agent.state.turn_called_tools(turn_id).await? {
@@ -137,6 +138,13 @@ impl ThreadRunner {
                 started: None,
             });
             return Ok(false);
+        }
+        if self.has_pending().await? {
+            // The user sent something while the turn was judged, perhaps `/goal clear`:
+            // it goes first, and the turn it starts is judged.
+            self.goal_waiting = true;
+            self.take_in().await?;
+            return Ok(true);
         }
         let next = goal::continuation(&judgment.reason);
         state.add_pending(thread_id, &next).await?;

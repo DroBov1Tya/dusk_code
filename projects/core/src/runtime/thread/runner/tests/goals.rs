@@ -361,3 +361,45 @@ async fn a_stop_pauses_the_goal_and_a_message_goes_on_with_it() {
     assert_eq!(verdicts.len(), 1);
     assert_eq!(verdicts[0].verdict, GoalVerdict::Met);
 }
+
+/// Turns without a tool before `/goal` do not count toward its stall rule: a first goal
+/// turn that only plans goes on.
+#[tokio::test]
+async fn turns_before_a_goal_do_not_stall_it() {
+    let state = thread_state("goal_fresh_count").await;
+    let config = live_config("goal_fresh_count_config");
+    let mut scripts = vec![said("hello"), said("title"), said("hi"), said("hey")];
+    scripts.push(said("first I plan"));
+    scripts.push(said("NOT_MET: nothing was built yet"));
+    scripts.extend(works());
+    scripts.push(said("MET: it is built"));
+    let provider = provider(scripts);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let client = async move {
+        for text in ["one", "two", "three"] {
+            input.send(text).await.unwrap();
+            next_turn_finished(&mut output).await;
+        }
+        input.send("/goal build it").await.unwrap();
+        let mut verdicts = Vec::new();
+        loop {
+            match output.next_event().await.expect("the thread ended") {
+                ThreadEvent::GoalEvaluated(evaluation) => verdicts.push(evaluation.verdict),
+                ThreadEvent::Goal { note, .. } if note.starts_with("Goal stalled") => {
+                    panic!("stalled after {verdicts:?}")
+                }
+                ThreadEvent::Goal { goal: None, .. } if !verdicts.is_empty() => {
+                    return verdicts;
+                }
+                _ => {}
+            }
+        }
+    };
+
+    let (_, verdicts) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(runner.run(), client)
+    })
+    .await
+    .unwrap();
+    assert_eq!(verdicts, [GoalVerdict::NotMet, GoalVerdict::Met]);
+}
