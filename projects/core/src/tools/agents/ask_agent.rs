@@ -141,6 +141,14 @@ impl AskAgent {
             .await?
             .filter(|name| tiers::connected(&config, name))
             .or(chat);
+        // An agent at work goes on with its model; the one picked now comes at its next wake.
+        let running = self.launcher.running_model(&thread_id).await;
+        let later = running
+            .as_ref()
+            .and(model.as_ref())
+            .filter(|picked| running.as_ref() != Some(*picked))
+            .cloned();
+        let model = running.or(model);
         let effort = Effort::for_subagent(config.effort(), state.agent_effort(&thread_id).await?);
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::SubagentStarted {
@@ -159,11 +167,14 @@ impl AskAgent {
         drop(admitted);
         let effort = effort.map_or("the provider's default", Effort::name);
         let model = model.as_deref().unwrap_or("no model");
+        let later = later.map_or_else(String::new, |later| {
+            format!(" It is at work, so it switches to {later} only when it is woken next.")
+        });
         Ok(format!(
             "{name} (agent {agent}, thread {thread_id}, model {model}, effort {effort}) works \
              on it in the background. Call it {name} when you talk about it. What it writes \
              and its final answer will come to you as messages from {name}; to send it more, \
-             call ask_agent with thread {name}."
+             call ask_agent with thread {name}.{later}"
         ))
     }
 

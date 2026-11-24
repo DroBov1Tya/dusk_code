@@ -252,6 +252,14 @@ impl Launcher {
         Ok(ThreadRunner::new(setup))
     }
 
+    /// The model a runner at work answers on. It keeps the model it was started with, so
+    /// a tier picked meanwhile applies from its next wake.
+    pub async fn running_model(&self, thread_id: &str) -> Option<String> {
+        let mailbox = self.mailboxes.get(thread_id).await?;
+        mailbox.is_live().then_some(())?;
+        mailbox.context.model.current().map(|choice| choice.name())
+    }
+
     /// The model the asker picked for an agent by tier, when that is not the chat's. One
     /// that cannot be asked now (its provider removed, switched off or down) leaves the
     /// agent on the chat's model rather than failing its work.
