@@ -17,6 +17,12 @@ pub struct ToolScope {
     protected: Option<PathBuf>,
     /// Folders open to the tools wherever they are, the protected one included.
     shared: Vec<PathBuf>,
+    /// For a thread in a worktree: the folder of the project the work belongs to, which
+    /// its memory, variables and episodes are kept for. `None` is `cwd`.
+    project: Option<PathBuf>,
+    /// For a thread in a worktree: the parts of the repository's shared git data a
+    /// confined command must write to commit there, never its config or hooks.
+    git_writable: Vec<PathBuf>,
 }
 
 impl ToolScope {
@@ -31,7 +37,47 @@ impl ToolScope {
                 .context("thread workspace is not accessible")?,
             protected: None,
             shared: Vec::new(),
+            project: None,
+            git_writable: Vec::new(),
         })
+    }
+
+    /// The same scope with the tools working in the worktree `dir` instead, for the
+    /// project at `project`. Refused when the worktree is in the protected folder.
+    pub fn in_worktree(
+        &self,
+        dir: &Path,
+        project: &Path,
+        git_writable: Vec<PathBuf>,
+    ) -> Result<Self> {
+        let cwd = dir
+            .canonicalize()
+            .context("the worktree is not accessible")?;
+        ensure!(
+            !self
+                .protected
+                .as_ref()
+                .is_some_and(|protected| cwd.starts_with(protected)),
+            "the worktree is inside the dusk config folder"
+        );
+        Ok(Self {
+            cwd,
+            project: Some(project.to_owned()),
+            git_writable,
+            ..self.clone()
+        })
+    }
+
+    /// The folder of the project the work belongs to: `cwd`, or for a worktree the
+    /// project it was made from.
+    pub fn project_dir(&self) -> &Path {
+        self.project.as_deref().unwrap_or(&self.cwd)
+    }
+
+    /// Git data a confined command may write besides its folders; empty outside a
+    /// worktree.
+    pub fn git_writable(&self) -> &[PathBuf] {
+        &self.git_writable
     }
 
     /// Keeps the tools out of `folder` and everything under it.

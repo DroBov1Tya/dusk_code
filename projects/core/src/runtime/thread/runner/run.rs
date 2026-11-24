@@ -92,6 +92,7 @@ impl ThreadRunner {
             model: setup.model,
             config: setup.config,
             tools: Arc::new(setup.tools),
+            here: Mutex::new(Arc::clone(&setup.scope)),
             scope: setup.scope,
             project: setup.project,
             pictures_refused: Mutex::new(None),

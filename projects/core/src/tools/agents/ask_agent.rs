@@ -10,15 +10,13 @@
 //! delegating needs no AGENT.md. Depth is bounded, so agents cannot hand work down forever.
 
 use crate::plugins::store::origin::{self, Origins};
-use std::path::Path;
-
 use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 use tracing::info;
 
-use crate::tools::{Progress, Tool, ToolContext, ToolKind, schema};
+use crate::tools::{Tool, ToolContext, ToolKind, schema};
 use crate::{
     BoxFuture,
     catalog::agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
@@ -68,6 +66,10 @@ struct AskAgentArguments {
     /// mechanical work and read-only scouting, default otherwise. A tier the user did not
     /// set is this chat's model. It keeps the tier until asked with another.
     tier: Option<Tier>,
+    /// A new agent works on a git branch of its own, made from your current branch in a
+    /// worktree beside the repository, so its changes stay apart from yours until you
+    /// merge them with `branch` (action merge, agent <its name>).
+    isolated: Option<bool>,
 }
 
 impl AskAgent {
@@ -101,13 +103,26 @@ impl AskAgent {
         !limited && self.launcher.agents.builtin_general(&config)
     }
 
-    async fn ask(
-        &self,
-        arguments: AskAgentArguments,
-        cwd: &Path,
-        progress: Option<Progress>,
-    ) -> Result<String> {
+    async fn ask(&self, arguments: AskAgentArguments, context: &ToolContext) -> Result<String> {
+        let (scope, progress) = (&*context.scope, context.progress.clone());
         ensure!(!arguments.task.trim().is_empty(), "task is empty");
+        let isolated = arguments.isolated.unwrap_or(false);
+        ensure!(
+            !(isolated && arguments.thread.is_some()),
+            "`isolated` is for a new agent; an agent at work keeps where it works"
+        );
+        if isolated {
+            let repository = crate::project::git::repository(scope.cwd()).await;
+            ensure!(
+                repository.is_some_and(|repository| repository.branch.is_some()),
+                "`isolated` needs a git repository with a branch checked out"
+            );
+            // Asked before the agent's thread is made, so a no leaves nothing behind.
+            context
+                .approve_git("give a new agent a branch of its own in a new worktree")
+                .await?;
+        }
+        let cwd = scope.cwd();
         // Kept until the new agent is delivered its task, which gives it its slot.
         let mut admitted = None;
         let (thread_id, name, agent) = match &arguments.thread {
@@ -124,6 +139,26 @@ impl AskAgent {
                 self.start(arguments.agent.as_deref()).await?
             }
         };
+        let mut task = arguments.task.clone();
+        let mut branched = String::new();
+        if isolated {
+            let state = &self.launcher.state;
+            let made =
+                crate::tools::start_branch(state, &thread_id, &self.thread_id, scope, Some(&name))
+                    .await?;
+            task = format!(
+                "You work on your own git branch {}, made from {}, in the worktree {}: your \
+                 files and commands are there. Commit your work with the `branch` tool \
+                 (action commit) before your final answer; the agent that asked you merges \
+                 it.\n\n{task}",
+                made.branch, made.base, made.dir
+            );
+            branched = format!(
+                " It works on branch {} in {}; when its work is checked, merge it with \
+                 `branch` (action merge, agent {name}).",
+                made.branch, made.dir
+            );
+        }
         let state = &self.launcher.state;
         if let Some(effort) = arguments.effort {
             state.set_agent_effort(&thread_id, effort).await?;
@@ -155,14 +190,14 @@ impl AskAgent {
                 call_id: progress.call_id.to_owned(),
                 thread_id: thread_id.clone(),
                 agent: agent.clone(),
-                task: arguments.task.clone(),
+                task: task.clone(),
                 effort,
                 model: model.clone(),
                 task_id: None,
             });
         }
         self.launcher
-            .deliver(&thread_id, &self.thread_id, &arguments.task, cwd)
+            .deliver(&thread_id, &self.thread_id, &task, cwd)
             .await?;
         drop(admitted);
         let effort = effort.map_or("the provider's default", Effort::name);
@@ -174,7 +209,7 @@ impl AskAgent {
             "{name} (agent {agent}, thread {thread_id}, model {model}, effort {effort}) works \
              on it in the background. Call it {name} when you talk about it. What it writes \
              and its final answer will come to you as messages from {name}; to send it more, \
-             call ask_agent with thread {name}.{later}"
+             call ask_agent with thread {name}.{branched}{later}"
         ))
     }
 
@@ -281,7 +316,9 @@ impl Tool for AskAgent {
              would fill this context; do small things yourself. Pick `tier` by the work: \
              strong for design, review and hard debugging, weak for mechanical edits and \
              read-only scouting, default otherwise; a tier the user left unset is this \
-             chat's model. Pick `effort` the same way.\nAgents:\n{}",
+             chat's model. Pick `effort` the same way. Set `isolated` for an agent \
+             whose edits should stay on a branch of its own, such as parallel or risky \
+             changes; merge it with `branch` once checked.\nAgents:\n{}",
             agents.join("\n")
         )
     }
@@ -291,11 +328,10 @@ impl Tool for AskAgent {
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
-        let cwd = context.scope.cwd().to_owned();
         Box::pin(async move {
             let arguments: AskAgentArguments =
                 serde_json::from_value(arguments).context("invalid arguments")?;
-            self.ask(arguments, &cwd, context.progress).await
+            self.ask(arguments, &context).await
         })
     }
 }

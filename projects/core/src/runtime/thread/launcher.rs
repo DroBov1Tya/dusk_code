@@ -24,9 +24,9 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State},
     tools::{
-        AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
-        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, SearchWorkshop, Show,
-        SuggestFromWorkshop, SuggestNext, Tasks, ToolRegistry, ToolScope,
+        AgentState, Approvals, AskAgent, AskUser, Branch, DisplayAudio, DisplayImage, GoalTool,
+        Jobs, McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, SearchWorkshop,
+        Show, SuggestFromWorkshop, SuggestNext, Tasks, ToolRegistry, ToolScope,
     },
 };
 
@@ -133,6 +133,7 @@ impl Launcher {
         };
         tools.add(Box::new(RunCommand::with_jobs(owner.clone())));
         tools.add(Box::new(Jobs(owner)));
+        tools.add(Box::new(Branch));
         let history = ReadHistory::new(Arc::clone(&self.state), thread_id.to_owned());
         tools.add(Box::new(history));
         let tasks = Tasks::new(Arc::clone(&self.state), thread_id.to_owned());
@@ -331,6 +332,7 @@ mod tests {
         ("agent_state", true, false),
         ("ask_agent", false, false),
         ("ask_user", true, false),
+        ("branch", false, false), // true for status and list only, both ways
         ("changes", true, true),
         ("click", false, false),
         ("computer_actions", false, false),
@@ -413,7 +415,10 @@ mod tests {
     #[tokio::test]
     async fn argument_dependent_tools_repeat_only_for_reads() {
         let (chat, _) = registries("arguments").await;
-        let cases: [(&str, Value, bool); 8] = [
+        let cases: [(&str, Value, bool); 11] = [
+            ("branch", json!({"action": "status"}), true),
+            ("branch", json!({"action": "list"}), true),
+            ("branch", json!({"action": "merge"}), false),
             ("goal", json!({"action": "show"}), true),
             ("goal", json!({"action": "propose"}), false),
             ("goal", json!({"action": "request_verification"}), false),
@@ -431,8 +436,9 @@ mod tests {
             );
             assert_eq!(
                 chat.read_only(name, &arguments),
-                // Only the job reads are read-only; goal show is repeatable but writes.
-                expected && name == "jobs",
+                // Only the job and branch reads are read-only; goal show is repeatable
+                // but writes.
+                expected && name != "goal",
                 "{name} {arguments} read-only"
             );
         }

@@ -407,7 +407,7 @@ async fn project_env(context: &ToolContext) -> Result<Vec<(String, String)>> {
     let Some(state) = &context.state else {
         return Ok(Vec::new());
     };
-    let Some(dir) = context.scope.cwd().to_str() else {
+    let Some(dir) = context.scope.project_dir().to_str() else {
         return Ok(Vec::new());
     };
     state.project_env_for_dir(dir).await
@@ -416,8 +416,15 @@ async fn project_env(context: &ToolContext) -> Result<Vec<(String, String)>> {
 /// How the command is confined in sandbox mode, by the scope it runs in.
 pub async fn confinement(context: &ToolContext) -> Option<Confinement> {
     let scope = &*context.scope;
-    (context.approvals_policy().await == ApprovalPolicy::Sandbox)
-        .then(|| Confinement::around(scope.cwd(), scope.workspace(), scope.protected()))
+    (context.approvals_policy().await == ApprovalPolicy::Sandbox).then(|| {
+        let mut confinement =
+            Confinement::around(scope.cwd(), scope.workspace(), scope.protected());
+        // In a worktree a commit writes objects and refs in the repository's shared data.
+        confinement
+            .writable
+            .extend(scope.git_writable().iter().cloned());
+        confinement
+    })
 }
 
 /// The command ready to start, with the user's shell PATH when it was read.

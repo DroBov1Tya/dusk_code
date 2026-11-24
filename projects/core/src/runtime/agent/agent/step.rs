@@ -58,7 +58,9 @@ impl Agent {
         if newest_user > conversation.answered_through {
             self.state.extend_turn(&turn.turn_id, newest_user).await?;
         }
-        let mut tools = self.tools.specs(&self.scope, &config);
+        self.follow_worktree().await;
+        let scope = self.working_scope();
+        let mut tools = self.tools.specs(&scope, &config);
         let screen = |spec: &ToolSpec| {
             self.tools.kind_of(&spec.name) == Some(crate::tools::ToolKind::Computer)
         };
@@ -76,7 +78,7 @@ impl Agent {
         {
             tools.retain(|tool| tool.name == "goal");
         }
-        let workspace = self.scope.workspace();
+        let workspace = scope.workspace();
         let with_pictures = self.takes_pictures();
         let sources = ThreadSources {
             state: &self.state,
