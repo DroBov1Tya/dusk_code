@@ -1,6 +1,7 @@
 //! Structured content a chat shows that is not markdown: a flow of layers, a list of
-//! checks, reply buttons, a diagram. The model makes a block with one call of the `show` tool; the
-//! call's arguments, which the thread stores with the assistant message, are the block.
+//! checks, reply buttons, a diagram. The model makes a block with one call of the `show`
+//! tool, or a diagram with one call of `draw_diagram`; the call's arguments, which the
+//! thread stores with the assistant message, are the block.
 //! Every text in a block is a `Line`: plain, capped, never read as markdown or a link.
 
 mod checks;
@@ -28,9 +29,12 @@ use crate::model::ToolCall;
 
 /// The tool whose calls are blocks.
 pub const SHOW_TOOL: &str = "show";
+/// The tool whose calls are diagrams; its arguments are a `Diagram`.
+pub const DIAGRAM_TOOL: &str = "draw_diagram";
 
 /// One block. Each kind is built only through its checked `new`, in code and from JSON
-/// alike, so a block that exists is within its caps.
+/// alike, so a block that exists is within its caps. As JSON a block is the arguments of
+/// `show`; a diagram is read from the arguments of `draw_diagram` instead (`asked`).
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", try_from = "Show")]
@@ -49,19 +53,17 @@ pub struct Show {
     pub flow: Option<Flow>,
     pub checks: Option<Checks>,
     pub choices: Option<Choices>,
-    pub diagram: Option<Diagram>,
 }
 
 impl TryFrom<Show> for Block {
     type Error = anyhow::Error;
 
     fn try_from(show: Show) -> anyhow::Result<Self> {
-        Ok(match (show.flow, show.checks, show.choices, show.diagram) {
-            (Some(flow), None, None, None) => Self::Flow(flow),
-            (None, Some(checks), None, None) => Self::Checks(checks),
-            (None, None, Some(choices), None) => Self::Choices(choices),
-            (None, None, None, Some(diagram)) => Self::Diagram(diagram),
-            _ => bail!("give exactly one of flow, checks, choices and diagram"),
+        Ok(match (show.flow, show.checks, show.choices) {
+            (Some(flow), None, None) => Self::Flow(flow),
+            (None, Some(checks), None) => Self::Checks(checks),
+            (None, None, Some(choices)) => Self::Choices(choices),
+            _ => bail!("give exactly one of flow, checks and choices"),
         })
     }
 }
@@ -91,14 +93,18 @@ impl Block {
         text
     }
 
-    /// The block a `show` call asks for, before its result is known: what a client keeps
-    /// from `ToolStarted`, or from a call of an assistant message in history, when it
-    /// does not keep the call itself. `None` for another tool and for a block out of caps.
+    /// The block a `show` or `draw_diagram` call asks for, before its result is known:
+    /// what a client keeps from `ToolStarted`, or from a call of an assistant message in
+    /// history, when it does not keep the call itself. `None` for another tool and for a
+    /// block out of caps.
     pub fn asked(call: &ToolCall) -> Option<Self> {
-        if call.name != SHOW_TOOL {
-            return None;
+        match call.name.as_str() {
+            SHOW_TOOL => Self::deserialize(&call.arguments).ok(),
+            DIAGRAM_TOOL => Diagram::deserialize(&call.arguments)
+                .ok()
+                .map(Self::Diagram),
+            _ => None,
         }
-        Self::deserialize(&call.arguments).ok()
     }
 
     /// Whether `result`, the content of the call's result or tool message, says the block
@@ -110,8 +116,8 @@ impl Block {
         rest.is_some_and(|rest| rest.is_empty() || rest.starts_with('\n'))
     }
 
-    /// The block a `show` call put in the chat, given its result: `asked` and `shown_by`
-    /// in one, for a client that has both at hand.
+    /// The block a `show` or `draw_diagram` call put in the chat, given its result:
+    /// `asked` and `shown_by` in one, for a client that has both at hand.
     pub fn shown(call: &ToolCall, result: &str) -> Option<Self> {
         Self::asked(call).filter(|block| block.shown_by(result))
     }

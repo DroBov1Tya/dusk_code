@@ -7,11 +7,7 @@ use super::*;
 use crate::thread::Block;
 
 fn read(diagram: Value) -> Result<Diagram, String> {
-    match serde_json::from_value::<Block>(json!({ "diagram": diagram })) {
-        Ok(Block::Diagram(diagram)) => Ok(diagram),
-        Ok(other) => Err(format!("not a diagram: {other:?}")),
-        Err(error) => Err(error.to_string()),
-    }
+    serde_json::from_value::<Diagram>(diagram).map_err(|error| error.to_string())
 }
 
 fn refused(diagram: Value, said: &str) {

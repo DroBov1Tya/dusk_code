@@ -269,16 +269,10 @@ fn timeline(diagram: &Diagram, rows: &mut Vec<Row>) {
 
 #[cfg(test)]
 mod tests {
-    use dusk_protocol::thread::Block;
-
     use super::*;
 
     fn drawn(diagram: serde_json::Value, width: usize) -> Vec<String> {
-        let Ok(Block::Diagram(diagram)) =
-            serde_json::from_value(serde_json::json!({ "diagram": diagram }))
-        else {
-            panic!("not a diagram");
-        };
+        let diagram = serde_json::from_value(diagram).expect("a diagram within caps");
         render(&diagram, width)
             .into_iter()
             .map(|line| line.spans.iter().map(|s| s.content.as_ref()).collect())

@@ -381,8 +381,8 @@ mod tests {
         state::artifacts::ArtifactStore,
         testing::{temp_dir, temp_state},
         tools::{
-            AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Show,
-            SuggestNext, Tasks,
+            AgentState, AskUser, DisplayImage, DrawDiagram, GoalTool, PlanEdit, ReadHistory,
+            Remember, Show, SuggestNext, Tasks,
         },
     };
 
@@ -522,6 +522,7 @@ mod tests {
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
         tools.push(Box::new(Show));
+        tools.push(Box::new(DrawDiagram));
         let paths = crate::init::paths::Paths::new(dir.join("config"), dir.join("work"));
         tools.push(Box::new(crate::tools::SearchWorkshop::new(paths.clone())));
         tools.push(Box::new(crate::tools::SuggestFromWorkshop::new(paths)));

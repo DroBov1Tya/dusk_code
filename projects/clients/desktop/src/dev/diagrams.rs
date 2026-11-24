@@ -1,8 +1,11 @@
 //! `fake=diagrams`: a chat with a diagram of each kind, made-up data only, to look at
-//! them without a model; `fake=diagram-KIND` shows just the one (`flow`, `architecture`,
+//! them without a model, each read from a `draw_diagram` call as a chat reads it; `fake=diagram-KIND` shows just the one (`flow`, `architecture`,
 //! `sequence`, `timeline`, `tree`, `state`).
 
-use dusk_protocol::thread::Block;
+use dusk_protocol::{
+    model::ToolCall,
+    thread::{Block, DIAGRAM_TOOL},
+};
 use gpui_kit::*;
 
 use crate::{
@@ -10,7 +13,7 @@ use crate::{
     workspace::{Center, Workspace},
 };
 
-/// The diagrams, by name, as the model would give them to `show`.
+/// The diagrams, by name, as the model would give them to `draw_diagram`.
 const DIAGRAMS: &str = include_str!("diagrams.json");
 
 pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
@@ -27,9 +30,12 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         if only.is_some_and(|only| only != name) {
             continue;
         }
-        let block: Block =
-            serde_json::from_value(serde_json::json!({ "diagram": sample["diagram"] }))
-                .expect("a made-up diagram is within caps");
+        let call = ToolCall {
+            id: name.to_owned(),
+            name: DIAGRAM_TOOL.into(),
+            arguments: sample["diagram"].clone(),
+        };
+        let block = Block::asked(&call).expect("a made-up diagram is within caps");
         items.push(Item::Assistant {
             text: format!("The {name}, as a diagram:"),
             reasoning: String::new(),

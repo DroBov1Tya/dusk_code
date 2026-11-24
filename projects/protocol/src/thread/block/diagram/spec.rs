@@ -25,7 +25,7 @@ pub const GROUP_LABEL_CHARS: usize = 32;
 pub const DIAGRAM_TITLE_CHARS: usize = 80;
 pub const WHEN_CHARS: usize = 20;
 
-// Plain comments on the types here: a doc comment goes into the schema of `show` and so
+// Plain comments on the types here: a doc comment goes into the schema of `draw_diagram` and so
 // into every request, so only the few a model needs are doc comments.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

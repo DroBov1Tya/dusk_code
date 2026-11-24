@@ -1,6 +1,6 @@
 //! A block the model showed with `show`, as its own row of the transcript: a flow (`flow`),
-//! a list of checks (`checks`), reply buttons (`choices`) or a diagram (`diagram`), with
-//! `glyph` for the small drawings.
+//! a list of checks (`checks`) or reply buttons (`choices`); or a diagram it drew with
+//! `draw_diagram` (`diagram`). `glyph` has the small drawings.
 //!
 //! Every text in a block is a `Line` the model wrote: drawn as it is, never as markdown or
 //! a link. A block has no button, no fill of the accent and no focus stop, so it cannot pass

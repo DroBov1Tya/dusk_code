@@ -250,7 +250,7 @@ fn only_one_layer_is_emphasised_and_choices_differ() {
     let both = json!({ "choices": { "labels": ["a", "b"] }, "checks": checks(1)["checks"] });
     assert_eq!(
         read(both).unwrap_err(),
-        "give exactly one of flow, checks, choices and diagram"
+        "give exactly one of flow, checks and choices"
     );
 }
 
@@ -358,4 +358,30 @@ fn a_block_is_shown_only_by_a_show_call_that_was_not_refused() {
     // The two steps a client takes when the call and its result come apart.
     let asked = Block::asked(&shown).unwrap();
     assert!(asked.shown_by(&block.text()) && !asked.shown_by("error: denied"));
+}
+
+/// A diagram comes only from `draw_diagram`, whose arguments are the diagram itself;
+/// `show` takes no diagram.
+#[test]
+fn a_diagram_is_shown_only_by_a_draw_diagram_call() {
+    let call = |name: &str, arguments: Value| ToolCall {
+        id: "1".into(),
+        name: name.into(),
+        arguments,
+    };
+    let diagram = json!({ "kind": "tree", "nodes": [{ "id": "a" }, { "id": "b" }],
+                          "edges": [{ "from": "a", "to": "b" }] });
+    let drawn = Block::asked(&call(DIAGRAM_TOOL, diagram.clone())).expect("a diagram");
+    assert!(matches!(drawn, Block::Diagram(_)));
+    assert!(drawn.text().starts_with("Diagram:"));
+    assert_eq!(
+        Block::shown(&call(DIAGRAM_TOOL, diagram.clone()), &drawn.text()),
+        Some(drawn.clone())
+    );
+    let through_show = json!({ "diagram": diagram });
+    assert_eq!(Block::asked(&call(SHOW_TOOL, through_show.clone())), None);
+    assert!(read(through_show).is_err());
+    let out_of_caps = json!({ "kind": "tree", "nodes": [{ "id": "a" }],
+                              "edges": [{ "from": "a", "to": "zz" }] });
+    assert_eq!(Block::asked(&call(DIAGRAM_TOOL, out_of_caps)), None);
 }

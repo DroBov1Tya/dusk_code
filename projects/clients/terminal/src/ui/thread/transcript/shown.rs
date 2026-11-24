@@ -1,6 +1,6 @@
-//! Blocks the agent showed with the `show` tool. Every text in one is a protocol `Line`:
-//! drawn as it is, never as markdown or a link. Each block says it is the agent's, so it
-//! cannot pass for a prompt of the app.
+//! Blocks the agent showed with `show` or `draw_diagram`. Every text in one is a protocol
+//! `Line`: drawn as it is, never as markdown or a link. Each block says it is the agent's,
+//! so it cannot pass for a prompt of the app.
 
 use dusk_protocol::thread::{Block, CheckState, Checks, Counts, Flow, FlowCard, Layer};
 use ratatui::{

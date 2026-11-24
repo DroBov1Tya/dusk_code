@@ -1,4 +1,4 @@
-//! A diagram as plain text: what the model reads back from `show`, and what a client
+//! A diagram as plain text: what the model reads back from `draw_diagram`, and what a client
 //! without a drawing for it shows. It reads in the order the picture does.
 
 use super::layout::reading_order;

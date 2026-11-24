@@ -30,27 +30,13 @@ impl Tool for Show {
     fn description(&self, _context: &ToolContext) -> String {
         format!(
             "Show the user a block the chat draws, instead of drawing it in text. Give \
-             exactly one: `flow`, a stack of layers top to bottom, each with optional \
-             cards; `checks`, test and CI results by state; `choices`, {MIN_CHOICES} to \
-             {MAX_CHOICES} reply buttons under your answer: call it last and end your turn, \
-             a click comes as the user's next message; `diagram`, nodes and edges the chat \
-             lays out itself, never ASCII art or Mermaid. Diagram kinds: `flow` (steps, \
-             shape `diamond` for a decision, `pill` to start or end), `architecture` (parts, \
-             `groups` for tiers or boundaries, shape `store` for data), `sequence` (nodes are \
-             participants left to right, edges the messages in order, `dashed` for replies), \
-             `timeline` (nodes are events in order, each with `when`), `tree` (edges parent \
-             to child), `state` (shapes `start` and `end`, an edge may loop back). One idea \
-             per diagram, about a dozen nodes at most, labels of a few words; give a tone \
-             only to the one or two nodes to see first. E.g. {{\"diagram\":{{\"kind\":\"flow\",\
-             \"nodes\":[{{\"id\":\"in\",\"label\":\"Parse\"}},{{\"id\":\"ok\",\"label\":\
-             \"Valid?\",\"shape\":\"diamond\"}},{{\"id\":\"db\",\"label\":\"Store\"}}],\
-             \"edges\":[{{\"from\":\"in\",\"to\":\"ok\"}},{{\"from\":\"ok\",\"to\":\"db\",\
-             \"label\":\"yes\"}}]}}}} or {{\"diagram\":{{\"kind\":\"sequence\",\"nodes\":[{{\
-             \"id\":\"c\"}},{{\"id\":\"api\"}}],\"edges\":[{{\"from\":\"c\",\"to\":\"api\",\
-             \"label\":\"GET /x\"}},{{\"from\":\"api\",\"to\":\"c\",\"label\":\"200\",\
-             \"style\":\"dashed\"}}]}}}}. Every text in a block is one plain line. In your \
-             own text, `{{{{success: Passed}}}}` draws a coloured label; the tones are \
-             neutral, info, success, warning, danger and accent."
+             exactly one: `flow`, layers top to bottom joined by arrows, each with optional \
+             cards, for an architecture or a pipeline; `checks`, test and CI results by \
+             state; `choices`, {MIN_CHOICES} to {MAX_CHOICES} reply buttons under your \
+             answer: call it last and end your turn, a click comes as the user's next \
+             message. Every text in a block is one plain line. In your own text, \
+             `{{{{success: Passed}}}}` draws a coloured label; the tones are neutral, info, \
+             success, warning, danger and accent."
         )
     }
 
@@ -184,10 +170,7 @@ mod tests {
         let layer = json!({ "title": "a" });
         let long = "x".repeat(25);
         for (arguments, said) in [
-            (
-                json!({}),
-                "exactly one of flow, checks, choices and diagram",
-            ),
+            (json!({}), "exactly one of flow, checks and choices"),
             (
                 json!({ "flow": { "layers": vec![layer.clone(); MAX_LAYERS + 1] } }),
                 "/flow/layers",
@@ -212,51 +195,12 @@ mod tests {
                 json!({ "choices": { "labels": ["a", "b"] }, "html": "<b>" }),
                 "html",
             ),
-            (
-                json!({ "diagram": { "kind": "flow", "nodes": [{ "id": "a" }],
-                                     "edges": [{ "from": "a", "to": "b" }] } }),
-                "\"b\", which is not given",
-            ),
-            (
-                json!({ "diagram": { "kind": "flow", "nodes": [{ "id": "a", "svg": "<svg/>" }] } }),
-                "svg",
-            ),
         ] {
             let (call, result) = show(arguments).await;
             assert!(result.is_error, "{}", result.content);
             assert!(result.content.contains(said), "{said}: {}", result.content);
             assert_eq!(Block::shown(&call, &result.content), None);
         }
-    }
-
-    /// The examples the model learns from are diagrams the tool takes.
-    #[test]
-    fn the_description_examples_are_valid_diagrams() {
-        let dir = temp_dir("show_examples");
-        std::fs::create_dir_all(&dir).unwrap();
-        let scope = ToolScope::new(&dir, &dir).unwrap();
-        let description = Show.description(&tool_context(&scope));
-        let mut found = 0;
-        for (start, _) in description.match_indices("{\"diagram\"") {
-            let mut depth = 0;
-            let end = description[start..]
-                .char_indices()
-                .find(|&(_, c)| {
-                    depth += match c {
-                        '{' => 1,
-                        '}' => -1,
-                        _ => 0,
-                    };
-                    depth == 0
-                })
-                .map(|(at, _)| start + at + 1)
-                .unwrap();
-            let example: Value = serde_json::from_str(&description[start..end]).unwrap();
-            let block: Block = serde_json::from_value(example).unwrap();
-            assert!(matches!(block, Block::Diagram(_)));
-            found += 1;
-        }
-        assert_eq!(found, 2);
     }
 
     #[test]

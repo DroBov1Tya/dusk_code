@@ -24,9 +24,9 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State},
     tools::{
-        AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
-        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, SearchWorkshop, Show,
-        SuggestFromWorkshop, SuggestNext, Tasks, ToolRegistry, ToolScope,
+        AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, DrawDiagram,
+        GoalTool, Jobs, McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand,
+        SearchWorkshop, Show, SuggestFromWorkshop, SuggestNext, Tasks, ToolRegistry, ToolScope,
     },
 };
 
@@ -183,6 +183,7 @@ impl Launcher {
         if depth == 0 {
             tools.add(Box::new(AskUser));
             tools.add(Box::new(Show));
+            tools.add(Box::new(DrawDiagram));
             tools.add(Box::new(SearchWorkshop::new(self.paths.clone())));
             tools.add(Box::new(SuggestFromWorkshop::new(self.paths.clone())));
             tools.add(Box::new(SuggestNext));
@@ -336,6 +337,7 @@ mod tests {
         ("computer_actions", false, false),
         ("display_audio", true, false),
         ("display_image", true, false),
+        ("draw_diagram", true, false),
         ("goal", false, false), // true for the show action only; see `argument_dependent_tools`
         ("jobs", false, false), // true for list, status and output only, both ways
         ("load_skill", true, true),

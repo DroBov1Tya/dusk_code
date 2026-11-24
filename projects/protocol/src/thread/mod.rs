@@ -26,9 +26,9 @@ mod turn;
 pub use block::diagram;
 pub use block::{
     Block, CARD_LINE_CHARS, CARD_TITLE_CHARS, CHECK_DETAIL_CHARS, CHECK_NAME_CHARS, CHOICE_CHARS,
-    Check, CheckState, Checks, Choices, Counts, Diagram, Flow, FlowCard, LAYER_SUBTITLE_CHARS,
-    LAYER_TITLE_CHARS, Layer, Line, MAX_CARDS, MAX_CHECKS, MAX_CHOICES, MAX_LAYERS, MIN_CHOICES,
-    MIN_LAYERS, SHOW_TOOL, Show,
+    Check, CheckState, Checks, Choices, Counts, DIAGRAM_TOOL, Diagram, Flow, FlowCard,
+    LAYER_SUBTITLE_CHARS, LAYER_TITLE_CHARS, Layer, Line, MAX_CARDS, MAX_CHECKS, MAX_CHOICES,
+    MAX_LAYERS, MIN_CHOICES, MIN_LAYERS, SHOW_TOOL, Show,
 };
 pub use context::{ContextItemDetail, ContextReport, ContextSection, ContextSource};
 pub use event::{EpisodeKind, RepeatRung, ThreadEvent};

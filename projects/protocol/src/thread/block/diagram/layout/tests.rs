@@ -5,14 +5,10 @@ use proptest::prelude::*;
 use serde_json::{Value, json};
 
 use super::*;
-use crate::thread::Block;
 use crate::thread::diagram::{MAX_EDGES, MAX_NODES};
 
 fn diagram(value: Value) -> Diagram {
-    match serde_json::from_value::<Block>(json!({ "diagram": value })) {
-        Ok(Block::Diagram(diagram)) => diagram,
-        other => panic!("not a diagram: {other:?}"),
-    }
+    serde_json::from_value(value).expect("a diagram within caps")
 }
 
 fn architecture() -> Diagram {
