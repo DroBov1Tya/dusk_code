@@ -7,7 +7,7 @@
 use anyhow::Result;
 use dusk_protocol::thread::TaskDuty;
 
-use super::{card, events};
+use super::{card, events, review::Gaps};
 use crate::{
     runtime::Launcher,
     state::{Duty, PlanStatus, PlanTask, TeamRun, short_task_id},
@@ -82,16 +82,21 @@ pub(super) fn end_words(plan: &[PlanTask], run: &TeamRun) -> String {
     if critic.status != PlanStatus::Done {
         return " The critic did not finish; nothing checked the results as a whole.".into();
     }
-    let id = short_task_id(&critic.task_id);
-    match super::review::gaps(&critic.result) {
-        None => format!(
-            " Critic: its answer could not be read; show #{id}, then add tasks and run, or \
-             report what it names as open."
-        ),
-        Some((0, 0)) => format!(" Critic: nothing missing or unverified (#{id})."),
-        Some((missing, unverified)) => format!(
+    words(Gaps::read(&critic.result), short_task_id(&critic.task_id))
+}
+
+/// The end line's words on a critic that finished, `#id`, whose answer the core read as
+/// `gaps`. Only an explicit all-clear says nothing is missing.
+pub(super) fn words(gaps: Gaps, id: &str) -> String {
+    match gaps {
+        Gaps::Clear => format!(" Critic: nothing missing or unverified (#{id})."),
+        Gaps::Counted(missing, unverified) => format!(
             " Critic: {missing} missing, {unverified} unverified; show #{id}. Add tasks and \
              run, or report them as open."
+        ),
+        Gaps::Unclear => format!(
+            " Critic: read #{id} \u{2014} it may name gaps; add tasks and run, or report them \
+             as open."
         ),
     }
 }

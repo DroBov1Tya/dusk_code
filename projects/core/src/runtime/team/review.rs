@@ -135,7 +135,7 @@ impl Problem {
 
 /// What a duty row keeps of its member's answer: the finding lines and the footer, each
 /// made plain, else its last lines. A critic's gap the footer could not take in is kept
-/// with all after it, so `gaps` sees it was not read. The caller cleans it of secrets.
+/// with all after it, so the lead reads it as written. The caller cleans it of secrets.
 pub(super) fn kept(answer: &str) -> String {
     let footer = footer::read(answer, &FOOTER, &ITEMS);
     let all: Vec<&str> = answer
@@ -163,56 +163,237 @@ pub(super) fn kept(answer: &str) -> String {
 /// The end of `text` that a row's result holds: whole lines from the end, so a long list
 /// of findings loses its first ones and never the labels under them.
 pub(super) fn tail(text: &str) -> String {
+    tail_to(text, MAX_RESULT)
+}
+
+/// The end of `text` in `max` characters at most, cut as `tail` cuts it.
+fn tail_to(text: &str, max: usize) -> String {
     let length = text.chars().count();
-    if length <= MAX_RESULT {
+    if length <= max {
         return text.to_owned();
     }
-    let cut: String = text.chars().skip(length - MAX_RESULT).collect();
+    let cut: String = text.chars().skip(length - max).collect();
     match cut.split_once('\n') {
         Some((_, rest)) if !rest.is_empty() => rest.to_owned(),
         _ => cut,
     }
 }
 
-/// The gaps a critic's stored answer names: its `Missing:` and its `Unverified:`
-/// findings, one a line or a list under a heading, each that says nothing left out.
-/// `None` when the answer cannot be read: it has no footer, or names a gap where the
-/// footer does not reach.
-pub(super) fn gaps(result: &str) -> Option<(usize, usize)> {
-    let footer = footer::read(result, &FOOTER, &ITEMS);
-    if footer.fields.is_empty() {
-        return None;
-    }
-    let named = |lines: &mut dyn Iterator<Item = &str>| {
-        lines
-            .filter(|line| footer::item_of(line, &GAPS).is_some())
-            .count()
-    };
-    if named(&mut result.lines()) != named(&mut footer.lines.iter().copied()) {
-        return None;
-    }
-    let mut gaps = (0, 0);
-    for (label, value) in &footer.items {
-        if says_nothing(value) {
-            continue;
-        }
-        match *label {
-            "Missing:" => gaps.0 += 1,
-            "Unverified:" => gaps.1 += 1,
-            _ => {}
-        }
-    }
-    Some(gaps)
+/// How a critic's stored result begins: the core's reading of its whole answer, made
+/// before the row kept only the end of it.
+const READING: &str = "Core reading: ";
+
+/// What the core makes of a critic's answer. It fails safe: only an answer that says in
+/// so many words that nothing is missing and nothing unverified is an all-clear, and only
+/// a layout the footer reads in full is counted. Anything else may name gaps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Gaps {
+    /// `Missing: none` and `Unverified: none`, and no other word of a gap.
+    Clear,
+    /// Missing and unverified, each a finding line or a line under a heading of them.
+    Counted(usize, usize),
+    /// Gaps in prose, in another language or layout, or out of the footer's reach.
+    Unclear,
 }
 
-/// `none`, `nothing.`, `Nothing, all of it was checked`: a finding that names no gap.
-fn says_nothing(value: &str) -> bool {
+impl Gaps {
+    /// The reading of a critic's whole answer.
+    pub fn of(answer: &str) -> Self {
+        let footer = footer::read(answer, &FOOTER, &ITEMS);
+        if footer.fields.is_empty() || footer.ambiguous {
+            return Self::Unclear;
+        }
+        // Every line that names a gap is a finding line the footer reaches, and an
+        // explicit `Missing: none` is noted for each label.
+        let mut explicit = [false; 2];
+        let mut named = 0;
+        for line in answer.lines().map(str::trim) {
+            if !names_gap(line) {
+                continue;
+            }
+            let Some((label, value)) = footer::item_of(line, &GAPS) else {
+                return Self::Unclear;
+            };
+            named += 1;
+            explicit[gap_at(label)] |= nothing(value);
+        }
+        let reached = footer
+            .lines
+            .iter()
+            .filter(|line| footer::item_of(line, &GAPS).is_some())
+            .count();
+        if named != reached {
+            return Self::Unclear;
+        }
+        let mut counts = [0; 2];
+        let mut nothings = [0; 2];
+        for (label, value) in footer
+            .items
+            .iter()
+            .filter(|(label, _)| GAPS.contains(label))
+        {
+            let at = gap_at(label);
+            if nothing(value) {
+                nothings[at] += 1;
+            } else if nothing_like(value) || value.starts_with('#') {
+                // `No gaps found`, `none except the docs`, a heading taken for a finding.
+                return Self::Unclear;
+            } else {
+                counts[at] += 1;
+            }
+        }
+        // `none` under a heading, twice, or beside a gap: no clear answer.
+        for at in 0..GAPS.len() {
+            if nothings[at] > 0 && (counts[at] > 0 || nothings[at] > 1 || !explicit[at]) {
+                return Self::Unclear;
+            }
+        }
+        // What the footer says it could not check is unverified all the same.
+        let said_nothing = |label| footer.text(label).is_none_or(|text| nothing(&text));
+        match counts {
+            [0, 0]
+                if nothings == [1, 1]
+                    && said_nothing("Not checked:")
+                    && said_nothing("Open:")
+                    && !names_other_gap(answer) =>
+            {
+                Self::Clear
+            }
+            [0, 0] => Self::Unclear,
+            [missing, unverified] => Self::Counted(missing, unverified),
+        }
+    }
+
+    /// The row's result: this reading on the first line, then the end of `kept`.
+    pub fn stored(self, kept: &str) -> String {
+        let line = match self {
+            Self::Clear => format!("{READING}nothing missing or unverified"),
+            Self::Counted(missing, unverified) => {
+                format!("{READING}{missing} missing, {unverified} unverified")
+            }
+            Self::Unclear => format!("{READING}may name gaps"),
+        };
+        let room = MAX_RESULT.saturating_sub(line.chars().count() + 1);
+        format!("{line}\n{}", tail_to(kept, room))
+    }
+
+    /// The reading a stored result begins with; a result without one may name gaps.
+    pub fn read(result: &str) -> Self {
+        let line = result.lines().next().unwrap_or_default();
+        let Some(said) = line.strip_prefix(READING) else {
+            return Self::Unclear;
+        };
+        if said == "nothing missing or unverified" {
+            return Self::Clear;
+        }
+        let counted = said
+            .strip_suffix(" unverified")
+            .and_then(|said| said.split_once(" missing, "))
+            .and_then(|(missing, unverified)| {
+                Some((missing.parse().ok()?, unverified.parse().ok()?))
+            });
+        match counted {
+            Some((missing, unverified)) => Self::Counted(missing, unverified),
+            None => Self::Unclear,
+        }
+    }
+}
+
+/// Labels of lines beside the gaps that name one all the same, unless they say nothing.
+const OTHER: [&str; 4] = ["Problem:", "Not verified:", "Not checked:", "Open:"];
+/// Words of a heading over a list of gaps.
+const GAP_WORDS: [&str; 4] = ["gap", "gaps", "missing", "unverified"];
+
+/// Whether lines beside `Missing:` and `Unverified:` name a gap anyway: a problem, a
+/// `Not verified:`, `Not checked:` or `Open:` that says more than a nothing-word, or a
+/// heading of gaps with a list under it. Gaps named in plain prose elsewhere cannot be
+/// judged: an answer with both `none`s and such prose is still read as an all-clear.
+fn names_other_gap(answer: &str) -> bool {
+    let lines: Vec<&str> = answer
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let all: Vec<&str> = FOOTER.iter().chain(&ITEMS).chain(&OTHER).copied().collect();
+    for (at, line) in lines.iter().enumerate() {
+        // The lines under a label or heading, up to the next one.
+        let below = || {
+            lines[at + 1..]
+                .iter()
+                .take_while(|line| !heading(line) && footer::label_of(line, &all).is_none())
+        };
+        if let Some((_, value)) = footer::label_of(line, &OTHER) {
+            let said: Vec<&str> = match value.is_empty() {
+                true => below().map(|line| footer::unlisted(line)).collect(),
+                false => vec![value],
+            };
+            if said.iter().any(|value| !nothing(value)) {
+                return true;
+            }
+        } else if heading(line) && gap_heading(line) {
+            let mut listed = below()
+                .filter(|line| footer::listed(line))
+                .map(|line| footer::unlisted(line));
+            if listed.any(|item| !nothing(item)) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// A markdown heading: `## x`, or a line that is all bold (`**x**`, `**x:**`).
+fn heading(line: &str) -> bool {
+    line.starts_with('#')
+        || line.starts_with(['*', '_']) && line.trim_end_matches([':', ' ']).ends_with(['*', '_'])
+}
+
+/// A heading that speaks of gaps: `## Gaps`, `**What is missing**`, `### Not verified`.
+fn gap_heading(line: &str) -> bool {
+    let words: Vec<String> = line
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    words.iter().any(|word| GAP_WORDS.contains(&word.as_str()))
+        || words
+            .windows(2)
+            .any(|pair| pair[0] == "not" && matches!(pair[1].as_str(), "verified" | "checked"))
+}
+
+/// Where `label` stands in `GAPS`.
+fn gap_at(label: &str) -> usize {
+    usize::from(label == GAPS[1])
+}
+
+/// Whether a line names a gap by its word, however it is dressed: `Missing:`, `❌
+/// Missing`, `Missing (2):`, `What is unverified`.
+fn names_gap(line: &str) -> bool {
+    line.split(|c: char| !c.is_alphanumeric()).any(|word| {
+        GAPS.iter()
+            .any(|gap| word.eq_ignore_ascii_case(gap.trim_end_matches(':')))
+    })
+}
+
+/// Words that say a finding names no gap.
+const NOTHING: [&str; 4] = ["none", "nothing", "n/a", "nil"];
+
+/// `none`, `Nothing.`, `**none**`: a finding that is one word saying no gap.
+fn nothing(value: &str) -> bool {
+    let (word, remark) = footer::said(value);
+    remark.is_empty() && NOTHING.contains(&word.as_str())
+}
+
+/// A finding that begins as if it named no gap but says more (`No gaps found`, `none
+/// except the docs`): it is no clear answer either way.
+fn nothing_like(value: &str) -> bool {
     let first = value
         .split(|c: char| !c.is_alphanumeric() && c != '/')
         .find(|word| !word.is_empty())
         .unwrap_or_default();
-    ["nothing", "none", "n/a", "nil"]
+    NOTHING
         .iter()
+        .chain(&["no"])
         .any(|word| first.eq_ignore_ascii_case(word))
 }
 

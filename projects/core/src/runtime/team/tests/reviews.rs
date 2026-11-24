@@ -261,65 +261,193 @@ async fn a_verdict_in_markdown_is_read_and_an_unclear_one_is_not() {
     assert_eq!(high.summary(), "1 high");
 }
 
-/// However a critic lays out its gaps, each is counted; an answer that cannot be read
-/// is never taken for one that names no gap.
+/// Only a clear condition holds an approval; words that tell when or how a check ran do
+/// not.
 #[test]
-fn a_critic_s_gaps_are_counted_however_they_are_laid_out() {
-    use super::super::review::{gaps, kept};
+fn only_a_condition_holds_an_approval() {
+    use super::super::review::Verdict;
 
-    const END: &str = "Status: done\nResult: most\nChecked: x\nNot checked: nothing\nOpen: nothing";
-    for (body, counted) in [
-        ("Missing: the docs\nUnverified: the build\n", (1, 1)),
-        (
-            "Missing:\n- the docs\n- the tests\nUnverified:\n- the build\n",
-            (2, 1),
-        ),
-        (
-            "**Missing:**\n\n* the docs\n* the tests\n\n**Unverified:**\n1. the build\n",
-            (2, 1),
-        ),
-        (
-            "## Missing\n- the docs\n- the tests\n\n## Unverified\n- the build\n",
-            (2, 1),
-        ),
-        ("**Missing**\n- the docs\n", (1, 0)),
-        ("Missing: nothing\nUnverified: none\n", (0, 0)),
-        ("## Missing\nNothing, all of it was done.\n", (0, 0)),
-        ("All of it was done and checked.\n", (0, 0)),
+    for (remark, held) in [
+        ("approve (all checks pass after the rebuild)", false),
+        ("approve - looks good, though naming is odd", false),
+        ("approve (verified when run locally)", false),
+        ("approve (first pass clean)", false),
+        ("approve - but fix docs", true),
+        ("approve once CI is green", true),
+        ("approve (need to bump version)", true),
+        ("approve (pending CI)", true),
     ] {
-        let answer = format!("I compared the request with the results.\n\n{body}\n{END}");
-        assert_eq!(gaps(&kept(&answer)), Some(counted), "{answer}");
-    }
-    let long: String = (0..20).map(|i| format!("- part {i}\n")).collect();
-    assert_eq!(
-        gaps(&kept(&format!("## Missing\n{long}{END}"))),
-        Some((20, 0))
-    );
-    for unread in [
-        // A gap with prose under it that the footer cannot take in.
-        format!("Missing: the docs\nThey were asked for in the second message.\n{END}"),
-        // No footer at all.
-        "Missing:\n- the docs".to_owned(),
-        "The docs are missing.".to_owned(),
-    ] {
-        assert_eq!(gaps(&kept(&unread)), None, "{unread}");
+        let verdict = Verdict::of(&format!("Verdict: {remark}\nChecked: x"));
+        match held {
+            true => assert_eq!(verdict, None, "{remark}"),
+            false => assert!(!verdict.expect(remark).fix, "{remark}"),
+        }
     }
 }
 
-/// A critic's gaps written in markdown are counted from what its row keeps, and so are
-/// the labels a stored answer is read by later.
+/// The end line the lead reads for a critic that gave `answer`, as the core stores the
+/// answer and reads it back.
+fn critic_end(answer: &str) -> String {
+    use super::super::{
+        critic::words,
+        review::{Gaps, kept},
+    };
+
+    let stored = Gaps::of(answer).stored(&kept(answer));
+    words(Gaps::read(&stored), "abcd1234")
+}
+
+const CLEAR: &str = " Critic: nothing missing or unverified (#abcd1234).";
+const UNCLEAR: &str =
+    " Critic: read #abcd1234 \u{2014} it may name gaps; add tasks and run, or report them as open.";
+
+fn counted(missing: usize, unverified: usize) -> String {
+    format!(
+        " Critic: {missing} missing, {unverified} unverified; show #abcd1234. Add tasks and \
+         run, or report them as open."
+    )
+}
+
+/// However a critic lays out its gaps, each is counted when the layout is clear; only an
+/// explicit `Missing: none` and `Unverified: none` with no other gap named is an
+/// all-clear, and anything else points the lead at the answer.
+#[test]
+fn a_critic_s_gaps_are_counted_however_they_are_laid_out() {
+    const END: &str = "Status: done\nResult: most\nChecked: x\nNot checked: nothing\nOpen: nothing";
+    let long: String = (0..20).map(|i| format!("- part {i}\n")).collect();
+    let longer: String = (0..40)
+        .map(|i| format!("- part {i}: {}\n", "a finding of many words ".repeat(5)))
+        .collect();
+    let cases: Vec<(String, String)> = vec![
+        // The plain form the brief asks for.
+        ("Missing: none\nUnverified: none\n".into(), CLEAR.into()),
+        (
+            "- **Missing:** None.\n- **unverified**: *none*\n".into(),
+            CLEAR.into(),
+        ),
+        (
+            "Missing: the docs\nMissing: the tests\nUnverified: the build\n".into(),
+            counted(2, 1),
+        ),
+        (
+            "Missing:\n- the docs\n- the tests\nUnverified:\n- the build\n".into(),
+            counted(2, 1),
+        ),
+        (
+            "**Missing:**\n\n* the docs\n* the tests\n\n**Unverified:**\n1. the build\n".into(),
+            counted(2, 1),
+        ),
+        (
+            "## Missing\n- the docs\n- the tests\n\n## Unverified\n- the build\n".into(),
+            counted(2, 1),
+        ),
+        ("**Missing**\n- the docs\n".into(), counted(1, 0)),
+        (format!("## Missing\n{long}"), counted(20, 0)),
+        // Longer than a row holds: read from the whole answer.
+        (format!("Missing:\n{longer}"), counted(40, 0)),
+        // Layouts the core cannot count, and answers that are no clear all-clear.
+        ("All of it was done and checked.\n".into(), UNCLEAR.into()),
+        (
+            "## \u{274c} Missing\n- the docs\n- the tests\n".into(),
+            UNCLEAR.into(),
+        ),
+        ("**\u{274c} Missing:**\n- the docs\n".into(), UNCLEAR.into()),
+        (
+            "Missing (2):\n- the docs\n- the tests\n".into(),
+            UNCLEAR.into(),
+        ),
+        ("Missing items:\n- the docs\n".into(), UNCLEAR.into()),
+        ("### What is missing\n- the docs\n".into(), UNCLEAR.into()),
+        (
+            "Fehlend: die Doku\nUnverifiziert: der Build\n".into(),
+            UNCLEAR.into(),
+        ),
+        (
+            "\u{274c} Missing: the docs\n\u{26a0}\u{fe0f} Unverified: the build\n".into(),
+            UNCLEAR.into(),
+        ),
+        (
+            "Missing: No gaps found\nUnverified: none\n".into(),
+            UNCLEAR.into(),
+        ),
+        ("Missing: none\nUnverified:\n".into(), UNCLEAR.into()),
+        (
+            "Missing: none\nMissing:\n- the docs\nUnverified: none\n".into(),
+            UNCLEAR.into(),
+        ),
+        (
+            "## Missing\nNothing, all of it was done.\n".into(),
+            UNCLEAR.into(),
+        ),
+        ("Missing: nothing\n".into(), UNCLEAR.into()),
+        // Both `none`s, and another line that names a gap all the same.
+        (
+            "Missing: none\nUnverified: none\nProblem: high | a.rs | wrong | fix\n".into(),
+            UNCLEAR.into(),
+        ),
+        (
+            "Not verified: the build\nMissing: none\nUnverified: none\n".into(),
+            UNCLEAR.into(),
+        ),
+        (
+            "## Gaps\n- the docs\n\nMissing: none\nUnverified: none\n".into(),
+            UNCLEAR.into(),
+        ),
+        (
+            "### Not checked\n* the Windows build\n\nMissing: none\nUnverified: none\n".into(),
+            UNCLEAR.into(),
+        ),
+    ];
+    for (body, end) in cases {
+        let answer = format!("I compared the request with the results.\n\n{body}\n{END}");
+        assert_eq!(critic_end(&answer), end, "{answer}");
+    }
+    // What the footer leaves open or unchecked is a gap beside the `none`s.
+    for footer in [
+        "Status: done\nResult: all\nChecked: x\nNot checked: the Windows build\nOpen: nothing",
+        "Status: done\nResult: all\nChecked: x\nNot checked: nothing\nOpen: the docs",
+        "Status: done\nResult: all\nChecked: x\nNot checked:\n- the docs\nOpen: none",
+    ] {
+        let answer = format!("Missing: none\nUnverified: none\n{footer}");
+        assert_eq!(critic_end(&answer), UNCLEAR, "{answer}");
+    }
+    let quiet = "Missing: none\nUnverified: none\nStatus: done\nResult: all\nChecked: x\n\
+                 Not checked:\n- nothing\nOpen: none";
+    assert_eq!(critic_end(quiet), CLEAR);
+    for unread in [
+        // A gap with prose under it that the footer cannot take in.
+        format!("Missing: the docs\nThey were asked for in the second message.\n{END}"),
+        // No footer at all, or no answer.
+        "Missing:\n- the docs".to_owned(),
+        "Missing: none\nUnverified: none".to_owned(),
+        "The docs are missing.".to_owned(),
+        String::new(),
+    ] {
+        assert_eq!(critic_end(&unread), UNCLEAR, "{unread}");
+    }
+}
+
+/// A critic's gaps written in markdown are counted from its whole answer and kept on the
+/// first line of its row; the labels a stored answer is read by later read markdown too.
 #[tokio::test]
 async fn stored_answers_are_read_by_their_labels_in_markdown() {
-    use super::super::review::{Verdict, gaps, kept, result_line};
+    use super::super::review::{Gaps, Verdict, kept, result_line};
 
     let critic = "Compared the request with the results.\n\n- **Missing:** the docs\n\
                   - **Unverified:** the Windows build\n* missing: a changelog entry\n\n\
                   **Status:** done\n**Result:** most of it\n**Checked:** read the diff\n\
                   **Not checked:** nothing\n**Open:** nothing";
-    assert_eq!(gaps(&kept(critic)), Some((2, 1)));
+    let stored = Gaps::of(critic).stored(&kept(critic));
+    assert!(stored.chars().count() <= crate::state::MAX_RESULT);
+    assert_eq!(Gaps::read(&stored), Gaps::Counted(2, 1));
+    // A footer that names no gap at all is no all-clear, nor is a row without a reading.
     assert_eq!(
-        gaps(&kept("Status: done\nResult: all\nChecked: x")),
-        Some((0, 0))
+        Gaps::of("Status: done\nResult: all\nChecked: x"),
+        Gaps::Unclear
+    );
+    assert_eq!(
+        Gaps::read("Missing: none\nUnverified: none\nStatus: done"),
+        Gaps::Unclear
     );
     assert_eq!(
         result_line("- **Result:** most of it\nStatus: done"),

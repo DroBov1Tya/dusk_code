@@ -107,20 +107,36 @@ pub fn find_task<'a>(tasks: &'a [Task], task_id: &str) -> Option<(usize, &'a Tas
         .map(|(index, task)| (index + 1, task))
 }
 
-/// Words that make a remark after an approval a condition on it (`approve - but fix
-/// the docs first`): such an approval is no clear verdict. The core reads it the same.
-const CONDITIONS: [&str; 16] = [
-    "but", "if", "once", "after", "before", "unless", "until", "provided", "pending", "except",
-    "assuming", "when", "though", "although", "however", "first",
+/// Words and phrases that make a remark after an approval a condition on it (`approve -
+/// but fix the docs first`, `approve once CI is green`): such an approval is no clear
+/// verdict. Words that only tell when or how a check ran (`after the rebuild`, `when run
+/// locally`) are no condition. The core reads it the same.
+const CONDITIONS: [&str; 12] = [
+    "but",
+    "once",
+    "provided",
+    "if",
+    "as long as",
+    "pending",
+    "except",
+    "after you fix",
+    "after they fix",
+    "need to",
+    "needs to",
+    "unless",
 ];
 
 /// Whether the remark after a verdict's word puts a condition on it.
 pub fn conditional_remark(remark: &str) -> bool {
-    remark.split(|c: char| !c.is_alphanumeric()).any(|word| {
-        CONDITIONS
-            .iter()
-            .any(|cond| word.eq_ignore_ascii_case(cond))
-    })
+    let words: Vec<String> = remark
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    let said = format!(" {} ", words.join(" "));
+    CONDITIONS
+        .iter()
+        .any(|condition| said.contains(&format!(" {condition} ")))
 }
 
 /// The value of a stored line labelled `name`, written as a member wrote it:
@@ -225,6 +241,25 @@ mod tests {
         ] {
             let tasks = [task.clone(), review(result)];
             assert_eq!(task.review_word(&tasks).as_deref(), Some(word), "{result}");
+        }
+    }
+
+    #[test]
+    fn only_a_condition_holds_an_approval() {
+        for (remark, held) in [
+            ("(all checks pass after the rebuild)", false),
+            ("- looks good, though naming is odd", false),
+            ("(verified when run locally)", false),
+            ("(first pass clean)", false),
+            ("- but fix docs", true),
+            ("once CI is green", true),
+            ("(need to bump version)", true),
+            ("(pending CI)", true),
+            ("- as long as the docs land", true),
+            ("- after you fix the test", true),
+            ("(unless the build fails)", true),
+        ] {
+            assert_eq!(conditional_remark(remark), held, "{remark}");
         }
     }
 

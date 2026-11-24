@@ -196,12 +196,12 @@ pub(super) fn item_of<'a>(
 }
 
 /// A list item: `- x`, `* x`, `+ x`, `• x` or `1. x`.
-fn listed(line: &str) -> bool {
+pub(super) fn listed(line: &str) -> bool {
     unlisted(line).len() != line.len()
 }
 
 /// The line without its list marker.
-fn unlisted(line: &str) -> &str {
+pub(super) fn unlisted(line: &str) -> &str {
     for marker in ["- ", "* ", "+ ", "\u{2022} "] {
         if let Some(rest) = line.strip_prefix(marker) {
             return rest.trim_start();

@@ -359,7 +359,12 @@ async fn duty_done(
     answer: &str,
 ) -> Result<bool> {
     let kept = clean::text(launcher, lead, &review::kept(answer)).await;
-    let kept = review::tail(&kept);
+    // The critic's gaps are read from its whole answer: what the row keeps may have lost
+    // the heading or the prose that names them.
+    let kept = match row.duty {
+        TaskDuty::Critic => review::Gaps::of(answer).stored(&kept),
+        _ => review::tail(&kept),
+    };
     let closed = launcher
         .state
         .close_duty(&member.id, &row.task_id, &kept)
