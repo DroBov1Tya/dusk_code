@@ -210,18 +210,18 @@ fn the_reads_of_one_step_count_as_one() {
 fn times_and_ids_in_a_result_do_not_hide_a_repeat_but_counts_do() {
     let mut repeats = Repeats::default();
     let limits = Limits::default();
-    let jobs = call("jobs", json!({}));
-    let at = |time: &str, id: &str| format!("job {id} running since 10:{time}, 0.{time}s");
+    let status = command("systemctl status app");
+    let at = |time: &str, id: &str| format!("app {id} running since 10:{time}, 0.{time}s");
     assert_eq!(
-        step(&mut repeats, &jobs, &at("01", "a81f3c9"), false, &limits),
+        step(&mut repeats, &status, &at("01", "a81f3c9"), false, &limits),
         None
     );
     assert_eq!(
-        step(&mut repeats, &jobs, &at("02", "b92e4d0"), false, &limits),
+        step(&mut repeats, &status, &at("02", "b92e4d0"), false, &limits),
         None
     );
     assert_eq!(
-        step(&mut repeats, &jobs, &at("03", "c03f5e1"), false, &limits),
+        step(&mut repeats, &status, &at("03", "c03f5e1"), false, &limits),
         Some((RepeatRung::SameCall, 3))
     );
     let mut repeats = Repeats::default();
@@ -266,7 +266,7 @@ fn any_result_is_hashed_without_panic() {
 fn mid_sized_results_that_differ_only_near_the_end_are_different() {
     let mut repeats = Repeats::default();
     let limits = Limits::default();
-    let poll = call("jobs", json!({ "action": "output", "job_id": "1" }));
+    let poll = read("build.log");
     let log = "compiling crate\n".repeat(380);
     for line in 0..6 {
         let output = format!("{log}line {line} done\n");
@@ -295,4 +295,65 @@ fn a_read_again_after_its_result_was_put_away_is_not_counted() {
         step(&mut repeats, &main, "fn main() {}", true, &limits),
         Some((RepeatRung::CycleReplan, 5))
     );
+}
+
+#[test]
+fn polling_a_running_job_is_no_cycle_and_no_stall() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let build = call(
+        "run_command",
+        json!({ "command": "cargo build --release", "background": true }),
+    );
+    repeats.step("t");
+    let started = ToolResult {
+        content: "job 1 started".into(),
+        is_error: false,
+        exit_code: None,
+        artifacts: Vec::new(),
+    };
+    let facts = Facts::default();
+    assert!(
+        repeats
+            .note("t", &build, &started, &started.content, &facts, &limits)
+            .is_none()
+    );
+    // A long build: a wait, then a look that shows the same, again and again.
+    let wait = command("sleep 30");
+    let look = call("jobs", json!({ "action": "status", "job_id": "1" }));
+    for i in 0..40 {
+        assert_eq!(
+            step(&mut repeats, &wait, "", false, &limits),
+            None,
+            "wait {i}"
+        );
+        assert_eq!(
+            step(&mut repeats, &look, "job 1 running", true, &limits),
+            None,
+            "look {i}"
+        );
+        assert_eq!(repeats.take_stall("t", &limits), None, "poll {i}");
+    }
+}
+
+#[test]
+fn a_cycle_between_polls_of_a_job_is_still_caught() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let look = call("jobs", json!({ "action": "output", "job_id": "1" }));
+    let edit = command("sed -i 's/a/b/' src/lib.rs");
+    let check = command("cargo check");
+    let mut rungs = Vec::new();
+    let mut stalled = false;
+    for _ in 0..8 {
+        step(&mut repeats, &look, "job 1 running", true, &limits);
+        rungs.push(step(&mut repeats, &edit, "", false, &limits).map(|n| n.0));
+        step(&mut repeats, &look, "job 1 running", true, &limits);
+        rungs.push(step(&mut repeats, &check, "error[E0308]", false, &limits).map(|n| n.0));
+        stalled |= repeats.take_stall("t", &limits).is_some();
+    }
+    assert!(rungs.contains(&Some(RepeatRung::Cycle)), "{rungs:?}");
+    assert!(rungs.contains(&Some(RepeatRung::CycleReplan)), "{rungs:?}");
+    // The polls between did not break the run of re-plans: the judge is told.
+    assert!(stalled);
 }

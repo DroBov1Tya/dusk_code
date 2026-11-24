@@ -15,6 +15,10 @@
 //! the third call in a row identical to the one before, with a result identical to the
 //! byte, gets a note; nothing is folded or made alike.
 //!
+//! Polling a background job is not noted here: a look at the jobs, or a plain wait once
+//! one started, gives the same result until the job ends, and waiting is what it should
+//! do. The caller leaves such calls out, as the no-progress rule tells them.
+//!
 //! A read seen again counts only the times within the steps whose results the model
 //! still has whole (`limits.stub_keep_steps` with `limits.stub_results` on): reading a
 //! file again because its result was put away is what the stub asks for.

@@ -5,6 +5,7 @@
 //! - calls going in circles (`cycles`): the same call with the same result in a row, a
 //!   short run of calls coming round again, or a read giving the same result with
 //!   nothing changed between; with `limits.loop_cycles` on they escalate to a re-plan;
+//!   polling a background job (`progress::Progress::polls_job`) is not one;
 //! - tests run again with no project file changed (`test_runs`, `limits.test_reruns`);
 //! - steps in a row that bring nothing new (`progress`, `limits.no_progress`), which also
 //!   mark the turn a stall candidate for a judge, as a cycle asked twice for a different
@@ -201,9 +202,15 @@ impl Repeats {
             Some(alike) if limits.loop_cycles => alike,
             _ => hash(content),
         };
-        let cycle = self
-            .cycles
-            .note(self.steps, facts.read_only, call_hash, result_hash, limits);
+        // Polling a job shows the same thing until it ends: neither a cycle nor an idle
+        // step, and it leaves the cycle's count as it was.
+        let polls = self.progress.polls_job(call, result);
+        let cycle = (!polls)
+            .then(|| {
+                self.cycles
+                    .note(self.steps, facts.read_only, call_hash, result_hash, limits)
+            })
+            .flatten();
         let moved = self.progress.note(
             &progress::Call {
                 call,
@@ -214,6 +221,7 @@ impl Repeats {
                 writes_project: facts.writes_project,
                 unwatched: facts.unwatched,
                 edits: facts.edits.as_deref(),
+                polls,
             },
             limits,
         );
@@ -275,7 +283,7 @@ impl Repeats {
         }
         // A call outside the cycle, or one that brought something new, ends the run of
         // re-plans: another cycle later starts its own.
-        if cycle.is_none() || self.progress.moved() {
+        if (cycle.is_none() && !polls) || self.progress.moved() {
             self.cycle_replans = 0;
         }
         notices.extend(rerun);

@@ -22,7 +22,7 @@
 //! A look at the background jobs is neither: a build or a run going on shows little more
 //! than a counter between two looks, which is not news, yet the job is moving. A step of
 //! nothing but such looks, and plain waits (`sleep 30`) once a job started in the turn,
-//! is not counted.
+//! is not counted. `polls_job` tells such a call, for the cycle rule too.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -53,6 +53,8 @@ pub struct Call<'a> {
     /// The ledger's rows for the call, as (path, state after); None when the ledger was
     /// not read for it.
     pub edits: Option<&'a [(String, String)]>,
+    /// The call only polls a job (`Progress::polls_job`).
+    pub polls: bool,
 }
 
 #[derive(Default)]
@@ -124,16 +126,7 @@ impl Progress {
     /// Notes a finished call; the rung, count and note when the steps before brought
     /// nothing new and neither has the step so far.
     pub fn note(&mut self, done: &Call<'_>, limits: &Limits) -> Option<(RepeatRung, u32, String)> {
-        if !limits.no_progress {
-            return None;
-        }
-        if done.call.name == signature::RUN_COMMAND
-            && (done.call.arguments["background"].as_bool() == Some(true)
-                || done.result.exit_code.is_none())
-        {
-            self.jobs_started = true;
-        }
-        if done.call.name == JOBS || (self.jobs_started && is_wait(done.call)) {
+        if !limits.no_progress || done.polls {
             return None;
         }
         self.counted = true;
@@ -156,6 +149,18 @@ impl Progress {
         } else {
             (RepeatRung::NoProgress, count, note(count))
         })
+    }
+
+    /// Notes a finished call before the rules read it; whether it only polls a job: a
+    /// look at the jobs, or a plain wait once a command of the turn went on in the
+    /// background. Such a call is neither an idle step nor a step of a cycle.
+    pub fn polls_job(&mut self, call: &ToolCall, result: &ToolResult) -> bool {
+        if call.name == signature::RUN_COMMAND
+            && (call.arguments["background"].as_bool() == Some(true) || result.exit_code.is_none())
+        {
+            self.jobs_started = true;
+        }
+        call.name == JOBS || (self.jobs_started && is_wait(call))
     }
 
     /// Whether the running step brought something new so far.
