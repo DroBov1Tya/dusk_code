@@ -31,6 +31,8 @@ pub struct ThreadRunner {
     ends_when_idle: bool,
     /// The next automatic round waits for dependency completion, not a timer.
     pub goal_waiting: bool,
+    /// Turns in a row that called no tool, for a goal's stall rule.
+    pub goal_quiet_turns: u32,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
     /// The question a restart asked while the runner waits for its answer.
@@ -109,6 +111,7 @@ impl ThreadRunner {
             mailboxes: setup.mailboxes,
             ends_when_idle: setup.ends_when_idle,
             goal_waiting: false,
+            goal_quiet_turns: 0,
             left: false,
             deciding,
             _lock: setup.lock,
@@ -297,6 +300,7 @@ impl ThreadRunner {
                         false => self.agent.run_turn(&turn, &mut self.inbox).await?,
                     };
                     failed = status == TurnStatus::Failed;
+                    self.count_quiet_turn(&turn.turn_id).await?;
                     match stop {
                         Some(stop) => Some(stop),
                         None => self.agent.name_thread(&mut self.inbox).await,

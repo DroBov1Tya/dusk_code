@@ -73,6 +73,15 @@ impl State {
         count.try_into().context("negative turn count")
     }
 
+    /// Whether the turn called any tool.
+    pub async fn turn_called_tools(&self, turn_id: &str) -> Result<bool> {
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tool_executions WHERE turn_id = ?)")
+            .bind(turn_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("check the turn's tool calls")
+    }
+
     /// Sequence of the newest message any turn of the thread has taken; 0 before the first.
     pub async fn answered_through(&self, thread_id: &str) -> Result<u64> {
         let sequence: i64 = sqlx::query_scalar(

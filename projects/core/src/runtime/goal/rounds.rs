@@ -2,6 +2,10 @@
 //! the work against the goal's criteria when the model asked for that, and otherwise
 //! queues the next round. Rounds are counted for display only; a user who wants a bound
 //! writes it into the goal.
+//!
+//! Stall rule: when `STALL_TURNS` turns in a row end without calling a tool, the agent is
+//! only talking, so no round is queued. The goal stays set, control goes back to the user,
+//! and the rounds go on after the next turn the user starts.
 
 use std::sync::Arc;
 
@@ -13,7 +17,23 @@ use crate::{
     state::GoalStatus,
 };
 
+/// Turns in a row without a tool call after which a goal stops queueing rounds.
+pub const STALL_TURNS: u32 = 3;
+
 impl ThreadRunner {
+    /// Counts a turn that called no tool toward the stall rule; one that called a tool
+    /// starts the count again.
+    pub async fn count_quiet_turn(&mut self, turn_id: &str) -> Result<()> {
+        if self.agent.depth > 0 {
+            return Ok(());
+        }
+        self.goal_quiet_turns = match self.agent.state.turn_called_tools(turn_id).await? {
+            true => 0,
+            false => self.goal_quiet_turns + 1,
+        };
+        Ok(())
+    }
+
     pub async fn verification_pending(&self) -> Result<bool> {
         Ok(self.agent.depth == 0
             && self
@@ -84,6 +104,19 @@ impl ThreadRunner {
             return Ok(false);
         }
         if goal.verification == "needs_user" {
+            return Ok(false);
+        }
+        if self.goal_quiet_turns >= STALL_TURNS {
+            // The count starts again, so the user's next turn resumes the rounds.
+            self.goal_quiet_turns = 0;
+            self.agent.emit(ThreadEvent::Goal {
+                goal: Some(goal),
+                note: format!(
+                    "goal stalled: {STALL_TURNS} turns in a row used no tool; \
+                     it stays set and goes on after your next message"
+                ),
+                started: None,
+            });
             return Ok(false);
         }
         let state = &self.agent.state;

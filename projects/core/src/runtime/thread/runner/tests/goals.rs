@@ -2,11 +2,8 @@
 
 use super::*;
 
-/// No cap stops a goal: it goes on round after round, here until a turn fails.
-#[tokio::test]
-async fn a_goal_goes_on_round_after_round_without_a_cap() {
-    let state = thread_state("goal_rounds").await;
-    let config = live_config("goal_config");
+/// An approved goal on the thread, ready for `/goal approve <revision>`.
+async fn approvable_goal(state: &State) -> String {
     let draft = state.set_goal("thread", "build it").await.unwrap();
     let draft = state
         .propose_goal(
@@ -20,10 +17,34 @@ async fn a_goal_goes_on_round_after_round_without_a_cap() {
         )
         .await
         .unwrap();
-    let approve = format!("/goal approve {}", draft.revision);
-    let answer = vec![Step::Text("working"), Step::Done];
+    format!("/goal approve {}", draft.revision)
+}
+
+/// The goal's user messages, in order.
+async fn user_lines(state: &State) -> Vec<String> {
+    transcript(state)
+        .await
+        .into_iter()
+        .filter(|(role, _)| *role == MessageRole::User)
+        .map(|(_, text)| text)
+        .collect()
+}
+
+/// No cap stops a goal: it goes on round after round, here until a turn fails.
+#[tokio::test]
+async fn a_goal_goes_on_round_after_round_without_a_cap() {
+    let state = thread_state("goal_rounds").await;
+    let config = live_config("goal_config");
+    let approve = approvable_goal(&state).await;
+    // Every turn calls a tool, so the stall rule never stops the rounds.
+    let work = [
+        vec![Step::Call("working"), Step::Done],
+        vec![Step::Text("worked"), Step::Done],
+    ];
     // The first turn, the title it gets after it, two rounds; the third round fails.
-    let mut scripts = vec![answer; 4];
+    let mut scripts = work.to_vec();
+    scripts.push(vec![Step::Text("title"), Step::Done]);
+    scripts.extend(work.iter().cloned().cycle().take(4));
     scripts.push(vec![Step::Reject]);
     let provider = provider(scripts);
     let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
@@ -44,14 +65,8 @@ async fn a_goal_goes_on_round_after_round_without_a_cap() {
     let (_, goal) = tokio::join!(runner.run(), client);
     assert_eq!(goal.rounds, 3);
     assert_eq!(goal.note.as_deref(), Some("the last turn failed"));
-    let users: Vec<_> = transcript(&state)
-        .await
-        .into_iter()
-        .filter(|(role, _)| *role == MessageRole::User)
-        .map(|(_, text)| text)
-        .collect();
     assert_eq!(
-        users,
+        user_lines(&state).await,
         [
             "Goal: build it",
             "Continue toward the goal (round 1): build it",
@@ -64,6 +79,66 @@ async fn a_goal_goes_on_round_after_round_without_a_cap() {
         requests[0].last(),
         Some(ChatMessage::System(text)) if text.starts_with("Standing goal")
     ));
+}
+
+/// Waits for the stall note and returns the goal it carried.
+async fn next_stall(output: &mut ThreadOutput) -> Goal {
+    loop {
+        if let Some(ThreadEvent::Goal {
+            goal: Some(goal),
+            note,
+            ..
+        }) = output.next_event().await
+            && note.starts_with("goal stalled")
+        {
+            return goal;
+        }
+    }
+}
+
+/// Turns that only talk stop the rounds with the goal still set; the user's next
+/// message starts them again, and the count with them.
+#[tokio::test]
+async fn a_goal_stalls_after_turns_without_tools_until_the_user_speaks() {
+    let state = thread_state("goal_stall").await;
+    let config = live_config("goal_stall_config");
+    let approve = approvable_goal(&state).await;
+    let talk = vec![Step::Text("still thinking"), Step::Done];
+    // The first turn, its title and two rounds stall; the user's turn and two more
+    // rounds stall again.
+    let mut scripts = vec![talk.clone(); 4];
+    scripts.extend(vec![talk; 3]);
+    let provider = provider(scripts);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let client = async move {
+        input.send(approve).await.unwrap();
+        let first = next_stall(&mut output).await;
+        input.send("keep going").await.unwrap();
+        let second = next_stall(&mut output).await;
+        (first, second)
+    };
+
+    let (_, (first, second)) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(runner.run(), client)
+    })
+    .await
+    .unwrap();
+    assert_eq!(first.status, GoalStatus::Active);
+    assert_eq!(first.rounds, 2);
+    assert_eq!(second.rounds, 4);
+    let goal = state.goal("thread").await.unwrap().unwrap();
+    assert_eq!(goal.status, GoalStatus::Active);
+    assert_eq!(
+        user_lines(&state).await,
+        [
+            "Goal: build it",
+            "Continue toward the goal (round 1): build it",
+            "Continue toward the goal (round 2): build it",
+            "keep going",
+            "Continue toward the goal (round 3): build it",
+            "Continue toward the goal (round 4): build it",
+        ]
+    );
 }
 
 pub(super) async fn verified_fixture(state: &State) -> (Goal, String) {

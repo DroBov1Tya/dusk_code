@@ -344,13 +344,18 @@ async fn a_goal_does_not_count_a_waiting_turn_as_a_round() {
         .await
         .unwrap();
     let approve = format!("/goal approve {}", draft.revision);
-    let working = answered("working");
+    // Each turn calls a tool, so the stall rule never stops the rounds.
+    let call = vec![Step::Call("working"), Step::Done];
+    let worked = answered("worked");
     let provider = super::provider(vec![
         rate_limited(50),
-        working.clone(),
-        working.clone(),
-        working.clone(),
-        working,
+        call.clone(),
+        worked.clone(),
+        answered("title"),
+        call.clone(),
+        worked.clone(),
+        call,
+        worked,
         // The third round fails, which pauses the goal.
         vec![Step::Reject],
     ]);
