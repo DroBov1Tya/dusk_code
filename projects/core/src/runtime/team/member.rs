@@ -16,8 +16,14 @@
 //!    claim of its role takes it (`State::spare_member`).
 //! 2. The claim, one statement. A stop here leaves a claimed task without a card: the
 //!    next pass delivers it, and without one the lease runs out and the task reopens.
-//! 3. The card is delivered under `card:<task>:<attempt>`, which stores it once however
-//!    often this is run, and the member's runner is started.
+//! 3. The card is delivered under `card:<task>:<attempt>:<member>`, which stores it once
+//!    however often this is run, and the member's runner is started.
+//!
+//! A task its member lost goes back to that member when it may (`resumable`): the same
+//! thread, with its transcript, gets a short resume note under `resume:<task>:<n>`
+//! instead of a card. A context that overflowed or a request the provider refused would
+//! fail the same way, and so would a member that lost the task twice: those go to a fresh
+//! member, whose card says how the last attempt ended.
 
 use std::path::Path;
 
@@ -25,10 +31,11 @@ use anyhow::{Result, ensure};
 use dusk_protocol::thread::{TaskDuty, team_call_id};
 use tracing::{debug, info, warn};
 
-use super::{card, clean, critic, gate, review};
+use super::{card, clean, critic, gate, lead_lines, review};
 use crate::{
     catalog::{agents::GENERAL_AGENT, skills},
     config::{ApprovalPolicy, Config, Effort},
+    providers::ProviderErrorKind,
     providers::ProviderRegistry,
     runtime::{
         Launcher, ThreadEvent,
@@ -36,8 +43,8 @@ use crate::{
         thread::start::{read_prompt, start_member_thread},
     },
     state::{
-        Claim, MAX_REWORKS, MEMBER_SOURCE, PlanError, PlanTask, State, TeamRun, Thread,
-        short_task_id,
+        Claim, MAX_REWORKS, MEMBER_SOURCE, PlanError, PlanTask, State, TeamRun, Thread, TurnStatus,
+        Unclaimable, short_task_id,
     },
     tools::ToolRegistry,
 };
@@ -171,37 +178,61 @@ pub(super) async fn give(
     if let Some(why) = unusable_model(&config, role) {
         return Ok(Given::NoAgent(why));
     }
-    let member = match state.spare_member(lead, role).await? {
-        Some(spare) => spare,
-        None => match make(launcher, &config, lead, role).await {
-            Ok(made) => made,
-            Err(error) => return Ok(Given::NoAgent(format!("{error:#}"))),
-        },
-    };
-    // Copied, never raised: a member asks for no more than its lead may do unasked.
-    let policy = lead_policy(state, &config, lead).await?;
-    state.set_thread_approvals(&member, Some(policy)).await?;
     let model = model_name(&config, role, launcher.model.current().as_ref());
-    let claim = Claim {
-        owner: &member,
-        at_once: run.at_once,
-        model: model.as_deref(),
-        now,
-    };
-    let claimed = match state.claim_task(lead, &task.task_id, claim).await {
-        Ok(claimed) => claimed,
-        Err(PlanError::NotClaimable { why, .. }) => {
-            debug!("task {} was not claimed: {why:?}", task.task_id);
-            return Ok(Given::Lost);
+    let mut resumed = resumable(state, lead, task, role).await?;
+    let claimed = loop {
+        let member = match resumed.take() {
+            Some(last) => last,
+            None => {
+                // Not given back, the last owner is forgotten first: a spare that is it
+                // (it never had a turn) then gets a card, not a resume note.
+                if task.last_owner_thread_id.is_some() {
+                    state.forget_last_owner(lead, &task.task_id).await?;
+                }
+                match state.spare_member(lead, role).await? {
+                    Some(spare) => spare,
+                    None => match make(launcher, &config, lead, role).await {
+                        Ok(made) => made,
+                        Err(error) => return Ok(Given::NoAgent(format!("{error:#}"))),
+                    },
+                }
+            }
+        };
+        // Copied, never raised: a member asks for no more than its lead may do unasked.
+        let policy = lead_policy(state, &config, lead).await?;
+        state.set_thread_approvals(&member, Some(policy)).await?;
+        let claim = Claim {
+            owner: &member,
+            at_once: run.at_once,
+            model: model.as_deref(),
+            now,
+        };
+        match state.claim_task(lead, &task.task_id, claim).await {
+            Ok(claimed) => break claimed,
+            // The last owner holds another task, which the store does not let it: a
+            // fresh member takes this one.
+            Err(PlanError::NotClaimable {
+                why: Unclaimable::OwnerBusy,
+                ..
+            }) if task.last_owner_thread_id.as_deref() == Some(member.as_str()) => {
+                warn!("task {}: its last member {member} is busy", task.task_id);
+            }
+            Err(PlanError::NotClaimable { why, .. }) => {
+                debug!("task {} was not claimed: {why:?}", task.task_id);
+                return Ok(Given::Lost);
+            }
+            Err(PlanError::Illegal { .. }) => return Ok(Given::Lost),
+            Err(error) => return Err(error.into()),
         }
-        Err(PlanError::Illegal { .. }) => return Ok(Given::Lost),
-        Err(error) => return Err(error.into()),
     };
+    let member = claimed.owner_thread_id.clone().unwrap_or_default();
     info!(
-        "task {} given to member {member} as {role}, attempt {}",
-        claimed.task_id, claimed.attempts
+        "task {} given to member {member} as {role}, attempt {}{}",
+        claimed.task_id,
+        claimed.attempts,
+        if resumes(&claimed) { ", resumed" } else { "" }
     );
-    deliver_card(launcher, lead, &member, &claimed, folder).await?;
+    deliver_start(launcher, lead, &member, &claimed, folder).await?;
     drop(admitted);
     announce(launcher, lead, &member, role, &claimed).await;
     Ok(Given::Claimed(Box::new(claimed)))
@@ -251,18 +282,114 @@ async fn make(launcher: &Launcher, config: &Config, lead: &str, role: &str) -> R
     Ok(thread.thread_id)
 }
 
-/// The uid of what a member was last sent for `task`: its card, or the note of the
-/// newest time the task came back.
+/// Counted losses after which a task goes to a fresh member: the one that lost it twice
+/// would most likely lose it again.
+const RESUMED_UP_TO: u32 = 1;
+
+/// The member that lost `task` last, when the task may go back to it: a work task (a
+/// review or the critic is always fresh) lost no more than `RESUMED_UP_TO` times by its
+/// members, whose last owner is still a member of `lead` working as `role`, had a turn
+/// and has none running (one the core is cutting off, as at a lease that ran out, would
+/// end after the new claim), and did not fail on a context too long or a request the provider refused,
+/// which would only fail again.
+async fn resumable(
+    state: &State,
+    lead: &str,
+    task: &PlanTask,
+    role: &str,
+) -> Result<Option<String>> {
+    let Some(last) = task.last_owner_thread_id.as_deref() else {
+        return Ok(None);
+    };
+    if task.duty != TaskDuty::Work || task.attempts > RESUMED_UP_TO {
+        return Ok(None);
+    }
+    let Some(thread) = state.load_thread(last).await? else {
+        return Ok(None);
+    };
+    if !is_member(&thread)
+        || thread.parent_thread_id.as_deref() != Some(lead)
+        || thread.agent.as_deref() != Some(role)
+    {
+        return Ok(None);
+    }
+    // A member that never had a turn never read its card: it takes the task as a spare
+    // does, with a card.
+    match state.last_turn(last).await? {
+        None => return Ok(None),
+        Some(turn) if turn.status == TurnStatus::Running => return Ok(None),
+        Some(_) => {}
+    }
+    let failed = state.last_failure(last).await?;
+    let kind = failed.and_then(|failed| failed.provider.map(|provider| provider.kind));
+    if matches!(
+        kind,
+        Some(ProviderErrorKind::TooLong | ProviderErrorKind::Refused)
+    ) {
+        return Ok(None);
+    }
+    Ok(Some(last.to_owned()))
+}
+
+/// Whether the member at work on `task` is the one that held it before: it was given
+/// back, and its round started with a resume note, not a card.
+fn resumes(task: &PlanTask) -> bool {
+    task.duty == TaskDuty::Work
+        && task.owner_thread_id.is_some()
+        && task.owner_thread_id == task.last_owner_thread_id
+}
+
+/// The uid of the note that gives `task` back to its member: one for each time.
+fn resume_uid(task: &PlanTask) -> String {
+    format!("resume:{}:{}", task.task_id, task.resumes)
+}
+
+/// The uid of what a member was last sent for `task`: its card or resume note, or the
+/// note of the newest time the task came back.
 pub(super) fn round_uid(task: &PlanTask) -> String {
     match task.reworks {
+        0 if resumes(task) => resume_uid(task),
         0 => card::uid(task),
         reworks => format!("rework:{}:{reworks}", task.task_id),
     }
 }
 
+/// Starts the member of a claimed task: the card, or the resume note when the task went
+/// back to the member that lost it. Run again, it stores nothing and only starts a
+/// member that still waits.
+pub(super) async fn deliver_start(
+    launcher: &Launcher,
+    lead: &str,
+    member: &str,
+    task: &PlanTask,
+    folder: &Path,
+) -> Result<()> {
+    if !resumes(task) {
+        return deliver_card(launcher, lead, member, task, folder).await;
+    }
+    let reason = match lead_lines::quoted(&task.note, MAX_REASON) {
+        reason if reason.is_empty() => "no reason was kept".to_owned(),
+        reason => reason,
+    };
+    let text = format!(
+        "Your last turn on #{} stopped: {reason}. Continue from where you are; your files, \
+         rules and footer are as in the card above.",
+        short_task_id(&task.task_id)
+    );
+    // The note can quote a provider's error: a secret stops here.
+    let text = clean::text(launcher, lead, &text).await;
+    launcher
+        .deliver_once(member, lead, &resume_uid(task), &text, folder)
+        .await?;
+    Ok(())
+}
+
+/// Characters of the reason a resume note gives.
+const MAX_REASON: usize = 300;
+
 /// Delivers the card of a claimed task to its member and starts it; run again, it
 /// stores nothing and only starts a member that still waits.
-pub(super) async fn deliver_card(
+async fn deliver_card(
     launcher: &Launcher,
     lead: &str,
     member: &str,

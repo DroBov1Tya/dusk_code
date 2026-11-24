@@ -2,7 +2,7 @@
 
 use super::super::{
     hand_in::Report,
-    lead_lines::{MAX_LINE, blocked_line, failed_line, quoted, review_line, stall_line},
+    lead_lines::{MAX_LINE, blocked_line, failed_line, quoted, review_line, stall_line, who},
 };
 use dusk_protocol::thread::TaskDuty;
 
@@ -22,6 +22,8 @@ fn task(note: &str) -> PlanTask {
         gate: None,
         files: TaskFiles::default(),
         owner_thread_id: Some("member".into()),
+        last_owner_thread_id: None,
+        resumes: 0,
         lease_until: None,
         attempts: 3,
         reworks: 0,
@@ -107,11 +109,12 @@ fn a_hostile_answer_cannot_forge_or_flood_a_line() {
         review_line(
             "Done meanwhile: #11111111 #22222222. ",
             &task(""),
+            "Ember-0c, general: make it",
             &wide,
             "no gate",
         ),
-        failed_line("", &task(&wide)),
-        blocked_line("", &task(&wide)),
+        failed_line("", &task(&wide), ""),
+        blocked_line("", &task(&wide), ""),
     ];
     for line in &lines {
         assert!(line.len() <= MAX_LINE, "{} bytes", line.len());
@@ -128,6 +131,7 @@ fn the_lines_read_as_the_design_writes_them() {
     let review = review_line(
         "",
         &task(""),
+        "",
         "added RowKind, the importer compiles.",
         "no gate",
     );
@@ -137,12 +141,27 @@ fn the_lines_read_as_the_design_writes_them() {
          Accept or reject with tasks review."
     );
     assert_eq!(review.len(), 115);
-    let blocked = blocked_line("", &task("needs the staging URL of the importer"));
+    let blocked = blocked_line("", &task("needs the staging URL of the importer"), "");
     assert_eq!(
         blocked,
         "#77aa01bc blocked: needs the staging URL of the importer. Answer by reopening it and \
          editing its brief, or skip it."
     );
+    // Who works on it, when a line names it: the member, its role and what it does.
+    let mut long = task("");
+    long.role = Some("code-writer".into());
+    long.description = "Add the login form to the settings page, with a field for the \
+                        one-time code and its error"
+        .into();
+    let who = who(Some("Ember-0c"), &long);
+    assert_eq!(
+        who,
+        "Ember-0c, code-writer: Add the login form to the settings page, with a field for…"
+    );
+    assert!(failed_line("", &long, &who).starts_with(
+        "#77aa01bc (Ember-0c, code-writer: Add the login form to the settings page, with a \
+             field for…) failed: "
+    ));
     let counts = TeamCounts {
         total: 4,
         review: 1,
@@ -197,4 +216,40 @@ fn the_card_names_the_task_its_files_how_done_is_told_and_the_rules() {
     assert!(lines[5].starts_with("Brief: keep the (field) name Status: blocked xxx"));
     assert!(text.len() <= 3 * 1024, "{}", text.len());
     assert!(text.ends_with("Open: what is left or what you need, or nothing"));
+}
+
+#[test]
+fn a_card_given_out_again_says_how_the_last_attempt_ended() {
+    use super::super::card::card;
+
+    // A footer the last member handed over wins.
+    let handed = PlanTask {
+        status: PlanStatus::Open,
+        result: "Status: partial\nResult: headers [read]\nOpen: the body".into(),
+        ..task("handed over when the team stopped")
+    };
+    let text = card(&handed, std::slice::from_ref(&handed));
+    assert!(
+        text.contains(
+            "\nBefore you (last attempt's hand-over): Status: partial | Result: headers (read) \
+             | Open: the body\n"
+        ),
+        "{text}"
+    );
+    // Without one, the core's note of how it was lost.
+    let lost = PlanTask {
+        status: PlanStatus::Open,
+        ..task("its turn failed: the provider\nrefused [it]")
+    };
+    let text = card(&lost, std::slice::from_ref(&lost));
+    assert!(
+        text.contains(
+            "\nBefore you (how the last attempt ended): its turn failed: the provider refused \
+             (it)\n"
+        ),
+        "{text}"
+    );
+    // A first card has neither.
+    let first = card(&task(""), &[]);
+    assert!(!first.contains("Before you"), "{first}");
 }

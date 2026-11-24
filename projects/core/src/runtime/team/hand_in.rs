@@ -207,10 +207,11 @@ async fn finished(
         // user stopped, and the turns it would wind down are cut already, so the team
         // ends as stopped at once.
         TurnStatus::Interrupted if announced => {
-            if lease::at_work(&launcher.state, lead, &member.id)
-                .await?
-                .is_some()
-            {
+            // A task still claimed was given back to this member after the turn began:
+            // the turn is the one the core cut off when it took the task away (a lease
+            // that ran out), not the user's stop of the new round.
+            let held = lease::at_work(&launcher.state, lead, &member.id).await?;
+            if held.is_some_and(|held| held.status != TaskStatus::Claimed) {
                 launcher.team_cancel(lead).await?;
             }
             Ok(false)

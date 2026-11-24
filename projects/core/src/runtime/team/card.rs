@@ -119,7 +119,15 @@ pub fn card(task: &PlanTask, plan: &[PlanTask]) -> String {
         .filter(|line| !line.is_empty())
         .collect();
     let handover: String = handover.join(" | ").chars().take(HANDOVER_CHARS).collect();
-    lines.push(("Before you (last attempt's hand-over)", handover));
+    match handover.is_empty() {
+        false => lines.push(("Before you (last attempt's hand-over)", handover)),
+        // Without a footer, how the last attempt was lost: the core's words, with an
+        // error a provider or a runner gave.
+        true => lines.push((
+            "Before you (how the last attempt ended)",
+            plain(&task.note).chars().take(HANDOVER_CHARS).collect(),
+        )),
+    }
     for (label, text) in lines {
         if !text.is_empty() {
             card.push_str(&format!("\n{label}: {text}"));

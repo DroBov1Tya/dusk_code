@@ -318,6 +318,7 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
                 role: Some(made.role.into()),
                 model: Some("chatgpt/gpt-5.5".into()),
                 task_id: format!("t{number}"),
+                summary: String::new(),
                 // A member stopped by the end still says what its task was.
                 status: match stopped.contains(number) {
                     true => TaskStatus::Running,

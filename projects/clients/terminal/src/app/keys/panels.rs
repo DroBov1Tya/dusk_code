@@ -549,6 +549,7 @@ mod tests {
             role: None,
             model: None,
             task_id: format!("task-{thread}"),
+            summary: String::new(),
             status: TaskStatus::Running,
         };
         Team {
@@ -671,6 +672,7 @@ mod team_tests {
                     role: None,
                     model: None,
                     task_id: (*task).into(),
+                    summary: String::new(),
                     status: *status,
                 })
                 .collect(),

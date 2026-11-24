@@ -151,6 +151,11 @@ pub struct TeamMember {
     pub task_id: String,
     /// The status of its task.
     pub status: TaskStatus,
+    /// What it does, in a short line the core writes from its task: the start of the
+    /// task's text, `review of #77aa01bc` or `completeness check`. Model text, made
+    /// plain. Shown where the plan does not hold its task. Empty from older cores.
+    #[serde(default)]
+    pub summary: String,
 }
 
 #[cfg(test)]
@@ -178,6 +183,7 @@ mod tests {
                     role: Some("reviewer".into()),
                     model: None,
                     task_id: "t1".into(),
+                    summary: String::new(),
                     status: TaskStatus::Review,
                 }],
                 started_at: None,
@@ -212,6 +218,7 @@ mod tests {
                     role: None,
                     model: None,
                     task_id: "x".into(),
+                    summary: String::new(),
                     status: *status,
                 })
                 .collect(),

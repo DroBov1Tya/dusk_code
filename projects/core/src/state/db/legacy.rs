@@ -544,6 +544,8 @@ mod tests {
              DROP INDEX turns_task;
              ALTER TABLE turns DROP COLUMN task_id;
              DROP INDEX tasks_review_of;
+             ALTER TABLE tasks DROP COLUMN last_owner_thread_id;
+             ALTER TABLE tasks DROP COLUMN resumes;
              ALTER TABLE tasks DROP COLUMN result;
              ALTER TABLE tasks DROP COLUMN duty;
              ALTER TABLE tasks DROP COLUMN review_of;
@@ -627,6 +629,8 @@ mod tests {
              DROP INDEX turns_task;
              ALTER TABLE turns DROP COLUMN task_id;
              DROP INDEX tasks_review_of;
+             ALTER TABLE tasks DROP COLUMN last_owner_thread_id;
+             ALTER TABLE tasks DROP COLUMN resumes;
              ALTER TABLE tasks DROP COLUMN result;
              ALTER TABLE tasks DROP COLUMN duty;
              ALTER TABLE tasks DROP COLUMN review_of;
@@ -749,7 +753,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls', 'team no budget', 'team flow', 'team wind down'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls', 'team no budget', 'team flow', 'team wind down', 'team resume'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

@@ -2,12 +2,15 @@
 //! and step, the members, and the plan's counts the stall rule reads.
 
 use dusk_protocol::thread::{
-    MAX_TEAM_MEMBERS, TaskStatus, TeamEnd, TeamMember, TeamStatus, TeamUsed,
+    MAX_TEAM_MEMBERS, TaskDuty, TaskStatus, TeamEnd, TeamMember, TeamStatus, TeamUsed,
 };
 use sqlx::Row;
 
 use super::{MINUTE_MS, State, TeamRun, Tx, error::TeamError, read_run, root_of, stored};
-use crate::state::{PlanStatus, thread::threads::family};
+use crate::{
+    message::plain::plain,
+    state::{PlanStatus, short_task_id, thread::threads::family},
+};
 
 /// What the dispatcher is about to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,8 +195,10 @@ pub(super) async fn members(
     root: &str,
 ) -> Result<Vec<TeamMember>, TeamError> {
     let rows = sqlx::query(
-        "SELECT th.id, COALESCE(th.name, th.id) AS name, t.task_id, t.role, t.model, t.status
-         FROM (SELECT task_id, owner_thread_id, role, model, status,
+        "SELECT th.id, COALESCE(th.name, th.id) AS name, t.task_id, t.role, t.model, t.status,
+             t.description, t.duty, t.review_of
+         FROM (SELECT task_id, owner_thread_id, role, model, status, description, duty,
+                   review_of,
                    ROW_NUMBER() OVER (PARTITION BY owner_thread_id
                        ORDER BY status NOT IN ('done', 'failed') DESC, updated_at DESC,
                                 task_id DESC) AS rank
@@ -212,6 +217,11 @@ pub(super) async fn members(
             let status: String = row.try_get("status")?;
             let status = PlanStatus::parse(&status)
                 .ok_or_else(|| stored(format!("unknown task status {status}")))?;
+            let duty: String = row.try_get("duty")?;
+            let duty = TaskDuty::parse(&duty)
+                .ok_or_else(|| stored(format!("unknown task duty {duty}")))?;
+            let review_of: Option<String> = row.try_get("review_of")?;
+            let description: String = row.try_get("description")?;
             Ok(TeamMember {
                 thread_id: row.try_get("id")?,
                 name: row.try_get("name")?,
@@ -219,9 +229,34 @@ pub(super) async fn members(
                 model: row.try_get("model")?,
                 task_id: row.try_get("task_id")?,
                 status: task_status(status),
+                summary: summary(duty, review_of.as_deref(), &description),
             })
         })
         .collect()
+}
+
+/// Characters of a task's text in a member's summary.
+const SUMMARY_CHARS: usize = 60;
+
+/// What a member does, in a line: what its row is for, else the start of its task's text
+/// made plain, cut at a word where one ends near the cap.
+pub fn summary(duty: TaskDuty, review_of: Option<&str>, description: &str) -> String {
+    match (duty, review_of) {
+        (TaskDuty::Review, Some(of)) => return format!("review of #{}", short_task_id(of)),
+        (TaskDuty::Critic, _) => return "completeness check".to_owned(),
+        _ => {}
+    }
+    let text = plain(description.lines().next().unwrap_or_default());
+    let text = text.trim();
+    if text.chars().count() <= SUMMARY_CHARS {
+        return text.to_owned();
+    }
+    let cut: String = text.chars().take(SUMMARY_CHARS).collect();
+    let cut = match cut.rfind(' ') {
+        Some(space) if space > SUMMARY_CHARS / 2 => &cut[..space],
+        _ => cut.as_str(),
+    };
+    format!("{}…", cut.trim_end_matches([' ', ',', '.', ';', ':']))
 }
 
 fn task_status(status: PlanStatus) -> TaskStatus {

@@ -10103,6 +10103,11 @@
           "$ref": "#/$defs/TaskStatus",
           "description": "The status of its task."
         },
+        "summary": {
+          "default": "",
+          "description": "What it does, in a short line the core writes from its task: the start of the\ntask's text, `review of #77aa01bc` or `completeness check`. Model text, made\nplain. Shown where the plan does not hold its task. Empty from older cores.",
+          "type": "string"
+        },
         "task_id": {
           "type": "string"
         },

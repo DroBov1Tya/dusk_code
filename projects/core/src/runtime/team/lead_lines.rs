@@ -14,9 +14,13 @@ use tracing::warn;
 
 use super::clean;
 use crate::{
+    catalog::agents::GENERAL_AGENT,
     message::plain::plain,
     runtime::Launcher,
-    state::{PlanStatus, PlanTask, State, TeamCounts, Thread, short_task_id, timestamp_ms},
+    state::{
+        PlanStatus, PlanTask, State, TeamCounts, Thread, member_summary as summary, short_task_id,
+        timestamp_ms,
+    },
 };
 
 /// The most bytes of one line.
@@ -60,26 +64,68 @@ fn cut(text: &str) -> &str {
     &text[..text.floor_char_boundary(MAX_LINE)]
 }
 
-pub(super) fn review_line(folded: &str, task: &PlanTask, result: &str, why: &str) -> String {
+/// `#77aa01bc`, or with who works on it: `#77aa01bc (Ember-0c, code-writer: add the
+/// login form)`. `who` is `who` of the task, or empty.
+fn named(task: &PlanTask, who: &str) -> String {
+    let id = short_task_id(&task.task_id);
+    match who.is_empty() {
+        true => format!("#{id}"),
+        false => format!("#{id} ({who})"),
+    }
+}
+
+/// Who works on `task`, as a line names it: the member's name when one holds it, its
+/// role and what it does (`Ember-0c, code-writer: add the login form`). Made plain.
+pub(super) fn who(name: Option<&str>, task: &PlanTask) -> String {
+    let role = quoted(task.role.as_deref().unwrap_or(GENERAL_AGENT), 32);
+    let what = summary(task.duty, task.review_of.as_deref(), &task.description);
+    match name {
+        Some(name) => format!("{}, {role}: {what}", quoted(name, 32)),
+        None => format!("{role}: {what}"),
+    }
+}
+
+/// `who` of `task` with the name of its member thread, read from the store.
+async fn who_of(launcher: &Launcher, member: Option<&str>, task: &PlanTask) -> String {
+    let name = match member {
+        Some(member) => match launcher.state.load_thread(member).await {
+            Ok(thread) => thread.and_then(|thread| thread.name),
+            Err(error) => {
+                warn!("cannot read member {member}: {error:#}");
+                None
+            }
+        },
+        None => None,
+    };
+    who(name.as_deref(), task)
+}
+
+pub(super) fn review_line(
+    folded: &str,
+    task: &PlanTask,
+    who: &str,
+    result: &str,
+    why: &str,
+) -> String {
     let head = format!(
-        "{folded}#{} waits for you: {why}. Result: ",
-        short_task_id(&task.task_id)
+        "{folded}{} waits for you: {why}. Result: ",
+        named(task, who)
     );
     let tail = ". Accept or reject with tasks review.";
     line(&head, &quoted(result, MAX_QUOTED), tail)
 }
 
-pub(super) fn confirm_line(folded: &str, task: &PlanTask, result: &str) -> String {
+pub(super) fn confirm_line(folded: &str, task: &PlanTask, who: &str, result: &str) -> String {
     let head = format!(
-        "{folded}#{} waits for the user to confirm it. Result: ",
-        short_task_id(&task.task_id)
+        "{folded}{} waits for the user to confirm it. Result: ",
+        named(task, who)
     );
     let tail = ". Tell the user what to look at; only they can confirm it, the team goes on.";
     line(&head, &quoted(result, MAX_QUOTED), tail)
 }
 
-pub(super) fn failed_line(folded: &str, task: &PlanTask) -> String {
-    let head = format!("{folded}#{} failed: ", short_task_id(&task.task_id));
+pub(super) fn failed_line(folded: &str, task: &PlanTask, who: &str) -> String {
+    let head = format!("{folded}{} failed: ", named(task, who));
     // A task that could not be given out at all failed before any attempt.
     let tail = match task.attempts {
         0 => ". Reopen it, edit it, skip it, or stop.".to_owned(),
@@ -88,8 +134,8 @@ pub(super) fn failed_line(folded: &str, task: &PlanTask) -> String {
     line(&head, &quoted(&task.note, MAX_QUOTED), &tail)
 }
 
-pub(super) fn blocked_line(folded: &str, task: &PlanTask) -> String {
-    let head = format!("{folded}#{} blocked: ", short_task_id(&task.task_id));
+pub(super) fn blocked_line(folded: &str, task: &PlanTask, who: &str) -> String {
+    let head = format!("{folded}{} blocked: ", named(task, who));
     let tail = ". Answer by reopening it and editing its brief, or skip it.";
     line(&head, &quoted(&task.note, MAX_QUOTED), tail)
 }
@@ -143,7 +189,8 @@ pub(super) async fn review(
     why: &str,
 ) {
     let folded = folded(launcher, lead).await;
-    let line = review_line(&folded, task, result, why);
+    let who = who_of(launcher, Some(member), task).await;
+    let line = review_line(&folded, task, &who, result, why);
     tell(launcher, lead, member, &uid(task), &line, true).await;
 }
 
@@ -156,7 +203,8 @@ pub(super) async fn confirm(
     result: &str,
 ) {
     let folded = folded(launcher, lead).await;
-    let line = confirm_line(&folded, task, result);
+    let who = who(member.name.as_deref(), task);
+    let line = confirm_line(&folded, task, &who, result);
     tell(launcher, lead, &member.id, &uid(task), &line, true).await;
 }
 
@@ -165,14 +213,16 @@ pub(super) async fn confirm(
 pub(super) async fn failed(launcher: &Launcher, lead: &str, task: &PlanTask) {
     let folded = folded(launcher, lead).await;
     let from = task.owner_thread_id.as_deref().unwrap_or(lead);
-    let line = failed_line(&folded, task);
+    let who = who_of(launcher, task.owner_thread_id.as_deref(), task).await;
+    let line = failed_line(&folded, task, &who);
     tell(launcher, lead, from, &uid(task), &line, true).await;
 }
 
 /// A member said it cannot go on.
 pub(super) async fn blocked(launcher: &Launcher, lead: &str, member: &Thread, task: &PlanTask) {
     let folded = folded(launcher, lead).await;
-    let line = blocked_line(&folded, task);
+    let who = who(member.name.as_deref(), task);
+    let line = blocked_line(&folded, task, &who);
     tell(launcher, lead, &member.id, &uid(task), &line, true).await;
 }
 

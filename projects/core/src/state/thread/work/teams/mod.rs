@@ -21,7 +21,7 @@ use super::{PlanTask, State, tasks::root_of};
 use crate::state::MEMBER_SOURCE;
 
 pub use error::TeamError;
-pub use used::{TeamAsk, TeamCheck, TeamCounts};
+pub use used::{TeamAsk, TeamCheck, TeamCounts, summary as member_summary};
 pub use wind::{WindWhy, Winding};
 
 use error::{end_name, parse_end};

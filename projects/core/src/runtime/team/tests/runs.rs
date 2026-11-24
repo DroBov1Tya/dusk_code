@@ -8,7 +8,9 @@ use crate::state::{GoalCheck, LEASE_MS, TaskFiles, WaitsOn, timestamp_ms};
 /// The id in `#1a2b3c4d waits for you`.
 fn waiting_id(line: &str) -> Option<&str> {
     let before = line.split(" waits for you").next()?;
-    let id = before.rsplit('#').next()?;
+    // `#77aa01bc (Ember-0c, general: first)`: who works on it follows the id.
+    let named = before.rsplit_once(" (").map_or(before, |(named, _)| named);
+    let id = named.rsplit('#').next()?;
     (before.len() < line.len() && id.len() == 8).then_some(id)
 }
 
@@ -221,12 +223,21 @@ async fn a_task_lost_three_times_fails_and_the_lead_gets_one_line() {
     let behind = rig.task(&ids[1]).await;
     assert_eq!(behind.status, PlanStatus::Blocked);
     assert_eq!(behind.waits_on, Some(WaitsOn::Task(ids[0].clone())));
+    // The first member was given it back once, with its transcript; the third attempt
+    // went to a fresh member.
     let members = rig.members().await;
-    assert_eq!(members.len(), 3, "a new thread for each attempt");
-    for (attempt, member) in members.iter().enumerate() {
-        let card = format!("card:{}:{}:{member}", ids[0], attempt + 1);
-        assert_eq!(rig.uids(member).await, [card]);
-    }
+    assert_eq!(members.len(), 2, "one resume, then a fresh thread");
+    assert_eq!(
+        rig.uids(&members[0]).await,
+        [
+            format!("card:{}:1:{}", ids[0], members[0]),
+            format!("resume:{}:1", ids[0])
+        ]
+    );
+    assert_eq!(
+        rig.uids(&members[1]).await,
+        [format!("card:{}:3:{}", ids[0], members[1])]
+    );
     until("the lead read the line", || async {
         rig.turns(&rig.lead).await == (1, false)
     })
@@ -325,7 +336,7 @@ async fn a_card_delivered_again_is_dropped() {
     let member = rig.members().await.remove(0);
     let task = rig.task(&ids[0]).await;
     for _ in 0..2 {
-        super::super::member::deliver_card(rig.launcher(), &rig.lead, &member, &task, &rig.folder)
+        super::super::member::deliver_start(rig.launcher(), &rig.lead, &member, &task, &rig.folder)
             .await
             .unwrap();
         rig.pass().await;
@@ -406,7 +417,10 @@ async fn the_next_wave_waits_for_a_failed_task_until_the_lead_skips_it() {
     // The lead reads nothing, so its one line stays unanswered and the team waits.
     let rig = Rig::new("team_barrier", |asked| match asked.lead {
         true => Out::Hang,
-        false if asked.user.contains(": one\n") => Out::Reject,
+        // Its card, and the note that gives it back to its member.
+        false if asked.user.contains(": one\n") || asked.user.contains("Your last turn on") => {
+            Out::Reject
+        }
         false => Out::Say(DONE.into()),
     })
     .await;
@@ -452,7 +466,8 @@ async fn the_next_wave_waits_for_a_failed_task_until_the_lead_skips_it() {
     let one = crate::state::short_task_id(&ids[0]).to_owned();
     until("the lead was told", || async {
         rig.lines().await.iter().any(|line| {
-            line.contains(&format!("#{one} failed: "))
+            line.contains(&format!("#{one} ("))
+                && line.contains(", general: one) failed: ")
                 && line.ends_with("Reopen it, edit it, skip it, or stop.")
         })
     })

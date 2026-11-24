@@ -137,6 +137,14 @@ board too and no team runs.
   is not counted against the task's three attempts, up to three such losses of one task;
   a lease that runs out while the team runs still counts. A provider's end reads
   "stopped" with the provider's reason in the lead's line.
+- **Resume.** A task its member lost goes back to that member: the same thread, with
+  its transcript, gets a short note ("Your last turn on #id stopped: … Continue from where
+  you are") instead of a new card. A turn that failed on a context too long or a request
+  the provider refused, a member that lost the task twice, a turn still being cut off (a
+  lease that ran out), a review, the critic, and a task the lead edited or reopened go
+  to a fresh member instead, whose card says how the last attempt ended. Each member
+  carries a one-line summary of what it does (`TeamMember.summary`), and the lead's lines
+  name the member, its role and its task.
 - **Recovery.** When the chat is opened after a restart, an ended team's work goes back
   to open, a turn still running gets its lease again, a turn that completed is handed in,
   a lost one goes back to open without counting the attempt, and a gate that was cut off

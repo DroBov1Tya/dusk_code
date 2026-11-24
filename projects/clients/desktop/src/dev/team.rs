@@ -83,6 +83,7 @@ fn plan() -> Vec<Made> {
             json!({ "depends_on": ["t2"], "files": ["tests/expiry.rs"],
                     "acceptance": "Three tests: on read, by the sweep, and a live key kept",
                     "waits_on": "lead", "note": "which clock to mock: Instant or a fake clock?",
+                    "attempts": 2,
                     "steps": 12, "tokens": 84_000 }),
         ),
         made(
@@ -195,6 +196,8 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
                 role: Some(made.role.into()),
                 model: Some("chatgpt/gpt-5.5".into()),
                 task_id: format!("t{}", made.number),
+                // As the core writes it: the start of the task's text.
+                summary: made.text.chars().take(60).collect(),
                 status: made.status,
             }
         })

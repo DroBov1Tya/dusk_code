@@ -190,6 +190,7 @@ mod tests {
             role: None,
             model: None,
             task_id: "t1".into(),
+            summary: String::new(),
             status,
         }
     }

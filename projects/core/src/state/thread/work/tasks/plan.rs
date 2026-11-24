@@ -139,6 +139,11 @@ pub struct PlanTask {
     pub gate: Option<GoalCheck>,
     pub files: TaskFiles,
     pub owner_thread_id: Option<String>,
+    /// The thread that held it when it was last lost or handed back: the next claim
+    /// gives it back to that member when it may (`runtime::team::member::give`).
+    pub last_owner_thread_id: Option<String>,
+    /// How often it was given back to its last owner; names each resume note once.
+    pub resumes: u32,
     pub lease_until: Option<i64>,
     pub attempts: u32,
     pub reworks: u32,
@@ -202,9 +207,9 @@ macro_rules! select_tasks {
         concat!(
             "SELECT t.task_id, t.thread_id, t.description, t.status, t.depends_on, t.role, \
              t.phase, t.acceptance, t.brief, t.gate, t.files, t.owner_thread_id, \
-             t.lease_until, t.attempts, t.reworks, t.waits_on, t.note, t.gate_job, \
-             t.checkpoint, t.model, t.result, t.duty, t.review_of, t.skipped, t.created_at, \
-             t.updated_at FROM tasks t ",
+             t.last_owner_thread_id, t.resumes, t.lease_until, t.attempts, t.reworks, \
+             t.waits_on, t.note, t.gate_job, t.checkpoint, t.model, t.result, t.duty, \
+             t.review_of, t.skipped, t.created_at, t.updated_at FROM tasks t ",
             $rest
         )
     };
@@ -241,6 +246,8 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
         gate: gate.as_deref().map(serde_json::from_str).transpose()?,
         files: TaskFiles::new(files)?,
         owner_thread_id: row.try_get("owner_thread_id")?,
+        last_owner_thread_id: row.try_get("last_owner_thread_id")?,
+        resumes: count("resumes")?,
         lease_until: row.try_get("lease_until")?,
         attempts: count("attempts")?,
         reworks: count("reworks")?,

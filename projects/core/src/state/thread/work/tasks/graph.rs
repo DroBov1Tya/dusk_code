@@ -126,7 +126,8 @@ impl State {
     }
 
     /// Changes a task nobody has started: one that is open, or blocked only because a
-    /// task it depends on failed.
+    /// task it depends on failed. A member that lost it is not given it back: it worked
+    /// from the old card.
     pub async fn edit_plan_task(
         &self,
         thread: &str,
@@ -171,6 +172,7 @@ impl State {
         sqlx::query(
             "UPDATE tasks SET description = ?, depends_on = ?, role = ?, phase = ?,
                  acceptance = ?, brief = ?, gate = ?, files = ?, updated_at = ?,
+                 last_owner_thread_id = NULL,
                  skipped = CASE status WHEN 'open' THEN 0 ELSE skipped END
              WHERE task_id = ? AND thread_id = ?",
         )

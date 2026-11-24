@@ -9,10 +9,9 @@ use crate::providers::ProviderErrorKind;
 const PARTIAL: &str = "Half way.\n\nStatus: partial\nResult: the parser reads headers\nChecked: \
                        cargo test parser passed\nNot checked: the body\nOpen: parse the body";
 
-/// The first member answers `PARTIAL` once let through; one whose card carries a
-/// hand-over finishes.
+/// The first member answers `PARTIAL` once let through; given the task back, it finishes.
 fn hands_over(asked: &Asked) -> Out {
-    match (asked.lead, asked.user.contains("Before you")) {
+    match (asked.lead, asked.user.contains("Your last turn on")) {
         (true, _) => Out::Say("Noted.".into()),
         (false, true) => Out::Say(DONE.into()),
         (false, false) => Out::Held(PARTIAL.into()),
@@ -24,7 +23,7 @@ const ONCE: &str = "mode: TEAM\nlimits:\n  plan_graph: true\n  team_review: fals
                     max_attempts: 1\n";
 
 #[tokio::test]
-async fn a_stopped_member_hands_over_and_the_next_card_carries_it() {
+async fn a_stopped_member_hands_over_and_is_given_the_task_back() {
     let rig = Rig::new("team_wind_hand_over", hands_over).await;
     let id = rig.plan(&[task("parse the file")]).await.remove(0);
     assert_eq!(rig.run().await, 1);
@@ -60,27 +59,28 @@ async fn a_stopped_member_hands_over_and_the_next_card_carries_it() {
     assert_eq!(rig.ended().await, Some(TeamEnd::Stopped));
     assert_eq!(rig.state().count_turns(&rig.lead).await.unwrap(), 0);
 
-    // The next run gives it to a new member, whose card carries the hand-over.
+    // The next run gives it back to the member that handed it over, which goes on
+    // from its transcript.
     assert_eq!(rig.run().await, 1);
-    until("the second member handed in", || async {
+    until("the member handed in", || async {
         rig.status(&id).await == PlanStatus::Review
     })
     .await;
-    let members = rig.members().await;
-    assert_eq!(members.len(), 2);
-    let messages = rig.state().list_messages(&members[1]).await.unwrap();
-    let card = &messages
+    assert_eq!(rig.members().await, [first.as_str()]);
+    let messages = rig.state().list_messages(&first).await.unwrap();
+    let note = &messages
         .iter()
-        .find(|message| message.content.starts_with("Task #"))
+        .find(|message| message.content.starts_with("Your last turn on"))
         .unwrap()
         .content;
-    assert!(
-        card.contains(
-            "Before you (last attempt's hand-over): Status: partial | Result: the parser reads \
-             headers | Checked: cargo test parser passed | Not checked: the body | Open: parse \
-             the body"
-        ),
-        "{card}"
+    assert_eq!(
+        note,
+        &format!(
+            "Your last turn on #{} stopped: handed over when the team stopped; its report \
+             says where it stands. Continue from where you are; your files, rules and footer \
+             are as in the card above.",
+            crate::state::short_task_id(&id)
+        )
     );
     assert_eq!(rig.task(&id).await.attempts, 1);
 }
@@ -206,8 +206,10 @@ async fn three_provider_failures_in_a_row_stop_the_team_and_fail_no_task() {
     until("the team ended", || async { rig.ended().await.is_some() }).await;
 
     assert_eq!(rig.ended().await, Some(TeamEnd::Stopped));
-    // Three members lost it, each to the provider: none of it counted.
-    assert_eq!(rig.members().await.len(), 3);
+    // One member lost it three times, each to the provider and given it back each time:
+    // none of it counted.
+    assert_eq!(rig.members().await.len(), 1);
+    assert_eq!(rig.task(&id).await.resumes, 2);
     let task = rig.task(&id).await;
     assert_eq!((task.status, task.attempts), (PlanStatus::Open, 0));
 }

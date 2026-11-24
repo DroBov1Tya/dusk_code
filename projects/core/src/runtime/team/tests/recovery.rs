@@ -139,18 +139,19 @@ async fn stopped_after_the_turn(rig: &Rig, outcome: TurnOutcome) -> (String, Str
 #[tokio::test]
 async fn a_task_whose_turn_a_stop_cut_off_returns_to_the_pool_exactly_once() {
     let rig = Rig::new("team_settle_lost", hang).await;
-    let (id, dead) = stopped_after_the_turn(&rig, TurnOutcome::Interrupted(None)).await;
+    let (id, cut) = stopped_after_the_turn(&rig, TurnOutcome::Interrupted(None)).await;
     let fresh = restarted(&rig);
 
     fresh.team_settle(&rig.lead).await;
 
-    // Released and given out again in the same breath, to a thread that has read
-    // nothing; the dead member's thread is not started again. The restart, not the
-    // member, cut the turn off: that attempt is not counted.
+    // Released and given out again in the same breath, back to the member the restart
+    // cut off, which goes on from its transcript with a resume note. The restart, not
+    // the member, cut the turn off: that attempt is not counted.
     let task = rig.task(&id).await;
-    assert_eq!(task.attempts, 1);
-    assert!(task.owner_thread_id.is_some() && task.owner_thread_id != Some(dead.clone()));
-    assert_eq!(rig.turns(&dead).await, (1, false));
+    assert_eq!((task.attempts, task.resumes), (1, 1));
+    assert_eq!(task.owner_thread_id, Some(cut.clone()));
+    let card = format!("card:{id}:1:{cut}");
+    assert_eq!(rig.uids(&cut).await, [card, format!("resume:{id}:1")]);
 
     // Settling again finds nothing left by a stopped core: the task is not released
     // a second time.
@@ -161,7 +162,7 @@ async fn a_task_whose_turn_a_stop_cut_off_returns_to_the_pool_exactly_once() {
         (again.attempts, again.owner_thread_id),
         (1, task.owner_thread_id)
     );
-    assert_eq!(rig.members().await.len(), 2);
+    assert_eq!(rig.members().await, [cut.as_str()]);
 }
 
 #[tokio::test]

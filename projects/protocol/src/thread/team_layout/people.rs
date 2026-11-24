@@ -139,7 +139,9 @@ pub fn people(team: &Team, tasks: &[Task], agents: &BTreeMap<String, Subagent>) 
             model: model.map(short_model),
             task_id: member.task_id.clone(),
             number: found.map(|(number, _)| number),
-            task: found.map(|(number, task)| task.numbered(number)),
+            task: found
+                .map(|(number, task)| task.numbered(number))
+                .or_else(|| member.summary()),
             spend: task.and_then(Task::spend),
             line: state.line(task, tasks, ended, &member.thread_id),
             word: state.word(task),
@@ -490,6 +492,7 @@ mod tests {
                     role: Some(if number % 2 == 0 { "qa" } else { "backend" }.into()),
                     model: Some("chatgpt/gpt-5.5".into()),
                     task_id: format!("t{number}"),
+                    summary: String::new(),
                     status: *status,
                 })
                 .collect(),

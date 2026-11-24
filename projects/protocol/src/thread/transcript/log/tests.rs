@@ -567,6 +567,7 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
                 role: Some("backend-engineer".into()),
                 model: None,
                 task_id: (*task_id).into(),
+                summary: String::new(),
                 status: *status,
             })
             .collect(),

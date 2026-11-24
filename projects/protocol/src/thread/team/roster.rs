@@ -144,6 +144,7 @@ mod tests {
                     role: None,
                     model: None,
                     task_id: (*task).into(),
+                    summary: String::new(),
                     status: *status,
                 })
                 .collect(),

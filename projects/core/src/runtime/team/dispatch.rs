@@ -272,7 +272,7 @@ async fn failed(launcher: &Launcher, lead: &str, task: &PlanTask) {
 }
 
 /// Members at work get what they were to be woken with, if a stop came between: the card
-/// of a claimed task, the note of a task the lead sent back. Both are stored once under
+/// or the resume note of a claimed task, the note of a task the lead sent back. Both are stored once under
 /// their uid, so this costs a look when nothing is missing.
 async fn wake_members(launcher: &Launcher, lead: &str, folder: &Path) -> Result<()> {
     let state = &launcher.state;
@@ -281,7 +281,7 @@ async fn wake_members(launcher: &Launcher, lead: &str, folder: &Path) -> Result<
         match held.status {
             TaskStatus::Claimed => {
                 let task = state.plan_task(lead, &held.task_id).await?;
-                member::deliver_card(launcher, lead, member, &task, folder).await?;
+                member::deliver_start(launcher, lead, member, &task, folder).await?;
             }
             TaskStatus::Running => {
                 let task = state.plan_task(lead, &held.task_id).await?;
