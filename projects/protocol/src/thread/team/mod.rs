@@ -48,6 +48,10 @@ pub struct Team {
     /// before runs were told apart.
     #[serde(default)]
     pub started_at: Option<i64>,
+    /// When this run ended, in Unix milliseconds; none while it runs, and from cores
+    /// before it was told.
+    #[serde(default)]
+    pub ended_at: Option<i64>,
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -334,6 +338,7 @@ mod tests {
                     status: TaskStatus::Review,
                 }],
                 started_at: None,
+                ended_at: None,
             };
             let text = serde_json::to_string(&team).unwrap();
             assert_eq!(serde_json::from_str::<Team>(&text).unwrap(), team);
@@ -367,6 +372,7 @@ mod tests {
                 })
                 .collect(),
             started_at: None,
+            ended_at: None,
         }
     }
 

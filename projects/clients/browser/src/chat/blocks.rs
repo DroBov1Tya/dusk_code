@@ -127,11 +127,16 @@ fn opens_turn(item: &Item) -> bool {
 }
 
 /// What a finished turn folds away: all but its answer, the user's words, the blocks and
-/// Workshop cards the agent showed, and errors.
+/// Workshop cards the agent showed, the runs it started, and errors.
 fn folds(item: &Item) -> bool {
     !matches!(
         item,
-        Item::User { .. } | Item::Job(_) | Item::Block(_) | Item::Suggestion(_) | Item::Error(_)
+        Item::User { .. }
+            | Item::Job(_)
+            | Item::Block(_)
+            | Item::Suggestion(_)
+            | Item::Run(_)
+            | Item::Error(_)
     )
 }
 
@@ -435,6 +440,7 @@ fn item_view(
         }
         Item::Image { card, .. } => view! { <ImageCard card /> }.into_any(),
         Item::Audio(card) => view! { <AudioCard card /> }.into_any(),
+        Item::Run(_) => view! { <RunCardView id source /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),
         Item::Error(text) => view! { <ErrorRow id text source thread /> }.into_any(),
     }
@@ -1062,5 +1068,75 @@ mod tests {
         chat.apply(ThreadEvent::Model(ModelEvent::Text("Found it.".into())), 0);
         chat.apply(ThreadEvent::TurnFinished(running_turn()), 0);
         assert_eq!(fold(&chat), running);
+    }
+}
+
+/// A team or subagents the chat started, as a card where it began: its title, "Team ·
+/// 5 agents · 1m 12s" and a square a task or agent. A click opens its tab in the right
+/// column: the tasks for a team, the agents for subagents. While it runs, its clock is
+/// read once a second, and not while the page is hidden.
+#[component]
+fn RunCardView(id: u64, source: Source) -> impl IntoView {
+    use dusk_protocol::thread::{RunKind, RunMark};
+    let now = RwSignal::new(super::data::now_ms());
+    let card = Memo::new(move |_| {
+        source.with(|c| c.index_of(id).and_then(|at| c.run_card(at, now.get())))
+    });
+    let handle = set_interval_with_handle(
+        move || {
+            let hidden = web_sys::window()
+                .and_then(|w| w.document())
+                .is_some_and(|d| d.hidden());
+            let running =
+                card.with_untracked(|card| card.as_ref().is_some_and(|card| card.running));
+            if running && !hidden {
+                now.set(super::data::now_ms());
+            }
+        },
+        std::time::Duration::from_secs(1),
+    )
+    .ok();
+    on_cleanup(move || {
+        if let Some(handle) = handle {
+            handle.clear();
+        }
+    });
+    move || {
+        let card = card.get()?;
+        let tab = match card.kind {
+            RunKind::Team => super::inspector::Tab::Tasks,
+            RunKind::Subagents => super::inspector::Tab::Agents,
+        };
+        let marks = card
+            .marks
+            .iter()
+            .map(|mark| {
+                let class = match mark {
+                    RunMark::Done => "run-mark done",
+                    RunMark::Running => "run-mark running",
+                    RunMark::Waiting | RunMark::Confirm => "run-mark waiting",
+                    RunMark::Open => "run-mark open",
+                    RunMark::Blocked => "run-mark blocked",
+                    RunMark::Failed => "run-mark failed",
+                };
+                view! { <i class=class></i> }
+            })
+            .collect_view();
+        let line = card.line();
+        let shown = !card.marks.is_empty();
+        // The row takes the chat's lane, so the card stands at its start at any width.
+        Some(view! {
+            <div class="run-row">
+                <button class="run-card" title=card.title.clone()
+                    on:click=move |_| state().show_inspector(tab)>
+                    <span class="run-card-head">
+                        <span class="run-card-title">{card.title.clone()}</span>
+                        <Icon name=IconName::ChevronRight />
+                    </span>
+                    <span class="run-card-line">{line}</span>
+                    {shown.then(|| view! { <span class="run-marks" aria-hidden="true">{marks}</span> })}
+                </button>
+            </div>
+        })
     }
 }

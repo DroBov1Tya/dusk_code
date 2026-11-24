@@ -94,6 +94,14 @@ pub fn Workspace(children: Children) -> impl IntoView {
         app.view.get();
         close();
     });
+    // An ask to show the right column (a run's card) opens it where it is a drawer.
+    Effect::new(move |seen: Option<u64>| {
+        let asked = app.inspector_asked.get();
+        if seen.is_some_and(|seen| seen != asked) && width.get_untracked() < 1280.0 {
+            open(Drawer::Inspector);
+        }
+        asked
+    });
     Effect::new(move |_| {
         if app.subagent.with(Option::is_some) && drawer.get_untracked().is_some() {
             drawer.set(None);

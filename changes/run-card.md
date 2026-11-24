@@ -1,0 +1,2 @@
+Added
+When a chat sets its team to work or asks several subagents in one step, a card stands in the chat where it started: its title, "Team · 5 agents · 1m 12s" with a clock that runs until the run ends, and a square a task or agent. A click opens the Team screen or the subagents (desktop), the Tasks or Agents tab (browser); the terminal draws it as one line.

@@ -639,6 +639,9 @@ fn act(
         }
         "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
         "fake" if value == "team" || value == "team-ended" => super::team::fake(ws, value, cx),
+        "fake" if value == "subagents" || value == "subagents-ended" => {
+            super::team::subagents(ws, value, cx)
+        }
         "fake" if value.starts_with("team-") => super::team_sizes::fake(ws, value, cx),
         // The Team page's layers, and a long plan's done waves shown.
         "layer" => {

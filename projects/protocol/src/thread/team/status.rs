@@ -76,6 +76,7 @@ mod tests {
             },
             members: Vec::new(),
             started_at: None,
+            ended_at: None,
         }
     }
 

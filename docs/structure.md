@@ -208,22 +208,25 @@ start, stop). Everything else is the core's.
 ```
 api/  (9)
 auth/  (2)
-chat/  (29)
+chat/  (31)
   data/  (2)
   inspector/  (8)
   shown/  (4)
 columns/  (3)
-pages/  (32)
-  customize/  (15)
-    workshop/  (7)
+dev/  (1)
+pages/  (35)
+  customize/  (16)
+    workshop/  (8)
   settings/  (11)
+  welcome/  (3)
 ui/  (7)
 ```
 
 
 The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the typed calls by domain,
 `state` what the whole page knows, `chat/data` the transcript as plain data (testable without a
-browser), `markdown` model output as DOM text only. It draws and calls; it decides nothing.
+browser), `markdown` model output as DOM text only, `dev` made-up chats in debug builds only. It draws and
+calls; it decides nothing.
 
 ### clients/terminal
 

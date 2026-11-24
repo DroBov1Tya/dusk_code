@@ -562,6 +562,7 @@ mod tests {
             used: TeamUsed::default(),
             members: vec![member("m1"), member("m2")],
             started_at: None,
+            ended_at: None,
         }
     }
 
@@ -675,6 +676,7 @@ mod team_tests {
                 })
                 .collect(),
             started_at: None,
+            ended_at: None,
         }
     }
 

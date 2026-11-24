@@ -78,6 +78,12 @@ pub enum Entry {
     Block(dusk_protocol::thread::Block),
     /// The Workshop listings the agent suggested, in place of that tool step.
     Suggestion(dusk_protocol::plugin::Suggestion),
+    /// A team or subagents the chat started, as its card said at `seen` (Unix
+    /// milliseconds): a running card's clock goes on from there.
+    Run {
+        card: dusk_protocol::thread::RunCard,
+        seen: i64,
+    },
 }
 
 /// A Workshop card's plain text, for the copy button: its heading and a line a listing.
@@ -513,6 +519,13 @@ impl Transcript {
             }
             Item::Block(block) => Entry::Block(block.clone()),
             Item::Suggestion(card) => Entry::Suggestion(card.clone()),
+            Item::Run(_) => {
+                let seen = now_ms();
+                let Some(card) = self.log.run_card(index, seen) else {
+                    return;
+                };
+                Entry::Run { card, seen }
+            }
             // A picture `display_image` showed stays with its step.
             Item::Image {
                 card,
@@ -614,6 +627,7 @@ impl Transcript {
             Entry::Job { result, .. } => format!("{}\n{}", result.title(), result.output),
             Entry::Block(block) => block.text(),
             Entry::Suggestion(card) => card_text(card),
+            Entry::Run { card, .. } => format!("{} \u{00B7} {}", card.title, card.line()),
             Entry::Tool { tool, .. } => match tool.state {
                 ToolState::Running => tool.arguments.clone(),
                 _ => tool.output.clone(),

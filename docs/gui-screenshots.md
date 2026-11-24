@@ -33,6 +33,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `fake=todo-short` | after `fake=chat`: its board cut to three open tasks, so the Todo unfolds in place instead of opening as a screen |
 | `fake=activity-thinking\|stalled\|writing\|planning\|steps\|agents\|waiting\|compacting` | after `fake=chat`: a running turn in each kind of work the working row tells apart (`fake=retry` and `fake=unreachable` show the held one) |
 | `fake=team`, `fake=team-ended` | after `fake=chat`: the chat leads a team of seven members on a plan of eight tasks, one in each status (the core's `Team`, `TaskChanged` and member events), running or ended on its steps; the Overview and the plan strip get the answers their requests would give; then `modal=team-stop|team-budget|task-card` opens the yes Stop team asks for, the budget form or the card of task #4 |
+| `fake=subagents`, `fake=subagents-ended` | after `fake=chat`: the chat asks three subagents in one step, one done, one at work and one failed, or all ended; the chat shows their run's card |
 | `fake=team-2\|team-6\|team-24\|team-24-ended\|team-empty` | after `fake=chat`: a team of two members on four tasks, six on eight, or twenty-four on forty-four whose first waves are done (its done members fold by role, its done waves fold), the large one ended on its steps, or a TEAM chat with no plan yet; `center=team` shows the Team page and `layer=people\|plan\|both\|unfold` its layers or a long plan's done waves |
 | `fake=mcp` | five connectors, one of each state, in the place of the config's |
 | `screen=team\|overview\|plan\|todo` | opens that module as the right column's screen (the Todo only with more than three open tasks, else the list shows); `screen=` goes back to the list (take a `shot` before a click on it: the window draws no frames of its own, so a click lands on the last drawn frame) |
@@ -59,3 +60,12 @@ milliseconds in (`fake=activity-thinking`, a shot, then `fake=activity-steps` in
 
 The subagents' mascots move faster than a shot is taken: `DUSK_MASCOT=MS` in the environment holds
 each that many milliseconds into its activity (`fake=agents;modal=agents` shows one of each).
+
+## The web page
+
+A debug build of the web client (`trunk build` in `projects/clients/browser`, served from its
+`dist` by any static server) draws a made-up chat without a core when its address asks for one:
+`?fake=team|team-ended|subagents|subagents-ended` is a chat that set a team of seven to work on a
+plan of eight tasks, one in each status, or asked three subagents in one step, running or ended
+(`src/dev`, not built into release). Nothing is sent; the page's calls fail quietly. Take the
+pictures with any browser.

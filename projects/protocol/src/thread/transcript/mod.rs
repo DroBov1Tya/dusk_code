@@ -10,6 +10,7 @@ mod mark;
 mod note;
 mod progress;
 mod retry;
+mod run;
 mod tool;
 
 pub use agent::AgentState;
@@ -18,6 +19,7 @@ pub use mark::{MAX_MARK_CHARS, Span, Tone, marks, unmarked};
 pub use note::{Note, note};
 pub use progress::{TurnSpend, turn_spend};
 pub use retry::{Retry, RetryRow, retry_row};
+pub use run::{ASK_AGENT_TOOL, PLAN_TOOL, Run, RunCard, RunKind, RunMark};
 pub use tool::{
     DETAIL_KEYS, FAILED_PREFIXES, SHOWN_CHARS, Tool, ToolState, clip, stored_failure, tool_detail,
 };
