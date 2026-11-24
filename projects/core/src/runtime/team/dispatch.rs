@@ -31,6 +31,11 @@ use crate::{
 /// Provider failures in a row, across the team's members, that wind it down.
 const MAX_INFRA_LOSSES: u32 = 3;
 
+/// Losses of one task to the provider or the runner that go uncounted. Past them each
+/// counts as the member's: other members' hand-ins keep the team's row short, and a
+/// task the provider fails every time would be given to new members without end.
+const MAX_UNCOUNTED_PER_TASK: u32 = 3;
+
 /// Why a member's turn was lost, which decides whether the loss counts against its
 /// task's attempts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,7 +77,8 @@ pub(super) async fn pass(launcher: &Launcher, lead: &str, now: i64) -> Result<us
     }
     let folder = folder(launcher, lead).await?;
     if let Some(winding) = run.winding {
-        expire(launcher, lead, now).await?;
+        // The core told the members to stop: a lease that ran out is not counted.
+        expire(launcher, lead, now, false).await?;
         wake_members(launcher, lead, &folder).await?;
         end::wound(launcher, &run, winding, &folder, now).await?;
         return Ok(0);
@@ -83,7 +89,7 @@ pub(super) async fn pass(launcher: &Launcher, lead: &str, now: i64) -> Result<us
         end::wind(launcher, lead, WindWhy::Quiet, now).await?;
         return Ok(0);
     }
-    expire(launcher, lead, now).await?;
+    expire(launcher, lead, now, true).await?;
     wake_members(launcher, lead, &folder).await?;
     gate::resume(launcher, lead).await?;
     review::resume(launcher, lead).await?;
@@ -110,11 +116,18 @@ pub(super) async fn folder(launcher: &Launcher, lead: &str) -> Result<PathBuf> {
 }
 
 /// Releases the tasks whose lease ran out before `now`, and stops what is left of their
-/// members: a runner that lives without its heartbeat, a card nobody read.
-async fn expire(launcher: &Launcher, lead: &str, now: i64) -> Result<()> {
+/// members: a runner that lives without its heartbeat, a card nobody read. Such a loss
+/// is `counted` while the team runs: nothing tells a member that hangs from a provider
+/// that does, and uncounted it would be given to new members without end. While the
+/// team winds down it is not: the core told the member to stop.
+async fn expire(launcher: &Launcher, lead: &str, now: i64, counted: bool) -> Result<()> {
     let state = &launcher.state;
     let members = state.team_members(lead).await?;
-    for task in state.release_expired(lead, now).await? {
+    let expired = match counted {
+        true => state.release_expired(lead, now).await?,
+        false => state.return_expired(lead, now).await?,
+    };
+    for task in expired {
         if let Some(member) = members.iter().find(|held| held.task_id == task.task_id) {
             end::cancel_member(launcher, &member.thread_id).await;
         }
@@ -148,6 +161,9 @@ pub(super) async fn lost(
         let loss = if winding { Loss::Cut } else { loss };
         let note = clean::note(launcher, lead, note).await;
         let task = match loss {
+            Loss::Infra(_) if !uncounted(launcher, &held.task_id) => {
+                state.release_task(lead, &held.task_id, &note).await?
+            }
             Loss::Member => state.release_task(lead, &held.task_id, &note).await?,
             Loss::Cut | Loss::Infra(_) => state.return_task(member, &held.task_id, &note).await?,
         };
@@ -158,6 +174,15 @@ pub(super) async fn lost(
     };
     released(launcher, lead, &task).await;
     Ok(true)
+}
+
+/// Counts one more loss of `task` to the provider or the runner; false once it had
+/// `MAX_UNCOUNTED_PER_TASK`, and this one counts.
+fn uncounted(launcher: &Launcher, task: &str) -> bool {
+    let mut losses = launcher.team.task_infra_losses.lock();
+    let count = losses.entry(task.to_owned()).or_default();
+    *count += 1;
+    *count <= MAX_UNCOUNTED_PER_TASK
 }
 
 /// Counts a loss the provider or the runner caused. A key or a quota the provider
@@ -181,7 +206,7 @@ async fn provider_failed(launcher: &Launcher, lead: &str, kind: Option<ProviderE
     info!("team of thread {lead}: the provider keeps failing ({kind:?}); it winds down");
     launcher.team.infra_losses.lock().remove(lead);
     let wound = match crate::state::timestamp_ms() {
-        Ok(now) => end::wind(launcher, lead, WindWhy::Provider, now)
+        Ok(now) => end::wind_for(launcher, lead, WindWhy::Provider, kind, now)
             .await
             .map(drop)
             .map_err(anyhow::Error::from),
@@ -192,9 +217,10 @@ async fn provider_failed(launcher: &Launcher, lead: &str, kind: Option<ProviderE
     }
 }
 
-/// A member handed in: the provider answered, and losses in a row start again.
-pub(super) fn infra_passed(launcher: &Launcher, lead: &str) {
+/// A member handed in `task`: the provider answered, and losses in a row start again.
+pub(super) fn infra_passed(launcher: &Launcher, lead: &str, task: &str) {
     launcher.team.infra_losses.lock().remove(lead);
+    launcher.team.task_infra_losses.lock().remove(task);
 }
 
 /// After a release: clients hear of the task, and when it failed, of the tasks the

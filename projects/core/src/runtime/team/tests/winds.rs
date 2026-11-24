@@ -186,7 +186,8 @@ async fn a_key_the_provider_refuses_is_no_lost_attempt_and_stops_the_team() {
     let lines = rig.lines().await;
     assert!(
         lines.last().unwrap().starts_with(
-            "Team ended: stopped, the provider kept failing the members' turns. 0 of 1 tasks;"
+            "Team ended: stopped, the provider kept failing the members' turns (key or sign-in \
+             not accepted). 0 of 1 tasks;"
         ),
         "{lines:?}"
     );
@@ -209,4 +210,54 @@ async fn three_provider_failures_in_a_row_stop_the_team_and_fail_no_task() {
     assert_eq!(rig.members().await.len(), 3);
     let task = rig.task(&id).await;
     assert_eq!((task.status, task.attempts), (PlanStatus::Open, 0));
+}
+
+#[tokio::test]
+async fn a_member_cut_off_when_the_grace_runs_out_loses_no_attempt() {
+    let rig = Rig::new("team_wind_grace", hang).await;
+    let id = rig.plan(&[task("one")]).await.remove(0);
+    rig.run().await;
+    until("the member works", || async {
+        rig.status(&id).await == PlanStatus::Running
+    })
+    .await;
+    rig.runner().stop(&rig.lead).await.unwrap();
+    assert_eq!(rig.ended().await, None);
+
+    // The member never answers; the grace runs out and the next pass ends the team.
+    sqlx::query("UPDATE teams SET winding_since = winding_since - ? WHERE thread_id = ?")
+        .bind(GRACE_MS)
+        .bind(&rig.lead)
+        .execute(&rig.state().pool)
+        .await
+        .unwrap();
+    rig.pass().await;
+
+    assert_eq!(rig.ended().await, Some(TeamEnd::Stopped));
+    let task = rig.task(&id).await;
+    assert_eq!((task.status, task.attempts), (PlanStatus::Open, 0));
+}
+
+#[tokio::test]
+async fn a_task_the_provider_keeps_failing_counts_past_its_uncounted_losses() {
+    let rig = Rig::with("team_wind_task_cap", ONCE, |asked| match asked.lead {
+        true => Out::Say("Noted.".into()),
+        false => Out::Fail(ProviderErrorKind::Interrupted),
+    })
+    .await;
+    let id = rig.plan(&[task("one")]).await.remove(0);
+    // As if other members' hand-ins had kept the team's row short while this task was
+    // lost to the provider again and again.
+    rig.launcher()
+        .team
+        .task_infra_losses
+        .lock()
+        .insert(id.clone(), 3);
+    rig.run().await;
+
+    until("the team ended", || async { rig.ended().await.is_some() }).await;
+
+    // Each loss now counts: the third fails the task.
+    let task = rig.task(&id).await;
+    assert_eq!((task.status, task.attempts), (PlanStatus::Failed, 3));
 }

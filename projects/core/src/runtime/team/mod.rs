@@ -87,6 +87,9 @@ pub struct Teams {
     /// Each team's member turns lost in a row to the provider or the runner. After a
     /// restart it counts again from nothing.
     infra_losses: parking_lot::Mutex<HashMap<String, u32>>,
+    /// Each task's turns lost to the provider or the runner, uncounted so far. After a
+    /// restart it counts again from nothing.
+    task_infra_losses: parking_lot::Mutex<HashMap<String, u32>>,
 }
 
 /// The team behind a chat's `tasks`: what its `run`, `stop` and `show` reach.

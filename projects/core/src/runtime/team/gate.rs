@@ -260,12 +260,12 @@ async fn settle(
             }
         }
         Some(note) => {
-            // A team that ended gives no task back to a member: the gate runs again
-            // with the next run.
+            // A team that ended, or winds down, gives no task back to a member: its
+            // member was told to stop, and the gate runs again with the next run.
             let running = state
                 .team_run(lead)
                 .await?
-                .is_some_and(|run| run.status == TeamStatus::Running);
+                .is_some_and(|run| run.status == TeamStatus::Running && run.winding.is_none());
             if !running {
                 return Ok(());
             }

@@ -249,7 +249,7 @@ pub(super) async fn completed(
         }
     }
     // The provider answered: losses to it in a row start again.
-    dispatch::infra_passed(launcher, lead);
+    dispatch::infra_passed(launcher, lead, &held.task_id);
     let answer = launcher
         .answer(&member.id, turn.response_message_id.as_deref())
         .await;

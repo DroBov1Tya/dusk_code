@@ -350,13 +350,14 @@ async fn the_team_s_end_returns_work_without_failing_it() {
     let mut returned = state.return_work(LEAD).await.unwrap();
     returned.sort_by(|one, other| one.task_id.cmp(&other.task_id));
     assert_eq!(returned.len(), 2);
-    for (task, attempts) in returned.iter().zip([MAX_ATTEMPTS, 1]) {
+    // The attempt each claim counted is taken back: the end was not the member's.
+    for (task, attempts) in returned.iter().zip([MAX_ATTEMPTS - 1, 0]) {
         assert_eq!(task.status, PlanStatus::Open);
         assert_eq!(
             (task.owner_thread_id.as_deref(), task.lease_until),
             (None, None)
         );
-        assert_eq!(task.attempts, attempts, "attempts are left as they were");
+        assert_eq!(task.attempts, attempts);
     }
     assert_eq!(
         (get(&state, &ids[2]).await, get(&state, &ids[3]).await),

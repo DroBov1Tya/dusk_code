@@ -241,7 +241,16 @@ impl State {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         let task_id = locate(&mut transaction, &root, task).await?;
-        let released = release(&mut transaction, &root, Some(&task_id), None, note, now).await?;
+        let released = release(
+            &mut transaction,
+            &root,
+            Some(&task_id),
+            None,
+            note,
+            now,
+            true,
+        )
+        .await?;
         if released.is_empty() {
             return Err(refusal(&mut transaction, &root, &task_id, None, PlanStatus::Open).await);
         }
@@ -300,6 +309,22 @@ impl State {
         thread: &str,
         now: i64,
     ) -> Result<Vec<PlanTask>, PlanError> {
+        self.expired(thread, now, true).await
+    }
+
+    /// Returns every task of the plan whose lease ran out before `now` to open, as
+    /// `return_task` does: the attempt is not counted and none fails. For a team that
+    /// winds down, whose members the core told to stop.
+    pub async fn return_expired(&self, thread: &str, now: i64) -> Result<Vec<PlanTask>, PlanError> {
+        self.expired(thread, now, false).await
+    }
+
+    async fn expired(
+        &self,
+        thread: &str,
+        now: i64,
+        counted: bool,
+    ) -> Result<Vec<PlanTask>, PlanError> {
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         let released = release(
@@ -309,6 +334,7 @@ impl State {
             Some(now),
             "the lease ran out",
             now,
+            counted,
         )
         .await?;
         settle_blocks(&mut transaction, &root, now).await?;
@@ -316,14 +342,15 @@ impl State {
     }
 
     /// The team ended: tasks at work go back to open, whatever their attempts, and none
-    /// fails. `attempts` is left as it is.
+    /// fails. The attempt their claim counted is taken back: the end cut their members
+    /// off, which was not the members' doing.
     pub async fn return_work(&self, thread: &str) -> Result<Vec<PlanTask>, PlanError> {
         let now = timestamp_ms()?;
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
         let returned: Vec<String> = sqlx::query_scalar(
             "UPDATE tasks SET status = 'open', owner_thread_id = NULL, lease_until = NULL,
-                 updated_at = ?
+                 attempts = MAX(attempts - 1, 0), updated_at = ?
              WHERE thread_id = ? AND status IN ('claimed', 'running') RETURNING task_id",
         )
         .bind(now)
@@ -653,6 +680,8 @@ impl State {
 }
 
 /// Takes tasks at work back: one by id, or all whose lease ended before `expired`.
+/// claimed or running back to open, or to failed at `MAX_ATTEMPTS`. Not `counted`, the
+/// attempt the claim counted is taken back and none fails.
 async fn release(
     transaction: &mut Tx<'_>,
     root: &str,
@@ -660,11 +689,13 @@ async fn release(
     expired: Option<i64>,
     note: &str,
     now: i64,
+    counted: bool,
 ) -> Result<Vec<String>, PlanError> {
     Ok(sqlx::query_scalar(
         "UPDATE tasks SET
-             status = CASE WHEN attempts >= ?1 THEN 'failed' ELSE 'open' END,
-             owner_thread_id = CASE WHEN attempts >= ?1 THEN owner_thread_id END,
+             status = CASE WHEN ?7 AND attempts >= ?1 THEN 'failed' ELSE 'open' END,
+             owner_thread_id = CASE WHEN ?7 AND attempts >= ?1 THEN owner_thread_id END,
+             attempts = CASE WHEN ?7 THEN attempts ELSE MAX(attempts - 1, 0) END,
              lease_until = NULL, note = ?2, updated_at = ?3
          WHERE thread_id = ?4 AND status IN ('claimed', 'running')
            AND (?5 IS NULL OR task_id = ?5) AND (?6 IS NULL OR lease_until < ?6)
@@ -676,6 +707,7 @@ async fn release(
     .bind(root)
     .bind(task_id)
     .bind(expired)
+    .bind(counted)
     .fetch_all(&mut **transaction)
     .await?)
 }

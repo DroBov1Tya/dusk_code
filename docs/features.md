@@ -133,9 +133,10 @@ board too and no team runs.
   once nobody is at work or `limits.team_wrap_seconds` (180) ran out; clients say
   "wrapping up" meanwhile, and a second stop ends it at once. A stop of the chat or of a
   member by the user still ends the team at once. A loss that is not the member's (a
-  restart, a provider failure, a turn cut off while winding down) is not counted against
-  the task's three attempts; a provider's end reads "stopped" with the reason in the
-  lead's line.
+  restart, a provider failure, a turn cut off while winding down or by the team's end)
+  is not counted against the task's three attempts, up to three such losses of one task;
+  a lease that runs out while the team runs still counts. A provider's end reads
+  "stopped" with the provider's reason in the lead's line.
 - **Recovery.** When the chat is opened after a restart, an ended team's work goes back
   to open, a turn still running gets its lease again, a turn that completed is handed in,
   a lost one goes back to open without counting the attempt, and a gate that was cut off

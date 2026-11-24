@@ -96,7 +96,7 @@ async fn the_end_gives_work_back_and_a_run_waits_for_work_left() {
         .iter()
         .map(|task| task.attempts)
         .collect();
-    assert_eq!(attempts, [1, 1, 0], "an end does not cost an attempt");
+    assert_eq!(attempts, [0, 0, 0], "an end does not cost an attempt");
 
     // A crash after the end committed and before the work came back.
     state.start_team(LEAD, plain(), START + 2).await.unwrap();

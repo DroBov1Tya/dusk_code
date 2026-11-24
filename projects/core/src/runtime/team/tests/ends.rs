@@ -67,7 +67,8 @@ async fn a_user_who_stops_a_member_stops_the_team() {
     // Nothing started the task again.
     assert_eq!(rig.pass().await, 0);
     assert_eq!(rig.members().await.len(), 1);
-    assert_eq!(rig.task(&ids[0]).await.attempts, 1);
+    // The end cut the member off: its attempt is not counted.
+    assert_eq!(rig.task(&ids[0]).await.attempts, 0);
 }
 
 #[tokio::test]

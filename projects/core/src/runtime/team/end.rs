@@ -8,7 +8,10 @@
 
 use std::path::Path;
 
-use dusk_protocol::thread::{TaskDuty, TaskStatus, TeamEnd, TeamMember, TeamStatus};
+use dusk_protocol::{
+    model::ProviderErrorKind,
+    thread::{TaskDuty, TaskStatus, TeamEnd, TeamMember, TeamStatus},
+};
 use tracing::warn;
 
 use super::{allow, critic, dispatch, events, gate, lead_lines};
@@ -43,6 +46,17 @@ pub(super) async fn end(
     why: TeamEnd,
     now: i64,
 ) -> Result<Vec<PlanTask>, TeamError> {
+    end_for(launcher, lead, why, None, now).await
+}
+
+/// `end`, with the provider's reason when it is why the team stops.
+async fn end_for(
+    launcher: &Launcher,
+    lead: &str,
+    why: TeamEnd,
+    kind: Option<ProviderErrorKind>,
+    now: i64,
+) -> Result<Vec<PlanTask>, TeamError> {
     let state = &launcher.state;
     let members = state.team_members(lead).await?;
     let ended = state.end_team(lead, why, now).await;
@@ -60,7 +74,7 @@ pub(super) async fn end(
         events::task(launcher, lead, task).await;
     }
     events::team(launcher, lead, now, true).await;
-    tell(launcher, &run, why, now).await;
+    tell(launcher, &run, why, kind, now).await;
     Ok(returned)
 }
 
@@ -77,13 +91,25 @@ pub(super) async fn wind(
     why: WindWhy,
     now: i64,
 ) -> Result<Vec<PlanTask>, TeamError> {
+    wind_for(launcher, lead, why, None, now).await
+}
+
+/// `wind`, with the provider's reason when the provider is why: the lead's line names
+/// it.
+pub(super) async fn wind_for(
+    launcher: &Launcher,
+    lead: &str,
+    why: WindWhy,
+    kind: Option<ProviderErrorKind>,
+    now: i64,
+) -> Result<Vec<PlanTask>, TeamError> {
     let state = &launcher.state;
     let run = state.team_run(lead).await?.ok_or(TeamError::NoTeam)?;
     if let TeamStatus::Ended(before) = run.status {
         return Err(TeamError::Ended(before));
     }
     if run.winding.is_some() {
-        return end(launcher, lead, why.end(), now).await;
+        return end_for(launcher, lead, why.end(), kind, now).await;
     }
     let plan = state.plan(lead).await?;
     let at_work: Vec<TeamMember> = state
@@ -118,7 +144,7 @@ pub(super) async fn wind(
     state.wind_team(lead, why, now).await?;
     let asked = at_work.iter().filter(|member| hands_over(member)).count();
     if asked == 0 {
-        let mut ended = end(launcher, lead, why.end(), now).await?;
+        let mut ended = end_for(launcher, lead, why.end(), kind, now).await?;
         returned.append(&mut ended);
         return Ok(returned);
     }
@@ -128,8 +154,11 @@ pub(super) async fn wind(
     }
     events::team(launcher, lead, now, true).await;
     let cause = match why {
-        WindWhy::Provider => "The provider keeps failing; the team is stopping",
-        WindWhy::Stopped | WindWhy::Quiet => "Team winding down",
+        WindWhy::Provider => format!(
+            "The provider keeps failing{}; the team is stopping",
+            provider_kind(kind)
+        ),
+        WindWhy::Stopped | WindWhy::Quiet => "Team winding down".to_owned(),
     };
     let line = match asked {
         1 => format!("{cause}: 1 member is writing its hand-over."),
@@ -203,7 +232,13 @@ pub(super) async fn cancel_member(launcher: &Launcher, thread_id: &str) {
 /// `Team ended: done. 7 of 7 tasks; 212 steps, 1.31M tokens, 18 min.` Stored under the
 /// run's own uid, so an end is told once. A stopped team does not wake its lead: the
 /// user stopped the work, and the line is read with the next request.
-async fn tell(launcher: &Launcher, run: &TeamRun, why: TeamEnd, now: i64) {
+async fn tell(
+    launcher: &Launcher,
+    run: &TeamRun,
+    why: TeamEnd,
+    kind: Option<ProviderErrorKind>,
+    now: i64,
+) {
     let lead = &run.thread_id;
     let state = &launcher.state;
     let (Ok(plan), Ok(Some(team))) = (state.plan(lead).await, state.team(lead, now).await) else {
@@ -211,13 +246,16 @@ async fn tell(launcher: &Launcher, run: &TeamRun, why: TeamEnd, now: i64) {
     };
     let provider = run.winding.map(|winding| winding.why) == Some(WindWhy::Provider);
     let reason = match why {
-        TeamEnd::Done => "done",
+        TeamEnd::Done => "done".to_owned(),
         // Only older cores ended a team on a budget.
-        TeamEnd::Steps | TeamEnd::Tokens | TeamEnd::Time => "its budget was spent",
-        TeamEnd::Stalled => "stalled, nothing could start",
-        TeamEnd::Stopped if provider => "stopped, the provider kept failing the members' turns",
-        TeamEnd::Stopped => "stopped",
-        TeamEnd::Quiet => "quiet, you were written to 30 times without the user",
+        TeamEnd::Steps | TeamEnd::Tokens | TeamEnd::Time => "its budget was spent".to_owned(),
+        TeamEnd::Stalled => "stalled, nothing could start".to_owned(),
+        TeamEnd::Stopped if provider => format!(
+            "stopped, the provider kept failing the members' turns{}",
+            provider_kind(kind)
+        ),
+        TeamEnd::Stopped => "stopped".to_owned(),
+        TeamEnd::Quiet => "quiet, you were written to 30 times without the user".to_owned(),
     };
     let left = match why {
         TeamEnd::Done => "",
@@ -279,6 +317,12 @@ fn held_wave(plan: &[PlanTask]) -> String {
         current + 1,
         holding.join(", ")
     )
+}
+
+/// ` (rate limited)`: the provider's reason, when it gave one.
+fn provider_kind(kind: Option<ProviderErrorKind>) -> String {
+    kind.map(|kind| format!(" ({})", kind.label().to_lowercase()))
+        .unwrap_or_default()
 }
 
 /// `1.31M`, `212k`, `950`.
