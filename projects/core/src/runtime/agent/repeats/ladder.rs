@@ -142,6 +142,24 @@ impl Ladder {
     }
 }
 
+impl Ladder {
+    /// The error that came back most often in the turn, with its attempts; None when
+    /// none came back.
+    pub fn worst(&self) -> Option<String> {
+        let seen = self
+            .seen
+            .values()
+            .filter(|seen| seen.count >= 2)
+            .max_by_key(|seen| (seen.count, seen.last))?;
+        Some(format!(
+            "this error came back {} times:\n{}\nattempts:\n{}",
+            seen.count,
+            seen.excerpt,
+            seen.list()
+        ))
+    }
+}
+
 impl Seen {
     /// Attempts are told apart as they are listed, so the list reads as it always did.
     fn add(&mut self, attempt: Attempt) {

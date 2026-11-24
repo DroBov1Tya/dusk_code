@@ -7,19 +7,24 @@
 //!   nothing changed between; with `limits.loop_cycles` on they escalate to a re-plan;
 //! - tests run again with no project file changed (`test_runs`, `limits.test_reruns`);
 //! - steps in a row that bring nothing new (`progress`, `limits.no_progress`), which also
-//!   mark the turn a stall candidate for a judge;
+//!   mark the turn a stall candidate for a judge, as a cycle asked twice for a different
+//!   plan does (`judge` has what the judge reads and how its answer is taken);
 //! - when `limits.failure_ladder` is on, the same error through calls that differ
 //!   (`ladder`, with `signature` saying when two errors are the same, and a test run's
 //!   failing ids standing for its error). The same count tells, with `limits.episodes`
 //!   on, when a pass ended such an error (`solved`).
 //!
-//! Only the ladder ends a turn; the other rules add notes. The test results of the turn,
+//! Only the ladder ends a turn by itself; the other rules add notes, and a stall candidate
+//! ends it only when the judge is sure it is stuck. The test results of the turn,
 //! and whether it wrote where the change ledger does not look, are kept too, for a goal
 //! to tell whether its rounds still change anything (`Round`).
 
 mod cycles;
 #[cfg(test)]
 mod cycles_tests;
+mod judge;
+#[cfg(test)]
+mod judge_tests;
 mod ladder;
 mod progress;
 #[cfg(test)]
@@ -37,7 +42,7 @@ mod test_runs_tests;
 mod tests;
 
 use std::{
-    collections::{BTreeMap, hash_map::DefaultHasher},
+    collections::{BTreeMap, VecDeque, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
 };
 
@@ -45,6 +50,7 @@ use dusk_protocol::thread::RepeatRung;
 
 use crate::{config::Limits, providers::ToolCall, tools::ToolResult};
 
+pub use judge::{Verdict, digest, judge_note, judge_stop, verdict};
 pub use solved::{Solved, lesson, lesson_note};
 pub use test_runs::is_test_run;
 
@@ -89,6 +95,24 @@ pub struct Round {
     pub unseen_writes: bool,
 }
 
+/// A turn a judge should read: a rule asked for a different plan and nothing came of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stall {
+    /// What the rule counted: steps with nothing new, or rounds of a cycle.
+    pub count: u32,
+    /// What the rule saw, in a few words, for the judge and the user.
+    pub what: String,
+}
+
+/// What the judge reads of the turn besides the user's request.
+#[derive(Debug, Default)]
+pub struct Digest {
+    /// The newest calls of the turn, one line each, oldest first.
+    pub calls: Vec<String>,
+    /// The error that came back most often, with its attempts, when one came back.
+    pub error: Option<String>,
+}
+
 /// Kept per turn: a new turn starts every count over.
 #[derive(Default)]
 pub struct Repeats {
@@ -105,6 +129,17 @@ pub struct Repeats {
     stop: Option<String>,
     /// A result of this turn asked the model for a lesson line.
     lesson_asked: bool,
+    /// The newest calls, one line each, for a judge; kept with `limits.loop_judge` on.
+    recent: VecDeque<String>,
+    /// Re-plans the cycle rule asked for since it last marked a stall.
+    cycle_replans: u32,
+    /// A cycle asked twice for a different plan and the judge has not been told yet.
+    cycle_stall: Option<Stall>,
+    /// Judge calls made in the turn.
+    judged: u32,
+    /// Stall candidates to let pass before the next judge call: each judge that let
+    /// the turn go on makes the next one wait longer.
+    skip: u32,
 }
 
 impl Repeats {
@@ -179,6 +214,9 @@ impl Repeats {
         let climbed = counted
             .filter(|_| limits.failure_ladder)
             .and_then(|key| self.ladder.climb(key, limits));
+        if limits.loop_judge {
+            self.keep_recent(call, result);
+        }
         let mut notices = Vec::new();
         if let Some(climbed) = climbed {
             if climbed.stop.is_some() {
@@ -195,7 +233,33 @@ impl Repeats {
             .map(|(rung, count, note)| Notice { rung, count, note })?;
         // A no-progress note that lost to another rule's comes with a later call.
         self.progress.noticed(notice.rung, limits);
+        if notice.rung == RepeatRung::CycleReplan {
+            self.cycle_replans += 1;
+            if self.cycle_replans >= CYCLE_REPLANS_TO_JUDGE {
+                self.cycle_replans = 0;
+                self.cycle_stall = Some(Stall {
+                    count: notice.count,
+                    what: format!(
+                        "the same calls came round {} times with the same results",
+                        notice.count
+                    ),
+                });
+            }
+        }
         Some(notice)
+    }
+
+    fn keep_recent(&mut self, call: &ToolCall, result: &ToolResult) {
+        let outcome = match (result.is_error, result.exit_code) {
+            (false, _) => "ok".to_owned(),
+            (true, Some(code)) => format!("failed, exit {code}"),
+            (true, None) => "failed".to_owned(),
+        };
+        if self.recent.len() >= judge::RECENT_CALLS {
+            self.recent.pop_front();
+        }
+        let shown = ladder::Attempt::of(call).shown;
+        self.recent.push_back(format!("{shown} -> {outcome}"));
     }
 
     fn keep_test_result(&mut self, run: &test_runs::TestRun, call: &ToolCall, result: &ToolResult) {
@@ -240,14 +304,46 @@ impl Repeats {
         }
     }
 
-    /// Steps in a row with nothing new in the turn `turn_id`, once the model was asked
-    /// for a different plan for that: a turn a judge should look at. Given once per
-    /// re-plan; None after progress.
-    pub fn take_stall(&mut self, turn_id: &str) -> Option<u32> {
+    /// The turn `turn_id` as a stall candidate, once a rule asked for a different plan
+    /// and nothing came of it: steps in a row with nothing new past the re-plan, or a
+    /// cycle asked twice. Given once per mark, and only while the judge is on and has
+    /// calls left; marks that come while a judge's redirect is being given time pass.
+    pub fn take_stall(&mut self, turn_id: &str, limits: &Limits) -> Option<Stall> {
         if self.turn != turn_id {
             return None;
         }
-        self.progress.take_stall()
+        let idle = self.progress.take_stall().map(|idle| Stall {
+            count: idle,
+            what: format!("{idle} steps in a row brought nothing new"),
+        });
+        let stall = self.cycle_stall.take().or(idle)?;
+        if !limits.loop_judge || self.judged >= limits.loop_judge_calls {
+            return None;
+        }
+        if self.skip > 0 {
+            self.skip -= 1;
+            return None;
+        }
+        Some(stall)
+    }
+
+    /// What a judge of the turn `turn_id` reads of it.
+    pub fn digest(&self, turn_id: &str) -> Digest {
+        if self.turn != turn_id {
+            return Digest::default();
+        }
+        Digest {
+            calls: self.recent.iter().cloned().collect(),
+            error: self.ladder.worst(),
+        }
+    }
+
+    /// A judge read the turn `turn_id` and let it go on, or could not answer: the next
+    /// stall candidate it reads waits for one more mark than this one did.
+    pub fn judged(&mut self, turn_id: &str) {
+        self.enter(turn_id);
+        self.judged = self.judged.saturating_add(1);
+        self.skip = self.judged;
     }
 
     /// The loop a call that passed ended, for an episode. Only asked with
@@ -300,6 +396,8 @@ impl Repeats {
 
 /// Test runners a turn keeps the last result of.
 const MAX_TEST_RUNNERS: usize = 16;
+/// Re-plans a cycle is asked for before a judge reads the turn: the first may still work.
+const CYCLE_REPLANS_TO_JUDGE: u32 = 2;
 
 /// Which notice wins when rules agree on a call: lower first.
 fn weight(rung: RepeatRung) -> u8 {

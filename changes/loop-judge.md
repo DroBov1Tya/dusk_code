@@ -1,0 +1,2 @@
+Added
+A judge for stuck turns (`limits.loop_judge`, on): a turn still without progress after the no-progress re-plan, or a cycle asked twice for a different plan, is read by the turn's own model, without tools, from a short digest (the request, the last 20 calls, what the rule saw, the error that came back most). Only a judge at least 0.9 sure the turn is stuck ends it as failed, with the last calls and its suggestion (`JudgeStop`); otherwise its advice is the next step's note (`JudgeRedirect`) and the next look waits longer. At most `loop_judge_calls` (3) a turn.

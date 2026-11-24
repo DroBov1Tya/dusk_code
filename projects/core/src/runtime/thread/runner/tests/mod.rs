@@ -432,6 +432,7 @@ async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
 
 mod episodes;
 mod goals;
+mod judge;
 mod progress;
 mod repeats;
 mod resume;

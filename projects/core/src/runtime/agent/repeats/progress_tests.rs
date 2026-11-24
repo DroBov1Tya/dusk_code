@@ -103,7 +103,11 @@ fn steps_that_change_nothing_get_a_note_then_a_replan_and_a_stall_mark() {
     let rungs = idle_after_edit(&mut repeats, 13, &limits);
     // The edit's step and 12 idle ones are behind the 14th call when it brings nothing.
     assert_eq!(fired(&rungs), [(13, RepeatRung::NoProgress)]);
-    assert_eq!(repeats.take_stall("t"), None, "a note alone marks no stall");
+    assert_eq!(
+        repeats.take_stall("t", &limits).map(|stall| stall.count),
+        None,
+        "a note alone marks no stall"
+    );
     let mut more = Vec::new();
     for i in 0..30 {
         let done = quiet(command(&format!("echo more {i}")));
@@ -119,12 +123,20 @@ fn steps_that_change_nothing_get_a_note_then_a_replan_and_a_stall_mark() {
         ]
     );
     assert_eq!(
-        repeats.take_stall("t"),
+        repeats.take_stall("t", &limits).map(|stall| stall.count),
         Some(42),
         "the judge hook gets the turn once"
     );
-    assert_eq!(repeats.take_stall("t"), None);
-    assert_eq!(repeats.take_stall("other turn"), None);
+    assert_eq!(
+        repeats.take_stall("t", &limits).map(|stall| stall.count),
+        None
+    );
+    assert_eq!(
+        repeats
+            .take_stall("other turn", &limits)
+            .map(|stall| stall.count),
+        None
+    );
 }
 
 #[test]
@@ -152,7 +164,10 @@ fn the_switch_turns_the_rule_off() {
     limits.no_progress = false;
     let rungs = idle_after_edit(&mut repeats, 60, &limits);
     assert_eq!(fired(&rungs), []);
-    assert_eq!(repeats.take_stall("t"), None);
+    assert_eq!(
+        repeats.take_stall("t", &limits).map(|stall| stall.count),
+        None
+    );
 }
 
 #[test]

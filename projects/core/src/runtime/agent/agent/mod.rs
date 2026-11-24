@@ -4,6 +4,7 @@
 
 mod calls;
 mod episodes;
+mod judge;
 mod mode;
 mod pictures;
 mod report;

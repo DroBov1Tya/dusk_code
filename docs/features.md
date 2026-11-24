@@ -79,6 +79,17 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   job, an MCP tool), a new call that may write counts as progress; a step of only looks
   at background jobs is not counted. Notes only: after the re-plan the turn is a stall
   candidate for a judge, and goes on.
+- **Loop judge.** `limits.loop_judge` (on): a turn still without progress after the
+  no-progress re-plan, or a cycle asked twice for a different plan, is read by a judge:
+  the turn's own model (no smaller helper model is configured anywhere; titles and
+  summaries use the chat's model too), without tools, given the user's request, the
+  last 20 calls one line each, what the rule saw and the error that came back most
+  (`resources/internal/LOOP_JUDGE.md`, which says varied retries and batch edits are not
+  loops). It answers `{stuck, confidence, redirect}`. Only `stuck` at 0.9 or more ends
+  the turn as failed, with the last calls and the suggestion (`JudgeStop`); otherwise
+  the redirect is the next step's note (`JudgeRedirect`) and the next candidate waits
+  for one more mark than the last did. At most `limits.loop_judge_calls` (3) a turn; an
+  answer that cannot be read lets the turn go on.
 - **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
   a goal, the state of the files its chat and agents changed and the test results of
   the round (error lines included, so a build failing with fewer errors is another

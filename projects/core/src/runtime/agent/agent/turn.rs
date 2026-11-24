@@ -1,5 +1,6 @@
 //! A turn: starting it, running it, and what joins it from outside.
 
+use super::judge::Judged;
 use super::wait::Waited;
 use super::{Agent, Pace, StepEnd};
 use crate::plugins::HookEvent;
@@ -19,14 +20,6 @@ const MAX_SHRINKS: u32 = 2;
 const MAX_STRANDED: u32 = 2;
 
 impl Agent {
-    /// A turn a stall candidate: `idle` steps in a row brought nothing new, and the model
-    /// was asked for a different plan. Why the turn must end, when a judge reads it and
-    /// confirms it is stuck; until there is one, the turn goes on and the notes stand.
-    async fn judge_stall(&self, turn: &Turn, idle: u32) -> Option<String> {
-        info!(turn = %turn.turn_id, idle, "the turn is a stall candidate");
-        None
-    }
-
     /// Starts a turn when something is queued and the context fits the input limit.
     pub async fn start_turn(&self) -> Result<Option<Turn>> {
         if self.model.current().is_none() {
@@ -145,16 +138,29 @@ impl Agent {
                 StepEnd::CalledTools => self.repeats.lock().take_stop(&turn.turn_id),
                 _ => None,
             };
-            // Steps went by with nothing new even after a re-plan: only a judge may end
-            // the turn for that.
+            // A re-plan came to nothing (steps with nothing new, a cycle going on): only a
+            // judge may end the turn for that; otherwise its advice is the next note.
             let stalled = match end {
                 StepEnd::CalledTools if repeated.is_none() => {
-                    self.repeats.lock().take_stall(&turn.turn_id)
+                    let limits = self.config.current().limits();
+                    self.repeats.lock().take_stall(&turn.turn_id, &limits)
                 }
                 _ => None,
             };
             let repeated = match stalled {
-                Some(idle) => self.judge_stall(turn, idle).await,
+                Some(stall) => match self.judge_stall(turn, &stall, inbox).await {
+                    Judged::Stuck(why) => Some(why),
+                    Judged::Redirect(advice) => {
+                        note = Some(advice);
+                        None
+                    }
+                    Judged::Goes => None,
+                    Judged::Stopped(reason) => {
+                        stop = Some(reason);
+                        outcome = TurnOutcome::Interrupted(None);
+                        break;
+                    }
+                },
                 None => repeated,
             };
             if let Some(why) = repeated {
