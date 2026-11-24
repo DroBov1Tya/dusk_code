@@ -869,6 +869,16 @@ fn a_team_card_tells_the_run_it_stands_for() {
             plan_task("t1", TaskStatus::Done),
             plan_task("t2", TaskStatus::Running),
             plan_task("t3", TaskStatus::Open),
+            // The review of t1 and the critic are the core's checks, not squares.
+            Task {
+                duty: crate::thread::TaskDuty::Review,
+                review_of: Some("t1".into()),
+                ..plan_task("r1", TaskStatus::Done)
+            },
+            Task {
+                duty: crate::thread::TaskDuty::Critic,
+                ..plan_task("c", TaskStatus::Open)
+            },
         ]),
         1_000,
     );
