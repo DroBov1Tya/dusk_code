@@ -209,10 +209,20 @@ fn node(task: &TaskNode, lit: Option<Lit>, cx: &mut Context<Workspace>) -> State
             })
             // Come back from review says it was given again; the count would crowd it.
             .when(task.attempts > 1 && task.reworks == 0, |row| {
+                let tip = SharedString::from(format!(
+                    "Given out {} times: a lost attempt goes back to its member once, then to \
+                     a fresh one",
+                    task.attempts
+                ));
                 row.child(
                     div()
+                        .id(SharedString::from(format!("team-attempt-{}", task.task_id)))
                         .flex_none()
-                        .child(format!("\u{00D7}{}", task.attempts)),
+                        .tooltip(move |window, cx| {
+                            gpui_kit::component::tooltip::Tooltip::new(tip.clone())
+                                .build(window, cx)
+                        })
+                        .child(format!("attempt {}", task.attempts)),
                 )
             })
             .when(task.gated, |row| {

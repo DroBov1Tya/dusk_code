@@ -241,8 +241,8 @@ pub fn stop(id: &'static str, cx: &mut Context<Workspace>) -> Stateful<Div> {
         }))
 }
 
-/// The members as one line of faces and their count; unfolded, a row each with its role,
-/// model and state. A click on a member opens its chat.
+/// The members as one line of faces and their count; unfolded, a row each with its task,
+/// role, model and state. A click on a member opens its chat.
 fn members(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(chat) = ws.shown_chat() else {
         return div();
@@ -302,7 +302,8 @@ fn members(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         let ended = team.ended().is_some();
         let mut list = div().flex().flex_col().pt_1();
         for row in rows {
-            let role = [Some(row.role.clone()), row.model.clone()]
+            // Who does what: its task first, then its role and model.
+            let role = [row.task.clone(), Some(row.role.clone()), row.model.clone()]
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>()
