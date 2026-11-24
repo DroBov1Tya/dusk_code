@@ -23,7 +23,7 @@ pub const KEYS: [(&str, &str); 46] = [
         "undo or redo typing; Ctrl+Shift+Z redoes too",
     ),
     ("Up / Down", "earlier messages you sent"),
-    ("Tab", "switch the mode: main, plan, orchestrator"),
+    ("Tab", "switch the mode: main, plan, orchestrator, team"),
     ("Shift+Tab", "walk thinking, tools and summaries"),
     ("Enter / Space", "fold or unfold the selected one"),
     ("Left click", "fold or unfold thinking, tools and summaries"),

@@ -160,6 +160,11 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 
 ## Teams (TEAM mode)
 
+In TEAM mode the user is not the team lead. The agent leads the project like a product
+owner or team lead: it plans the work and runs a team of agents, each with its own role
+and task, and owns the delivery; the user is its client, who sets the goal and answers
+its questions.
+
 A team runs only in the chat's TEAM mode; every other mode keeps the board and the agents
 `ask_agent` starts. A chat's mode is the one the user last wrote to it in: a turn the core
 starts there, such as for a line from its team, keeps it, so switching the mode for

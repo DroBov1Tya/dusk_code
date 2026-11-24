@@ -62,7 +62,7 @@ fn empty(cx: &App) -> Div {
         .pt_6()
         .small()
         .text_color(muted)
-        .child("No team yet. In TEAM mode the agent writes a plan; `run` starts a team here.")
+        .child("No team yet. In TEAM mode the agent leads: it plans, and its team works here.")
 }
 
 /// "Team", the chat's title, how the team stands, and what steers it.
