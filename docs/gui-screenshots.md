@@ -60,3 +60,12 @@ milliseconds in (`fake=activity-thinking`, a shot, then `fake=activity-steps` in
 
 The subagents' mascots move faster than a shot is taken: `DUSK_MASCOT=MS` in the environment holds
 each that many milliseconds into its activity (`fake=agents;modal=agents` shows one of each).
+
+## The web page
+
+A debug build of the web client (`trunk build` in `projects/clients/browser`, served from its
+`dist` by any static server) draws a made-up chat without a core when its address asks for one:
+`?fake=team|team-ended|subagents|subagents-ended` is a chat that set a team of seven to work on a
+plan of eight tasks, one in each status, or asked three subagents in one step, running or ended
+(`src/dev`, not built into release). Nothing is sent; the page's calls fail quietly. Take the
+pictures with any browser.
