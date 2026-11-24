@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
   "x-protocol": 38,
-  "x-oldest": 36,
+  "x-oldest": 38,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
     "Hello": {
