@@ -14,7 +14,7 @@ use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::tools::{Tool, ToolContext, ToolKind, schema};
 use crate::{
@@ -145,7 +145,15 @@ impl AskAgent {
             let state = &self.launcher.state;
             let made =
                 crate::tools::start_branch(state, &thread_id, &self.thread_id, scope, Some(&name))
-                    .await?;
+                    .await;
+            // `isolated` is refused for an agent asked before, so this one is new.
+            let made = match made {
+                Ok(made) => made,
+                Err(error) => {
+                    self.forget_new(&thread_id).await;
+                    return Err(error);
+                }
+            };
             task = format!(
                 "You work on your own git branch {}, made from {}, in the worktree {}: your \
                  files and commands are there. Commit your work with the `branch` tool \
@@ -252,6 +260,30 @@ impl AskAgent {
             .name
             .unwrap_or_else(|| start::agent_name(&thread.thread_id));
         Ok((thread.thread_id, name, agent_name.to_owned()))
+    }
+
+    /// Erases an agent thread just made, with its folder, when it cannot be given its
+    /// task: it would be left with nothing to do.
+    async fn forget_new(&self, thread_id: &str) {
+        let folders = match self.launcher.state.delete_thread(thread_id).await {
+            Ok(folders) => folders,
+            Err(error) => {
+                warn!("cannot remove the agent thread {thread_id} that got no task: {error:#}");
+                return;
+            }
+        };
+        for folder in folders {
+            let Ok(path) = self.launcher.paths.workspace_folder(&folder) else {
+                continue;
+            };
+            match tokio::fs::remove_dir_all(&path).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    warn!("cannot remove the folder of agent thread {thread_id}: {error}")
+                }
+            }
+        }
     }
 
     /// An agent this thread asked before, by its name or its thread. Nothing else is
