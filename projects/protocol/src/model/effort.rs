@@ -84,3 +84,23 @@ impl Effort {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Effort;
+
+    #[test]
+    fn a_subagent_effort_is_dropped_where_the_chat_sends_none() {
+        // The provider's default or Off: the model is not asked to reason at a level, so
+        // the asker's level is quietly left out instead of refused.
+        for chat in [None, Some(Effort::Off)] {
+            assert_eq!(Effort::for_subagent(chat, Some(Effort::High)), chat);
+        }
+        let chat = Some(Effort::High);
+        assert_eq!(
+            Effort::for_subagent(chat, Some(Effort::Low)),
+            Some(Effort::Low)
+        );
+        assert_eq!(Effort::for_subagent(chat, None), Some(Effort::Medium));
+    }
+}

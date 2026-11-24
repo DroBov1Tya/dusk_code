@@ -63,19 +63,22 @@ pub fn task_in_work<'a>(tasks: &'a [Task], team: Option<&Team>) -> Option<(usize
 mod tests {
     use super::*;
     use crate::thread::TaskStatus;
-    use crate::thread::{TeamBudget, TeamUsed};
+    use crate::thread::TeamUsed;
 
     fn team(status: TeamStatus) -> Team {
         Team {
             thread_id: "lead".into(),
             status,
-            budget: TeamBudget::new(3, 400, 4_000_000, 120).unwrap(),
+            at_once: 3,
             used: TeamUsed {
                 minutes: 57,
                 ..TeamUsed::default()
             },
             members: Vec::new(),
             started_at: None,
+            ended_at: None,
+            winding_since: None,
+            goal: String::new(),
         }
     }
 
@@ -95,6 +98,11 @@ mod tests {
             team(TeamStatus::Running).progress_note(),
             "running \u{00B7} 57 min"
         );
+        let winding = Team {
+            winding_since: Some(1),
+            ..team(TeamStatus::Running)
+        };
+        assert_eq!(winding.progress_note(), "wrapping up \u{00B7} 57 min");
         let ended = |end| team(TeamStatus::Ended(end)).progress_note();
         assert_eq!(
             ended(TeamEnd::Steps),

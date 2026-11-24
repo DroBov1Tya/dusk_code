@@ -1,9 +1,9 @@
 //! Requests about one thread: opening, sending, pinning, closing.
 
 use super::publish::{publish, send_to};
-use super::unread;
 use super::{CLOSE_TIMEOUT, OpenThread, Running, Server};
 use super::{ClientId, Shown};
+use super::{thread_pulls, unread};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
@@ -55,6 +55,7 @@ impl Server {
                     // Read before the lock, which no wait may hold.
                     let failure = runtime.last_failure(&thread_id).await?;
                     let agents = runtime.agents_at_work(&thread_id).await?;
+                    let goal = runtime.goal(&thread_id).await?;
                     let Some(open) = self.threads.get_mut(&thread_id) else {
                         anyhow::bail!("thread has ended");
                     };
@@ -79,10 +80,20 @@ impl Server {
                         (None, None) => [None, None],
                     };
                     let agents = agents.then_some(ThreadEvent::AgentsWorking(true));
+                    // The thread told its goal when it opened, before this client came.
+                    let goal = goal.map(|goal| ThreadEvent::Goal {
+                        goal: Some(goal),
+                        note: String::new(),
+                        started: None,
+                    });
                     let suggestion = suggested
                         .clone()
                         .map(|text| ThreadEvent::NextSuggested { text });
-                    for event in events.into_iter().chain([agents, suggestion]).flatten() {
+                    for event in events
+                        .into_iter()
+                        .chain([goal, agents, suggestion])
+                        .flatten()
+                    {
                         send_to(
                             &self.subscribers,
                             self.caller,
@@ -266,6 +277,7 @@ impl Server {
         let suggested: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let suggestion = Arc::clone(&suggested);
         let runtime = Arc::clone(&self.runtime);
+        let (tracker, syncs) = (self.pulls.clone(), self.chat_pulls.clone());
         let forward = tokio::spawn(async move {
             // A thread may say it is idle as it opens; it is done only once it has worked.
             let mut worked = false;
@@ -277,6 +289,19 @@ impl Server {
                     flag.store(false, Ordering::Relaxed);
                 }
                 unread::heard(&runtime, &subscribers, &id, &event).await;
+                // A message of the user or an answer may link a pull request.
+                if matches!(
+                    event,
+                    ThreadEvent::UserMessage(_) | ThreadEvent::TurnFinished(_)
+                ) {
+                    let (runtime, tracker) = (Arc::clone(&runtime), tracker.clone());
+                    let (subscribers, id) = (Arc::clone(&subscribers), id.clone());
+                    let syncs = syncs.clone();
+                    tokio::spawn(async move {
+                        thread_pulls::chat_spoke(&runtime, &tracker, &subscribers, &syncs, &id)
+                            .await;
+                    });
+                }
                 // The start, the waits and the end of a turn are kept and sent under the
                 // lock a joining client takes, so it hears of a running turn before its
                 // end. A question is kept while the turn waits for the user's decision:

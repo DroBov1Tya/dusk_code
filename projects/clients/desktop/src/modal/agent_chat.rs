@@ -15,7 +15,7 @@ use crate::{
     columns::inspector::mascot,
     pages::chat::{
         links,
-        messages::{activity_text, agent_report, notice, run, steps},
+        messages::{activity_text, agent_report, notice, run, selectable, steps},
         transcript::{Item, Log},
     },
     ui::{Type, widgets},
@@ -82,14 +82,13 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
             Item::Assistant { text, reasoning } => {
                 let mut said = div().flex().flex_col().gap_2();
                 if !reasoning.trim().is_empty() {
-                    let thought = reasoning.clone();
                     said = said.child(activity_text(
                         ws,
                         agent,
                         at,
                         ("Thinking", IconName::Asterisk),
                         reasoning,
-                        move || thought.into_any_element(),
+                        || selectable(format!("agent-thought-{agent}-{at}"), reasoning),
                         cx,
                     ));
                 }
@@ -101,8 +100,17 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 }
                 said.into_any_element()
             }
-            // Only a chat shows Workshop cards; an agent has no user to show one to.
-            Item::Tool(_) | Item::Suggestion(_) => div().into_any_element(),
+            // Only a chat shows Workshop cards and has a goal; an agent has no user.
+            Item::Tool(_) | Item::Suggestion(_) | Item::Goal(_) => div().into_any_element(),
+            // Agents an agent started read as one quiet line; their details are the chat's.
+            Item::Run(_) => div()
+                .meta()
+                .text_color(muted)
+                .children(
+                    chat.run_card(at, dusk_protocol::system::now_ms())
+                        .map(|card| format!("{} \u{00B7} {}", card.title, card.line())),
+                )
+                .into_any_element(),
             Item::Block(shown) => crate::pages::chat::messages::block(ws, agent, at, shown, cx),
             Item::Job(result) => {
                 crate::pages::chat::messages::job(ws, agent, at, result, cx).into_any_element()
@@ -140,7 +148,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .bg(danger.opacity(0.1))
                 .small()
                 .text_color(danger)
-                .child(text.clone())
+                .child(selectable(format!("agent-error-{agent}-{at}"), text))
                 .into_any_element(),
         });
     }
@@ -246,6 +254,7 @@ impl Workspace {
             agent: agent.to_owned(),
             name,
         });
+        self.modal_scroll.scroll_to_bottom();
         cx.notify();
         let known = self
             .shown_chat()
@@ -269,6 +278,10 @@ impl Workspace {
                         // Events that came while the history loaded stay on top of it.
                         read.append_live(live);
                         chat.agent_chats.insert(agent.clone(), read);
+                    }
+                    let open = matches!(&ws.modal, Some(Modal::AgentChat { agent: shown, .. }) if *shown == agent);
+                    if open {
+                        ws.modal_scroll.scroll_to_bottom();
                     }
                     cx.notify();
                 }

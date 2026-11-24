@@ -261,15 +261,6 @@ pub fn state_color(state: PullState, cx: &App) -> Hsla {
     }
 }
 
-pub fn state_name(state: PullState) -> &'static str {
-    match state {
-        PullState::Open => "open",
-        PullState::Draft => "draft",
-        PullState::Merged => "merged",
-        PullState::Closed => "closed",
-    }
-}
-
 pub fn check_color(state: CheckState, cx: &App) -> Hsla {
     let theme = cx.theme();
     match state {
@@ -314,20 +305,15 @@ impl Workspace {
         );
     }
 
-    /// The pull requests of each project's branch, for the icons beside its chats.
+    /// Asks for the pull requests of each project's branch. Nothing shows them any more,
+    /// but the asking keeps the core reading every project's repository, not only the
+    /// shown one, and each chat's pull requests (`Thread::pulls`) are kept fresh by
+    /// those reads.
     pub fn load_pull_summaries(&mut self, cx: &mut Context<Self>) {
         self.core.call(
             cx,
             |client| async move { client.projects().pull_summaries().await },
-            |ws, result, cx| {
-                if let Ok(summaries) = result {
-                    ws.pulls = summaries
-                        .into_iter()
-                        .map(|summary| (summary.project_id.clone(), summary))
-                        .collect();
-                    cx.notify();
-                }
-            },
+            |_, _, _| {},
         );
     }
 

@@ -40,6 +40,7 @@ impl<L> ChatLog<L> {
                         thread_id: member.thread_id.clone(),
                         role: member.role,
                         model: member.model,
+                        effort: None,
                         call_id: team_call_id(&member.task_id),
                         task: member.task,
                         task_id: Some(member.task_id),

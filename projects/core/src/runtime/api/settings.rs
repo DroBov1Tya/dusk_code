@@ -147,13 +147,6 @@ impl Runtime {
         Ok(())
     }
 
-    pub fn set_max_goal_rounds(&self, rounds: u32) -> Result<()> {
-        self.launcher
-            .config
-            .update(|config| config.set_max_goal_rounds(rounds))?;
-        Ok(())
-    }
-
     /// Seconds a model call may stay silent before it is given up on.
     pub fn set_model_timeout(&self, seconds: u32) -> Result<()> {
         self.launcher

@@ -24,12 +24,13 @@ pub struct Limits {
     max_input_tokens: Option<u64>,
     #[serde(default, skip_serializing)]
     max_output_tokens: Option<u64>,
+    /// Older configs capped a goal's rounds; a goal now runs until it is met or the user
+    /// bounds it in its own words.
+    #[serde(default, skip_serializing)]
+    max_goal_rounds: Option<u32>,
     /// Maximum number of subagents running across all threads.
     #[serde(default = "default_max_agents_at_work")]
     pub max_agents_at_work: usize,
-    /// Turns a goal may start by itself before it is paused for the user.
-    #[serde(default = "default_max_goal_rounds")]
-    pub max_goal_rounds: u32,
     /// Seconds a model call may stay silent before it is given up on. A reasoning model
     /// can think for a while, so the quiet counts, not the whole call.
     #[serde(default = "default_model_timeout_seconds")]
@@ -83,6 +84,66 @@ pub struct Limits {
     /// Times before the turn ends as failed.
     #[serde(default = "default_failure_stop_at")]
     pub failure_stop_at: u32,
+    /// Whether calls going in circles get a note and then a request for a different
+    /// plan: a short run of calls coming round with the same results, or a read giving
+    /// the same result with nothing changed between. Off, only the same call with the
+    /// same result three times in a row gets a note. Notes only: it never ends a turn.
+    #[serde(default = "yes")]
+    pub loop_cycles: bool,
+    /// Rounds of a cycle (or times a read came back the same) before the note.
+    #[serde(default = "default_cycle_note_at")]
+    pub cycle_note_at: u32,
+    /// Rounds before the model is asked for a different plan.
+    #[serde(default = "default_cycle_replan_at")]
+    pub cycle_replan_at: u32,
+    /// Whether a test run repeating one of its runner (the same command, or the same
+    /// tests failing) with no project file changed since gets a note with what that run
+    /// found, and a run's failing test ids stand for its
+    /// error in the failure ladder. The command still runs. Notes only.
+    #[serde(default = "yes")]
+    pub test_reruns: bool,
+    /// Runs in a row with nothing changed between, the first included, before the note.
+    #[serde(default = "default_test_rerun_note_at")]
+    pub test_rerun_note_at: u32,
+    /// Runs before the model is asked for a different plan.
+    #[serde(default = "default_test_rerun_replan_at")]
+    pub test_rerun_replan_at: u32,
+    /// Whether steps in a row that bring nothing new get a note asking where the turn
+    /// stands, then a request for a different plan: no project file changed, nothing new
+    /// read or shown, nothing that failed passed. Notes only: past the re-plan the turn
+    /// is a stall candidate, which only a judge may end.
+    #[serde(default = "yes")]
+    pub no_progress: bool,
+    /// Steps in a row with nothing new before the note, and between notes after the
+    /// re-plan.
+    #[serde(default = "default_no_progress_note_at")]
+    pub no_progress_note_at: u32,
+    /// Steps before the model is asked for a different plan.
+    #[serde(default = "default_no_progress_replan_at")]
+    pub no_progress_replan_at: u32,
+    /// Whether a turn that a rule marks a stall candidate (still no progress after the
+    /// re-plan, or a cycle asked twice for a different plan) is read by a judge model: it
+    /// ends the turn only when confident it is stuck, and otherwise its advice goes to
+    /// the model as a note and the next look waits longer.
+    #[serde(default = "yes")]
+    pub loop_judge: bool,
+    /// Judge calls a turn may make at most.
+    #[serde(default = "default_loop_judge_calls")]
+    pub loop_judge_calls: u32,
+    /// Whether the model's text repeating one piece over and over, outside code, tables
+    /// and lists, is cut short and the step taken again with a note.
+    #[serde(default = "yes")]
+    pub text_loops: bool,
+    /// Times a 50-character piece of text comes back close together before the cut.
+    #[serde(default = "default_text_loop_repeats")]
+    pub text_loop_repeats: u32,
+    /// Whether a goal pauses for the user once its rounds stop changing anything: the
+    /// same project files and the same test results after each.
+    #[serde(default = "yes")]
+    pub goal_stall: bool,
+    /// Rounds in a row that changed nothing before the goal pauses.
+    #[serde(default = "default_goal_stall_rounds")]
+    pub goal_stall_rounds: u32,
     /// Whether the files a command changes in the project are recorded, with a diff when
     /// the text before is known, so the agent and clients can ask what changed. Off, no
     /// command is watched and the chat's list of changed files stays empty too.
@@ -117,6 +178,11 @@ pub struct Limits {
     /// on how to read it whole. The full output stays stored.
     #[serde(default = "yes")]
     pub shape_output: bool,
+    /// Whether a failed run of `cargo test`, `pytest` or jest through `npm test` gets one
+    /// line naming the command that re-runs only the failing tests, when the command line
+    /// and the output leave no doubt about it.
+    #[serde(default = "yes")]
+    pub rerun_hint: bool,
     /// Whether the model is offered `project_graph`: a map of the project's files and
     /// folders by name. The name is kept from the code graph it replaced.
     #[serde(default = "yes")]
@@ -154,21 +220,29 @@ pub struct Limits {
     /// Members of one team that work at once; never above `max_agents_at_work`.
     #[serde(default = "default_team_at_once")]
     pub team_at_once: usize,
-    /// The most model steps a team may spend before it ends.
-    #[serde(default = "default_team_max_steps")]
-    pub team_max_steps: u32,
-    /// The most tokens a team may spend, prompt and completion together.
-    #[serde(default = "default_team_max_tokens")]
-    pub team_max_tokens: u64,
-    /// The most minutes a team may run.
-    #[serde(default = "default_team_max_minutes")]
-    pub team_max_minutes: u32,
+    /// Older configs set a team's budget; teams have none now, so these are read and dropped.
+    #[serde(default, skip_serializing)]
+    team_max_steps: Option<u64>,
+    #[serde(default, skip_serializing)]
+    team_max_tokens: Option<u64>,
+    #[serde(default, skip_serializing)]
+    team_max_minutes: Option<u64>,
     /// The longest one gate command may run before it is killed and counts as failed.
     #[serde(default = "default_team_gate_seconds")]
     pub team_gate_seconds: u64,
     /// The most gate commands one team may run; past it a gated task waits for the lead.
     #[serde(default = "default_team_max_gate_runs")]
     pub team_max_gate_runs: u32,
+    /// How long members at work may take to hand over once their team winds down (it
+    /// was stopped, went quiet, or its provider keeps failing); then it ends.
+    #[serde(default = "default_team_wrap_seconds")]
+    pub team_wrap_seconds: u64,
+    /// Whether a fresh reviewer checks each team task that changed files, with one round
+    /// of fixes by its author, and a critic checks the results against the request at
+    /// the end. Off, a task without a gate waits for the lead and the team ends when
+    /// its last task is done.
+    #[serde(default = "yes")]
+    pub team_review: bool,
 }
 
 impl Default for Limits {
@@ -177,7 +251,7 @@ impl Default for Limits {
             max_input_tokens: None,
             max_output_tokens: None,
             max_agents_at_work: default_max_agents_at_work(),
-            max_goal_rounds: default_max_goal_rounds(),
+            max_goal_rounds: None,
             model_timeout_seconds: default_model_timeout_seconds(),
             max_attempts: default_max_attempts(),
             retry_unreachable_seconds: default_retry_unreachable_seconds(),
@@ -191,6 +265,21 @@ impl Default for Limits {
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),
             failure_stop_at: default_failure_stop_at(),
+            loop_cycles: true,
+            cycle_note_at: default_cycle_note_at(),
+            cycle_replan_at: default_cycle_replan_at(),
+            test_reruns: true,
+            test_rerun_note_at: default_test_rerun_note_at(),
+            test_rerun_replan_at: default_test_rerun_replan_at(),
+            no_progress: true,
+            no_progress_note_at: default_no_progress_note_at(),
+            no_progress_replan_at: default_no_progress_replan_at(),
+            loop_judge: true,
+            loop_judge_calls: default_loop_judge_calls(),
+            text_loops: true,
+            text_loop_repeats: default_text_loop_repeats(),
+            goal_stall: true,
+            goal_stall_rounds: default_goal_stall_rounds(),
             record_changes: true,
             stub_results: true,
             stub_keep_steps: default_stub_keep_steps(),
@@ -199,6 +288,7 @@ impl Default for Limits {
             compact_tail_tokens: default_compact_tail_tokens(),
             compact_early: true,
             shape_output: true,
+            rerun_hint: true,
             project_graph: true,
             episodes: true,
             episode_lesson: true,
@@ -208,11 +298,13 @@ impl Default for Limits {
             peer_messages: false,
             procedures: false,
             team_at_once: default_team_at_once(),
-            team_max_steps: default_team_max_steps(),
-            team_max_tokens: default_team_max_tokens(),
-            team_max_minutes: default_team_max_minutes(),
+            team_max_steps: None,
+            team_max_tokens: None,
+            team_max_minutes: None,
             team_gate_seconds: default_team_gate_seconds(),
             team_max_gate_runs: default_team_max_gate_runs(),
+            team_wrap_seconds: default_team_wrap_seconds(),
+            team_review: true,
         }
     }
 }
@@ -227,10 +319,6 @@ impl Limits {
 
 fn default_max_agents_at_work() -> usize {
     8
-}
-
-fn default_max_goal_rounds() -> u32 {
-    10
 }
 
 /// Long enough for a reasoning model's pauses, short enough not to hang a turn.
@@ -285,6 +373,63 @@ fn default_failure_stop_at() -> u32 {
     8
 }
 
+/// Three rounds, as the same call in a row always had; a cycle of four calls then
+/// spans twelve.
+fn default_cycle_note_at() -> u32 {
+    3
+}
+
+fn default_cycle_replan_at() -> u32 {
+    5
+}
+
+/// The first run again with nothing changed already tells nothing new.
+fn default_test_rerun_note_at() -> u32 {
+    2
+}
+
+fn default_test_rerun_replan_at() -> u32 {
+    4
+}
+
+/// A step that only rereads is common; a dozen in a row is not research any more.
+fn default_no_progress_note_at() -> u32 {
+    12
+}
+
+fn default_no_progress_replan_at() -> u32 {
+    30
+}
+
+/// Steps in a row with nothing new have to span a few at least, and stay well short of a
+/// turn that burns itself out.
+pub const MIN_NO_PROGRESS_STEPS: u32 = 3;
+pub const MAX_NO_PROGRESS_STEPS: u32 = 500;
+
+/// A judge per stall candidate, the look after a redirect waiting longer each time:
+/// three reach far into a turn.
+fn default_loop_judge_calls() -> u32 {
+    3
+}
+
+pub const MIN_LOOP_JUDGE_CALLS: u32 = 1;
+pub const MAX_LOOP_JUDGE_CALLS: u32 = 10;
+
+/// Gemini CLI's count: ten times one piece of text within a few hundred characters is
+/// no longer prose.
+fn default_text_loop_repeats() -> u32 {
+    10
+}
+
+/// Fewer and a refrain or a list in prose would be cut.
+pub const MIN_TEXT_LOOP_REPEATS: u32 = 5;
+pub const MAX_TEXT_LOOP_REPEATS: u32 = 100;
+
+/// One round that changed nothing can be a look around; three is a goal going nowhere.
+fn default_goal_stall_rounds() -> u32 {
+    3
+}
+
 /// Two steps at least, so the result the model is reading is never put away under it.
 pub const MIN_STUB_KEEP_STEPS: u32 = 2;
 pub const MAX_STUB_KEEP_STEPS: u32 = 50;
@@ -308,40 +453,28 @@ fn default_compact_tail_tokens() -> u64 {
     16_000
 }
 
-/// A team's ceilings. The floors keep a plan able to finish one task; the tops keep a
-/// mistyped number from being an open-ended bill.
+/// Members of a team at work at once. The floor keeps a plan able to finish one task.
 pub const MIN_TEAM_AT_ONCE: usize = 1;
 pub const MAX_TEAM_AT_ONCE: usize = 8;
-pub const MIN_TEAM_MAX_STEPS: u32 = 10;
-pub const MAX_TEAM_MAX_STEPS: u32 = 5_000;
-pub const MIN_TEAM_MAX_TOKENS: u64 = 100_000;
-pub const MAX_TEAM_MAX_TOKENS: u64 = 100_000_000;
-pub const MIN_TEAM_MAX_MINUTES: u32 = 5;
-pub const MAX_TEAM_MAX_MINUTES: u32 = 1_440;
 /// A gate is a check such as a build and its tests; the top is a command's own longest.
 pub const MIN_TEAM_GATE_SECONDS: u64 = 10;
 pub const MAX_TEAM_GATE_SECONDS: u64 = 600;
 pub const MIN_TEAM_MAX_GATE_RUNS: u32 = 1;
 pub const MAX_TEAM_MAX_GATE_RUNS: u32 = 1_000;
+pub const MIN_TEAM_WRAP_SECONDS: u64 = 10;
+pub const MAX_TEAM_WRAP_SECONDS: u64 = 1_800;
 
 fn default_team_at_once() -> usize {
     3
 }
 
-fn default_team_max_steps() -> u32 {
-    400
-}
-
-fn default_team_max_tokens() -> u64 {
-    4_000_000
-}
-
-fn default_team_max_minutes() -> u32 {
-    120
-}
-
 fn default_team_gate_seconds() -> u64 {
     300
+}
+
+/// Three minutes: a member's next step or two, and its footer.
+fn default_team_wrap_seconds() -> u64 {
+    180
 }
 
 /// Two gate runs a task (its first and a rework) for a plan of 64 tasks, the most open.
@@ -381,6 +514,13 @@ pub struct Team {
     /// what every member may have; a role without one keeps them all.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tools: BTreeMap<String, Vec<String>>,
+    /// The role that reviews a task that changed files; `code-reviewer` when not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer: Option<String>,
+    /// The role that checks the results against the request at the end; `code-reviewer`
+    /// when not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub critic: Option<String>,
 }
 
 impl Team {
@@ -406,20 +546,34 @@ impl Team {
                 "team.tools names tools, such as read_file"
             );
         }
-        for role in self.models.keys().chain(self.tools.keys()) {
+        let roles = self.models.keys().chain(self.tools.keys());
+        for role in roles.chain(&self.reviewer).chain(&self.critic) {
             anyhow::ensure!(
                 !role.is_empty()
                     && role.len() <= MAX_ROLE_NAME
                     && role
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-                "team.models and team.tools keys must be role names of up to {MAX_ROLE_NAME} of \
-                 a-z, 0-9, - and _"
+                "team.models and team.tools keys, team.reviewer and team.critic must be role \
+                 names of up to {MAX_ROLE_NAME} of a-z, 0-9, - and _"
             );
         }
         Ok(())
     }
+
+    /// The role a review of a task is given to.
+    pub fn reviewer_role(&self) -> &str {
+        self.reviewer.as_deref().unwrap_or(DEFAULT_CHECK_ROLE)
+    }
+
+    /// The role the completeness check at the end of a team is given to.
+    pub fn critic_role(&self) -> &str {
+        self.critic.as_deref().unwrap_or(DEFAULT_CHECK_ROLE)
+    }
 }
+
+/// The shipped role that reviews and checks when the settings name none.
+const DEFAULT_CHECK_ROLE: &str = "code-reviewer";
 
 /// What the core records about its work. Off, nothing is written or sent at all.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -70,6 +70,7 @@ impl InputView<'_> {
             frame,
             area,
             self.app.git.as_ref(),
+            self.app.branch.is_some(),
             &self.app.folder,
             approvals,
         );

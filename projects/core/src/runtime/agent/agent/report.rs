@@ -104,7 +104,7 @@ impl Agent {
     pub fn context_source(&self) -> ContextSource {
         ContextSource {
             tools: Arc::clone(&self.tools),
-            scope: Arc::clone(&self.scope),
+            scope: self.working_scope(),
             model: Arc::clone(&self.model),
             config: Arc::clone(&self.config),
         }

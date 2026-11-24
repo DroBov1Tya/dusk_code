@@ -33,6 +33,14 @@ pub struct Thread {
     /// client last showed the chat (`ThreadRequest::Seen`). Never for an agent's thread.
     #[serde(default)]
     pub unread: bool,
+    /// The pull requests the chat linked, the first linked first; merged and closed ones
+    /// stay. `ThreadEvent::Pulls` tells of a change. Empty for an agent's thread.
+    #[serde(default)]
+    pub pulls: Vec<crate::project::ThreadPull>,
+    /// The branch the thread works on in a worktree, when it branched off its folder.
+    /// `ThreadEvent::Branch` tells of a change.
+    #[serde(default)]
+    pub branch: Option<crate::project::ThreadBranch>,
 }
 
 /// A message found by searching the text of every chat.
@@ -70,6 +78,8 @@ mod tests {
             temporary: false,
             owner: None,
             unread: true,
+            pulls: Vec::new(),
+            branch: None,
         };
         let text = serde_json::to_string(&thread).unwrap();
         assert_eq!(serde_json::from_str::<Thread>(&text).unwrap(), thread);

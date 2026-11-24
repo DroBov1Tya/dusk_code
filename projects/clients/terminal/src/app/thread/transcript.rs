@@ -18,7 +18,7 @@ use dusk_protocol::{
     catalog::SkillChange,
     system::now_ms,
     thread::{
-        ChatLog, JobResult, Message, ThreadEvent, Tool, ToolState,
+        ChatLog, GoalEvaluation, JobResult, Message, ThreadEvent, Tool, ToolState,
         transcript::{INTERRUPTED, Item},
     },
     tools::{Answered, Card},
@@ -53,6 +53,11 @@ pub enum Entry {
         pictures: Vec<Card>,
         open: bool,
     },
+    /// What the evaluator said of the goal after a turn; `open` shows its reason.
+    Goal {
+        evaluation: GoalEvaluation,
+        open: bool,
+    },
     /// What a compaction left in place of the older messages.
     Summary {
         text: String,
@@ -78,6 +83,12 @@ pub enum Entry {
     Block(dusk_protocol::thread::Block),
     /// The Workshop listings the agent suggested, in place of that tool step.
     Suggestion(dusk_protocol::plugin::Suggestion),
+    /// A team or subagents the chat started, as its card said at `seen` (Unix
+    /// milliseconds): a running card's clock goes on from there.
+    Run {
+        card: dusk_protocol::thread::RunCard,
+        seen: i64,
+    },
 }
 
 /// A Workshop card's plain text, for the copy button: its heading and a line a listing.
@@ -490,6 +501,10 @@ impl Transcript {
                 text: text.clone(),
                 open: false,
             },
+            Item::Goal(evaluation) => Entry::Goal {
+                evaluation: evaluation.clone(),
+                open: false,
+            },
             Item::Tool(tool) => {
                 let (tool, call_id) = (tool.clone(), tool.call_id.clone());
                 let step = Entry::Tool {
@@ -513,6 +528,13 @@ impl Transcript {
             }
             Item::Block(block) => Entry::Block(block.clone()),
             Item::Suggestion(card) => Entry::Suggestion(card.clone()),
+            Item::Run(_) => {
+                let seen = now_ms();
+                let Some(card) = self.log.run_card(index, seen) else {
+                    return;
+                };
+                Entry::Run { card, seen }
+            }
             // A picture `display_image` showed stays with its step.
             Item::Image {
                 card,
@@ -612,8 +634,12 @@ impl Transcript {
             | Entry::Notice { text, .. }
             | Entry::Skill { text, .. } => text.clone(),
             Entry::Job { result, .. } => format!("{}\n{}", result.title(), result.output),
+            Entry::Goal { evaluation, .. } => {
+                format!("{}\n{}", evaluation.title(), evaluation.reason)
+            }
             Entry::Block(block) => block.text(),
             Entry::Suggestion(card) => card_text(card),
+            Entry::Run { card, .. } => format!("{} \u{00B7} {}", card.title, card.line()),
             Entry::Tool { tool, .. } => match tool.state {
                 ToolState::Running => tool.arguments.clone(),
                 _ => tool.output.clone(),
@@ -651,6 +677,7 @@ impl Transcript {
                         | Entry::Reasoning { .. }
                         | Entry::Tool { .. }
                         | Entry::Summary { .. }
+                        | Entry::Goal { .. }
                         | Entry::FromAgent { .. }
                         | Entry::Job { .. }
                 )
@@ -719,6 +746,7 @@ fn open_of(entry: &Entry) -> Option<bool> {
         | Entry::Reasoning { open, .. }
         | Entry::Tool { open, .. }
         | Entry::Summary { open, .. }
+        | Entry::Goal { open, .. }
         | Entry::FromAgent { open, .. }
         | Entry::Job { open, .. } => Some(*open),
         _ => None,
@@ -732,6 +760,7 @@ fn open_mut(entry: &mut Entry) -> Option<&mut bool> {
         | Entry::Reasoning { open, .. }
         | Entry::Tool { open, .. }
         | Entry::Summary { open, .. }
+        | Entry::Goal { open, .. }
         | Entry::FromAgent { open, .. }
         | Entry::Job { open, .. } => Some(open),
         _ => None,

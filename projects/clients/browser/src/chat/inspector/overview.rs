@@ -9,8 +9,8 @@ use crate::{
     ui::{Icon, IconName, compact, confirm, run, sleep, tone_text},
 };
 use dusk_protocol::thread::{
-    BUDGET_FIELDS, BudgetPart, ContextReport, EVENTS_PAGE, LogEntry, LogKind, OVERVIEW_LOG,
-    Overview, PlanCounts, Task, Team, TeamBudget, ThreadTokens, plural,
+    ContextReport, EVENTS_PAGE, LogEntry, LogKind, MAX_TEAM_AT_ONCE, OVERVIEW_LOG, Overview,
+    PlanCounts, Task, Team, ThreadTokens, plural,
 };
 use leptos::prelude::*;
 
@@ -36,7 +36,7 @@ pub fn OverviewTab(id: String, wide: RwSignal<bool>) -> impl IntoView {
     let more = RwSignal::new(false);
     let asked_at = StoredValue::new(f64::MIN);
     let waiting = StoredValue::new(false);
-    let form = BudgetForm::new();
+    let form = AtOnceForm::new();
     // The plan's tasks and the token report as memos: the chat changes with every
     // streamed event, and only these parts of it are drawn here.
     let tasks = Memo::new(move |_| {
@@ -159,21 +159,21 @@ fn figure(value: String, label: &'static str) -> impl IntoView {
     view! { <div class="ov-stat"><b>{value}</b><span>{label}</span></div> }
 }
 
-/// The budget form's state. It lives as long as the Overview, not the section drawn
-/// around it, which the core's answers and the chat's events draw again and again.
+/// The members-at-once form's state. It lives as long as the Overview, not the section
+/// drawn around it, which the core's answers and the chat's events draw again and again.
 #[derive(Clone, Copy)]
-struct BudgetForm {
+struct AtOnceForm {
     editing: RwSignal<bool>,
     error: RwSignal<Option<String>>,
-    fields: [RwSignal<String>; 4],
+    at_once: RwSignal<u32>,
 }
 
-impl BudgetForm {
+impl AtOnceForm {
     fn new() -> Self {
         Self {
             editing: RwSignal::new(false),
             error: RwSignal::new(None),
-            fields: std::array::from_fn(|_| RwSignal::new(String::new())),
+            at_once: RwSignal::new(1),
         }
     }
 }
@@ -182,7 +182,7 @@ fn progress(
     counts: PlanCounts,
     team: Option<&Team>,
     thread: String,
-    form: BudgetForm,
+    form: AtOnceForm,
 ) -> Option<AnyView> {
     let running = counts.at_work();
     let all = counts.total();
@@ -197,14 +197,15 @@ fn progress(
         // One segment a status, as wide as its share: 200 tasks stay one bar.
         .map(|(class, count)| view! { <i class=class style=format!("flex:{count}")></i> })
         .collect_view();
-    let budget = team.map(|team| {
-        // Only a running team can be stopped or given more.
+    let steer = team.map(|team| {
+        // Only a running team can be stopped or changed.
         let controls = team
             .ended()
             .is_none()
-            .then(|| view! { <TeamControls thread budget=team.budget form /> });
+            .then(|| view! { <TeamControls thread at_once=team.at_once form /> });
+        // What it used: shown, never a limit.
         view! {
-            {team.budget_parts().into_iter().map(budget_row).collect_view()}
+            <p class="ov-used">{team.used_line()}</p>
             {controls}
         }
     });
@@ -218,22 +219,23 @@ fn progress(
                     {figure(counts.blocked.to_string(), "blocked")}
                 </div>
                 <div class="ov-segs" aria-hidden="true">{segments}</div>
-                {budget}
+                {steer}
             </section>
         }
         .into_any(),
     )
 }
 
-/// Stop team and the budget of a running team, under its Progress. Stopping asks first;
-/// the budget opens as four fields in place, read back with the protocol's own limits.
+/// Stop team and members at once of a running team, under its Progress. Stopping asks
+/// first; members at once open as a stepper in place, 1 to the protocol's most; the core
+/// holds them to the settings and says so.
 #[component]
-fn TeamControls(thread: String, budget: TeamBudget, form: BudgetForm) -> impl IntoView {
+fn TeamControls(thread: String, at_once: u32, form: AtOnceForm) -> impl IntoView {
     let thread = StoredValue::new(thread);
-    let BudgetForm {
+    let AtOnceForm {
         editing,
         error,
-        fields,
+        at_once: asked,
     } = form;
     let stop = move |_| {
         let asked = "Stop the team? Members at work are stopped and their tasks go back to \
@@ -244,42 +246,36 @@ fn TeamControls(thread: String, budget: TeamBudget, form: BudgetForm) -> impl In
         }
     };
     let save = move |_| {
-        let texts = fields.map(|field| field.get_untracked());
-        match TeamBudget::read(texts.each_ref().map(String::as_str)) {
-            Err(why) => error.set(Some(format!("{why:#}"))),
-            Ok(budget) => {
-                let id = thread.get_value();
-                run(
-                    async move { api::set_team_budget(&id, budget).await },
-                    move |()| {
-                        editing.set(false);
-                        error.set(None);
-                    },
-                );
-            }
-        }
+        let (id, at_once) = (thread.get_value(), asked.get_untracked());
+        run(
+            async move { api::set_team_at_once(&id, at_once).await },
+            move |()| {
+                editing.set(false);
+                error.set(None);
+            },
+        );
+    };
+    let step = move |by: i32| {
+        asked.update(|n| *n = n.saturating_add_signed(by).clamp(1, MAX_TEAM_AT_ONCE));
+        error.set(None);
     };
     let form = move || {
         editing.get().then(|| {
-            let inputs = BUDGET_FIELDS
-                .iter()
-                .zip(fields)
-                .map(|(name, field)| {
-                    view! {
-                        <label class="ov-field">
-                            <span class="muted">{*name}</span>
-                            <input prop:value=move || field.get()
-                                on:input=move |ev| field.set(event_target_value(&ev)) />
-                        </label>
-                    }
-                })
-                .collect_view();
             view! {
-                <div class="ov-budget-form">{inputs}</div>
+                <div class="ov-at-once">
+                    <span class="muted">"Members at once"</span>
+                    <button class="ghost" aria-label="Fewer"
+                        prop:disabled=move || asked.get() <= 1
+                        on:click=move |_| step(-1)>"\u{2212}"</button>
+                    <b>{move || asked.get()}</b>
+                    <button class="ghost" aria-label="More"
+                        prop:disabled=move || asked.get() >= MAX_TEAM_AT_ONCE
+                        on:click=move |_| step(1)>"+"</button>
+                </div>
                 {move || error.get().map(|why| view! { <p class="bad small">{why}</p> })}
                 <div class="ov-actions">
                     <button class="ghost" on:click=move |_| editing.set(false)>"Cancel"</button>
-                    <button class="primary" on:click=save>"Save budget"</button>
+                    <button class="primary" on:click=save>"Save"</button>
                 </div>
             }
         })
@@ -288,30 +284,15 @@ fn TeamControls(thread: String, budget: TeamBudget, form: BudgetForm) -> impl In
         <Show when=move || !editing.get()>
             <div class="ov-actions">
                 <button class="ghost" on:click=move |_| {
-                    // The form opens on the budget as it is now, and keeps what is typed
-                    // while the Overview draws again around it.
-                    for (field, text) in fields.iter().zip(budget.fields()) {
-                        field.set(text);
-                    }
+                    // The form opens on members at once as they are now.
+                    asked.set(at_once);
                     error.set(None);
                     editing.set(true);
-                }>"Edit budget"</button>
+                }>"Members at once"</button>
                 <button class="ghost danger" on:click=stop>"Stop team"</button>
             </div>
         </Show>
         {form}
-    }
-}
-
-fn budget_row(part: BudgetPart) -> impl IntoView {
-    view! {
-        <div class="ov-budget">
-            <span>{part.name}</span>
-            <div class="ov-track">
-                <i class:near=part.near() style=format!("width:{:.0}%", part.share() * 100.0)></i>
-            </div>
-            <span class="num">{part.text()}</span>
-        </div>
     }
 }
 

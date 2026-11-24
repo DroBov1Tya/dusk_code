@@ -202,10 +202,15 @@ impl Workspace {
         if std::mem::take(&mut self.navigator_open) {
             return true;
         }
+        // A screen whose module has nothing to show is not seen, so Escape goes on past it.
+        if !self.right_hidden && self.right_screen_shown().is_some() {
+            self.close_right(cx);
+            return true;
+        }
         if self.dismiss_suggestion(window, cx) {
             return true;
         }
-        if self.welcome_back(cx) {
+        if self.welcome_escape(window, cx) {
             return true;
         }
         if self.center == Center::Review {

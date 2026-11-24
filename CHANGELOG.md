@@ -6,6 +6,181 @@ branches after end-to-end testing. Entries of unreleased changes live in `change
 
 ## Unreleased
 
+## 0.77.1 - 2026-11-24
+
+### Added
+
+- Agents can branch off a git project and merge back: the new `branch` tool makes a branch `agent/<name>` from the current one in a worktree beside the repository, and the thread's files, commands and sandbox move there (a restart finds it again), while memory, project variables and episodes stay with the saved project. `status`, `commit`, `merge`, `abort`, `abandon` and `list` go through the core's git layer, never a shell: a merge first brings the base branch into the worktree so conflicts are resolved there, then merges back with a merge commit and removes the worktree and the merged branch. A merge into the user's branch, and abandoning a branch that has work on it, ask the user every time in every mode; abandoning commits uncommitted work to the branch and keeps any branch with unmerged work. `ask_agent` takes `isolated: true` to give a subagent a branch of its own that the asking agent merges. In sandbox mode a command in a worktree may write only the git objects, the agents' branch refs and that worktree's own git data, never the repository's config or hooks. Desktop's Git panel, the browser's chat header and the terminal's status line show the branch a chat works on. A merge into the user's branch is checked again after their yes, so a branch switched meanwhile is never merged into, and a merge that fails is aborted or reported as left mid-merge. A thread on a branch merges or abandons it only after the branches of the agents it asked from it; `abandon` forgets a record whose worktree, folder or base branch is gone, keeping the branch. An agent asked from a branch without `isolated` keeps the saved project's memory and variables. A confined command may write any `agent/*` branch ref, not only its thread's.
+
+- Desktop: a chat in the sidebar shows its own pull requests, not the project branch's: an icon and their count, tinted by the checks of the open ones, and under the pointer a card that lists them, the last linked first, with title, state, `owner/repo #N` and lines added and removed. Merged and closed ones stay listed; a row opens the pull request's page.
+
+- Each chat keeps its own pull requests: those a message of the user or the model links in the project's repository, and one made from the chat. They stay listed once merged or closed, with their last title, state and size, and reach clients in the chat list (`Thread::pulls`) and as `ThreadEvent::Pulls` when they change. The core reads them along with the repository status it already keeps, and a merged or closed one no more, nor one not found after a few reads. A chat keeps at most 50, and one message links at most 20.
+
+- The terminal's message box has undo and redo: Ctrl+Z takes back the last word typed, deletion, paste or a cleared or sent message; Ctrl+Y (or Ctrl+Shift+Z where the terminal tells Shift apart) puts it again. Each chat keeps its own history.
+
+- Workshop connectors can be a program from a pinned GitHub release: one exact tag, one archive per platform named by its SHA-256. Only the official list's own work may bring one. duskcode downloads the archive for this computer from GitHub only, checks its size and SHA-256 before unpacking, takes out only the program into its own versioned folder under the data folder, and starts it from there; removing the connector removes the folder, and an update leaves no old version. The official list carries them as `kind: release-connector`, which an older duskcode leaves out instead of refusing the whole list.
+
+- Remove in the desktop detail window of connectors, plugins and skills, not only on Workshop listings. One the Workshop did not install says why it cannot be removed. The core refuses to remove a plugin's server, which goes with its plugin.
+
+- `draw_diagram` draws diagrams in the chat: a tool of its own, beside `show`, on by default and switched like any other, taking one of six kinds (flow, architecture, sequence, timeline, tree, state) given as nodes, edges, groups and a legend, never as markup. The core checks it like any model output (ids, references, caps of 24 nodes and 40 edges, a tree with one parent a node, at most three toned nodes), and the protocol lays it out the same for every client: layers with tracked orthogonal edges, or curves for states, for the layered kinds, lanes for a sequence, an axis for a timeline, trying narrower forms (down instead of right, shorter lines, a tree as an outline, a standing timeline) when the column is narrow. The desktop draws it natively with the pointer lighting a node's edges, the web page as an SVG it builds itself, and the terminal as text in reading order.
+
+- The desktop side panel has a button beside Add project that collapses every project at once, or expands them all again, while chats are listed by project. Which projects are collapsed is kept across restarts.
+
+- The web page shows the chat's goal as the terminal does: a strip above the box with "◎ goal active · elapsed" (paused in the warning colour) and the condition, which unfolds into the condition, time, turns evaluated, tokens, why it is paused and the evaluator's latest reason, with a Clear button that sends `/goal clear`. Each verdict is a line in the transcript whose reason unfolds under it; a finished turn no longer folds the verdict away out of sight. A `/goal` typed in the box leaves the queue once the core answers it, and a goal that ended while the page was offline goes when it reconnects.
+- A client that joins a chat another client keeps open is told the chat's goal, as one that opens it is.
+
+- The desktop shows a chat's standing goal: a quiet "◎ goal active · 12m" over the composer (in the warning colour while paused) opens a small card with the condition (cut to three lines, whole under the pointer), the time, the turns evaluated, the tokens, the evaluator's latest reason and a Clear goal button that sends `/goal clear`. Each verdict of the evaluator is a row of the chat, achieved in green, failed in red, not met yet as a quiet step, that unfolds to its reason.
+
+- Two more guards against a stuck turn, both notes only and on by default. Calls going in circles (`limits.loop_cycles`): a run of one to four calls coming round with the same results, or a read giving the same result with nothing changed between, gets a note at the third round and a request for a different plan at the fifth (`cycle_note_at`, `cycle_replan_at`); the reads of one step count as one, and ids, times and durations in results are made alike. Test re-runs (`limits.test_reruns`): a test run that repeats one of its runner with no project file changed since, as the same command ending the same way or with the same tests failing, gets a note naming that run's step and failing tests, then a request for a different plan (`test_rerun_note_at`, `test_rerun_replan_at`), and a run's failing test ids stand for its error in the failure ladder, which at its top hands the turn to the judge rather than ending it (with the judge off it still ends it, and at twice the count once the judge's calls are spent); the first run that names the one test that failed is not a repeat, the chat's own records (goal, tasks, plan, memory) are no change, and a command whose walk gave up is one. The protocol (39, oldest still 36) names the rungs of these and of the guards to come: `Cycle`, `CycleReplan`, `TestRerun`, `TestRerunReplan`, `NoProgress`, `NoProgressReplan`, `JudgeRedirect`, `JudgeStop`; the evals count `JudgeStop` as a stop.
+
+- Four eval tasks that tempt an agent into loops (`loop-flaky-test`, `loop-narrow-test`, `loop-ping-pong`, `loop-missing-dependency`), and a `test_runs` count in eval reports: commands that ran tests, so re-running a suite over and over shows.
+
+- A judge for stuck turns (`limits.loop_judge`, on): a turn still without progress after the no-progress re-plan, a cycle asked twice for a different plan, or the same failing tests at the failure ladder's top, is read by the arbiter's helper model when one is set (`arbiter.model`), else the turn's own, at low effort (again without one when the model refuses it, and from then on) and without tools, from a short digest (the request, the last 20 calls, what the rule saw, the error that came back most). Only a judge at least 0.9 sure the turn is stuck ends it as failed, with the last calls and its suggestion (`JudgeStop`); otherwise its advice is the next step's note (`JudgeRedirect`) and the next look waits longer. At most `loop_judge_calls` (3) a turn. Text loops (`limits.text_loops`, on): an answer whose 50-character piece comes back `text_loop_repeats` (10) times close together, outside code, tables and lists, is cut as it streams and the step taken again with a note (`Cycle`); only places that do not overlap count, and the text between them must be mostly the same too, so a long hash, a run of one character or a list of paths sharing a long start is no loop; after two cuts the next step streams whole.
+
+- In the web page, Settings > Model has a Subagent models section: pick the strong, default and weak model an agent may give its subagents from the connected models, or leave a level on the chat's model. A level whose provider is gone says so and uses the chat's model.
+
+- Two guards against work that goes nowhere, on by default. No progress (`limits.no_progress`): steps in a row that change no project file to a new state, show nothing new, read nothing not read before and pass nothing that failed get a note asking where the turn stands at the 12th (`no_progress_note_at`) and a request for a different plan at the 30th (`no_progress_replan_at`), as `NoProgress` and `NoProgressReplan` notices; notes only, and the turn is then a stall candidate for a judge to come. Goal stalls (`limits.goal_stall`): a goal whose last 3 rounds that used tools (`goal_stall_rounds`) left the files its chat changed and its test results (error lines included) as they were pauses for the user, saying what stayed the same, and the user's next message starts the count over; rounds that changed no file and ran no test, wrote where the change ledger does not look (a look at the goal or the tasks is no write), or ran where it never recorded anything are not counted. Looks at a background job, and plain waits once one started in the turn, are not counted as steps without progress; a command whose walk gave up counts as a write, a look at the goal or the tasks does not.
+
+- The project graph is back, built by agents: for a saved project the core keeps every file
+  with its line count and hash, refreshed in the background, and `project_graph` gains
+  `about`, `find`, `impact`, `record` and `fix` beside `map`, which now shows lines per file
+  and folder and the summaries agents recorded. Facts whose file changed are marked stale.
+
+- A failed `cargo test`, `pytest` or `npm test` running jest is followed by one line naming the command that re-runs only the failing tests, when the command line and the output leave no doubt about it (`limits.rerun_hint`, on). The main and agent prompts ask to iterate with the tests that cover a change and run the full suite once before calling the work done.
+
+- Web: a run's card in the chat stands at the start of the chat's lane at any width, and on a page too narrow for the right column its click opens the inspector's drawer on the run's tab. A debug build shows made-up team and subagent chats at `?fake=team|team-ended|subagents|subagents-ended`, to look at the page without a core.
+
+- When a chat sets its team to work or asks several subagents in one step, a card stands in the chat where it started: its title, "Team · 5 agents · 1m 12s" with a clock that runs until the run ends, and a square a task or agent (a team's reviews and its final check are part of the tasks they check, not squares of their own). A click opens the Team screen or the subagents (desktop), the Tasks or Agents tab (browser); the terminal draws it as one line.
+
+- Subagent model tiers: pick a strong, a default and a weak model from your connected providers (`models` in the config, `/tier` in the terminal, Subagent models under Settings, AI, LLM in the desktop app). An agent that asks a subagent, or plans a team task, can choose the tier and the reasoning effort for it: strong for design, review and hard debugging, weak for mechanical work and read-only scouting. An unset tier, or one whose provider is no longer connected, uses the chat's model, so nothing changes until you pick models; new chats, titles and the arbiter keep their own models, and a team role's own model still wins. The model and effort a subagent got are shown where subagents are. If a subagent's model does not take a reasoning effort, it is asked again without one instead of failing.
+
+### Changed
+
+- In the desktop app a subagent's chat window opens at its latest message instead of its first.
+
+- The Arbiter module in the right column opens its full view from a small button instead of a labelled one.
+
+- Desktop and web: the composer's panel tab slides down into the box when it hides and rises out of it when it shows, instead of fading in place.
+
+- In the desktop app an unfolded Thinking block or agent report has its copy button in its top-right corner, and the button stays in sight at the top of the block while it scrolls.
+
+- `/goal` works as a standing condition judged after every turn. `/goal <condition>` (up to 4000 characters) sets the chat's one goal, replacing any other, and starts a turn on it at once; `/goal` alone shows it with the time, the turns judged, the tokens spent and the latest reason; `/goal clear` (or stop, off, reset, none, cancel) removes it. After each turn a separate model call, which runs no tool and reads no file, judges the conversation: not met starts another turn with its reason, met clears the goal as achieved, impossible clears it as failed; each verdict is a `ThreadEvent::GoalEvaluated` and a `ChatLog` item, and is stored in the chat as a `MessageRole::Goal` message (migration 47) that the model never reads, so a reopened chat, in any client, still shows it. There is no cap: a bound goes in the condition. Three turns of the goal in a row without a tool call stop it until the user's next message (turns before `/goal` do not count); a turn is not judged while a job, an agent or a question is under way; a busy or unreachable provider is tried again three times, a spent limit or other failure pauses the goal until the next message, and so do three turns in a row the evaluator could not judge, and a refused key, model or context clears it. A goal survives a restart, its counts starting again. The draft, criteria, approval, confirmation and evidence review of goals, the `goal` tool and the goal's Approve and Change buttons in the terminal and on Telegram are gone.
+
+- A goal no longer stops after a set number of rounds: it goes on until it is met, paused or cleared, or a turn fails. To bound it, say so in the goal itself, such as "or stop after 20 turns". When three turns in a row end without using a tool, the goal stops queueing rounds and hands control back with a "goal stalled" note; it stays set and goes on after your next message. The "Goal rounds" setting is gone from the desktop, browser and terminal settings, the terminal goal bar shows "round N", and an old `limits.max_goal_rounds` in config.yml is ignored and dropped on the next save. The core now accepts protocol 39 clients only, since Status and the settings requests dropped the goal-round fields.
+
+- The built-in skills say more precisely when to load them and name only what exists: `computer-use` covers `computer_actions` limits, regions and one-window pictures, and scrolling by keys before the real mouse; `duskcode` lists the tools an agent can be given and the MCP `icon` field; `skill-creator` says how to write a description that gets the skill picked; `skill-evolve` finds earlier occasions with `recall` too and tells a shipped skill by either of its `source` values; `token-thrift` names `background: true` for long commands.
+
+- Desktop: a great falling star in the header sky now comes in from the left edge as often as from the right.
+
+- The core accepts protocol 39 clients only: this release drops the goal round cap, the goal's criteria and the team budgets from the wire. An older app that connects is refused with "update the client" and the versions the core speaks; a newer one is told to update duskcode.
+
+- In the desktop app a subagent's report shows its copy button beside the chevron all the time, so a folded report can be copied without pointing at it or unfolding it.
+
+- The built-in skills and agents credit `source` and `author` as `Duskcode`, one value instead of `dusk_code`, `duskcode`, `Dusk Code` and a person's name. The Workshop's Official badge accepts `Duskcode` as the owner's name, and `duskcode` still for lists signed before.
+
+- The plan over the message box is a calmer card: its title, how long the team has run and a stop button, one line of how the plan stands, then a row a wave with a small square a task, coloured by its state. Only the wave in work is unfolded; a task unfolds to who holds it, its model and try, its last note, and Confirm, Open transcript and Details. What runs breathes, waves and tasks are reached with Tab, and in a narrow window the card lets go of its time and Team link before its title.
+  The desktop's right column is a calm list, a row a module with one line of how it stands. Team, Overview and Plan open as a screen of the whole column with only Back on top (Escape goes back, the list keeps its place); the light modules still unfold in place. The column's Overview no longer shows the team's budget bars or Edit budget; the Overview page still does.
+  The column's Team screen says what runs now and what waits for you (Review unfolds that task in the plan), draws the plan in the same waves as the card, and folds the members into one line of faces that unfolds to each one's role, model and state.
+
+- A team works the way a careful lead runs one. The TEAM lead reads the project itself
+  (read_file, search_files, project_graph, recall) and hands work out only through the
+  plan: it no longer has ask_agent, commands or write tools, and a large search is a task
+  of the new read-only `scout` role. Every task of an `add` needs `accept` and, unless it is
+  a scout's, `files`; two tasks of one add that share a file need an `after` between them.
+  `run` takes the goal, which the Team page shows. The core gives out one wave at a time: a
+  wave starts when the one before is all done or skipped, and a failed or blocked task holds
+  the next wave until the lead reopens, edits or skips it (`skip`, new). Members end with a
+  five-line footer (Status, Result, Checked, Not checked, Open), kept as the task's report
+  that `show <id>` prints; an answer with no status waits for the lead. A task that changed
+  files is reviewed by a fresh member (`team.reviewer`, `code-reviewer` by default) who gets
+  the card, the report and the diff and ends with a verdict; a fix goes back to the same
+  member once, then a second fresh review, then the lead decides. At the end a critic
+  (`team.critic`) lists what the request asked that no task did or verified, and the end
+  line hands it to the lead. `limits.team_review: false` switches reviews and the critic
+  off. A task without files that changes one waits for the lead. Desktop shows a review as
+  a chip on its task, the critic as the last column, skipped tasks struck through, and a
+  task's report in its details; plan counts count the lead's tasks only.
+
+- TEAM mode now says plainly that the user is not the team lead: the agent leads the project like a product owner or team lead, plans the work and runs a team of agents, each with its own role and task, while the user sets the goal and answers its questions. The mode menu, the mode setting, the README, the feature docs, the Team page's empty state and the TEAM prompt's opening say so, and the terminal's help names team among the modes Tab walks.
+
+- The browser's plan strip shows a task's review as a word beside it (reviewing, reviewed, review: fix), as the desktop does, instead of a row of its own, and says skipped for a task the lead gave up.
+
+- A team task whose member lost it (a failed turn, a restart, the provider, a wind-down
+  hand-over) goes back to that same member, which keeps its transcript and gets a short
+  resume note instead of a fresh card (migration 0049: `tasks.last_owner_thread_id`,
+  `tasks.resumes`). A context too long, a refused request, a second counted loss, a turn
+  still being cut off, a review or the critic, and a task the lead edits or reopens go to
+  a fresh member, whose card now says how the last attempt ended when there was no
+  hand-over. Members carry a one-line summary of what they do (`TeamMember.summary`),
+  shown where the plan lacks their task, in the Team page's member list, and in the lead's
+  lines (`#id (Ember-0c, code-writer: add the login form) failed: …`). The Team page's
+  `×n` mark reads `attempt n`, with a tooltip.
+
+- A team that is stopped (the lead's `stop`, the Team page's Stop), that reached the quiet
+  cap, or whose provider keeps failing now winds down instead of cutting its members off:
+  nothing new is given out, the core asks each member at work to stop and hand over with
+  its footer, and the team ends once they have or after `limits.team_wrap_seconds` (180 s).
+  A task not finished goes back to open with that hand-over, and the next member's card
+  shows it under "Before you". Clients show "wrapping up" while it does (`Team.winding_since`).
+  A turn lost to a restart, the provider, the wind-down or the team's end no longer counts
+  as one of a task's three attempts (a task's fourth loss to the provider counts again); a
+  key or quota the provider refuses, or three such losses in a row, stop the team, and the
+  lead's line names the provider's reason. A stop of the chat or of a member by the user still ends it at once.
+
+- Desktop: the right column's Todo opens as a screen of the whole column, with Back on top, once the chat has more than three open tasks; a shorter board still unfolds in place, and an open Todo screen gives way to the list when the board shrinks. Changes and Files unfold in place again instead of opening as screens, scrolling inside when they run long.
+
+- The web client's welcome is now four pages walked sideways: hello, connect a model, the tools that stay off until you switch them on (computer use and the real pointer) with links to Voice and the Workshop, and ready. Dots, Back and Next and the arrow keys move between them; Escape (outside a field and any open drawer) or "Skip setup" in the corner finishes it, while "Skip for now" on the model page only goes on to the tools. It stays until you press Start or "Skip setup", even after a provider connects, and this browser remembers that it was finished.
+
+- The desktop welcome of a first run is four pages turned sideways: hello, connecting a model, the tools that stay off until switched on (using the screen and moving your real pointer, each with what it does and risks, plus the way to Voice and the Workshop), and ready. Back, Next, the dots, the arrow keys and a sideways trackpad swipe turn them; "Skip setup" in the corner or Escape finishes it. It stays until Start or "Skip setup" even after a model connects, and once finished it does not come back.
+  In a short window the welcome's page scrolls between "Skip setup" and the pinned Back and Next, which no longer move as the pages turn. The Model page's step button reads "Skip for now" until a model connects, and Escape in one of its boxes only leaves the box.
+
+### Fixed
+
+- A provider connected after startup, from Settings, the model menu or a ChatGPT sign-in, now becomes the active model when none is chosen yet. Connecting another provider keeps the model you chose.
+
+- In the web page, a message put back in the box after /undo can be taken out again with the browser's own Ctrl+Z / Cmd+Z, and what was typed before it stays undoable.
+
+- Cmd+Z and Cmd+Shift+Z in the desktop app's message box now undo and redo what changed it besides typing: an attachment or dictation added, a message put back after /undo, a command completed with Tab, and the box emptied by sending, so a message sent by mistake comes back with Cmd+Z. Another chat's text never comes back: switching chats starts the box's history anew.
+
+- Remove duskcode in the desktop app's Advanced settings works when the app was installed from the disk image without the terminal client: the app removes itself, its app bundle included, says so and closes.
+
+- In the desktop app a long window title, such as a task card opened from the Team module, is cut short with an ellipsis instead of running out of the window.
+
+- The physical input switch now works in every mode, not only Main: in Plan, Orchestrator and Team modes it no longer reads back off right after being switched on.
+
+- Desktop: removing the chosen project also clears its files, git and inspector, and removing another project keeps the chosen one.
+
+- Desktop: removing or adding a provider in Settings shows at once, even while another provider is still answering; the card no longer stays after Remove.
+
+- A tool call that a model writes as text inside its reasoning now runs, even when the closing `</parameter>` or `</function>` tags are missing. When the call cannot run, for example because it names a tool that does not exist, the model is told why and which offered tool comes closest, and it gets up to two more tries; a turn that still has no answer then ends as failed.
+
+- In the desktop app the words of errors, of the error banner over a chat and of a connector's window (its state, a failure's message, its address or command and its tools' descriptions, now shown whole) can be selected, and so can a Workshop connector's address. The banner closes from its own button, so a drag to select no longer dismisses it. Text in any window over the app can be selected too.
+
+- In the desktop app the text of Thinking, background task results, job output and notes in a chat or a subagent's chat can be selected, so a part of it can be copied, not only the whole through the copy button.
+
+- The end of a team run says nothing is missing or unverified only when the completeness check writes "Missing: none" and "Unverified: none" and no other line names a problem, an unchecked part or an open one. Gaps it lists one per line, as a "Missing:" line with a list under it, or under a "## Missing" heading are counted, read from its whole answer even when it is too long to keep; any other answer points the lead at it as one that may name gaps. A review's "Problem: **high**" now counts as high and turns an approval into a fix; "Verdict: approve ✅" reads as an approval, and an approval with a condition ("approve - but fix the docs", "approve once CI is green", "approve (pending CI)") holds the task for the lead, while "approve (all checks pass after the rebuild)" does not. The plan's review chip reads verdicts the same way.
+
+- A team member's or reviewer's closing lines are read as models write them: bullets, bold labels (`**Verdict:** approve`), any case, blank lines between, and a value on the lines under its label (`Checked:` then a list). A task was held before when its footer used markdown. Words after the status or verdict set apart by a bracket, a dash, a colon or a full stop are a remark (`done (all tests pass)`). The critic's `Missing:` and `Unverified:` lines and a review's verdict are counted and shown the same way once stored, so a critic that writes its gaps as bold bullets no longer ends the team with "nothing missing", and a long list of problems no longer cuts off the verdict under it. What is still no answer: a status or verdict that is not one of the words asked for (`done or blocked`, `approve, mostly`), and two that disagree; such a task is held for the lead.
+
+- In the desktop app a member or task clicked in the right column's Team module no longer stays lit with the rest dimmed: the selection clears when its window closes, on a click elsewhere, or when another chat is shown. The Team page keeps its selection as before.
+
+- Desktop: a user message stays inside the chat column when the column gets narrow, as after moving the window to a smaller screen, instead of spilling over the sidebar.
+
+### Removed
+
+- A team has no step, token or time budget any more: nothing it spends ends it. What it used
+  is still shown (steps, tokens, minutes), and members at once stay a setting the user may
+  change while the team runs, from 1 up to the setting (`work.set_team_at_once` replaces
+  `work.set_team_budget`; desktop, browser and terminal have a stepper in place of the
+  budget form). Old configs'
+  `limits.team_max_steps`, `team_max_tokens` and `team_max_minutes` are read and dropped;
+  a team that ended on a budget under an older core still reads with that reason. Clients
+  older than protocol 39 are no longer accepted.
+
+### Security
+
+- Updated `url` to 2.5.9, which fixes a stack overflow on nested `blob:` addresses (RUSTSEC-2026-0592).
+
 ## 0.77.0 - 2026-11-20
 
 ### Added

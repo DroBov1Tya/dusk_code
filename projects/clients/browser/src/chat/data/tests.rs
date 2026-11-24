@@ -132,3 +132,74 @@ fn the_composer_offers_the_chats_own_suggestion_until_the_user_speaks() {
     });
     assert_eq!(chat.suggestion.ghost(""), None);
 }
+
+#[test]
+fn the_goal_follows_the_core_and_its_command_leaves_the_queue() {
+    use dusk_protocol::thread::{Goal, GoalEvaluation, GoalStatus, GoalVerdict};
+    let mut chat = ChatData::default();
+    chat.sent("/goal all tests pass".into());
+    let goal = Goal {
+        thread_id: "t".into(),
+        text: "all tests pass".into(),
+        status: GoalStatus::Active,
+        started_at: 0,
+        turns: 0,
+        tokens: 0,
+        reason: None,
+        note: None,
+    };
+    chat.apply(ThreadEvent::Goal {
+        goal: Some(goal),
+        note: String::new(),
+        started: Some("all tests pass".into()),
+    });
+    assert!(chat.pending.is_empty());
+    chat.apply(ThreadEvent::GoalEvaluated(GoalEvaluation {
+        verdict: GoalVerdict::NotMet,
+        reason: "run the tests".into(),
+        turn: 1,
+        tokens: 900,
+        elapsed_ms: 1000,
+    }));
+    let goal = chat.goal.as_ref().expect("still set");
+    assert_eq!((goal.turns, goal.tokens), (1, 900));
+    assert_eq!(goal.reason.as_deref(), Some("run the tests"));
+    chat.sent("/goal clear".into());
+    chat.apply(ThreadEvent::Goal {
+        goal: None,
+        note: "Goal cleared: all tests pass".into(),
+        started: None,
+    });
+    assert!(chat.goal.is_none() && chat.pending.is_empty());
+}
+
+#[test]
+fn a_goal_that_ended_while_offline_goes_on_reconnect() {
+    use dusk_protocol::thread::{Goal, GoalStatus};
+    let goal = Goal {
+        thread_id: "t".into(),
+        text: "all tests pass".into(),
+        status: GoalStatus::Active,
+        started_at: 0,
+        turns: 2,
+        tokens: 0,
+        reason: None,
+        note: None,
+    };
+    let told = |goal: Option<Goal>| ThreadEvent::Goal {
+        goal,
+        note: String::new(),
+        started: None,
+    };
+    let mut chat = ChatData::default();
+    chat.apply(told(Some(goal.clone())));
+    // The goal was met while the stream was down: the reopening tells none.
+    chat.reopening();
+    chat.reloaded(&[]);
+    assert!(chat.goal.is_none());
+    // A goal still set comes with the reopening, before the history is read again.
+    chat.reopening();
+    chat.apply(told(Some(goal.clone())));
+    chat.reloaded(&[]);
+    assert_eq!(chat.goal, Some(goal));
+}

@@ -4,7 +4,7 @@ use anyhow::Result;
 use dusk_core::client::Client;
 use dusk_protocol::{
     client::{Command, Switch},
-    config::{ContextPolicy, ProviderKind},
+    config::{ContextPolicy, ModelTier, ProviderKind},
 };
 use ratatui::DefaultTerminal;
 
@@ -176,6 +176,38 @@ pub async fn set_branch_prefix(client: &Client, app: &mut App, prefix: String) {
     }
 }
 
+/// `/tier`: sets a subagent tier's model, then shows every tier as the status has it.
+pub async fn tier(client: &Client, app: &mut App, ask: Option<(ModelTier, Option<String>)>) {
+    if let Some((tier, model)) = ask {
+        match client.settings().model_tier(tier, model.as_deref()).await {
+            Ok(()) => {
+                let shown = model.as_deref().unwrap_or("the chat's model");
+                app.flash = Some(format!("{} tier: {shown}", tier.name()));
+            }
+            Err(error) => app.error(format!("cannot set the {} tier: {error:#}", tier.name())),
+        }
+        return;
+    }
+    let tiers = client.status.borrow().model_tiers.clone();
+    let lines: Vec<String> = ModelTier::ALL
+        .into_iter()
+        .map(|tier| {
+            let state = tiers.get(tier);
+            let model = state.chosen.as_deref().unwrap_or("the chat's model");
+            let missing = if state.missing {
+                " (provider not connected: the chat's model answers)"
+            } else {
+                ""
+            };
+            format!("{}: {model}{missing}", tier.name())
+        })
+        .collect();
+    app.transcript.notice(
+        format!("Subagent tiers\n{}", lines.join("\n")),
+        crate::app::Tone::Info,
+    );
+}
+
 pub async fn set_idle_minutes(client: &Client, app: &mut App, minutes: u32) {
     match client.settings().idle_screen_minutes(minutes).await {
         Ok(minutes) => {
@@ -189,19 +221,6 @@ pub async fn set_idle_minutes(client: &Client, app: &mut App, minutes: u32) {
             });
         }
         Err(error) => app.error(format!("cannot save the idle screen: {error:#}")),
-    }
-}
-
-pub async fn set_goal_rounds(client: &Client, app: &mut App, rounds: u32) {
-    match client.settings().max_goal_rounds(rounds).await {
-        Ok(()) => {
-            if let Some(Panel::Settings(list)) = &mut app.panel {
-                list.max_goal_rounds = rounds;
-            }
-            app.goal_rounds = rounds;
-            app.flash = Some(format!("Goal rounds: {rounds}"));
-        }
-        Err(error) => app.error(format!("cannot save the goal rounds: {error:#}")),
     }
 }
 

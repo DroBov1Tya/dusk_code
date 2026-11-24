@@ -16,6 +16,17 @@ use dusk_protocol::thread::{Task, TaskItem};
 use crate::ui::looping::Loop;
 use crate::{ui::widgets, workspace::Workspace};
 
+/// Up to this many open tasks the board unfolds in the column's list; more open it
+/// as a screen of the column.
+pub const IN_PLACE: usize = 3;
+
+/// The tasks the board shows as open cards, the done ones aside.
+pub fn open_count(ws: &Workspace) -> usize {
+    ws.shown_chat().map_or(0, |chat| {
+        chat.tasks.iter().filter(|task| !finished(task)).count()
+    })
+}
+
 /// The marker of an item, and the line that joins it to the next.
 const MARK: f32 = 14.;
 

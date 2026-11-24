@@ -458,7 +458,7 @@ mod tests {
         );
         let creator =
             fs::read_to_string(paths.skills_dir().join("skill-creator/SKILL.md")).unwrap();
-        assert!(creator.contains("source: \"dusk_code\""));
+        assert!(creator.contains("source: \"Duskcode\""));
     }
 
     /// A skill or agent that moved to a Workshop pack is not in `DROPPED`: the copy an

@@ -12,7 +12,7 @@ use crate::{
         Provider,
         openai::sign_in::{self, Credential, RESOURCE},
     },
-    runtime::Runtime,
+    runtime::{Runtime, start::pick_if_empty},
 };
 
 /// The name the provider gets in the config and in `provider/model`.
@@ -119,9 +119,10 @@ impl Runtime {
                 return Err(error);
             }
         };
-        let (config, model, note) = (
+        let (config, model, mailboxes, note) = (
             Arc::clone(&self.launcher.config),
             Arc::clone(&self.launcher.model),
+            Arc::clone(&self.launcher.mailboxes),
             Arc::clone(&self.chatgpt),
         );
         tokio::spawn(async move {
@@ -132,7 +133,9 @@ impl Runtime {
                 model.replace_provider(&name, Arc::new(Provider::new(&settings)?));
                 anyhow::Ok(())
             };
-            *note.lock() = match saved.await {
+            let saved = saved.await;
+            let connected = saved.is_ok();
+            *note.lock() = match saved {
                 Ok(()) => {
                     info!("signed in to ChatGPT");
                     ChatGpt::SignedOut
@@ -144,6 +147,10 @@ impl Runtime {
                     ChatGpt::Failed(error)
                 }
             };
+            // The first provider becomes the model; one chosen before stays.
+            if connected {
+                pick_if_empty(&config, &model, &mailboxes).await;
+            }
         });
         Ok(page)
     }

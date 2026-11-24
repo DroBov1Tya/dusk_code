@@ -5,7 +5,8 @@
 //! a group of steps folded into one, `step` the agent's steps, and `command`, `picture` and `cost` the
 //! cards and notes beside them; `sent_picture` the pictures a user's message carries;
 //! `block` what the model showed with `show`; `working_row` the last row while a turn runs;
-//! `texts` the parsed words of the rows, kept while the chat is shown.
+//! `texts` the parsed words of the rows, kept while the chat is shown; `run_card` a team
+//! or subagents the chat started, where it started them.
 
 mod activity;
 mod block;
@@ -13,15 +14,17 @@ mod command;
 mod cost;
 mod error_row;
 mod feedback;
+mod goal;
 mod picture;
 mod row;
+mod run_card;
 mod sent_picture;
 mod skill_change;
 mod step;
 mod texts;
 mod working_row;
 
-pub use activity::{activity_text, agent_report, notice};
+pub use activity::{activity_text, agent_report, notice, selectable};
 pub use block::{Pick, pills, render as block};
 pub use feedback::{answered, job};
 pub use picture::picture_path;
@@ -58,8 +61,10 @@ pub enum Row {
 }
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> AnyElement {
-    // Rows stand in a lane at most 780 px wide, with 24 px beside it.
-    ws.reading_width = (ws.chat_width(window) - 48.).clamp(0., 780.);
+    // Rows stand in a lane at most 780 px wide, with 24 px beside it. An open right dock
+    // takes its width from the chat too, or a diagram is laid out wider than its room.
+    let room = ws.chat_width(window) - crate::plugins::right_width(ws);
+    ws.reading_width = (room - 48.).clamp(0., 780.);
     let shown = ws.shown.clone().unwrap_or_default();
     let Some(chat) = ws.chats.get(&shown) else {
         return widgets::muted("Opening...", cx).into_any_element();

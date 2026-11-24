@@ -129,6 +129,11 @@ fn write(file: &Path, memory: &str) -> Result<()> {
 }
 
 impl Tool for Remember {
+    /// Keeps the chat's own records or speaks to someone: no project file changes.
+    fn writes_project(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     fn name(&self) -> &'static str {
         match self.kind {
             Kind::User => "remember",
@@ -146,7 +151,7 @@ impl Tool for Remember {
 
     fn description(&self, context: &ToolContext) -> String {
         let (_, max_chars) = self.settings(context);
-        let memory = read(&self.file(context.scope.cwd()), max_chars);
+        let memory = read(&self.file(context.scope.project_dir()), max_chars);
         let memory = if memory.is_empty() {
             "(empty)".to_owned()
         } else {
@@ -187,7 +192,7 @@ impl Tool for Remember {
                 chars <= max_chars,
                 "the memory is {chars} characters, over {max_chars}; make it shorter"
             );
-            write(&self.file(context.scope.cwd()), memory)?;
+            write(&self.file(context.scope.project_dir()), memory)?;
             Ok(if memory.is_empty() {
                 "memory cleared".to_owned()
             } else {

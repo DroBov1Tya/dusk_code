@@ -18,13 +18,13 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
         .and_then(|choice| config.providers().get(&choice.provider_name));
     Status {
         model: model.as_ref().map(|choice| choice.name()),
+        model_tiers: runtime.model_tiers(),
         discovering_model: runtime.discovering_model(),
         input_limit: runtime.input_limit(),
         context_policy: runtime.context_policy(),
         effort: config.effort(),
         mode: config.mode().to_owned(),
         approvals: config.approvals(),
-        max_goal_rounds: config.limits().max_goal_rounds,
         idle_screen_minutes: config.appearance().idle_screen_minutes,
         notifications: config.notifications(),
         sound_notifications: config.sound_notifications(),
@@ -51,13 +51,13 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
 pub fn blank_status() -> Status {
     Status {
         model: None,
+        model_tiers: Default::default(),
         discovering_model: false,
         input_limit: 0,
         context_policy: None,
         effort: None,
         mode: String::new(),
         approvals: dusk_protocol::config::ApprovalPolicy::Ask,
-        max_goal_rounds: 0,
         idle_screen_minutes: 0,
         notifications: false,
         sound_notifications: false,

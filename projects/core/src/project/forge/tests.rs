@@ -320,14 +320,26 @@ async fn create_refused_and_lookups_by_the_prefix() {
         json!({"ok": {"pull": pull(7, &format!("{PREFIX}7"))}}),
     );
     let found = read_pull(&setup.project, 7, &setup.forges, PREFIX).await;
-    assert_eq!(found.map(|pull| pull.number), Some(7));
-    setup.answer(
-        "pull",
-        json!({"ok": {"pull": pull(7, "https://github.com/someone/else/pull/7")}}),
-    );
-    assert!(
-        read_pull(&setup.project, 7, &setup.forges, PREFIX)
-            .await
-            .is_none()
-    );
+    assert_eq!(found.unwrap().map(|pull| pull.number), Some(7));
+    // None only when the forge answered there is no such pull of the remote; no answer
+    // is an error, so a chat does not give its pull request up while offline.
+    for (answer, absent) in [
+        (
+            json!({"ok": {"pull": pull(7, "https://github.com/someone/else/pull/7")}}),
+            true,
+        ),
+        (json!({"ok": {"pull": null}}), true),
+        (json!({"error": {"kind": "not_found"}}), true),
+        (json!({"error": {"kind": "unavailable"}}), false),
+        (json!({"error": {"kind": "signed_out"}}), false),
+        (json!({"error": {"kind": "failed"}}), false),
+    ] {
+        setup.answer("pull", answer.clone());
+        let read = read_pull(&setup.project, 7, &setup.forges, PREFIX).await;
+        match read {
+            Ok(None) => assert!(absent, "{answer}"),
+            Err(_) => assert!(!absent, "{answer}"),
+            Ok(Some(_)) => panic!("{answer} is no pull"),
+        }
+    }
 }

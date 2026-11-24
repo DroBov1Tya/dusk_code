@@ -22,7 +22,6 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         .collect();
     Ok(Settings {
         max_agents_at_work: config.limits().max_agents_at_work,
-        max_goal_rounds: config.limits().max_goal_rounds,
         model_timeout_seconds: config.limits().model_timeout_seconds,
         max_attempts: config.limits().max_attempts,
         idle_screen_minutes: config.appearance().idle_screen_minutes,

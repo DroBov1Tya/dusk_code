@@ -13,9 +13,10 @@ use crate::{
     },
     config::{Config, Effort, Limits},
     providers::{
-        ChatRequest, ModelOutput, ProviderError, ToolCall, is_unsupported_effort, provider_error,
+        ChatRequest, ModelEvent, ModelOutput, ProviderError, ToolCall, is_refused_effort,
+        is_unsupported_effort, provider_error,
     },
-    state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, NewSkillChange, Turn, TurnOutcome},
+    state::{KIND_MCP_TOOL, KIND_SKILL, NewSkillChange, Turn, TurnOutcome},
     tools::{Progress, ToolKind, ToolResult},
 };
 use anyhow::{Context, Result, anyhow};
@@ -97,19 +98,33 @@ pub struct Called {
     pub generated: Result<Result<Vec<ToolCall>>, Stop>,
     /// How many times the request was sent, the first included.
     pub attempts: u32,
+    /// The text went round and the stream was cut: the characters of it to keep.
+    pub chanted: Option<usize>,
 }
 
 impl Agent {
+    /// A subagent's model that already refused the reasoning effort is asked without it.
+    /// A chat keeps the level the user set, and its failure says why.
+    fn drops_effort(&self, model: &str) -> bool {
+        self.depth > 0 && self.effort_refused.lock().as_deref() == Some(model)
+    }
+
     /// Streams the model's response, trying again when the call fails in a way that may
     /// pass and nothing reached the user yet. The `Err` means the user stopped it during
     /// a pause between attempts. The last failure comes back as it was.
+    /// With `chant`, the answer's text is read as it streams and cut once one piece of
+    /// it came back that many times (`repeats::Chant`).
     pub async fn call_model(
         &self,
         choice: &Choice,
-        request: ChatRequest<'_>,
+        mut request: ChatRequest<'_>,
         requested_config: &Config,
+        chant: Option<u32>,
         inbox: &mut Inbox,
     ) -> Result<Called, Stop> {
+        if self.drops_effort(request.model) {
+            request.effort = None;
+        }
         let limits = self.config.current().limits();
         let idle = std::time::Duration::from_secs(limits.model_timeout_seconds.into());
         let started = tokio::time::Instant::now();
@@ -118,17 +133,32 @@ impl Agent {
             let mut output = ModelOutput::default();
             let events = self.events.clone();
             let mut meter = crate::runtime::agent::rate::RateMeter::default();
-            let streamed =
-                generation::generate(&*choice.provider, request, &mut output, idle, |event| {
-                    if let Some(tokens_per_sec) = meter.observe(event, Instant::now()) {
-                        self.emit(ThreadEvent::OutputRate {
-                            tokens_per_sec,
-                            window_ms: crate::runtime::agent::rate::WINDOW.as_millis() as u64,
-                        });
-                    }
-                    let _ = events.send(ThreadEvent::Model(event.clone()));
-                });
+            let mut chant = chant.map(repeats::Chant::new);
+            // Wakes the call below once the text went round, which ends the stream.
+            let went_round = tokio::sync::Notify::new();
+            let streamed = async {
+                let generating =
+                    generation::generate(&*choice.provider, request, &mut output, idle, |event| {
+                        if let Some(tokens_per_sec) = meter.observe(event, Instant::now()) {
+                            self.emit(ThreadEvent::OutputRate {
+                                tokens_per_sec,
+                                window_ms: crate::runtime::agent::rate::WINDOW.as_millis() as u64,
+                            });
+                        }
+                        let _ = events.send(ThreadEvent::Model(event.clone()));
+                        if let (Some(chant), ModelEvent::Text(text)) = (chant.as_mut(), event)
+                            && chant.push(text)
+                        {
+                            went_round.notify_one();
+                        }
+                    });
+                tokio::select! {
+                    generated = generating => generated,
+                    () = went_round.notified() => Err(anyhow!("the model's text went round")),
+                }
+            };
             let mut generated = inbox.race(streamed).await;
+            let chanted = chant.as_ref().and_then(repeats::Chant::cut);
             if let Some(tokens_per_sec) = meter.current(Instant::now()) {
                 self.emit(ThreadEvent::OutputRate {
                     tokens_per_sec,
@@ -157,6 +187,18 @@ impl Agent {
                 let rejected = std::mem::replace(error, anyhow!("reasoning effort rejected"));
                 *error = rejected.context(detail);
             }
+            // A subagent's level comes from its asker, not from what its model takes: a
+            // model that refuses it is asked once more without one, and from then on.
+            let effort_refused = matches!(&generated, Ok(Err(error)) if is_refused_effort(error));
+            if effort_refused && self.depth > 0 && request.effort.is_some() && !output.answered() {
+                warn!(
+                    "thread {}: model {} refused the reasoning effort; asking without it",
+                    self.thread_id, request.model
+                );
+                *self.effort_refused.lock() = Some(request.model.to_owned());
+                request.effort = None;
+                continue;
+            }
             let retry = match &generated {
                 Ok(Err(error)) if !output.answered() => provider_error(error)
                     .filter(|failure| failure.kind.is_retryable())
@@ -175,6 +217,7 @@ impl Agent {
                     output,
                     generated,
                     attempts: attempt,
+                    chanted,
                 });
             };
             let kind = failure.kind;
@@ -263,6 +306,7 @@ impl Agent {
         inbox: &mut Inbox,
     ) -> Result<Option<Stop>> {
         let together = config.limits().parallel_reads;
+        self.repeats.lock().step(&turn.turn_id);
         let mut stop = None;
         let mut surprised = false;
         let mut rest = calls;
@@ -335,12 +379,6 @@ impl Agent {
         if self.repeats.lock().stopping(&turn.turn_id) {
             return Ok(Some(Ran::cancelled(LADDER_STOPPED)));
         }
-        let draft = self.depth == 0
-            && self
-                .state
-                .goal(&self.thread_id)
-                .await?
-                .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
         let denied = match self.hooks.is_empty() {
             true => None,
             false => {
@@ -352,13 +390,7 @@ impl Agent {
                 checked.await
             }
         };
-        Ok(match denied {
-            _ if draft && call.name != "goal" => Some(Ran::failed(
-                "error: draft goal execution is blocked until the user approves its acceptance contract".to_owned(),
-            )),
-            Some(denied) => Some(Ran::failed(format!("error: {denied}"))),
-            None => None,
-        })
+        Ok(denied.map(|denied| Ran::failed(format!("error: {denied}"))))
     }
 
     /// Runs `group[i]` for each `i` in `running`, at most `TOGETHER` at once, until all are
@@ -451,7 +483,8 @@ impl Agent {
             let start = self.skill_watch.before().await;
             *baseline.lock() = start;
         }
-        let mut result = self.tools.call(call, &self.scope, config, progress).await;
+        let scope = self.working_scope();
+        let mut result = self.tools.call(call, &scope, config, progress).await;
         // The notice is the core's alone: a marker a tool printed is not believed.
         if result
             .content
@@ -545,6 +578,13 @@ impl Agent {
                 content.push_str(&format!("\n\n{note}"));
             }
         }
+        let rerun = finished
+            .as_ref()
+            .filter(|_| config.limits().rerun_hint)
+            .and_then(|result| self.tools.rerun(&call.name, &call.arguments, result));
+        if let Some(line) = rerun {
+            content.push_str(&format!("\n\n{line}"));
+        }
         // Durable usage counts: skills loaded and MCP tools called, when the call
         // ran and did not fail.
         if finished.is_some() && outcome != "failed" {
@@ -565,11 +605,24 @@ impl Agent {
                 warn!("cannot count the MCP tool use: {error:#}");
             }
         }
-        let notice = finished.as_ref().and_then(|result| {
-            let limits = config.limits();
-            let mut repeats = self.repeats.lock();
-            repeats.note(&turn.turn_id, call, result, &content, &limits)
-        });
+        let notice = match &finished {
+            Some(result) => {
+                let limits = config.limits();
+                let read_only = self.tools.read_only(&call.name, &call.arguments);
+                let unwatched = call.name == "run_command"
+                    && self.state.take_unwatched(&self.thread_id, &call.id);
+                let facts = repeats::Facts {
+                    read_only,
+                    writes_project: self.tools.writes_project(&call.name, &call.arguments),
+                    unwatched,
+                    ledger: self.ledger_count(call, &limits).await,
+                    edits: self.call_edits(call, read_only, &limits).await,
+                };
+                let mut repeats = self.repeats.lock();
+                repeats.note(&turn.turn_id, call, result, &content, &facts, &limits)
+            }
+            None => None,
+        };
         if let Some(notice) = &notice {
             content.push_str(&format!("\n\n{}", notice.note));
         }
@@ -633,6 +686,41 @@ impl Agent {
             });
         }
         Ok(outcome != "succeeded")
+    }
+
+    /// The change ledger's count for the thread, for a test run when the test re-run
+    /// rule reads it; None otherwise or when it cannot be read.
+    async fn ledger_count(&self, call: &ToolCall, limits: &Limits) -> Option<u64> {
+        if !(limits.test_reruns && limits.record_changes && repeats::is_test_run(call)) {
+            return None;
+        }
+        match self.state.change_count(&self.thread_id).await {
+            Ok(count) => Some(count),
+            Err(error) => {
+                warn!("cannot count the thread's changes: {error:#}");
+                None
+            }
+        }
+    }
+
+    /// What the call changed in the project by the change ledger, when the no-progress
+    /// rule reads it; None otherwise or when it cannot be read.
+    async fn call_edits(
+        &self,
+        call: &ToolCall,
+        read_only: bool,
+        limits: &Limits,
+    ) -> Option<Vec<(String, String)>> {
+        if read_only || !(limits.no_progress && limits.record_changes) {
+            return None;
+        }
+        match self.state.call_changes(&self.thread_id, &call.id).await {
+            Ok(edits) => Some(edits),
+            Err(error) => {
+                warn!("cannot read what a call changed: {error:#}");
+                None
+            }
+        }
     }
 
     /// Runs the plugins' hooks of `event` with what every hook is told about the thread.

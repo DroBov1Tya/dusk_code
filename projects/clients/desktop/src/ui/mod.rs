@@ -21,6 +21,7 @@ pub mod looping;
 pub mod motion;
 pub mod phone;
 pub mod press;
+pub mod sticky;
 pub mod theme;
 pub mod widgets;
 

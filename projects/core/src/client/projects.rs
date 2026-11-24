@@ -121,19 +121,22 @@ impl Projects<'_> {
     }
 
     /// A pull request from the project's current branch (pushed first), into `base` or
-    /// the default branch; answers with it as the forge now has it.
+    /// the default branch; answers with it as the forge now has it. Made from chat
+    /// `thread_id`, it is kept as one of that chat's.
     pub async fn create_pull(
         &self,
         id: &str,
         title: &str,
         body: &str,
         base: Option<&str>,
+        thread_id: Option<&str>,
     ) -> Result<PullStatus> {
         let request = ProjectRequest::CreatePull {
             id: id.to_owned(),
             title: title.to_owned(),
             body: body.to_owned(),
             base: base.map(str::to_owned),
+            thread_id: thread_id.map(str::to_owned),
         };
         match self.0.call(Request::Project(request)).await? {
             Response::PullStatus(Some(pull)) => Ok(*pull),

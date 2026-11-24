@@ -14,6 +14,8 @@ pub const SWITCH: Duration = Duration::from_millis(150);
 pub const ARRIVE: Duration = Duration::from_millis(200);
 /// A moved row settling into its new place.
 pub const SETTLE: Duration = Duration::from_millis(220);
+/// One of a row of pages turned sideways.
+pub const SLIDE: Duration = Duration::from_millis(180);
 
 /// Fast at first, gentle at the end: the eye sees the answer at once and the stop is soft.
 pub fn ease_out(t: f32) -> f32 {
@@ -30,6 +32,21 @@ where
         id,
         Animation::new(SWITCH).with_easing(ease_out),
         |page, t| page.opacity(t),
+    )
+}
+
+/// A page turned sideways: it fades in and slides the last 24 px from the side it lies
+/// on, `toward` 1 from the right, -1 from the left. As with `switch`, the old page is
+/// already gone, so a short slide reads as the row moving.
+pub fn slide<E>(id: impl Into<ElementId>, page: E, toward: isize) -> AnimationElement<E>
+where
+    E: IntoElement + Styled + 'static,
+{
+    let from = 24. * toward.signum() as f32;
+    page.with_animation(
+        id,
+        Animation::new(SLIDE).with_easing(ease_out),
+        move |page, t| page.opacity(t).relative().left(px((1. - t) * from)),
     )
 }
 

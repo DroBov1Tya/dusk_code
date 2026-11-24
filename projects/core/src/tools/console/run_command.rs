@@ -162,6 +162,8 @@ impl RunCommand {
         let mut result = match ran? {
             Ran::Done(result) => result,
             Ran::Detached(running) => {
+                // The job writes from now on where no walk looks.
+                super::file_changes::unwatched(context);
                 let owner = self
                     .jobs
                     .as_ref()
@@ -277,6 +279,12 @@ impl Tool for RunCommand {
     fn shape(&self, arguments: &Value, result: &crate::tools::ToolResult) -> Option<Shaped> {
         result.exit_code?;
         super::shape::shape(arguments["command"].as_str()?, &result.content)
+    }
+
+    /// Only a command that ended in the foreground and failed has tests to run again.
+    fn rerun(&self, arguments: &Value, result: &crate::tools::ToolResult) -> Option<String> {
+        result.exit_code.filter(|code| *code != 0)?;
+        super::rerun::rerun(arguments["command"].as_str()?, &result.content)
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
@@ -399,7 +407,7 @@ async fn project_env(context: &ToolContext) -> Result<Vec<(String, String)>> {
     let Some(state) = &context.state else {
         return Ok(Vec::new());
     };
-    let Some(dir) = context.scope.cwd().to_str() else {
+    let Some(dir) = context.scope.project_dir().to_str() else {
         return Ok(Vec::new());
     };
     state.project_env_for_dir(dir).await
@@ -408,8 +416,15 @@ async fn project_env(context: &ToolContext) -> Result<Vec<(String, String)>> {
 /// How the command is confined in sandbox mode, by the scope it runs in.
 pub async fn confinement(context: &ToolContext) -> Option<Confinement> {
     let scope = &*context.scope;
-    (context.approvals_policy().await == ApprovalPolicy::Sandbox)
-        .then(|| Confinement::around(scope.cwd(), scope.workspace(), scope.protected()))
+    (context.approvals_policy().await == ApprovalPolicy::Sandbox).then(|| {
+        let mut confinement =
+            Confinement::around(scope.cwd(), scope.workspace(), scope.protected());
+        // In a worktree a commit writes objects and refs in the repository's shared data.
+        confinement
+            .writable
+            .extend(scope.git_writable().iter().cloned());
+        confinement
+    })
 }
 
 /// The command ready to start, with the user's shell PATH when it was read.

@@ -41,6 +41,9 @@ pub enum MessageRole {
     Assistant,
     Tool,
     Job,
+    /// The evaluator's verdict on the chat's goal after a turn, its content a
+    /// `GoalEvaluation` as JSON. The transcript shows it; the model never reads it.
+    Goal,
 }
 
 impl Message {
@@ -53,7 +56,7 @@ impl Message {
 impl MessageRole {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::System | Self::Job => "system",
+            Self::System | Self::Job | Self::Goal => "system",
             Self::User => "user",
             Self::Assistant => "assistant",
             Self::Tool => "tool",

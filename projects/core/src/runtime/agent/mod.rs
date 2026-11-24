@@ -21,3 +21,4 @@ pub(crate) use compaction::Loaded;
 pub use inbox::{Inbox, Input, Stop};
 pub(crate) use mail::MAX_AGENT_MESSAGES;
 pub use mailboxes::{Mailbox, Mailboxes};
+pub(crate) use repeats::TestOutcome;

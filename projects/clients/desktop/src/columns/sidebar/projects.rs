@@ -129,6 +129,27 @@ impl Workspace {
         if !self.collapsed.remove(id) {
             self.collapsed.insert(id.to_owned());
         }
+        self.keep_collapsed(cx);
+    }
+
+    /// Folds every project, or opens every one.
+    pub fn fold_all_projects(&mut self, fold: bool, cx: &mut Context<Self>) {
+        self.collapsed = match fold {
+            true => self
+                .projects
+                .iter()
+                .map(|project| project.id.clone())
+                .collect(),
+            false => Default::default(),
+        };
+        self.keep_collapsed(cx);
+    }
+
+    /// The fold survives a restart.
+    fn keep_collapsed(&mut self, cx: &mut Context<Self>) {
+        let mut kept: Vec<String> = self.collapsed.iter().cloned().collect();
+        kept.sort();
+        crate::ui::theme::change(cx, |prefs| prefs.collapsed_projects = kept);
         cx.notify();
     }
 

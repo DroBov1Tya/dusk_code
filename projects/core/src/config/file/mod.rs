@@ -9,12 +9,13 @@ mod switches;
 mod tests;
 
 use super::sections::{
-    MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS,
-    MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE, MAX_TEAM_GATE_SECONDS, MAX_TEAM_MAX_GATE_RUNS,
-    MAX_TEAM_MAX_MINUTES, MAX_TEAM_MAX_STEPS, MAX_TEAM_MAX_TOKENS, MIN_COMPACT_TAIL_TOKENS,
-    MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS,
-    MIN_TEAM_AT_ONCE, MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS, MIN_TEAM_MAX_MINUTES,
-    MIN_TEAM_MAX_STEPS, MIN_TEAM_MAX_TOKENS, is_zero, yes,
+    MAX_COMPACT_TAIL_TOKENS, MAX_FAILURE_RUNG, MAX_LOOP_JUDGE_CALLS, MAX_NO_PROGRESS_STEPS,
+    MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS, MAX_STUB_MIN_TOKENS, MAX_TEAM_AT_ONCE,
+    MAX_TEAM_GATE_SECONDS, MAX_TEAM_MAX_GATE_RUNS, MAX_TEAM_WRAP_SECONDS, MAX_TEXT_LOOP_REPEATS,
+    MIN_COMPACT_TAIL_TOKENS, MIN_FAILURE_RUNG, MIN_LOOP_JUDGE_CALLS, MIN_NO_PROGRESS_STEPS,
+    MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS, MIN_TEAM_AT_ONCE,
+    MIN_TEAM_GATE_SECONDS, MIN_TEAM_MAX_GATE_RUNS, MIN_TEAM_WRAP_SECONDS, MIN_TEXT_LOOP_REPEATS,
+    is_zero, yes,
 };
 use super::{
     Appearance, ApprovalPolicy, Arbiter, ContextPolicy, CoreSection, Effort, Limits, Logging,
@@ -27,7 +28,7 @@ use crate::{
     release::update::Channel,
 };
 use anyhow::{Context, Result, anyhow, ensure};
-use dusk_protocol::config::VoiceSettings;
+use dusk_protocol::config::{ModelTiers, VoiceSettings};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -93,6 +94,10 @@ pub struct Config {
     /// provider when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
+    /// The models a thread may hand a subagent by tier, as `provider/model`; an unset tier
+    /// is the asking chat's model.
+    #[serde(default, skip_serializing_if = "ModelTiers::is_default")]
+    models: ModelTiers,
     /// The chat's mode, by its file in `modes/`; MAIN when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mode: Option<String>,
@@ -169,6 +174,7 @@ impl fmt::Debug for Config {
             .field("skill_packs", &self.skill_packs)
             .field("agents", &self.agents)
             .field("model", &self.model)
+            .field("models", &self.models)
             .field("mcp", &self.mcp.keys().collect::<Vec<_>>())
             .field("logging", &self.logging.enabled)
             .finish()
@@ -310,10 +316,6 @@ impl Config {
             "work_history.max_chars must be above zero"
         );
         ensure!(
-            self.limits.max_goal_rounds > 0,
-            "max_goal_rounds must be above zero"
-        );
-        ensure!(
             (MIN_MODEL_TIMEOUT_SECONDS..=MAX_MODEL_TIMEOUT_SECONDS)
                 .contains(&self.limits.model_timeout_seconds),
             "limits.model_timeout_seconds must be between {MIN_MODEL_TIMEOUT_SECONDS} and \
@@ -331,6 +333,41 @@ impl Config {
                 && limits.failure_stop_at <= MAX_FAILURE_RUNG,
             "limits.failure_note_at, failure_replan_at and failure_stop_at must rise in this \
              order, from {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.cycle_note_at
+                && limits.cycle_note_at < limits.cycle_replan_at
+                && limits.cycle_replan_at <= MAX_FAILURE_RUNG,
+            "limits.cycle_note_at and cycle_replan_at must rise in this order, from \
+             {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.test_rerun_note_at
+                && limits.test_rerun_note_at < limits.test_rerun_replan_at
+                && limits.test_rerun_replan_at <= MAX_FAILURE_RUNG,
+            "limits.test_rerun_note_at and test_rerun_replan_at must rise in this order, from \
+             {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
+        );
+        ensure!(
+            MIN_NO_PROGRESS_STEPS <= limits.no_progress_note_at
+                && limits.no_progress_note_at < limits.no_progress_replan_at
+                && limits.no_progress_replan_at <= MAX_NO_PROGRESS_STEPS,
+            "limits.no_progress_note_at and no_progress_replan_at must rise in this order, \
+             from {MIN_NO_PROGRESS_STEPS} to {MAX_NO_PROGRESS_STEPS}"
+        );
+        ensure!(
+            (MIN_LOOP_JUDGE_CALLS..=MAX_LOOP_JUDGE_CALLS).contains(&limits.loop_judge_calls),
+            "limits.loop_judge_calls must be between {MIN_LOOP_JUDGE_CALLS} and \
+             {MAX_LOOP_JUDGE_CALLS}"
+        );
+        ensure!(
+            (MIN_TEXT_LOOP_REPEATS..=MAX_TEXT_LOOP_REPEATS).contains(&limits.text_loop_repeats),
+            "limits.text_loop_repeats must be between {MIN_TEXT_LOOP_REPEATS} and \
+             {MAX_TEXT_LOOP_REPEATS}"
+        );
+        ensure!(
+            (MIN_FAILURE_RUNG..=MAX_FAILURE_RUNG).contains(&limits.goal_stall_rounds),
+            "limits.goal_stall_rounds must be between {MIN_FAILURE_RUNG} and {MAX_FAILURE_RUNG}"
         );
         ensure!(
             (MIN_RETRY_UNREACHABLE_SECONDS..=MAX_RETRY_UNREACHABLE_SECONDS)
@@ -365,20 +402,6 @@ impl Config {
             "limits.team_at_once must be between {MIN_TEAM_AT_ONCE} and {MAX_TEAM_AT_ONCE}"
         );
         ensure!(
-            (MIN_TEAM_MAX_STEPS..=MAX_TEAM_MAX_STEPS).contains(&limits.team_max_steps),
-            "limits.team_max_steps must be between {MIN_TEAM_MAX_STEPS} and {MAX_TEAM_MAX_STEPS}"
-        );
-        ensure!(
-            (MIN_TEAM_MAX_TOKENS..=MAX_TEAM_MAX_TOKENS).contains(&limits.team_max_tokens),
-            "limits.team_max_tokens must be between {MIN_TEAM_MAX_TOKENS} and \
-             {MAX_TEAM_MAX_TOKENS}"
-        );
-        ensure!(
-            (MIN_TEAM_MAX_MINUTES..=MAX_TEAM_MAX_MINUTES).contains(&limits.team_max_minutes),
-            "limits.team_max_minutes must be between {MIN_TEAM_MAX_MINUTES} and \
-             {MAX_TEAM_MAX_MINUTES}"
-        );
-        ensure!(
             (MIN_TEAM_GATE_SECONDS..=MAX_TEAM_GATE_SECONDS).contains(&limits.team_gate_seconds),
             "limits.team_gate_seconds must be between {MIN_TEAM_GATE_SECONDS} and \
              {MAX_TEAM_GATE_SECONDS}"
@@ -388,7 +411,13 @@ impl Config {
             "limits.team_max_gate_runs must be between {MIN_TEAM_MAX_GATE_RUNS} and \
              {MAX_TEAM_MAX_GATE_RUNS}"
         );
+        ensure!(
+            (MIN_TEAM_WRAP_SECONDS..=MAX_TEAM_WRAP_SECONDS).contains(&limits.team_wrap_seconds),
+            "limits.team_wrap_seconds must be between {MIN_TEAM_WRAP_SECONDS} and \
+             {MAX_TEAM_WRAP_SECONDS}"
+        );
         self.team.validate()?;
+        self.models.validate().map_err(|error| anyhow!(error))?;
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,
             "appearance.idle_screen_minutes must be at most {}",

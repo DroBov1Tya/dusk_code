@@ -139,7 +139,9 @@ pub fn people(team: &Team, tasks: &[Task], agents: &BTreeMap<String, Subagent>) 
             model: model.map(short_model),
             task_id: member.task_id.clone(),
             number: found.map(|(number, _)| number),
-            task: found.map(|(number, task)| task.numbered(number)),
+            task: found
+                .map(|(number, task)| task.numbered(number))
+                .or_else(|| member.summary()),
             spend: task.and_then(Task::spend),
             line: state.line(task, tasks, ended, &member.thread_id),
             word: state.word(task),
@@ -457,7 +459,7 @@ fn narrow_line(state: &MemberState, task: Option<&Task>, tasks: &[Task], team: &
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thread::{TaskOwner, TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed};
+    use crate::thread::{TaskOwner, TeamEnd, TeamMember, TeamStatus, TeamUsed};
 
     fn task(number: usize, status: TaskStatus, owner: Option<&str>) -> Task {
         Task {
@@ -477,8 +479,11 @@ mod tests {
         Team {
             thread_id: "lead".into(),
             started_at: None,
+            ended_at: None,
+            winding_since: None,
+            goal: String::new(),
             status,
-            budget: TeamBudget::new(8, 400, 4_000_000, 120).unwrap(),
+            at_once: 8,
             used: TeamUsed::default(),
             members: members
                 .iter()
@@ -488,6 +493,7 @@ mod tests {
                     role: Some(if number % 2 == 0 { "qa" } else { "backend" }.into()),
                     model: Some("chatgpt/gpt-5.5".into()),
                     task_id: format!("t{number}"),
+                    summary: String::new(),
                     status: *status,
                 })
                 .collect(),

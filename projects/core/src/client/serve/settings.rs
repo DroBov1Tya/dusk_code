@@ -21,7 +21,6 @@ impl Server {
                 let saved = runtime.config().current().appearance().idle_screen_minutes;
                 return Ok(Response::Number(saved.into()));
             }
-            SettingsRequest::MaxGoalRounds(rounds) => runtime.set_max_goal_rounds(rounds)?,
             SettingsRequest::ModelTimeout(seconds) => {
                 runtime.set_model_timeout(seconds)?;
                 let saved = runtime.config().current().limits().model_timeout_seconds;
@@ -41,6 +40,7 @@ impl Server {
             SettingsRequest::Switch { switch, on } => self.switch(switch, on)?,
             SettingsRequest::BranchPrefix(prefix) => runtime.set_branch_prefix(&prefix)?,
             SettingsRequest::Arbiter(arbiter) => runtime.set_arbiter(arbiter)?,
+            SettingsRequest::ModelTier { tier, model } => runtime.set_model_tier(tier, model)?,
             SettingsRequest::NextMode => return Ok(Response::Text(runtime.next_mode()?)),
             SettingsRequest::Mode(name) => runtime.set_mode(&name)?,
             SettingsRequest::Connect {

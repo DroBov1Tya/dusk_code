@@ -24,8 +24,9 @@ pub(super) fn mode_chip(mode: &str) -> Span<'static> {
     Span::styled(format!(" {} ", mode.to_lowercase()), bold(DEEP).bg(color))
 }
 
-/// The repository, branch, commits, changed files and the distance to the upstream.
-pub(super) fn git_line(summary: &GitSummary) -> Line<'static> {
+/// The repository, branch, commits, changed files and the distance to the upstream;
+/// `worktree` when it is the worktree of the thread's own branch.
+pub(super) fn git_line(summary: &GitSummary, worktree: bool) -> Line<'static> {
     let dot = || Span::styled(" \u{00B7} ", dim());
     let mut spans = vec![
         Span::styled(format!("  {}", summary.repository), dim()),
@@ -35,9 +36,14 @@ pub(super) fn git_line(summary: &GitSummary) -> Line<'static> {
             fg(TEXT_SOFT),
         ),
         dot(),
+    ];
+    if worktree {
+        spans.extend([Span::styled("worktree", fg(ACCENT)), dot()]);
+    }
+    spans.extend([
         Span::styled(format!("{} commits", summary.commits), dim()),
         dot(),
-    ];
+    ]);
     spans.push(match summary.changed {
         0 => Span::styled("clean", dim()),
         changed => Span::styled(format!("{changed} changed"), fg(TEXT_SOFT)),
@@ -168,6 +174,7 @@ impl InputView<'_> {
         frame: &mut Frame,
         area: Rect,
         git: Option<&GitSummary>,
+        worktree: bool,
         folder: &str,
         approvals: ApprovalPolicy,
     ) {
@@ -194,7 +201,7 @@ impl InputView<'_> {
             0
         };
         let mut line = match git {
-            Some(summary) => git_line(summary),
+            Some(summary) => git_line(summary, worktree),
             None => Line::from(vec![
                 Span::styled(format!("  {folder}"), dim()),
                 Span::styled(" \u{00B7} not a git repository", dim()),

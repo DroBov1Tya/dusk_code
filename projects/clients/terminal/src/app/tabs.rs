@@ -299,13 +299,13 @@ pub(crate) mod tests {
     pub(crate) fn app() -> App {
         App::new(Status {
             model: None,
+            model_tiers: Default::default(),
             discovering_model: false,
             input_limit: 0,
             context_policy: None,
             effort: None,
             mode: String::new(),
             approvals: ApprovalPolicy::Ask,
-            max_goal_rounds: 0,
             idle_screen_minutes: 0,
             notifications: false,
             sound_notifications: false,

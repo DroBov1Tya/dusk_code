@@ -267,7 +267,7 @@ impl Workspace {
                     Err(error) => Check::failed(&error),
                 };
                 ws.providers_page.checks.insert(shown, found);
-                ws.load_models(cx);
+                ws.reload_models(cx);
             },
         );
         cx.notify();
@@ -282,19 +282,22 @@ impl Workspace {
             cx,
             move |client| async move { client.settings().provider_enabled(&name, on).await },
             |ws, result, cx| match result {
-                Ok(()) => ws.load_models(cx),
+                Ok(()) => ws.reload_models(cx),
                 Err(error) => ws.fail(error, cx),
             },
         );
     }
 
     pub(super) fn remove_provider(&mut self, name: &str, cx: &mut Context<Self>) {
-        let name = name.to_owned();
+        let (name, removed) = (name.to_owned(), name.to_owned());
         self.core.call(
             cx,
             move |client| async move { client.settings().remove_provider(&name).await },
-            |ws, result, cx| match result {
-                Ok(()) => ws.load_models(cx),
+            move |ws, result, cx| match result {
+                Ok(()) => {
+                    ws.providers.retain(|provider| provider.name != removed);
+                    ws.reload_models(cx)
+                }
                 Err(error) => ws.fail(error, cx),
             },
         );

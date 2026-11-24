@@ -1,10 +1,10 @@
 //! The state database handle.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     io::ErrorKind,
     path::Path,
-    sync::RwLock,
+    sync::{Mutex, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -28,6 +28,9 @@ pub struct State {
     /// Episodes per project, kept in memory so `recall` can tell, without a query, whether
     /// it has anything to say. Filled when the database is opened.
     pub(crate) episodes: RwLock<HashMap<String, u64>>,
+    /// Calls, as (thread, call id), whose changes the ledger could not record; see
+    /// `note_unwatched`. In memory: only the turn that made the call reads it.
+    pub(crate) unwatched: Mutex<VecDeque<(String, String)>>,
 }
 
 impl State {
@@ -71,6 +74,7 @@ impl State {
         let state = Self {
             pool,
             episodes: RwLock::default(),
+            unwatched: Mutex::default(),
         };
         state.load_episode_counts().await?;
         Ok(state)
@@ -99,6 +103,7 @@ impl State {
         Ok(Self {
             pool,
             episodes: RwLock::default(),
+            unwatched: Mutex::default(),
         })
     }
 

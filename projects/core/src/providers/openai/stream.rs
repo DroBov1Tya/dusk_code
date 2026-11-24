@@ -7,20 +7,21 @@ use serde_json::Value;
 
 use crate::providers::{
     cost,
-    errors::{UnsupportedEffort, ended_early},
+    errors::{RefusedEffort, UnsupportedEffort, ended_early},
     output::{FinishReason, ModelEvent, Usage},
     transport::sse::{EventParser, SseDecoder, SseStream},
 };
 
-use super::client::error_rejects_effort_off;
+use super::client::error_rejects_effort;
+use crate::config::Effort;
 
 const DONE_MARKER: &str = "[DONE]";
 
 pub type CompletionStream = SseStream<CompletionParser>;
 
-pub fn stream(response: Response, effort_off: bool) -> CompletionStream {
+pub fn stream(response: Response, effort: Option<Effort>) -> CompletionStream {
     let parser = CompletionParser {
-        effort_off,
+        effort,
         ..CompletionParser::default()
     };
     SseStream::new(response, parser)
@@ -30,7 +31,8 @@ pub fn stream(response: Response, effort_off: bool) -> CompletionStream {
 #[derive(Default)]
 pub struct CompletionParser {
     decoder: SseDecoder,
-    effort_off: bool,
+    /// The level the request carried, to tell a refusal of it from another error.
+    effort: Option<Effort>,
     finish_seen: bool,
     done: bool,
 }
@@ -141,12 +143,17 @@ impl CompletionParser {
         let chunk: Chunk = serde_json::from_str(data)
             .map_err(|_| anyhow!("invalid provider stream chunk JSON"))?;
         if let Some(error) = chunk.error {
-            if self.effort_off && error_rejects_effort_off(&error) {
+            let refused = self.effort.is_some() && error_rejects_effort(&error);
+            if refused && self.effort == Some(Effort::Off) {
                 bail!(UnsupportedEffort);
             }
             // Type and code only: the message can echo the input.
             let kind = format!("{} {}", error["type"], error["code"]);
-            return Err(crate::providers::stream_error(&kind));
+            let failure = crate::providers::stream_error(&kind);
+            if refused {
+                bail!(RefusedEffort(failure));
+            }
+            return Err(failure);
         }
         let mut events = Vec::new();
         for choice in chunk.choices.into_iter().filter(|choice| choice.index == 0) {
@@ -232,6 +239,33 @@ mod tests {
         format!(
             "data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"{reason}\"}}]}}\n\n"
         )
+    }
+
+    #[test]
+    fn a_refused_level_of_effort_is_told_apart_from_off_and_other_errors() {
+        use crate::providers::{is_refused_effort, is_unsupported_effort, provider_error};
+        let refused = concat!(
+            "data: {\"error\":{\"type\":\"invalid_request_error\",",
+            "\"code\":\"unsupported_parameter\",\"param\":\"reasoning_effort\",",
+            "\"message\":\"reasoning_effort is not supported with this model\"}}\n\n"
+        );
+        let feed = |effort| {
+            CompletionParser {
+                effort,
+                ..CompletionParser::default()
+            }
+            .feed(refused.as_bytes())
+            .unwrap_err()
+        };
+        // A level the model does not take: the provider's failure, marked as refused.
+        let high = feed(Some(Effort::High));
+        assert!(is_refused_effort(&high));
+        assert!(provider_error(&high).is_some());
+        // Off keeps its own path, which restores the user's setting.
+        let off = feed(Some(Effort::Off));
+        assert!(is_unsupported_effort(&off) && !is_refused_effort(&off));
+        // Without an effort sent, the same text is an ordinary failure.
+        assert!(!is_refused_effort(&feed(None)));
     }
 
     #[test]

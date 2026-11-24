@@ -49,7 +49,16 @@ async fn a_member_has_only_the_tools_of_the_allowlist() {
     })
     .await;
     let lead = rig.offered(&rig.lead);
-    assert!(lead.contains(&"tasks".to_owned()) && lead.contains(&"ask_agent".to_owned()));
+    // It reads to plan, and hands work out through the plan alone.
+    let has = |name: &str| lead.iter().any(|offered| offered == name);
+    assert!(
+        has("tasks") && has("read_file") && has("search_files"),
+        "{lead:?}"
+    );
+    assert!(
+        !has("ask_agent") && !has("run_command") && !has("write_file"),
+        "{lead:?}"
+    );
     // An agent the lead asks is no member and keeps an agent's tools.
     let config = rig.launcher().config.current();
     let mut agent = rig.launcher().tools("t", None, 1);
@@ -117,7 +126,7 @@ async fn with_the_switch_off_nothing_runs_and_the_lead_has_the_board() {
     .await;
     let ids = rig.plan(&[task("one")]).await;
 
-    let refused = rig.run_with(|budget| budget).await;
+    let refused = rig.try_run().await;
 
     assert!(refused.unwrap_err().to_string().contains("switched off"));
     assert_eq!(rig.pass().await, 0);
@@ -174,6 +183,80 @@ async fn a_role_answers_on_its_own_model_and_one_that_cannot_answer_fails_the_ta
     assert_eq!(rig.members().await.len(), 1);
 }
 
+#[test]
+fn a_task_answers_on_its_tier_below_the_roles_own_model() {
+    use crate::config::Config;
+    use crate::runtime::tiers::Tier;
+    let config = Config::parse(
+        b"providers:\n  big:\n    base_url: https://127.0.0.1:1/v1\n\
+          models:\n  strong: big/fable\n  weak: gone/haiku\n\
+          team:\n  models:\n    code-reviewer: big/opus\n",
+    )
+    .unwrap();
+    let name = |role: &str, tier| super::super::member::model_name(&config, role, tier, None);
+    assert_eq!(
+        name("general", Some(Tier::Strong)).as_deref(),
+        Some("big/fable")
+    );
+    // The role's own model is the user's word for it, above any tier.
+    assert_eq!(
+        name("code-reviewer", Some(Tier::Strong)).as_deref(),
+        Some("big/opus")
+    );
+    // Unset, or set to a provider not connected: the chat's model, here none.
+    assert_eq!(name("general", Some(Tier::Default)), None);
+    assert_eq!(name("general", Some(Tier::Weak)), None);
+    assert_eq!(name("general", None), None);
+}
+
+#[tokio::test]
+async fn a_task_with_an_unset_tier_runs_on_the_chats_model_at_its_effort() {
+    use crate::config::Effort;
+    use crate::runtime::tiers::Tier;
+    let rig = Rig::with("team_tier_effort", "mode: TEAM\neffort: high\n", hang).await;
+    let ids = rig
+        .plan(&[NewTask {
+            tier: Some(Tier::Weak),
+            effort: Some(Effort::Low),
+            ..task("scout")
+        }])
+        .await;
+    rig.run().await;
+    let given = rig.task(&ids[0]).await;
+    assert_eq!(given.tier, Some(Tier::Weak));
+    assert_eq!(given.model.as_deref(), Some("fake/scripted"));
+    let members = rig.members().await;
+    let effort = rig.state().agent_effort(&members[0]).await.unwrap();
+    assert_eq!(effort, Some(Effort::Low));
+}
+
+#[tokio::test]
+async fn a_member_whose_model_refuses_the_effort_answers_without_it() {
+    use crate::config::Effort;
+    // The chat thinks at high; the member's model takes no reasoning effort at all.
+    let rig = Rig::with(
+        "team_effort_refused",
+        "mode: TEAM\neffort: high\n",
+        |asked| match (asked.lead, asked.effort) {
+            (true, _) => Out::Say("Noted.".into()),
+            (false, Some(_)) => Out::RefuseEffort,
+            (false, None) => Out::Say(DONE.into()),
+        },
+    )
+    .await;
+    let ids = rig
+        .plan(&[NewTask {
+            effort: Some(Effort::High),
+            ..task("scout")
+        }])
+        .await;
+    rig.run().await;
+    until("the member handed in", || async {
+        rig.status(&ids[0]).await == PlanStatus::Review
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_mode_switch_for_another_chat_does_not_pause_the_team() {
     let rig = Rig::new("team_mode_left", hang).await;
@@ -193,14 +276,10 @@ async fn a_mode_switch_for_another_chat_does_not_pause_the_team() {
     config
         .update(|config| config.set_mode("MAIN".into()))
         .unwrap();
-    let one_at_once =
-        |budget: TeamBudget| TeamBudget::new(1, budget.steps(), budget.tokens(), budget.minutes());
-    assert_eq!(
-        rig.run_with(|budget| one_at_once(budget).unwrap())
-            .await
-            .unwrap(),
-        1
-    );
+    // One at once: the team starts so before the lead's `run` goes on with it.
+    let now = crate::state::timestamp_ms().unwrap();
+    rig.state().start_team(&rig.lead, 1, now).await.unwrap();
+    assert_eq!(rig.run().await, 1);
     // The member at work is gone and its task is back: a slot is free.
     let free_a_slot = || async {
         for task in rig.state().plan(&rig.lead).await.unwrap() {
@@ -230,7 +309,7 @@ async fn a_mode_switch_for_another_chat_does_not_pause_the_team() {
     })
     .await;
     assert_eq!(rig.pass().await, 0);
-    assert!(rig.run_with(|budget| budget).await.is_err());
+    assert!(rig.try_run().await.is_err());
     assert_eq!(rig.ended().await, None);
 
     config

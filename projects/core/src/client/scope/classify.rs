@@ -159,8 +159,9 @@ fn work(request: &Work) -> Access<'_> {
         | Work::SavePlan { thread_id, .. }
         | Work::ConfirmTask { thread_id, .. }
         | Work::StopTeam { thread_id } => of(Area::ThreadWrite, thread_id),
-        // How much the team may spend unasked, so it sits with the approval mode.
-        Work::SetTeamBudget { thread_id, .. } => of(Area::ThreadApprovals, thread_id),
+        // How many members work at once, a setting of the team, so it sits with the approval
+        // mode.
+        Work::SetTeamAtOnce { thread_id, .. } => of(Area::ThreadApprovals, thread_id),
     }
 }
 
@@ -212,7 +213,6 @@ fn settings(request: &Settings) -> Area {
         | Settings::ContextPolicy(_)
         | Settings::MaxAgentsAtWork(_)
         | Settings::IdleScreenMinutes(_)
-        | Settings::MaxGoalRounds(_)
         | Settings::ModelTimeout(_)
         | Settings::MaxAttempts(_)
         | Settings::MemoryChars(_)
@@ -220,6 +220,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::Switch { .. }
         | Settings::BranchPrefix(_)
         | Settings::Arbiter(_)
+        | Settings::ModelTier { .. }
         | Settings::NextMode
         | Settings::Mode(_)
         | Settings::Connect { .. }

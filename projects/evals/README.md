@@ -5,11 +5,11 @@ agents better. Each task is a small project with a job to do and a script that c
 result, so a verdict is a command's exit code and not an opinion.
 
 ```bash
-cargo run -q -p dusk_evals -- --selfcheck
-cargo run -q -p dusk_evals -- --runs 3 --out projects/evals/results/shipped.json
-git show v0.69.1:resources/modes/MAIN.md > old.md
-cargo run -q -p dusk_evals -- --runs 3 --main-prompt old.md --out projects/evals/results/old.json
-cargo run -q -p dusk_evals -- --compare projects/evals/results/old.json projects/evals/results/shipped.json
+cargo run -q -p dusk_evals -- --selfcheck                                              # check the harness without calling a model
+cargo run -q -p dusk_evals -- --runs 3 --out projects/evals/results/shipped.json       # run every task 3 times with the shipped prompt
+git show v0.69.1:resources/modes/MAIN.md > old.md                                      # save the old MAIN prompt
+cargo run -q -p dusk_evals -- --runs 3 --main-prompt old.md --out projects/evals/results/old.json  # run again with the old prompt
+cargo run -q -p dusk_evals -- --compare projects/evals/results/old.json projects/evals/results/shipped.json  # compare the two runs
 ```
 
 `--selfcheck` needs no model: each check must fail on the untouched task and pass on its
@@ -48,7 +48,9 @@ those: tool calls and errors, provider retries, and re-runs (tool calls with the
 arguments of an earlier call of the same agent). For context work: stub moves, the results
 they put away and the tokens they saved (`limits.stub_results`), command results sent
 shaped and the tokens that saved (`limits.shape_output`), retrievals (`read_history`
-calls that read one stored result back), and finished compactions.
+calls that read one stored result back), and finished compactions. For loop work: `test_runs`,
+an approximate count of commands that ran tests (see Loop tasks), and repeat notices and
+stops.
 
 The headline is the pass rate and tokens per solved task: every token of every run,
 failed and timed-out ones included, over the runs that passed; `n/a` when none did. A run
@@ -62,15 +64,34 @@ Record the shipped engine first, then the same tasks with one mechanism changed,
 same model, runs and timeout, and compare:
 
 ```bash
-cargo run -q -p dusk_evals -- --runs 3 --timeout 600 --out projects/evals/results/baseline.json
+cargo run -q -p dusk_evals -- --runs 3 --timeout 600 --out projects/evals/results/baseline.json  # baseline run with a 600 s timeout
 cargo run -q -p dusk_evals -- --runs 3 --timeout 600 --set memory.enabled=false \
-    --out projects/evals/results/no-memory.json
-cargo run -q -p dusk_evals -- --compare projects/evals/results/baseline.json projects/evals/results/no-memory.json
+    --out projects/evals/results/no-memory.json  # same run with memory switched off
+cargo run -q -p dusk_evals -- --compare projects/evals/results/baseline.json projects/evals/results/no-memory.json  # compare the two runs
 ```
 
 The `hard-` tasks hide what the request does not spell out: randomized checks against a
 reference, concurrency under stress, encoded attacks, a specification with amendments, a
 large log. `--only hard-` runs them alone.
+
+## Loop tasks
+
+The `loop-` tasks tempt an agent to go round in circles, to measure the repeat and
+no-progress guards (`limits.failure_*`) on and off. The report counts `test_runs`
+(commands that ran tests, subagents included), repeat notices and repeat stops beside
+the verdict. `test_runs` is approximate: it matches runner names and common test commands
+in a command line, so `pip show pytest` counts and a runner it does not know does not.
+
+`loop-missing-dependency` asks for `acme-geodesy` from an index that does not exist. The
+name is not on PyPI today, but nothing stops someone publishing it; an agent that drops the
+`--index-url` would then install and run that code on your machine.
+
+| Task | The trap | A pass |
+|---|---|---|
+| `loop-flaky-test` | a test that fails one run in three (a counter file decides) and passes when run again | the retry bug is fixed; the check runs every case |
+| `loop-narrow-test` | a one-line bug in a suite of thirty two-second modules; the README names the narrow command | the fix, with the whole suite run at most twice |
+| `loop-ping-pong` | two tests that seem to want opposite values of one setting | the setting stays in milliseconds and the client converts |
+| `loop-missing-dependency` | a package from an index that cannot be reached | a report that it is missing, no stand-in and no claim of a pass |
 
 ## Team tasks
 
@@ -100,8 +121,8 @@ it (`kill_on_drop`) where a crash would leave it running; blocking work still ru
 The report has `killed_after` per run; a run that ended before its point has none.
 
 ```bash
-cargo run -q -p dusk_evals -- --only team- --mode TEAM --runs 4 --out projects/evals/results/team.json
-cargo run -q -p dusk_evals -- --only team-chain-kill --runs 20 --seed 1 --out projects/evals/results/kill.json
+cargo run -q -p dusk_evals -- --only team- --mode TEAM --runs 4 --out projects/evals/results/team.json  # run the team- tasks in TEAM mode, 4 times each
+cargo run -q -p dusk_evals -- --only team-chain-kill --runs 20 --seed 1 --out projects/evals/results/kill.json  # repeat the kill task 20 times, fixed seed
 ```
 
 ## What is known so far

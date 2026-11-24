@@ -91,7 +91,7 @@ impl Workspace {
     }
 
     /// Takes an unconfigured microphone or reader to the Voice settings.
-    fn open_voice_setup(&mut self, cx: &mut Context<Self>) {
+    pub fn open_voice_setup(&mut self, cx: &mut Context<Self>) {
         use crate::{
             pages::settings::{SettingsPage, ai::Tab},
             workspace::Center,

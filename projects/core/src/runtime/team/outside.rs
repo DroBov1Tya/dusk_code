@@ -16,16 +16,15 @@ const SHOWN: usize = 4;
 const SHOWN_CHARS: usize = 160;
 
 /// `changed outside its files: src/x.rs, notes.md and 2 more`, or `None` when every
-/// change of the task's turns is inside its files. A task without files names none.
+/// change of the task's turns is inside its files. A task without files (a scout, a
+/// reviewer, the critic) may change nothing: any change is `changed files but owns
+/// none: ...`.
 pub(super) async fn line(
     launcher: &Launcher,
     member: &str,
     task: &PlanTask,
 ) -> Result<Option<String>> {
     let files = task.files.entries();
-    if files.is_empty() {
-        return Ok(None);
-    }
     let changed = launcher
         .state
         .task_own_changes(member, &task.task_id)
@@ -51,8 +50,9 @@ pub(super) async fn line(
         0 => String::new(),
         left => format!(" and {left} more"),
     };
-    Ok(Some(format!(
-        "changed outside its files: {}{more}",
-        shown.join(", ")
-    )))
+    let what = match files.is_empty() {
+        true => "changed files but owns none",
+        false => "changed outside its files",
+    };
+    Ok(Some(format!("{what}: {}{more}", shown.join(", "))))
 }

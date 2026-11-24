@@ -108,6 +108,12 @@ fn node(task: &TaskNode, lit: Option<Lit>, cx: &mut Context<Workspace>) -> State
                 }))
                 .into_any_element()
         }
+        // A reviewed task that is done: the chip says it all.
+        false if task.status == TaskStatus::Done && task.review.is_some() => {
+            div().into_any_element()
+        }
+        // A task the lead gave up says so, quietly.
+        false if task.skipped => div().child("skipped").into_any_element(),
         // Waiting in the queue says nothing beside the role.
         false if task.status == TaskStatus::Open && task.owner.is_none() => {
             div().into_any_element()
@@ -158,7 +164,8 @@ fn node(task: &TaskNode, lit: Option<Lit>, cx: &mut Context<Workspace>) -> State
                     .min_w_0()
                     .meta()
                     .line_clamp(2)
-                    .when(done, |title| title.text_color(muted))
+                    .when(done || task.skipped, |title| title.text_color(muted))
+                    .when(task.skipped, |title| title.line_through())
                     .child(format!("#{} {}", task.number, task.title)),
             ),
     )
@@ -175,6 +182,23 @@ fn node(task: &TaskNode, lit: Option<Lit>, cx: &mut Context<Workspace>) -> State
             .text_color(muted)
             .child(owner)
             .child(div().flex_1().min_w_0().truncate().child(word))
+            // A fresh reviewer's check rides on the task it checks, as a chip.
+            .when_some(task.review.clone(), |row, review| {
+                let color = match review.starts_with("reviewed") {
+                    true => muted,
+                    false if review.starts_with("reviewing") => accent,
+                    false => theme.warning,
+                };
+                row.child(
+                    div()
+                        .flex_none()
+                        .px_1()
+                        .rounded_sm()
+                        .bg(color.opacity(0.12))
+                        .text_color(color)
+                        .child(review),
+                )
+            })
             .when(task.reworks > 0, |row| {
                 row.child(
                     div()
@@ -185,10 +209,20 @@ fn node(task: &TaskNode, lit: Option<Lit>, cx: &mut Context<Workspace>) -> State
             })
             // Come back from review says it was given again; the count would crowd it.
             .when(task.attempts > 1 && task.reworks == 0, |row| {
+                let tip = SharedString::from(format!(
+                    "Given out {} times: a lost attempt goes back to its member once, then to \
+                     a fresh one",
+                    task.attempts
+                ));
                 row.child(
                     div()
+                        .id(SharedString::from(format!("team-attempt-{}", task.task_id)))
                         .flex_none()
-                        .child(format!("\u{00D7}{}", task.attempts)),
+                        .tooltip(move |window, cx| {
+                            gpui_kit::component::tooltip::Tooltip::new(tip.clone())
+                                .build(window, cx)
+                        })
+                        .child(format!("attempt {}", task.attempts)),
                 )
             })
             .when(task.gated, |row| {

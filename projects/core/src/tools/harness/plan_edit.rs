@@ -43,6 +43,11 @@ impl PlanEdit {
 }
 
 impl Tool for PlanEdit {
+    /// Keeps the chat's own records or speaks to someone: no project file changes.
+    fn writes_project(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     fn name(&self) -> &'static str {
         "plan_edit"
     }

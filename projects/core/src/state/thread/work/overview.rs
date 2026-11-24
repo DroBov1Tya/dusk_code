@@ -142,7 +142,8 @@ fn log_entry(at: i64, kind: &str, number: Option<i64>, took: Option<i64>) -> Res
         "team_started" => (LogKind::Started, "Team started".to_owned()),
         "team_done" => (LogKind::Done, format!("Team done in {took}")),
         other => {
-            // A team that ended any other way ran out of a budget or was stopped.
+            // A team that ended any other way stalled, went quiet, was stopped, or (under an
+            // older core) ran out of a budget.
             let why = other.strip_prefix("team_").unwrap_or(other);
             (LogKind::Stopped, format!("Team ended ({why}) after {took}"))
         }

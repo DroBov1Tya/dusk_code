@@ -2,7 +2,7 @@
 
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Agent, Inbox, Input, Mailbox, Mailboxes, Stop};
-use crate::runtime::goal::action as goal;
+use crate::runtime::goal::STOPPED;
 use crate::runtime::{ThreadLock, model_choice::ModelChoice};
 use crate::state::artifacts::ArtifactStore;
 use crate::{
@@ -26,11 +26,17 @@ const FOREIGN_JOB_POLL: Duration = Duration::from_secs(2);
 /// Runs one thread; `Runtime` gives each active thread its own task with one of these.
 pub struct ThreadRunner {
     pub agent: Agent,
-    pub(super) inbox: Inbox,
+    pub(crate) inbox: Inbox,
     pub mailboxes: Arc<Mailboxes>,
     ends_when_idle: bool,
     /// The next automatic round waits for dependency completion, not a timer.
     pub goal_waiting: bool,
+    /// Turns in a row that called no tool, for a goal's stall rule.
+    pub goal_quiet_turns: u32,
+    /// Turns in a row the evaluator could not judge, for a goal's error pause.
+    pub goal_unjudged_turns: u32,
+    /// Turns of a goal tried again in a row after a provider error.
+    pub goal_retries: u32,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
     /// The question a restart asked while the runner waits for its answer.
@@ -85,9 +91,12 @@ impl ThreadRunner {
             model: setup.model,
             config: setup.config,
             tools: Arc::new(setup.tools),
+            here: Mutex::new(Arc::clone(&setup.scope)),
             scope: setup.scope,
             project: setup.project,
             pictures_refused: Mutex::new(None),
+            effort_refused: Mutex::new(None),
+            judge_effort_refused: Mutex::new(None),
             pace: Mutex::default(),
             repeats: Mutex::default(),
             asking: Mutex::new(Vec::new()),
@@ -109,6 +118,9 @@ impl ThreadRunner {
             mailboxes: setup.mailboxes,
             ends_when_idle: setup.ends_when_idle,
             goal_waiting: false,
+            goal_quiet_turns: 0,
+            goal_unjudged_turns: 0,
+            goal_retries: 0,
             left: false,
             deciding,
             _lock: setup.lock,
@@ -150,10 +162,9 @@ impl ThreadRunner {
         if self.agent.depth == 0
             && let Some(goal) = self.agent.state.goal(&self.agent.thread_id).await?
         {
-            let note = goal::describe(&goal);
             self.agent.emit(ThreadEvent::Goal {
                 goal: Some(goal),
-                note,
+                note: String::new(),
                 started: None,
             });
         }
@@ -279,6 +290,8 @@ impl ThreadRunner {
     async fn run_queued(&mut self, mut resumed: Option<Turn>) -> Result<()> {
         let mut ran = false;
         let mut failed = false;
+        // The last turn that ran, so a goal round is judged by how it ended.
+        let mut ended: Option<String> = None;
         loop {
             let turn = match resumed.take() {
                 // It goes on as it stood: a compaction would cut its step in two.
@@ -292,11 +305,16 @@ impl ThreadRunner {
                 Err(stop) => Some(stop),
                 Ok(Some((turn, resumes))) => {
                     ran = true;
+                    ended = Some(turn.turn_id.clone());
                     let (stop, status) = match resumes {
                         true => self.agent.resume_turn(&turn, &mut self.inbox).await?,
                         false => self.agent.run_turn(&turn, &mut self.inbox).await?,
                     };
                     failed = status == TurnStatus::Failed;
+                    if !failed {
+                        self.goal_retries = 0;
+                    }
+                    self.count_quiet_turn(&turn.turn_id).await?;
                     match stop {
                         Some(stop) => Some(stop),
                         None => self.agent.name_thread(&mut self.inbox).await,
@@ -304,14 +322,16 @@ impl ThreadRunner {
                 }
                 // Only a turn that ran goes on to the next round: a context too
                 // large to start one would start none forever.
-                // A failing turn would fail again: the goal waits for the user.
                 Ok(None) if ran && failed => {
-                    self.pause_goal("the last turn failed").await?;
+                    if self.goal_turn_failed().await? {
+                        (ran, failed) = (false, false);
+                        continue;
+                    }
                     return Ok(());
                 }
                 Ok(None)
-                    if (ran || self.goal_waiting || self.verification_pending().await?)
-                        && self.next_goal_round().await? =>
+                    if (ran || self.goal_waiting)
+                        && self.next_goal_round(ended.take().as_deref()).await? =>
                 {
                     ran = false;
                     continue;
@@ -325,10 +345,10 @@ impl ThreadRunner {
         }
     }
 
-    /// A cancel also pauses an idle goal waiting for dependency completion.
-    pub(super) async fn cancel_work(&mut self) -> Result<()> {
+    /// A cancel also pauses the goal, whether a turn of it runs or it waits for work.
+    pub(crate) async fn cancel_work(&mut self) -> Result<()> {
         self.goal_waiting = false;
-        self.pause_goal("stopped by the user").await?;
+        self.pause_goal(STOPPED).await?;
         self.cancel_agents().await
     }
 
@@ -362,7 +382,7 @@ impl ThreadRunner {
         Ok(true)
     }
 
-    async fn has_pending(&self) -> Result<bool> {
+    pub(crate) async fn has_pending(&self) -> Result<bool> {
         self.agent.state.has_pending(&self.agent.thread_id).await
     }
 }

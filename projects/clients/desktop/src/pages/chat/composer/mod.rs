@@ -61,6 +61,11 @@ pub fn dock_lane(content: impl IntoElement) -> Div {
         .child(div().px(px(SIDE + crate::ui::size::GAP_S)).child(content))
 }
 
+/// How wide a card in the dock lane is, in a chat column `chat` wide.
+pub fn lane_width(chat: f32) -> f32 {
+    chat.min(WIDTH + 2. * SIDE) - 2. * (16. + SIDE + crate::ui::size::GAP_S)
+}
+
 /// Puts the shown chat's draft in the composer when another chat's is there. Called as the
 /// chat page is drawn: every way to another chat ends here, and here is the window.
 pub fn show_draft(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
@@ -76,14 +81,17 @@ pub fn show_draft(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Work
     let switched = ws
         .drafts
         .switch(ws.shown.as_deref(), || std::mem::take(&mut current));
-    let changed = edited || switched.is_some();
+    let switched_chat = switched.is_some();
     let draft = switched.unwrap_or(current);
     ws.attachments = draft.attachments;
     ws.pastes = draft.pastes;
-    if changed {
+    if switched_chat {
+        // Another chat's draft: Cmd+Z must not bring back the text of the chat just left.
         ws.composer.update(cx, |composer, cx| {
             composer.set_value(draft.text, window, cx)
         });
+    } else if edited {
+        ws.write_composer(&draft.text, window, cx);
     }
 }
 
@@ -318,6 +326,19 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
 }
 
 impl Workspace {
+    /// Puts `text` in the box as one edit Cmd+Z takes back, the caret after it;
+    /// `set_value` would wipe the box's history. Leaves the box alone when it has the text.
+    pub fn write_composer(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.composer.update(cx, |composer, cx| {
+            if composer.value() == text {
+                return;
+            }
+            let len = composer.value().len();
+            composer.set_selected_range(0..len, cx);
+            composer.replace(text.to_owned(), window, cx);
+        });
+    }
+
     pub fn edit_draft(
         &mut self,
         thread_id: Option<String>,

@@ -377,7 +377,12 @@ mod tests {
     /// and schema must agree, just as they did in those releases.
     async fn before_goal_verification(state: &State) {
         sqlx::raw_sql(
-            "ALTER TABLE model_usage DROP COLUMN cache_write_tokens;
+            "ALTER TABLE messages DROP COLUMN goal_verdict;
+            DELETE FROM _sqlx_migrations WHERE version = 49;
+            ALTER TABLE goals DROP COLUMN started_at;
+            ALTER TABLE goals DROP COLUMN reason;
+            DELETE FROM _sqlx_migrations WHERE version = 48;
+            ALTER TABLE model_usage DROP COLUMN cache_write_tokens;
             ALTER TABLE model_usage DROP COLUMN cost_micro_usd;
             ALTER TABLE model_usage DROP COLUMN cost_source;
             DELETE FROM _sqlx_migrations WHERE version = 23;
@@ -543,6 +548,13 @@ mod tests {
              DROP INDEX tasks_one_at_work;
              DROP INDEX turns_task;
              ALTER TABLE turns DROP COLUMN task_id;
+             DROP INDEX tasks_review_of;
+             ALTER TABLE tasks DROP COLUMN last_owner_thread_id;
+             ALTER TABLE tasks DROP COLUMN resumes;
+             ALTER TABLE tasks DROP COLUMN result;
+             ALTER TABLE tasks DROP COLUMN duty;
+             ALTER TABLE tasks DROP COLUMN review_of;
+             ALTER TABLE tasks DROP COLUMN skipped;
              ALTER TABLE tasks DROP COLUMN status;
              ALTER TABLE tasks DROP COLUMN depends_on;
              ALTER TABLE tasks DROP COLUMN role;
@@ -562,6 +574,12 @@ mod tests {
              ALTER TABLE tasks DROP COLUMN model;
              ALTER TABLE threads DROP COLUMN owner;
              ALTER TABLE threads DROP COLUMN unread;
+             ALTER TABLE threads DROP COLUMN pulls_scanned;
+             DROP TABLE thread_worktrees;
+             DROP TABLE thread_pulls;
+             DROP TABLE agent_models;
+             ALTER TABLE tasks DROP COLUMN tier;
+             ALTER TABLE tasks DROP COLUMN effort;
              ALTER TABLE threads DROP COLUMN mode;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
@@ -619,6 +637,13 @@ mod tests {
              DROP INDEX tasks_one_at_work;
              DROP INDEX turns_task;
              ALTER TABLE turns DROP COLUMN task_id;
+             DROP INDEX tasks_review_of;
+             ALTER TABLE tasks DROP COLUMN last_owner_thread_id;
+             ALTER TABLE tasks DROP COLUMN resumes;
+             ALTER TABLE tasks DROP COLUMN result;
+             ALTER TABLE tasks DROP COLUMN duty;
+             ALTER TABLE tasks DROP COLUMN review_of;
+             ALTER TABLE tasks DROP COLUMN skipped;
              ALTER TABLE tasks DROP COLUMN status;
              ALTER TABLE tasks DROP COLUMN depends_on;
              ALTER TABLE tasks DROP COLUMN role;
@@ -638,6 +663,14 @@ mod tests {
              ALTER TABLE tasks DROP COLUMN model;
              ALTER TABLE threads DROP COLUMN owner;
              ALTER TABLE threads DROP COLUMN unread;
+             ALTER TABLE threads DROP COLUMN pulls_scanned;
+             DROP TABLE thread_worktrees;
+             DROP TABLE thread_pulls;
+             ALTER TABLE goals DROP COLUMN round_fingerprint;
+             ALTER TABLE goals DROP COLUMN same_rounds;
+             DROP TABLE agent_models;
+             ALTER TABLE tasks DROP COLUMN tier;
+             ALTER TABLE tasks DROP COLUMN effort;
              ALTER TABLE threads DROP COLUMN mode;
              DELETE FROM _sqlx_migrations WHERE version >= 13;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
@@ -735,7 +768,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls', 'subagent models', 'goal stall', 'goal evaluator', 'goal verdicts', 'team no budget', 'team flow', 'team wind down', 'team resume', 'thread worktrees'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

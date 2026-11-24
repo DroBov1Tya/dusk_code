@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::agent::AgentPhase;
 use crate::model::{Effort, ModelEvent, ProviderErrorKind, ToolCall};
 use crate::thread::{
-    Compaction, Goal, LocalUnsent, Message, Pin, Task, Team, ThreadTokens, Turn, TurnFailure,
+    Compaction, Goal, GoalEvaluation, LocalUnsent, Message, Pin, Task, Team, ThreadTokens, Turn,
+    TurnFailure,
 };
 use crate::tools::{ApprovalRequest, Question, ToolResult};
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -64,8 +65,10 @@ pub enum ThreadEvent {
     /// turn's `TurnFinished`, and again when a chat whose newest turn failed is opened.
     TurnFailed(TurnFailure),
     /// The model repeated itself and the core stepped in: the result of the call just
-    /// finished carries a note, and at `RepeatRung::Stop` the turn ends. `count` is how
-    /// many times the same call, or the same error, came back in this turn.
+    /// finished carries a note, and at `RepeatRung::Stop` or `RepeatRung::JudgeStop` the
+    /// turn ends. `count` is what the rung counts in this turn: the same call or error
+    /// coming back, a cycle's rounds, test runs with no change between, or steps with no
+    /// progress.
     RepeatNotice {
         rung: RepeatRung,
         count: u32,
@@ -175,7 +178,7 @@ pub enum ThreadEvent {
     Tasks(Vec<Task>),
     /// One task of the plan this thread leads changed; `Tasks` stays for the board.
     TaskChanged(Task),
-    /// The team running this thread's plan changed its status, members or budget; at
+    /// The team running this thread's plan changed its status, members or members at once; at
     /// most one a second.
     Team(Team),
     /// An agent's phase changed, by its own `agent_state` call or the runtime's.
@@ -202,13 +205,15 @@ pub enum ThreadEvent {
     /// A background process result joined this thread at a safe execution boundary.
     FromJob(Message),
     /// The standing goal changed, or the thread opened with one; `note` says what
-    /// happened in a line.
+    /// happened in a line, empty when there is nothing to say.
     Goal {
         goal: Option<Goal>,
         note: String,
         /// The message queued to start work on it, for a client to show as sent.
         started: Option<String>,
     },
+    /// The evaluator judged the goal after a turn.
+    GoalEvaluated(GoalEvaluation),
     /// /undo took the thread back; `text` is the message it went back to, for the
     /// client to offer again.
     Undone {
@@ -220,6 +225,13 @@ pub enum ThreadEvent {
     /// Something for the user arrived in the chat (true), or a client showed it to them
     /// (false): its `Thread::unread` changed. Every client listing the chat hears it.
     Unread(bool),
+    /// The chat's pull requests changed: one was linked, or the forge told a new state,
+    /// title or size. All of them, as `Thread::pulls`. Every client listing the chat
+    /// hears it.
+    Pulls(Vec<crate::project::ThreadPull>),
+    /// The thread branched off into a worktree (`Some`), or merged or abandoned it and
+    /// works in its own folder again (`None`): its `Thread::branch` changed.
+    Branch(Option<crate::project::ThreadBranch>),
     /// A skill file changed by a tool call of this thread, or such a change was undone.
     SkillChanged(crate::catalog::SkillChange),
     /// /fork wrote its summary; a client opens a new thread that starts from it.
@@ -253,6 +265,35 @@ pub enum RepeatRung {
     Replan,
     /// The turn ends as failed, with the error and the attempts.
     Stop,
+    /// The same short run of calls with the same results came round again, or one call
+    /// gave the same result several times with nothing changed between: the model is told
+    /// it is going in circles.
+    Cycle,
+    /// The cycle went on: the model is asked for a different plan.
+    CycleReplan,
+    /// The tests ran again with no project file changed since their last run: the model
+    /// is told what that run found.
+    TestRerun,
+    /// The tests kept running with nothing changed: the model is asked for a different
+    /// plan.
+    TestRerunReplan,
+    /// Steps went by with nothing new: no file changed, nothing new read, nothing that
+    /// failed passed. The model is asked where it stands.
+    NoProgress,
+    /// Still no progress: the model is asked for a different plan.
+    NoProgressReplan,
+    /// A judge model read the turn after a rule fired and found it not stuck; its
+    /// advice goes to the model and the turn goes on.
+    JudgeRedirect,
+    /// A judge model confirmed the turn is stuck: the turn ends as failed, with why.
+    JudgeStop,
+}
+
+impl RepeatRung {
+    /// Whether the turn ends at this rung.
+    pub fn stops(self) -> bool {
+        matches!(self, Self::Stop | Self::JudgeStop)
+    }
 }
 
 /// What an episode the core wrote down is about.
@@ -261,7 +302,7 @@ pub enum RepeatRung {
 pub enum EpisodeKind {
     /// An error that came back ended with a call that passed.
     Fixed,
-    /// A goal's verification passed.
+    /// The evaluator found a goal met.
     Verified,
 }
 

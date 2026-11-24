@@ -140,7 +140,7 @@ impl Agent {
                     return Ok(None);
                 }
             };
-        let specs = self.tools.specs(&self.scope, &config);
+        let specs = self.tools.specs(&self.working_scope(), &config);
         let working = turn.is_some() || conversation.has_queued();
         let percent = match turn {
             None if config.limits().compact_early => EARLY_COMPACT_PERCENT,
@@ -315,7 +315,7 @@ impl Agent {
         let config = self.config_now().await;
         // Same tools, project text and key as the steps, so the provider's cache of the
         // thread serves this request too; without them the whole context is read cold.
-        let tools = self.tools.specs(&self.scope, &config);
+        let tools = self.tools.specs(&self.working_scope(), &config);
         let call = ModelCall {
             thread_id: self.thread_id.clone(),
             turn_id: turn.map(|turn| turn.turn_id.clone()),
@@ -334,7 +334,9 @@ impl Agent {
                 effort: config.effort(),
                 cache_key: Some(&self.thread_id),
             };
-            let (output, generated) = match self.call_model(&choice, request, &config, inbox).await
+            let (output, generated) = match self
+                .call_model(&choice, request, &config, None, inbox)
+                .await
             {
                 Ok(called) => (called.output, called.generated),
                 Err(stop) => return Ok(Err(stop)),

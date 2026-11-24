@@ -3,6 +3,7 @@
 //! and a time limit. Branch names and paths are checked before git sees them (`check`).
 //! Nothing here forces a push, amends a commit or prunes a worktree.
 
+mod branches;
 mod check;
 mod read;
 mod remote;
@@ -12,13 +13,17 @@ mod tests;
 mod worktree;
 mod write;
 
+pub use branches::{
+    Repository, apart, files_between, merging, names, remove_merged, repository, unsaved,
+};
 pub use read::{changes, info, summary};
 pub use remote::{fetch, pull, push};
 pub use worktree::{add as add_worktree, remove as remove_worktree};
 pub use write::{
-    abort_merge, commit, create_branch, discard, merge, stage, stage_all, switch_branch, unstage,
+    abort_merge, commit, create_branch, discard, merge, merge_recorded, stage, stage_all,
+    switch_branch, unstage,
 };
 
-pub(super) use check::{branch as check_branch, message as check_message};
+pub(crate) use check::{branch as check_branch, message as check_message};
 pub(super) use read::web_page;
-pub(super) use run::{Output, command, finish, git, git_differs};
+pub(super) use run::{Output, command, finish, git, git_differs, run};

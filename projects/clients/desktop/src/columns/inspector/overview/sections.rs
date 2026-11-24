@@ -2,14 +2,13 @@
 //! the same section draws in the column and on the page, only its frame differs.
 
 use crate::ui::elevation::{Elevation, Level};
-use dusk_protocol::thread::{
-    BudgetPart, LogEntry, LogKind, Overview, PlanCounts, Task, Team, ThreadTokens,
-};
+use dusk_protocol::thread::{LogEntry, LogKind, Overview, PlanCounts, Task, Team, ThreadTokens};
 use gpui_kit::{
     component::{
         ActiveTheme, Icon, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -151,17 +150,21 @@ fn progress(shown: &Shown, form: Form, cx: &mut Context<Workspace>) -> Option<Di
         ]))
         .child(segments);
     if let Some(team) = &shown.team {
-        body = body.children(team.budget_parts().map(|part| budget_row(part, cx)));
-        // Only a running team can be stopped or given more.
+        // The column keeps to how the work stands; what the team used is the page's.
+        if form == Form::Wide {
+            let muted = theme.muted_foreground;
+            body = body.child(div().meta().text_color(muted).child(team.used_line()));
+        }
+        // Only a running team can be stopped or changed.
         if team.ended().is_none() {
-            body = body.child(steer(team, cx));
+            body = body.child(steer(team, form, cx));
         }
     }
     Some(frame(form, "Progress", aside, body, cx))
 }
 
-/// Edit budget and Stop team, under the budget they act on.
-fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
+/// Members at once and Stop team; the column has Stop only.
+fn steer(team: &Team, form: Form, cx: &mut Context<Workspace>) -> Div {
     let team = team.clone();
     div()
         .flex()
@@ -169,15 +172,15 @@ fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
         .justify_end()
         .gap_2()
         .pt_2()
-        .child(
-            Button::new("team-budget")
-                .small()
-                .ghost()
-                .label("Edit budget")
-                .on_click(
-                    cx.listener(move |ws, _, window, cx| ws.ask_team_budget(&team, window, cx)),
-                ),
-        )
+        .when(form == Form::Wide, |row| {
+            row.child(
+                Button::new("team-at-once")
+                    .small()
+                    .ghost()
+                    .label("Members at once")
+                    .on_click(cx.listener(move |ws, _, _, cx| ws.ask_team_at_once(&team, cx))),
+            )
+        })
         .child(
             Button::new("team-stop")
                 .small()
@@ -185,40 +188,6 @@ fn steer(team: &Team, cx: &mut Context<Workspace>) -> Div {
                 .label("Stop team")
                 .on_click(cx.listener(|ws, _, _, cx| ws.ask_stop_team(cx))),
         )
-}
-
-/// One part of the team's budget: its name, a thin bar, and "used of all".
-fn budget_row(part: BudgetPart, cx: &App) -> Div {
-    let theme = cx.theme();
-    let fill = if part.near() {
-        theme.warning
-    } else {
-        theme.muted_foreground
-    };
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .h(px(24.))
-        .meta()
-        .text_color(theme.muted_foreground)
-        .child(div().w(px(64.)).child(part.name))
-        .child(
-            div()
-                .flex_1()
-                .h(px(4.))
-                .rounded_full()
-                .bg(theme.border)
-                .child(
-                    div()
-                        .h_full()
-                        .w(relative(part.share()))
-                        .rounded_full()
-                        .bg(fill),
-                ),
-        )
-        .child(div().w(px(96.)).text_right().child(part.text()))
 }
 
 fn members(team: &Team, tasks: &[Task], form: Form, cx: &mut Context<Workspace>) -> Option<Div> {

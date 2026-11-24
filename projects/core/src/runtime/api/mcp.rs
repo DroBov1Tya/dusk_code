@@ -57,20 +57,44 @@ impl Runtime {
     pub fn save_mcp_server(&self, old: Option<&str>, text: &str) -> Result<Option<String>> {
         if text.trim().is_empty() {
             let old = old.context("write the server's YAML")?;
+            // Removing a plugin's server would only stop it until the plugin loads again.
+            ensure!(
+                self.launcher.config.current().mcp().contains_key(old),
+                "{old} is not in your settings; a plugin's server goes when the plugin is removed"
+            );
+            let release = self.release_folder_of(old);
             self.launcher
                 .config
                 .update(|config| config.set_mcp_server(old, None))?;
             self.launcher.mcp.restart(old, None);
             self.forget_connector(old, None)?;
+            if let Some(release) = release {
+                self.tidy_connector(&release);
+            }
             return Ok(None);
         }
         let (name, server) = parse_mcp_server(text)?;
+        let release = old.and_then(|old| self.release_folder_of(old));
         if let Some(old) = old {
             let kept = (old == name).then_some(&server);
             self.forget_connector(old, kept)?;
         }
         self.put_mcp_server(old, &name, server)?;
+        // A store program the server no longer starts, edited by hand or not, goes.
+        if let Some(release) = release {
+            self.tidy_connector(&release);
+        }
         Ok(Some(name))
+    }
+
+    /// The connector whose release program the server `name` starts, when it starts one
+    /// the store put in place.
+    fn release_folder_of(&self, name: &str) -> Option<String> {
+        let config = self.launcher.config.current();
+        let McpServerConfig::Stdio(stdio) = config.mcp().get(name)? else {
+            return None;
+        };
+        crate::plugins::store::connector::release::owner_of(self.paths(), Path::new(&stdio.command))
     }
 
     /// A server the store added stops being the store's once the user removes it,

@@ -9,6 +9,9 @@ use uuid::Uuid;
 use crate::project::ledger::Edit;
 use crate::state::{State, timestamp_ms};
 
+/// Calls whose changes went unrecorded, kept for their turns to read.
+const MAX_UNWATCHED: usize = 64;
+
 /// Which rows the `changes` tool asks for; every filter but the project is optional.
 pub struct ChangeQuery<'a> {
     /// The canonical project folder; rows of other projects are never read.
@@ -31,6 +34,14 @@ macro_rules! select {
             END AS turn_number FROM changes c ",
             $filter
         )
+    };
+}
+
+/// A file's state after a change: its content hash, `deleted`, or the row's own id when
+/// the content was not read, so a state not known is never taken for one seen before.
+macro_rules! state_after {
+    () => {
+        "COALESCE(hash_after, CASE kind WHEN 'deleted' THEN 'deleted' ELSE change_id END)"
     };
 }
 
@@ -114,6 +125,109 @@ impl State {
         .fetch_all(&self.pool)
         .await
         .context("list what the task's turns changed")
+    }
+
+    /// Notes that the call `call_id` of the thread may have changed project files the
+    /// ledger did not record: the walk around its command gave up (a project or a change
+    /// past the walk's caps, or out of time), the recording failed, or the command went
+    /// to the background. Only the newest marks are kept.
+    pub fn note_unwatched(&self, thread_id: &str, call_id: &str) {
+        let mut marks = self.unwatched.lock().unwrap_or_else(|e| e.into_inner());
+        if marks.len() >= MAX_UNWATCHED {
+            marks.pop_front();
+        }
+        marks.push_back((thread_id.to_owned(), call_id.to_owned()));
+    }
+
+    /// Whether `note_unwatched` marked the call; the mark is taken.
+    pub fn take_unwatched(&self, thread_id: &str, call_id: &str) -> bool {
+        let mut marks = self.unwatched.lock().unwrap_or_else(|e| e.into_inner());
+        let at = marks
+            .iter()
+            .position(|(thread, call)| thread == thread_id && call == call_id);
+        at.and_then(|at| marks.remove(at)).is_some()
+    }
+
+    /// How many changes the ledger holds for the thread. Rows are only added, so two
+    /// counts tell whether a project file changed between them.
+    pub async fn change_count(&self, thread_id: &str) -> Result<u64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM changes WHERE thread_id = ?")
+            .bind(thread_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("count the thread's changes")?;
+        u64::try_from(count).context("negative change count")
+    }
+
+    /// What the call `call_id` of the thread changed, as (path, state after), in the
+    /// order recorded; see `state_after!`.
+    pub async fn call_changes(
+        &self,
+        thread_id: &str,
+        call_id: &str,
+    ) -> Result<Vec<(String, String)>> {
+        sqlx::query_as(concat!(
+            "SELECT path, ",
+            state_after!(),
+            " FROM changes WHERE thread_id = ? AND call_id = ? ORDER BY rowid"
+        ))
+        .bind(thread_id)
+        .bind(call_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("list what a call changed")
+    }
+
+    /// Each file the threads changed with its latest state, as (path, state after), by
+    /// path; see `state_after!`.
+    pub async fn files_state(&self, threads: &[String]) -> Result<Vec<(String, String)>> {
+        // SQLite takes the other columns of a MAX() group from the row with the maximum.
+        sqlx::query_as(concat!(
+            "SELECT path, state FROM (SELECT path, ",
+            state_after!(),
+            " AS state, MAX(rowid) FROM changes
+                WHERE thread_id IN (SELECT value FROM json_each(?)) GROUP BY path)
+             ORDER BY path"
+        ))
+        .bind(serde_json::to_string(threads)?)
+        .fetch_all(&self.pool)
+        .await
+        .context("list the state of the changed files")
+    }
+
+    /// Whether the threads recorded a change since the turn `turn_id` started; false
+    /// for a turn not known.
+    pub async fn changed_in_turn(&self, threads: &[String], turn_id: &str) -> Result<bool> {
+        sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM changes
+                WHERE thread_id IN (SELECT value FROM json_each(?1))
+                  AND created_at >= (SELECT started_at FROM turns WHERE turn_id = ?2))",
+        )
+        .bind(serde_json::to_string(threads)?)
+        .bind(turn_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("tell whether a turn changed a file")
+    }
+
+    /// Each change the turns of `member` on `task_id` recorded, oldest first, as its path
+    /// and its diff when one was known: what a reviewer of the task reads. Secret and
+    /// unknown files have no diff.
+    pub async fn task_diffs(
+        &self,
+        member: &str,
+        task_id: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        sqlx::query_as(
+            "SELECT c.path, c.diff FROM changes c JOIN turns t ON t.turn_id = c.turn_id
+             WHERE c.thread_id = ?1 AND t.task_id = ?2
+             ORDER BY c.created_at, c.rowid",
+        )
+        .bind(member)
+        .bind(task_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("read the diffs of the task's turns")
     }
 
     /// The thread's own changes for a client, newest first, at most `MAX_FILE_CHANGES`.

@@ -12,3 +12,7 @@ d59429f25943a070cd6bb300f50a07ad144d85f9:projects/web/tests/browser.rs:generic-a
 292cedf84158635948baa95947dbb967fdac5afc:projects/core/src/project/episodes/clean_tests.rs:generic-api-key:652
 292cedf84158635948baa95947dbb967fdac5afc:projects/core/src/project/episodes/clean_tests.rs:private-key:514
 753c10ce879e2559c12ae1aafcb6f4d731f197f9:projects/core/src/project/graph/tests.rs:aws-access-token:122
+# Made-up keys planted by the project graph's tests, which prove a secret an agent records
+# never reaches the stored graph.
+877046114c4ce2dbc916278acc9da89ef16f475b:projects/core/src/tools/files/graph/tests.rs:generic-api-key:265
+877046114c4ce2dbc916278acc9da89ef16f475b:projects/core/src/tools/files/graph/tests.rs:generic-api-key:214

@@ -74,10 +74,24 @@ Read a kind through its accessors: `Flow::layers()`, `Layer::cards()`, `Checks::
   message whose `tool_call_id` is the call's.
 - With both at hand, `Block::shown(&call, content)` does it in one step.
 
+`Block::asked` also reads a `draw_diagram` call (see Diagrams), so a client draws a
+diagram the same way, as `Block::Diagram`.
+
 A block that was not shown (out of caps, tool switched off, denied by a plugin,
 interrupted) gives `None` or `false`, and the call stays a plain step with its error.
 Match on `Block` exhaustively, so a new kind fails to compile until it is drawn or sent to
 the plain text on purpose.
+
+## Diagrams
+
+A diagram has its own tool, `draw_diagram`, so `show` and its description stay small and a
+diagram is switched on and off apart (`tools: { draw_diagram: false }`, or under `modes:`).
+Its arguments are a `Diagram` (`thread/block/diagram/`): a `kind` (`flow`,
+`architecture`, `sequence`, `timeline`, `tree`, `state`), `nodes`, `edges`, and optional
+`title`, `direction`, `groups`, `legend`; at most 24 nodes and 40 edges, every id named
+once and every reference one of them. The result is `Block::Diagram(diagram).text()`,
+under the heading `Diagram:`. The protocol lays it out (`diagram::layout`) for the desktop
+and the web page; the terminal writes it as text in reading order.
 
 ## Adding a kind
 

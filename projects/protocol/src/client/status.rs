@@ -33,6 +33,10 @@ pub enum ChatGpt {
 pub struct Status {
     /// The model threads talk to, as `provider/model`.
     pub model: Option<String>,
+    /// The models of the subagent tiers strong, default and weak; an unset one is the
+    /// asking chat's model.
+    #[serde(default)]
+    pub model_tiers: crate::config::TierStates,
     /// The core is still looking for a model over the network.
     pub discovering_model: bool,
     pub input_limit: u64,
@@ -40,7 +44,6 @@ pub struct Status {
     pub effort: Option<Effort>,
     pub mode: String,
     pub approvals: ApprovalPolicy,
-    pub max_goal_rounds: u32,
     pub idle_screen_minutes: u32,
     /// Whether clients notify at all.
     pub notifications: bool,

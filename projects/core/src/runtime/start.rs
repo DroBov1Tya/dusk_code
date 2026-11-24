@@ -89,6 +89,8 @@ impl Runtime {
         }
         let initialized = init::initialize(&paths)?;
         let state = Arc::new(State::open(&state_db).await?);
+        // A goal outlives the restart; its turns, time and spend count from now.
+        state.restore_goals().await?;
         let mailboxes = Arc::new(Mailboxes::default());
         let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes), &state_db).await?;
         let config = Arc::new(LiveConfig::load_with(
@@ -206,28 +208,11 @@ impl Runtime {
             let model = Arc::clone(&launcher.model);
             let mailboxes = Arc::clone(&launcher.mailboxes);
             Some(tokio::spawn(async move {
-                let revision = model.revision();
-                let selected = if model.current().is_some() {
-                    refresh_saved(&model).await
-                } else {
-                    Choice::pick(&config.current(), None).await.map(|choice| {
-                        if model.set_if_empty_at_revision(choice, &revision) {
-                            model.current()
-                        } else {
-                            None
-                        }
-                    })
-                };
-                match selected {
-                    Ok(Some(selected)) => {
-                        for mailbox in mailboxes.lock().await.values() {
-                            mailbox.emit(ThreadEvent::ModelSelected {
-                                name: selected.name(),
-                                input_limit: selected.input_limit(&config.current()),
-                            });
-                            mailbox.send(Input::Sent);
-                        }
-                    }
+                if model.current().is_none() {
+                    return pick_if_empty(&config, &model, &mailboxes).await;
+                }
+                match refresh_saved(&model).await {
+                    Ok(Some(selected)) => announce(&selected, &config, &mailboxes).await,
                     Ok(None) => {}
                     Err(error) => warn!("model discovery is unavailable: {error:#}"),
                 }
@@ -297,6 +282,36 @@ impl Runtime {
         }
         self.launcher.state.close().await;
         self.temporary.state.close().await;
+    }
+}
+
+/// Chooses the first model that answers when none is chosen, and tells every chat. A
+/// model the user chooses meanwhile is kept: the revision guard drops this pick.
+pub(super) async fn pick_if_empty(config: &LiveConfig, model: &ModelChoice, mailboxes: &Mailboxes) {
+    let revision = model.revision();
+    if model.current().is_some() {
+        return;
+    }
+    match Choice::pick(&config.current(), None).await {
+        Ok(choice) => {
+            if model.set_if_empty_at_revision(choice, &revision)
+                && let Some(selected) = model.current()
+            {
+                announce(&selected, config, mailboxes).await;
+            }
+        }
+        Err(error) => warn!("model discovery is unavailable: {error:#}"),
+    }
+}
+
+/// Tells every chat the model chosen in the background, and wakes it to show it.
+async fn announce(selected: &Choice, config: &LiveConfig, mailboxes: &Mailboxes) {
+    for mailbox in mailboxes.lock().await.values() {
+        mailbox.emit(ThreadEvent::ModelSelected {
+            name: selected.name(),
+            input_limit: selected.input_limit(&config.current()),
+        });
+        mailbox.send(Input::Sent);
     }
 }
 

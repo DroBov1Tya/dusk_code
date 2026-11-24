@@ -75,7 +75,14 @@ impl<L> ChatLog<L> {
             MessageRole::Job => {
                 self.push(Item::Job(JobResult::read(&message.content)), at);
             }
+            MessageRole::Goal => {
+                if let Ok(evaluation) = serde_json::from_str(&message.content) {
+                    self.goal_verdict(evaluation, at);
+                }
+            }
             MessageRole::Assistant => {
+                // Each stored answer is a step of its own.
+                self.batch = None;
                 if !message.content.is_empty() || message.reasoning.is_some() {
                     let item = Item::Assistant {
                         text: message.content.clone(),
@@ -91,6 +98,7 @@ impl<L> ChatLog<L> {
             MessageRole::Tool => {
                 let call_id = message.tool_call_id.as_deref().unwrap_or_default();
                 if !self.suggestion(call_id, &message.content)
+                    && !self.finish_run_call(call_id, |tool| tool.finish_stored(&message.content))
                     && !self.show_block(call_id, &message.content)
                     && let Some(index) = self.tool_index(call_id)
                 {

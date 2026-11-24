@@ -5,7 +5,8 @@ entry: true
 links: [duskcode-agents/qa-engineer, duskcode-agents/performance-engineer, appsec-reviewer]
 skills: [duskcode-engineering/systematic-debugging]
 tools: [read_file, search_files, run_command, jobs, load_skill, read_history, tasks, ask_agent]
-source: Dusk Code
+source: "Duskcode"
+author: "Duskcode"
 tags: [review, correctness, quality]
 ---
 

@@ -2,7 +2,7 @@
 
 use dusk_protocol::{
     client::{COMMANDS, Command},
-    config::{ContextPolicy, ProviderKind},
+    config::{ContextPolicy, ModelTier, ProviderKind},
     tools::Decision,
 };
 
@@ -53,7 +53,6 @@ pub enum Action {
         api_key: Option<String>,
     },
     SetAgentLimit(usize),
-    SetGoalRounds(u32),
     SetModelTimeout(u32),
     SetMaxAttempts(u32),
     SetIdleMinutes(u32),
@@ -64,8 +63,8 @@ pub enum Action {
     Overview,
     /// Stop the chat's running team, after the second `s`.
     StopTeam,
-    /// Give the chat's running team this budget.
-    SetTeamBudget(dusk_protocol::thread::TeamBudget),
+    /// Let this many members of the chat's running team work at once.
+    SetTeamAtOnce(u32),
     /// `/files`: what this chat's commands changed in the project.
     ChangedFiles,
     /// `/diff`: the folder's changes line by line.
@@ -86,6 +85,8 @@ pub enum Action {
     Pin(PinAsk),
     /// `/access`: this chat's own approval mode, or the one it has now when none is named.
     Access(Option<String>),
+    /// `/tier`: shows the subagent tiers' models, or sets one; `None` unsets it.
+    Tier(Option<(ModelTier, Option<String>)>),
     SetMemoryChars(usize),
     SetWorkHistoryChars(usize),
     PinSource {
@@ -198,6 +199,10 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         (
             "/access",
             "this chat's access: ask, sandbox, auto, full or default",
+        ),
+        (
+            "/tier",
+            "subagent models: /tier strong provider/model, /tier weak unset",
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())

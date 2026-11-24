@@ -143,6 +143,48 @@ impl ToolContext {
     }
 }
 
+impl ToolContext {
+    /// Work on an agent's own branch, asked as the mode says: like a command, which
+    /// sandbox mode lets through since the core bounds it.
+    pub async fn approve_git(&self, action: &str) -> Result<()> {
+        let Some(approvals) = &self.approvals else {
+            return Ok(());
+        };
+        let request = Request::Git {
+            action: action.to_owned(),
+        };
+        let policy = self.approvals_policy().await;
+        approvals
+            .ask(&self.thread_id, request, self.progress.clone(), policy)
+            .await
+    }
+
+    /// A step on the user's own work, asked every time in every mode
+    /// (`Approvals::ask_always`). Refused at once where nobody can answer: no approvals
+    /// here, or a chat the timetable or a headless run started.
+    pub async fn ask_always(&self, action: &str) -> Result<()> {
+        let nobody = format!(
+            "git: {action} needs the user's yes, and nobody can answer in this chat; leave \
+             it to the user"
+        );
+        let approvals = self.approvals.as_ref().context(nobody.clone())?;
+        if let Some(state) = &self.state {
+            let chat = state.root_thread(&self.thread_id).await?;
+            let thread = state
+                .load_thread(&chat)
+                .await?
+                .with_context(|| format!("no chat {chat}"))?;
+            anyhow::ensure!(!UNATTENDED.contains(&thread.source.as_str()), "{nobody}");
+        }
+        let request = Request::Git {
+            action: action.to_owned(),
+        };
+        approvals
+            .ask_always(&self.thread_id, request, self.progress.clone())
+            .await
+    }
+}
+
 /// The sources of chats nobody who may change the settings is there to answer: the
 /// timetable's runs, a headless `duskcode run` (`cli`) and the evals' tasks.
 pub(crate) const UNATTENDED: [&str; 3] = ["schedule", "cli", "evals"];
@@ -255,10 +297,25 @@ pub trait Tool: Send + Sync {
         false
     }
 
+    /// The call may change a file of the project, so a test run after it may find the
+    /// code changed. A call that only reads cannot; nor can a harness tool that keeps the
+    /// chat's own records (its goal, tasks, plan, memory) or speaks to the user or another
+    /// agent, which override this.
+    fn writes_project(&self, arguments: &Value) -> bool {
+        !self.read_only(arguments)
+    }
+
     /// The result as the model is to be sent it when that is shorter than what is
     /// stored (`limits.shape_output`); `None` sends it whole. Decided from the call and
     /// its result alone, so the same call always gives the same text.
     fn shape(&self, _arguments: &Value, _result: &super::registry::ToolResult) -> Option<Shaped> {
+        None
+    }
+
+    /// A line added after the result that names a narrower command to run next, such as
+    /// the failing tests alone (`limits.rerun_hint`). Decided from the call and its result
+    /// alone, so the same call always gives the same line.
+    fn rerun(&self, _arguments: &Value, _result: &super::registry::ToolResult) -> Option<String> {
         None
     }
 

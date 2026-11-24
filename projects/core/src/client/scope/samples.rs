@@ -9,7 +9,6 @@ use dusk_protocol::{
     config::{ContextPolicy, Profile, ProviderKind, VoiceSettings},
     plugin::{StoreRequest as St, UiEvent},
     project::{Repeat, ScheduleDraft},
-    thread::TeamBudget,
     tools::Decision,
 };
 
@@ -176,9 +175,9 @@ fn work() -> Vec<W> {
             task_id: word(),
         },
         W::StopTeam { thread_id: id() },
-        W::SetTeamBudget {
+        W::SetTeamAtOnce {
             thread_id: id(),
-            budget: TeamBudget::new(1, 1, 1, 1).expect("a budget within the caps"),
+            at_once: 1,
         },
     ]
 }
@@ -192,7 +191,6 @@ fn settings() -> Vec<S> {
         S::ContextPolicy(ContextPolicy::Auto),
         S::MaxAgentsAtWork(1),
         S::IdleScreenMinutes(1),
-        S::MaxGoalRounds(1),
         S::ModelTimeout(1),
         S::MaxAttempts(1),
         S::MemoryChars(1),
@@ -203,6 +201,10 @@ fn settings() -> Vec<S> {
         },
         S::BranchPrefix(word()),
         S::Arbiter(Default::default()),
+        S::ModelTier {
+            tier: dusk_protocol::config::ModelTier::Weak,
+            model: Some(word()),
+        },
         S::NextMode,
         S::Mode(word()),
         S::Connect {
@@ -316,6 +318,7 @@ fn projects() -> Vec<P> {
             title: word(),
             body: word(),
             base: None,
+            thread_id: Some(word()),
         },
         P::PullSummaries,
         repository(G::CreateBranch {

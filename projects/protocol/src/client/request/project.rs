@@ -59,11 +59,15 @@ pub enum ProjectRequest {
     /// A pull request from the project's current branch (never a detached head), which
     /// must be pushed first, into `base` or the repository's default branch; answered
     /// beside the loop with `Response::PullStatus(Some(_))` as the forge now has it.
+    /// Made from chat `thread_id`, it is one of that chat's pull requests
+    /// (`Thread::pulls`).
     CreatePull {
         id: String,
         title: String,
         body: String,
         base: Option<String>,
+        #[serde(default)]
+        thread_id: Option<String>,
     },
     /// The pull requests of each saved project's current branch, from what the core
     /// last read; a project not read yet is read in the background.

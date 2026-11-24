@@ -121,12 +121,24 @@ impl ToolRegistry {
         self.tools.get(name)?.shape(arguments, result)
     }
 
+    /// The line naming a narrower command to run next, when the tool has one.
+    pub fn rerun(&self, name: &str, arguments: &Value, result: &ToolResult) -> Option<String> {
+        self.tools.get(name)?.rerun(arguments, result)
+    }
+
     /// Whether the call only reads, so it may run with the read-only calls next to it;
     /// an unknown tool never does.
     pub fn read_only(&self, name: &str, arguments: &Value) -> bool {
         self.tools
             .get(name)
             .is_some_and(|tool| tool.read_only(arguments))
+    }
+
+    /// Whether the call may change a file of the project; an unknown tool may.
+    pub fn writes_project(&self, name: &str, arguments: &Value) -> bool {
+        self.tools
+            .get(name)
+            .is_none_or(|tool| tool.writes_project(arguments))
     }
 
     /// The skill a successful `load_skill` call named; `None` for other tools or when
@@ -369,7 +381,7 @@ mod tests {
         state::artifacts::ArtifactStore,
         testing::{temp_dir, temp_state},
         tools::{
-            AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Show,
+            AgentState, AskUser, DisplayImage, DrawDiagram, PlanEdit, ReadHistory, Remember, Show,
             SuggestNext, Tasks,
         },
     };
@@ -503,13 +515,13 @@ mod tests {
         let dir = temp_dir("registry_schemas");
         let mut tools: Vec<Box<dyn Tool>> = super::super::builtin::all(&dir);
         tools.push(Box::new(Tasks::new(Arc::clone(&state), "t".into())));
-        tools.push(Box::new(GoalTool::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(PlanEdit::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(ReadHistory::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(Remember::user(dir.clone())));
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
         tools.push(Box::new(Show));
+        tools.push(Box::new(DrawDiagram));
         let paths = crate::init::paths::Paths::new(dir.join("config"), dir.join("work"));
         tools.push(Box::new(crate::tools::SearchWorkshop::new(paths.clone())));
         tools.push(Box::new(crate::tools::SuggestFromWorkshop::new(paths)));

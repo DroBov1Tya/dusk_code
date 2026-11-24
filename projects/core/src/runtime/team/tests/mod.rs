@@ -2,13 +2,15 @@
 //! a chat that leads, and members that answer what the test's script says. No test
 //! waits for the 30 s tick: a pass is run at the time the test names.
 
-mod budgets;
 mod ends;
 mod gates;
 mod limits;
 mod recovery;
+mod resumes;
+mod reviews;
 mod runs;
 mod text;
+mod winds;
 
 use std::{
     collections::VecDeque,
@@ -20,7 +22,7 @@ use std::{
     time::Duration,
 };
 
-use dusk_protocol::thread::{TeamBudget, TeamEnd, TeamStatus};
+use dusk_protocol::thread::{TeamEnd, TeamStatus};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
@@ -32,14 +34,19 @@ use crate::{
         ChatMessage, ChatRequest, ChatStream, FinishReason, Model, ModelEvent, ModelProvider,
     },
     runtime::{Launcher, Runtime, ThreadEvent, ThreadInput, model_choice::Choice},
-    state::{NewTask, PlanStatus, PlanTask, State, TeamCeilings},
+    state::{NewTask, PlanStatus, PlanTask, State},
     testing::temp_dir,
     tools::TeamRunner,
 };
 
 /// What a member answers when the script has nothing else for it.
-pub(super) const DONE: &str =
-    "Made the change.\n\nStatus: done\nResult: it works now\nChecked: not run\nOpen: nothing";
+pub(super) const DONE: &str = "Made the change.\n\nStatus: done\nResult: it works now\nChecked: \
+                               not run\nNot checked: nothing\nOpen: nothing";
+/// Past the grace a team that winds down gives its members: `limits.team_wrap_seconds`
+/// as shipped, and a second.
+pub(super) const GRACE_MS: i64 = 181_000;
+/// The goal every test runs its team toward.
+pub(super) const GOAL: &str = "the plan is done; each task's accept holds";
 
 /// What the scripted model does with one call.
 pub(super) enum Out {
@@ -47,6 +54,11 @@ pub(super) enum Out {
     Call(&'static str, Value),
     /// The call fails in a way not worth retrying, so the turn fails.
     Reject,
+    /// The provider refuses the request's level of reasoning effort, as a model without
+    /// reasoning does.
+    RefuseEffort,
+    /// The provider fails the call for this reason.
+    Fail(crate::providers::ProviderErrorKind),
     /// The call never answers, like a member still at work.
     Hang,
     /// Answers `Say` once the test lets one member through (`Rig::let_through`).
@@ -60,6 +72,8 @@ pub(super) struct Asked {
     pub user: String,
     /// The newest tool result, when it is the last message of the request.
     pub result: Option<String>,
+    /// The level of reasoning effort the call carries.
+    pub effort: Option<crate::config::Effort>,
 }
 
 type Script = Box<dyn Fn(&Asked) -> Out + Send + Sync>;
@@ -128,6 +142,7 @@ impl ModelProvider for Scripted {
             lead: *self.lead.lock().unwrap() == thread,
             user: user.unwrap_or_default(),
             result,
+            effort: request.effort,
         };
         let stream = match (self.script)(&asked) {
             Out::Say(text) => plain(say(text)),
@@ -156,6 +171,15 @@ impl ModelProvider for Scripted {
                 ]))
             }
             Out::Reject => return Box::pin(async { Err(anyhow::anyhow!("bad request")) }),
+            Out::RefuseEffort => {
+                use crate::providers::{ProviderError, ProviderErrorKind, RefusedEffort};
+                let failure = ProviderError::new(ProviderErrorKind::Refused, "bad request");
+                return Box::pin(async move { Err(RefusedEffort(failure.into()).into()) });
+            }
+            Out::Fail(kind) => {
+                let error = crate::providers::ProviderError::new(kind, "the provider failed");
+                return Box::pin(async move { Err(error.into()) });
+            }
         };
         Box::pin(async move { Ok(Box::new(stream) as Box<dyn ChatStream>) })
     }
@@ -186,9 +210,12 @@ pub(super) struct Rig {
     pub input: ThreadInput,
 }
 
-/// The settings every test starts from: the mode that offers the plan and runs a team.
+/// The settings every test starts from: the mode that offers the plan and runs a team,
+/// without the reviews and the critic, which their own tests switch on (`CHECKED`).
 // Tests add their own `limits` lines to it.
-pub(super) const ON: &str = "mode: TEAM\nlimits:\n  plan_graph: true\n";
+pub(super) const ON: &str = "mode: TEAM\nlimits:\n  plan_graph: true\n  team_review: false\n";
+/// The settings as shipped: a fresh reviewer for every change, and the critic.
+pub(super) const CHECKED: &str = "mode: TEAM\nlimits:\n  plan_graph: true\n";
 
 impl Rig {
     pub async fn new(name: &str, script: impl Fn(&Asked) -> Out + Send + Sync + 'static) -> Self {
@@ -272,18 +299,13 @@ impl Rig {
             .collect()
     }
 
-    /// The lead's `run` with the budget the settings allow, or the parts given.
+    /// The lead's `run`: the tasks it gave out.
     pub async fn run(&self) -> usize {
-        self.run_with(|budget| budget).await.unwrap()
+        self.try_run().await.unwrap()
     }
 
-    pub async fn run_with(
-        &self,
-        change: impl FnOnce(TeamBudget) -> TeamBudget,
-    ) -> anyhow::Result<usize> {
-        let limits = self.launcher().config.current().limits();
-        let budget = change(TeamCeilings::from_limits(&limits)?.budget());
-        let started = self.runner().run(&self.lead, budget, None).await?;
+    pub async fn try_run(&self) -> anyhow::Result<usize> {
+        let started = self.runner().run(&self.lead, GOAL, None).await?;
         Ok(started.given)
     }
 
@@ -292,7 +314,12 @@ impl Rig {
     }
 
     pub async fn pass(&self) -> usize {
-        let now = crate::state::timestamp_ms().unwrap();
+        self.pass_after(0).await
+    }
+
+    /// A pass `ms` from now, as the tick would run it then.
+    pub async fn pass_after(&self, ms: i64) -> usize {
+        let now = crate::state::timestamp_ms().unwrap() + ms;
         self.launcher().team_pass_at(&self.lead, now).await.unwrap()
     }
 

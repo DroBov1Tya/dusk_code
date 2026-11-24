@@ -1,5 +1,5 @@
 //! The look of the page. Palettes live in the stylesheet by name; the choice is a
-//! convenience of this browser and the only thing the page keeps in its storage.
+//! convenience of this browser, kept in its storage beside the finished welcome.
 
 use wasm_bindgen::JsCast;
 use web_sys::HtmlElement;

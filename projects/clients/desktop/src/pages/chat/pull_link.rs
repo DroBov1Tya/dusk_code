@@ -274,7 +274,7 @@ fn card(github: &str, pull: &PullStatus, cx: &App) -> Div {
         )
 }
 
-fn state_word(state: PullState) -> &'static str {
+pub fn state_word(state: PullState) -> &'static str {
     match state {
         PullState::Open => "Open",
         PullState::Draft => "Draft",

@@ -1,31 +1,38 @@
 //! The team: the core's run of a chat's plan.
 //! No model call is made here. A change to the plan or the team, a member's turn and a
 //! 30 s tick each lead to one `dispatch::pass`, which reads the tables and does what they
-//! ask for: leases that ran out are released, budgets are checked, ready tasks are given
-//! to members, and the team ends when it is done, spent or stalled.
+//! ask for: leases that ran out are released, ready tasks are given to members as many
+//! at once as allowed, and the team ends when it is done, stopped, quiet or stalled.
 //!
 //! `member` makes a member's thread and fixes what it may do, `allow` is the user's one
 //! yes for the plan's gates, `card` writes its first message, `clean` takes secrets out
 //! of every text that is forwarded, `lease` keeps its claim while its runner lives,
 //! `hand_in` moves its task when its turn ends, `outside` finds what it changed beyond
-//! its files, `gate` is where a command gate starts, `lead_lines` is what the lead is
-//! told, `end` ends a team, `settle` recovers one after a restart, `events` tells the
-//! clients.
+//! its files, `gate` is where a command gate starts, `review` has a fresh member check a
+//! task that changed files, `critic` checks the results against the request at the end,
+//! `lead_lines` is what the lead is told, `end` ends a team, `settle` recovers one after
+//! a restart, `events` tells the clients.
+//!
+//! The store gives out one wave at a time (`state::current_wave`): a wave starts when
+//! the one before is all done or skipped by the lead.
 //!
 //! Everything it needs to go on is in the database. `Teams` holds a lock and a few caches.
 
 mod allow;
 mod card;
 mod clean;
+mod critic;
 mod dispatch;
 mod end;
 mod events;
+mod footer;
 mod gate;
 mod hand_in;
 mod lead_lines;
 mod lease;
 mod member;
 mod outside;
+mod review;
 mod settle;
 #[cfg(test)]
 mod tests;
@@ -35,16 +42,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result, ensure};
-use dusk_protocol::thread::{Team, TeamBudget, TeamEnd, TeamStatus};
+use anyhow::{Context, Result, bail, ensure};
+use dusk_protocol::thread::{MAX_TEAM_AT_ONCE, Team, TeamEnd, TeamStatus};
 use tokio::task::JoinHandle;
 use tracing::warn;
 
 use crate::{
     BoxFuture,
     catalog::modes::{Modes, TEAM},
+    config::Limits,
     runtime::Launcher,
-    state::{BudgetBy, PlanTask, TeamCeilings, TeamError, timestamp_ms},
+    state::{PlanTask, TeamError, WindWhy, timestamp_ms},
     tools::{Progress, Started, TeamRunner},
 };
 
@@ -72,11 +80,17 @@ pub struct Teams {
     /// is empty and a gate that was cut off runs again: a gate is a check.
     gates: parking_lot::Mutex<HashMap<String, gate::Running>>,
     /// The gates each running team has run, against `limits.team_max_gate_runs`. After
-    /// a restart it counts again from nothing; the team's time still bounds it.
+    /// a restart it counts again from nothing, so a restart allows that many again.
     gate_runs: parking_lot::Mutex<HashMap<String, u32>>,
     /// The members a runner of this process has reported for. Recovery settles only
     /// the others: what a stopped process left.
     served: parking_lot::Mutex<HashSet<String>>,
+    /// Each team's member turns lost in a row to the provider or the runner. After a
+    /// restart it counts again from nothing.
+    infra_losses: parking_lot::Mutex<HashMap<String, u32>>,
+    /// Each task's turns lost to the provider or the runner, uncounted so far. After a
+    /// restart it counts again from nothing.
+    task_infra_losses: parking_lot::Mutex<HashMap<String, u32>>,
 }
 
 /// The team behind a chat's `tasks`: what its `run`, `stop` and `show` reach.
@@ -113,36 +127,29 @@ impl Runner {
         Ok(())
     }
 
-    /// Starts the chat's team, or goes on with the one running: a part of its budget the
-    /// lead now names lower is lowered, none is raised.
-    async fn start(&self, lead: &str, budget: TeamBudget, now: i64) -> Result<()> {
+    /// Starts the chat's team with the setting's members at once, or goes on with the
+    /// one running as it is. One that winds down is refused: it was stopped.
+    async fn start(&self, lead: &str, now: i64) -> Result<()> {
         let launcher = &self.launcher;
-        let config = launcher.config.current();
+        let at_once = at_once_setting(&launcher.config.current().limits());
         let state = &launcher.state;
-        let ceilings = || TeamCeilings::from_limits(&config.limits());
         let _one = launcher.team.pass.lock().await;
         match state.team_run(lead).await? {
-            Some(run) if run.status == TeamStatus::Running => {
-                let lower = TeamBudget::new(
-                    run.budget.at_once().min(budget.at_once()),
-                    run.budget.steps().min(budget.steps()),
-                    run.budget.tokens().min(budget.tokens()),
-                    run.budget.minutes().min(budget.minutes()),
-                )?;
-                if lower != run.budget {
-                    state
-                        .set_team_budget(lead, BudgetBy::Lead, lower, ceilings()?)
-                        .await?;
-                }
+            Some(run) if run.status == TeamStatus::Running && run.winding.is_some() => {
+                bail!(
+                    "the team is stopping: its members at work hand over first; run again \
+                     once it ended"
+                )
             }
-            _ => match state.start_team(lead, budget, ceilings()?, now).await {
+            Some(run) if run.status == TeamStatus::Running => {}
+            _ => match state.start_team(lead, at_once, now).await {
                 Ok(_) => {}
                 // The last end was cut off before it gave its work back.
                 Err(TeamError::WorkLeft(_)) => {
                     for task in state.return_work(lead).await? {
                         events::task(launcher, lead, &task).await;
                     }
-                    state.start_team(lead, budget, ceilings()?, now).await?;
+                    state.start_team(lead, at_once, now).await?;
                 }
                 Err(error) => return Err(error.into()),
             },
@@ -151,11 +158,20 @@ impl Runner {
     }
 }
 
+/// Members of a team at work at once by the settings: `limits.team_at_once`, cut to
+/// `max_agents_at_work`. A new run starts with it; while it runs the user may set fewer,
+/// or more up to it again.
+pub(crate) fn at_once_setting(limits: &Limits) -> u32 {
+    u32::try_from(limits.team_members_at_once())
+        .unwrap_or(MAX_TEAM_AT_ONCE)
+        .clamp(1, MAX_TEAM_AT_ONCE)
+}
+
 impl TeamRunner for Runner {
     fn run<'a>(
         &'a self,
         lead: &'a str,
-        budget: TeamBudget,
+        goal: &'a str,
         progress: Option<Progress>,
     ) -> BoxFuture<'a, Started> {
         Box::pin(async move {
@@ -163,7 +179,8 @@ impl TeamRunner for Runner {
             // Before the start, so no member works before the user answered.
             let gates = allow::ask(&self.launcher, lead, progress).await?;
             let now = timestamp_ms()?;
-            self.start(lead, budget, now).await?;
+            self.start(lead, now).await?;
+            self.launcher.state.set_team_goal(lead, goal).await?;
             events::team(&self.launcher, lead, now, true).await;
             let given = dispatch::pass(&self.launcher, lead, now).await?;
             Ok(Started { given, gates })
@@ -216,10 +233,22 @@ impl Launcher {
         self.team_changed(lead).await;
     }
 
-    /// Ends the chat's running team as stopped: its members at work are cancelled, their
-    /// tasks go back to open (answered here), and the lead reads of it with its next
-    /// request. A team that is not running is the store's refusal.
+    /// Stops the chat's running team, as the lead's `stop` and the Team page do: it
+    /// winds down, its members at work hand over, and it ends as stopped when they have
+    /// or `limits.team_wrap_seconds` ran out (`end::wind`). Stopped again while it winds
+    /// down, it ends at once. Answers the tasks that went back to open now; the lead
+    /// reads of it with its next request. A team that is not running is the store's
+    /// refusal.
     pub async fn team_stop(&self, lead: &str) -> Result<Vec<PlanTask>, TeamError> {
+        let now = timestamp_ms()?;
+        let _one = self.team.pass.lock().await;
+        end::wind(self, lead, WindWhy::Stopped, now).await
+    }
+
+    /// Ends the chat's running team as stopped at once: its members at work are
+    /// cancelled and their tasks go back to open. For a stop the user already made of
+    /// the members' turns themselves, which leaves nobody to hand over.
+    async fn team_cancel(&self, lead: &str) -> Result<Vec<PlanTask>, TeamError> {
         let now = timestamp_ms()?;
         let _one = self.team.pass.lock().await;
         end::end(self, lead, TeamEnd::Stopped, now).await

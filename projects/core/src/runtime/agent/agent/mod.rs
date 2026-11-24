@@ -4,8 +4,10 @@
 
 mod calls;
 mod episodes;
+mod judge;
 mod mode;
 mod pictures;
+mod place;
 mod report;
 mod resume;
 mod retry;
@@ -61,11 +63,19 @@ pub struct Agent {
     pub model: Arc<ModelChoice>,
     pub config: Arc<LiveConfig>,
     pub tools: Arc<ToolRegistry>,
+    /// Where the thread's tools act when it works in its own folder.
     pub scope: Arc<ToolScope>,
+    /// Where they act now: `scope`, or the worktree of a branch the thread works on.
+    /// Read at each step (`follow_worktree`), so a restart finds it again.
+    pub here: Mutex<Arc<ToolScope>>,
     /// Comes right after the prompt in every request.
     pub project: String,
     /// The model that refused pictures; the others still get them.
     pub pictures_refused: Mutex<Option<String>>,
+    /// The model that refused a subagent's reasoning effort; it is asked without one.
+    pub effort_refused: Mutex<Option<String>>,
+    /// The model that refused the loop judge's effort; the judge asks it without one.
+    pub judge_effort_refused: Mutex<Option<String>>,
     /// Where the turn is: planning, carrying out, or working out a surprise.
     pub pace: Mutex<Pace>,
     /// Calls repeated with the same result, to tell a stuck model.
@@ -106,6 +116,12 @@ enum StepEnd {
     /// The context does not fit the model: the turn compacts it and takes the step
     /// again, or fails as the failure says.
     TooLarge(TurnFailure),
+    /// The model wrote a tool call as text that could not be run: the turn takes the
+    /// step again with this note, or ends with the answer as it is.
+    Stranded(String, TurnAnswer),
+    /// The model's text went round and was cut: the turn takes the step again with this
+    /// note.
+    Chanted(String),
 }
 
 /// What a stopped step keeps: the text written so far, if any.

@@ -8,6 +8,7 @@ use crate::thread::{
     FAILED_PREFIXES, Message, MessageRole, SHOW_TOOL, SUGGEST_NEXT_TOOL, TaskStatus, Turn,
     TurnStatus, stored_failure,
 };
+use crate::thread::{RunKind, RunMark};
 use crate::tools::ToolResult;
 use serde_json::json;
 
@@ -557,7 +558,7 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
     Team {
         thread_id: "t".into(),
         status: crate::thread::TeamStatus::Running,
-        budget: crate::thread::TeamBudget::new(2, 100, 1_000_000, 60).unwrap(),
+        at_once: 2,
         used: crate::thread::TeamUsed::default(),
         members: members
             .iter()
@@ -567,10 +568,14 @@ fn team(members: &[(&str, &str, TaskStatus)]) -> Team {
                 role: Some("backend-engineer".into()),
                 model: None,
                 task_id: (*task_id).into(),
+                summary: String::new(),
                 status: *status,
             })
             .collect(),
         started_at: None,
+        ended_at: None,
+        winding_since: None,
+        goal: String::new(),
     }
 }
 
@@ -768,4 +773,235 @@ fn a_suggested_next_message_is_no_step() {
     assert!(live.items.is_empty(), "{:?}", live.items);
     assert_eq!(restored.items.len(), 1);
     assert!(matches!(&restored.items[0], Item::Tool(tool) if tool.name == "read_file"));
+}
+
+/// The `ask_agent` calls of one step are one run and a later step's another; the plan's
+/// `run` is the team's run, and one that failed is a step again. Live and from history
+/// alike.
+#[test]
+fn a_run_gathers_the_calls_that_started_it() {
+    let a = call("a", "ask_agent", json!({ "task": "one" }));
+    let b = call("b", "ask_agent", json!({ "task": "two" }));
+    let c = call("c", "ask_agent", json!({ "task": "three" }));
+    let run = call("r", "tasks", json!({ "action": "run" }));
+    let again = call("r2", "tasks", json!({ "action": "run" }));
+    let history = [
+        message(MessageRole::User, "go"),
+        calling(vec![a.clone(), b.clone()]),
+        result("a", "sent"),
+        result("b", "sent"),
+        calling(vec![c.clone(), run.clone()]),
+        result("c", "sent"),
+        result("r", "started"),
+        calling(vec![again.clone()]),
+        result("r2", "error: the plan has no tasks"),
+    ];
+    let stored = Chat::from_history(&history);
+    let finished = |id: &str, content: &str, is_error: bool| ThreadEvent::ToolFinished {
+        call_id: id.into(),
+        result: ToolResult {
+            is_error,
+            ..ToolResult::text(content.into())
+        },
+    };
+    let step = |id: &str, name: &str| {
+        ThreadEvent::Model(ModelEvent::ToolCall {
+            index: 0,
+            id: id.into(),
+            name: name.into(),
+        })
+    };
+    let events = [
+        ThreadEvent::UserMessage(history[0].clone()),
+        ThreadEvent::TurnStarted(turn()),
+        step("a", "ask_agent"),
+        ThreadEvent::ToolStarted(a),
+        ThreadEvent::ToolStarted(b),
+        finished("a", "sent", false),
+        finished("b", "sent", false),
+        step("c", "ask_agent"),
+        ThreadEvent::ToolStarted(c),
+        ThreadEvent::ToolStarted(run),
+        finished("c", "sent", false),
+        finished("r", "started", false),
+        step("r2", "tasks"),
+        ThreadEvent::ToolStarted(again),
+        finished("r2", "error: the plan has no tasks", true),
+    ];
+    let mut live = Chat::default();
+    for (at, event) in events.into_iter().enumerate() {
+        live.apply(event, at as i64);
+    }
+    for chat in [&stored, &live] {
+        let runs: Vec<(RunKind, Vec<&str>)> = chat
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Run(run) => Some((
+                    run.kind,
+                    run.tools.iter().map(|tool| tool.call_id.as_str()).collect(),
+                )),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            runs,
+            [
+                (RunKind::Subagents, vec!["a", "b"]),
+                (RunKind::Subagents, vec!["c"]),
+                (RunKind::Team, vec!["r"]),
+            ]
+        );
+        assert!(matches!(chat.items.last(), Some(Item::Tool(tool))
+            if tool.call_id == "r2" && tool.state == ToolState::Failed));
+    }
+}
+
+/// A team's card counts its members and runs its clock from when the core says the team
+/// started, stopping it where the team ended; an earlier run says only that it ended.
+#[test]
+fn a_team_card_tells_the_run_it_stands_for() {
+    let mut chat = Chat::default();
+    let run = || call("r", "tasks", json!({ "action": "run" }));
+    chat.apply(ThreadEvent::ToolStarted(run()), 1_000);
+    chat.apply(
+        ThreadEvent::Tasks(vec![
+            plan_task("t1", TaskStatus::Done),
+            plan_task("t2", TaskStatus::Running),
+            plan_task("t3", TaskStatus::Open),
+            // The review of t1 and the critic are the core's checks, not squares.
+            Task {
+                duty: crate::thread::TaskDuty::Review,
+                review_of: Some("t1".into()),
+                ..plan_task("r1", TaskStatus::Done)
+            },
+            Task {
+                duty: crate::thread::TaskDuty::Critic,
+                ..plan_task("c", TaskStatus::Open)
+            },
+        ]),
+        1_000,
+    );
+    let mut running = team(&[
+        ("m1", "t1", TaskStatus::Done),
+        ("m2", "t2", TaskStatus::Running),
+    ]);
+    running.started_at = Some(1_000);
+    chat.apply(ThreadEvent::Team(running.clone()), 1_100);
+    let at = chat
+        .items
+        .iter()
+        .position(|item| matches!(item, Item::Run(_)))
+        .expect("the run is an item");
+    let card = chat.run_card(at, 73_000).unwrap();
+    assert!(card.running);
+    assert_eq!(card.line(), "Team \u{00B7} 2 agents \u{00B7} 1m 12s");
+    assert_eq!(card.marks, [RunMark::Done, RunMark::Running, RunMark::Open]);
+
+    let mut ended = running;
+    ended.status = crate::thread::TeamStatus::Ended(crate::thread::TeamEnd::Done);
+    ended.ended_at = Some(41_000);
+    chat.apply(ThreadEvent::Team(ended), 41_000);
+    let card = chat.run_card(at, 900_000).unwrap();
+    assert!(!card.running);
+    assert_eq!(card.elapsed_ms, Some(40_000));
+
+    // Run again later: the first card is an earlier run now.
+    chat.apply(
+        ThreadEvent::ToolStarted(call("r2", "tasks", json!({ "action": "run" }))),
+        1_000_000,
+    );
+    let mut second = team(&[]);
+    second.started_at = Some(1_000_000);
+    chat.apply(ThreadEvent::Team(second), 1_000_100);
+    assert!(chat.run_card(at, 1_000_200).unwrap().earlier);
+    assert_eq!(
+        chat.run_card(at, 1_000_200).unwrap().line(),
+        "Team \u{00B7} ended"
+    );
+}
+
+/// The model and effort the core started a subagent on are what its row says of it.
+#[test]
+fn a_subagent_keeps_the_model_and_effort_it_was_started_on() {
+    let mut chat = Chat::default();
+    chat.apply(
+        ThreadEvent::SubagentStarted {
+            call_id: "ask".into(),
+            thread_id: "sub".into(),
+            agent: "general".into(),
+            task: "look".into(),
+            effort: Some(crate::model::Effort::Low),
+            model: Some("openrouter/haiku".into()),
+            task_id: None,
+        },
+        1,
+    );
+    let agent = chat.agent("sub").expect("the subagent is listed");
+    assert_eq!(
+        agent.role_and_model(),
+        "general \u{00B7} openrouter/haiku \u{00B7} low effort"
+    );
+}
+
+/// A goal's verdicts are stored in the chat, so a reopened chat shows them where they
+/// came live, each standing alone between the turns.
+#[test]
+fn goal_verdicts_read_the_same_from_history_and_live() {
+    use crate::thread::{GoalEvaluation, GoalVerdict};
+    let verdict = |verdict, turn| GoalEvaluation {
+        verdict,
+        reason: format!("reason {turn}"),
+        turn,
+        tokens: 100,
+        elapsed_ms: 1_000,
+    };
+    let stored = |evaluation: &GoalEvaluation| {
+        message(
+            MessageRole::Goal,
+            &serde_json::to_string(evaluation).unwrap(),
+        )
+    };
+    let (first, last) = (
+        verdict(GoalVerdict::NotMet, 1),
+        verdict(GoalVerdict::Met, 2),
+    );
+    let history = [
+        message(MessageRole::User, "Goal: build it"),
+        message(MessageRole::Assistant, "planned"),
+        stored(&first),
+        message(MessageRole::User, "The goal is not met yet"),
+        message(MessageRole::Assistant, "built"),
+        stored(&last),
+        message(MessageRole::Goal, "not a verdict"),
+    ];
+    let reopened = Chat::from_history(&history);
+
+    let ended = || Turn {
+        status: TurnStatus::Completed,
+        ..turn()
+    };
+    let events = [
+        ThreadEvent::UserMessage(history[0].clone()),
+        ThreadEvent::TurnStarted(turn()),
+        text("planned"),
+        ThreadEvent::TurnFinished(ended()),
+        ThreadEvent::Idle,
+        ThreadEvent::GoalEvaluated(first.clone()),
+        ThreadEvent::UserMessage(history[3].clone()),
+        ThreadEvent::TurnStarted(turn()),
+        text("built"),
+        ThreadEvent::TurnFinished(ended()),
+        ThreadEvent::Idle,
+        ThreadEvent::GoalEvaluated(last.clone()),
+    ];
+    let mut live = Chat::default();
+    for (at, event) in events.into_iter().enumerate() {
+        live.apply(event, at as i64);
+    }
+
+    assert_eq!(live.items, reopened.items);
+    assert_eq!(live.activity_boundaries, reopened.activity_boundaries);
+    assert_eq!(reopened.items[2], Item::Goal(first));
+    assert_eq!(reopened.items.last(), Some(&Item::Goal(last)));
 }

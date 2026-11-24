@@ -1,10 +1,13 @@
-//! The dock between the transcript and the composer: the plan strip, one line that unfolds
-//! to the plan's rows, and the panel the tab on the composer's upper edge opens. Both draw
-//! what the core holds: the chat's tasks, the plan's counts, the chat's folder and meters.
+//! The dock between the transcript and the composer: the plan card, a row a wave that
+//! unfolds to its tasks, the standing goal, and the panel the tab on the composer's upper
+//! edge opens. All draw what the core holds: the chat's tasks, the plan's counts, its goal,
+//! the chat's folder and meters.
 
+mod goal;
 pub mod panel;
 mod plan;
 
+pub use goal::render as goal_strip;
 pub use plan::render as plan_strip;
 
 use dusk_protocol::thread::{PlanCounts, ThreadEvent};
@@ -16,10 +19,8 @@ use crate::workspace::Workspace;
 pub struct Dock {
     /// The plan's counts as the core last gave them, and the chat they are of.
     pub counts: Option<(String, PlanCounts)>,
-    /// The counts before the last change and when it came, for the bar to ease from.
-    pub counts_before: Option<(PlanCounts, std::time::Instant)>,
-    /// When each task of the shown chat's plan was first heard of, and the chat: a task
-    /// that just came draws in once.
+    /// When each task of the shown chat's plan was first heard of, and the chat: a task's
+    /// square that just came draws in once.
     pub tasks_came: (
         Option<String>,
         std::collections::HashMap<String, std::time::Instant>,
@@ -28,9 +29,12 @@ pub struct Dock {
     busy: bool,
     /// The plan moved while busy: ask again once the answer is in.
     queued: bool,
-    /// The strip shows the plan's rows.
+    /// The card shows the plan's waves.
     pub plan_open: bool,
-    pub rows: UniformListScrollHandle,
+    /// The goal's indicator is open to its card.
+    pub goal_open: bool,
+    /// Which waves and task of the card are unfolded.
+    pub waves: crate::pages::team::waves::Folds,
     /// The composer's panel is open.
     pub panel_open: bool,
     /// The panel's tab, a stop of the focus order.
@@ -45,12 +49,12 @@ impl Dock {
     pub fn new(cx: &mut App) -> Self {
         Self {
             counts: None,
-            counts_before: None,
             tasks_came: Default::default(),
             busy: false,
             queued: false,
-            plan_open: false,
-            rows: UniformListScrollHandle::new(),
+            plan_open: true,
+            goal_open: false,
+            waves: Default::default(),
             panel_open: false,
             panel_focus: cx.focus_handle().tab_index(0).tab_stop(true),
             box_hovered: false,
@@ -66,7 +70,7 @@ impl Dock {
 }
 
 impl Workspace {
-    /// The shown chat's tasks changed: the strip asks for the plan's counts again.
+    /// The shown chat's tasks changed: the card asks for the plan's counts again.
     pub fn plan_heard(&mut self, thread_id: &str, event: &ThreadEvent, cx: &mut Context<Self>) {
         let tasks = match event {
             ThreadEvent::Tasks(tasks) => tasks.as_slice(),
@@ -96,7 +100,9 @@ impl Workspace {
                 continue;
             }
             let at = match opened {
-                true => now.checked_sub(plan::ARRIVE).unwrap_or(now),
+                true => now
+                    .checked_sub(crate::pages::team::waves::ARRIVE)
+                    .unwrap_or(now),
                 false => now + Duration::from_millis(70) * fresh,
             };
             came.insert(task.to_owned(), at);
@@ -127,23 +133,16 @@ impl Workspace {
                 ws.dock.busy = false;
                 match result {
                     Ok((counts, team)) => {
-                        // The strip says how the team stands, in a chat opened after it
+                        // The card says how the team stands, in a chat opened after it
                         // started too; its events keep it current from here, and an
                         // answer older than the last of them is dropped.
                         if let (Some(team), Some(chat)) = (team, ws.chats.get_mut(&asked)) {
                             chat.team_answer(team, dusk_protocol::system::now_ms());
                         }
-                        // The bar eases from the shares it showed for the same chat.
-                        ws.dock.counts_before = match &ws.dock.counts {
-                            Some((chat, before)) if *chat == asked && *before != counts => {
-                                Some((*before, std::time::Instant::now()))
-                            }
-                            _ => None,
-                        };
                         ws.dock.counts = Some((asked, counts));
                         cx.notify();
                     }
-                    // The strip keeps the last counts; the board still draws its rows.
+                    // The card keeps the last counts; the board still draws its rows.
                     Err(error) => tracing::warn!("cannot read the plan's counts: {error:#}"),
                 }
                 if std::mem::take(&mut ws.dock.queued) {

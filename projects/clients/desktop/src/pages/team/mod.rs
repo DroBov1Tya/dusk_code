@@ -3,16 +3,19 @@
 //! whom; **Plan** is the tasks in waves by what they need. The layout is the protocol's
 //! (`team_layout`); this module only draws it, and the narrow module of the right column
 //! (`module`) shows the same team in rows.
-//! - `page`: the page, its header, budget and the layers;
+//! - `page`: the page, its header, what the team used and the layers;
 //! - `graph`: what both layers draw with: a box at its place, the edges, a member's mark;
 //! - `people`, `plan`: the two layers;
-//! - `module`: the right column's Team module.
+//! - `module`: the right column's Team screen;
+//! - `waves`: the plan in waves with a square a task, shared by the chat's plan card and
+//!   the Team screen.
 
 mod graph;
 pub mod module;
 mod page;
 mod people;
 mod plan;
+pub mod waves;
 
 pub use page::render;
 
@@ -42,6 +45,9 @@ pub struct TeamPage {
     pub unfold: bool,
     /// The page Back returns to.
     pub back: Option<Center>,
+    /// The right column's Team screen: its waves' folds, and its members unfolded.
+    pub waves: waves::Folds,
+    pub members_open: bool,
 }
 
 impl TeamPage {
@@ -82,6 +88,14 @@ impl Workspace {
             false => return,
         }
         cx.notify();
+    }
+
+    /// The module's pick lasts only as long as what it opened; the page keeps its own
+    /// until it is opened again.
+    pub fn team_unpick(&mut self, cx: &mut Context<Self>) {
+        if self.center != Center::Team && self.team_page.picked.take().is_some() {
+            cx.notify();
+        }
     }
 
     /// A click on a member opens its chat, a click on a task its card; both stay lit.

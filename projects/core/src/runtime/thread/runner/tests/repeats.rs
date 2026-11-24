@@ -272,36 +272,23 @@ async fn an_agent_that_stops_ends_its_turn_as_failed() {
     assert_eq!(notices(&events).last(), Some(&(RepeatRung::Stop, 8)));
 }
 
-/// A failed turn would fail again: the goal pauses instead of starting another round.
+/// A turn the ladder stopped would fail again: the goal pauses instead of going on.
 #[tokio::test]
 async fn a_goal_pauses_after_the_stop_instead_of_another_round() {
     let state = thread_state("ladder_goal").await;
-    let settings = format!("{LADDER_ON}  max_goal_rounds: 3\n");
-    let config = Arc::new(temp_live_config_with("ladder_goal_config", &settings));
-    let draft = state.set_goal("thread", "find it").await.unwrap();
-    let criterion = crate::state::GoalCriterion {
-        id: "result".into(),
-        description: "the config is found".into(),
-        check: crate::state::GoalCheck::UserConfirmation,
-    };
-    let propose = state.propose_goal("thread", &draft.revision, vec![criterion]);
-    let draft = propose.await.unwrap();
+    let config = Arc::new(temp_live_config_with("ladder_goal_config", LADDER_ON));
     let mut scripts: Vec<_> = (1..=8).map(missing).collect();
     scripts.push(vec![Step::Text("another round"), Step::Done]);
     let provider = provider(scripts);
     let (runner, input, mut output) =
         runner_with(&state, &provider, &config, model(None), Box::new(Failing));
     let client = async move {
-        input
-            .send(format!("/goal approve {}", draft.revision))
-            .await
-            .unwrap();
+        input.send("/goal find it").await.unwrap();
         loop {
             if let Some(ThreadEvent::Goal {
                 goal: Some(goal), ..
             }) = output.next_event().await
                 && goal.status == GoalStatus::Paused
-                && goal.approved
             {
                 return goal;
             }
@@ -309,7 +296,36 @@ async fn a_goal_pauses_after_the_stop_instead_of_another_round() {
     };
     let (_, goal) = tokio::join!(runner.run(), client);
     assert_eq!(goal.note.as_deref(), Some("the last turn failed"));
-    assert_eq!(goal.rounds, 0);
+    assert_eq!(goal.turns, 0, "a failed turn is not judged");
     assert_eq!(state.count_turns("thread").await.unwrap(), 1);
     assert_eq!(provider.efforts.lock().unwrap().len(), 8);
+}
+
+#[tokio::test]
+async fn two_calls_taking_turns_are_a_cycle_noted_without_ending_the_turn() {
+    let mut scripts = Vec::new();
+    for _ in 0..5 {
+        scripts.push(calls("edit".into()));
+        scripts.push(calls("check: 1 error".into()));
+    }
+    scripts.push(vec![Step::Text("done"), Step::Done]);
+    let (state, _, events, turn) = run("cycle", "", scripts, 0).await;
+
+    use RepeatRung::{Cycle, CycleReplan};
+    let expected = [
+        (Cycle, 3),
+        (Cycle, 3),
+        (Cycle, 4),
+        (Cycle, 4),
+        (CycleReplan, 5),
+    ];
+    assert_eq!(notices(&events), expected);
+    assert_eq!(turn.status, TurnStatus::Completed);
+    let results = tool_results(&state).await;
+    assert!(
+        results[5].contains("repeat the 2 before them"),
+        "{}",
+        results[5]
+    );
+    assert!(results[9].contains("different plan"), "{}", results[9]);
 }

@@ -1,5 +1,6 @@
-//! The project's repository: its branch, the changes, the branches to switch to and
-//! the worktrees. The core refuses a switch while changes would be lost.
+//! The project's repository: its branch, the branch the chat works on in a worktree, the
+//! changes, the branches to switch to and the worktrees. The core refuses a switch while
+//! changes would be lost.
 
 use crate::ui::Type;
 use crate::ui::press::Press;
@@ -71,6 +72,39 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .on_click(cx.listener(|ws, _, _, cx| ws.load_git(cx))),
             ),
     );
+    // The chat works on a branch of its own in a worktree: say where, under the
+    // project's branch it was made from.
+    let shown = ws.shown.as_deref();
+    if let Some(own) = ws
+        .threads
+        .iter()
+        .find(|thread| Some(thread.id.as_str()) == shown)
+        .and_then(|thread| thread.branch.as_ref())
+    {
+        column = column.child(
+            div()
+                .flex()
+                .flex_col()
+                .px_3()
+                .pt_1()
+                .meta()
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap_1()
+                        .child(div().text_color(muted).child("This chat works on"))
+                        .child(div().truncate().child(own.branch.clone()))
+                        .child(div().text_color(muted).child(format!("from {}", own.base))),
+                )
+                .child(
+                    div()
+                        .text_color(muted)
+                        .truncate()
+                        .child(own.dir.display().to_string()),
+                ),
+        );
+    }
     let stat = git.stat;
     let repository = ws
         .repository

@@ -49,10 +49,15 @@ pub fn temp_live_config(name: &str) -> LiveConfig {
 
 /// The same, with more settings appended as YAML.
 pub fn temp_live_config_with(name: &str, settings: &str) -> LiveConfig {
+    temp_live_config_of(name, &format!("{TEST_CONFIG}{settings}"))
+}
+
+/// A config of exactly `contents`, for a test that needs providers of its own.
+pub fn temp_live_config_of(name: &str, contents: &str) -> LiveConfig {
     let directory = temp_dir(name);
     std::fs::create_dir_all(&directory).unwrap();
     let path = directory.join("config.yml");
-    std::fs::write(&path, format!("{TEST_CONFIG}{settings}")).unwrap();
+    std::fs::write(&path, contents).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

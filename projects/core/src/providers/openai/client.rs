@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::{
     config::{Effort, ProviderConfig, ProviderKind},
     providers::{
-        errors::{UnsupportedEffort, UnsupportedPictures},
+        errors::{RefusedEffort, UnsupportedEffort, UnsupportedPictures},
         limits::{Account, Headers},
         registry::Model,
         request::{ChatMessage, ChatRequest},
@@ -111,7 +111,8 @@ impl OpenAiCompatible {
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
-        let effort_off = request.effort == Some(Effort::Off);
+        let effort = request.effort;
+        let effort_off = effort == Some(Effort::Off);
         let has_pictures = request
             .messages
             .iter()
@@ -134,13 +135,16 @@ impl OpenAiCompatible {
             if has_pictures && matches!(status.as_u16(), 400 | 413 | 415 | 422) {
                 bail!(UnsupportedPictures);
             }
-            if effort_off && matches!(status.as_u16(), 400 | 422) {
+            if effort.is_some() && matches!(status.as_u16(), 400 | 422) {
                 // Inspect a bounded JSON error only; echoed provider text never reaches logs.
-                if tokio::time::timeout(ERROR_BODY_TIMEOUT, rejects_effort_off(response))
+                if tokio::time::timeout(ERROR_BODY_TIMEOUT, rejects_effort(response))
                     .await
                     .unwrap_or(false)
                 {
-                    bail!(UnsupportedEffort);
+                    if effort_off {
+                        bail!(UnsupportedEffort);
+                    }
+                    bail!(RefusedEffort(failure.into()));
                 }
             }
             bail!(failure);
@@ -149,7 +153,7 @@ impl OpenAiCompatible {
             http::is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(stream::stream(response, effort_off))
+        Ok(stream::stream(response, effort))
     }
 
     fn with_authorization(&self, request: RequestBuilder) -> RequestBuilder {
@@ -160,19 +164,20 @@ impl OpenAiCompatible {
     }
 }
 
-async fn rejects_effort_off(response: Response) -> bool {
+async fn rejects_effort(response: Response) -> bool {
     let Ok(bytes) = crate::net::read_limited(response, MAX_ERROR_BYTES).await else {
         return false;
     };
     serde_json::from_slice::<Value>(&bytes)
         .ok()
         .and_then(|body| body.get("error").cloned())
-        .is_some_and(|error| error_rejects_effort_off(&error))
+        .is_some_and(|error| error_rejects_effort(&error))
 }
 
 /// Only an explicit unsupported parameter/value verdict qualifies. Authentication,
-/// generic invalid requests, network failures and server errors never change settings.
-pub fn error_rejects_effort_off(error: &Value) -> bool {
+/// generic invalid requests, network failures and server errors never change settings
+/// and never drop the effort.
+pub fn error_rejects_effort(error: &Value) -> bool {
     let parameter = error
         .get("param")
         .and_then(Value::as_str)

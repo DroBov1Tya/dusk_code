@@ -20,10 +20,6 @@ ignore = [
     # precondition (a less trusted party writes the files) does not hold. Remove with the
     # sqlx upgrade.
     { id = "RUSTSEC-2026-0459", reason = "fix needs a sqlx release; databases are written only by duskcode" },
-    # rmcp < 3.9.0 buffers HTTP response bodies without a limit: a hostile MCP server can
-    # exhaust memory. Fixed by `cargo update -p rmcp` to >= 3.9.0 (semver-compatible), which
-    # lands as its own change with a full build and test. Remove then.
-    { id = "RUSTSEC-2026-0462", reason = "fix is cargo update -p rmcp >= 3.9.0, landing as its own change" },
     # chrono is a direct dependency and is now marked unmaintained. Replacing it touches the
     # core and the clients; until then it stays, with no known vulnerability.
     { id = "RUSTSEC-2026-0543", reason = "direct dependency; replacement tracked separately, no known vulnerability" },

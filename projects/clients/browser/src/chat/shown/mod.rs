@@ -1,9 +1,10 @@
-//! Blocks the agent put in the chat with the `show` tool. They are model output: every
-//! text is a text node, never markup or a link, and the frame says it came from the
+//! Blocks the agent put in the chat with `show` or `draw_diagram`. They are model output:
+//! every text is a text node, never markup or a link, and the frame says it came from the
 //! agent, so a block cannot pass for one of the app's own controls.
 
 mod checks;
 mod choices;
+mod diagram;
 mod flow;
 
 pub use choices::{ReplyRow, plain, question_labels};
@@ -28,5 +29,6 @@ pub fn ShownBlock(
         Block::Choices(choices) => {
             view! { <choices::ChoicesView choices id chat thread read_only /> }.into_any()
         }
+        Block::Diagram(diagram) => view! { <diagram::DiagramView diagram /> }.into_any(),
     }
 }

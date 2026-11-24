@@ -20,8 +20,7 @@ mod todo;
 pub mod touched;
 
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName},
-    prelude::FluentBuilder,
+    component::{ActiveTheme, Icon, IconName, Sizable, button::ButtonVariants},
     *,
 };
 
@@ -32,12 +31,52 @@ use crate::{
 };
 
 pub const WIDTH: f32 = 300.;
+/// How long a screen takes to slide over the list, or the list back.
+const SLIDE: std::time::Duration = std::time::Duration::from_millis(180);
+
+/// The tallest a light module with a long body grows in the list before it scrolls
+/// inside, so the modules under it stay in reach.
+const TALL: f32 = 360.;
+
+/// A heavy module opens as a screen of the whole column; a light one unfolds in place.
+/// The Todo is light while its board is short, and a screen once its open cards would
+/// stack down the column.
+pub fn heavy(ws: &Workspace, module: Right) -> bool {
+    match module {
+        Right::Overview | Right::Team | Right::Plan => true,
+        Right::Todo => todo::open_count(ws) > todo::IN_PLACE,
+        _ => false,
+    }
+}
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (panel, border, muted) = (theme.sidebar, theme.sidebar_border, theme.muted_foreground);
+    let (panel, border) = (theme.sidebar, theme.sidebar_border);
+    let shown = match ws.right_screen_shown() {
+        Some(module) => screen_view(ws, module, window, cx).into_any_element(),
+        None => list(ws, window, cx).into_any_element(),
+    };
+    div()
+        .w(px(WIDTH))
+        .h_full()
+        .flex()
+        .flex_col()
+        .bg(panel)
+        .border_l_1()
+        .border_color(border)
+        .overflow_hidden()
+        .child(shown)
+        // Where the chat works waits folded under everything that scrolls: a bar across
+        // the column's width unfolds it.
+        .child(footer(ws, cx))
+}
+
+/// The column's list: a row a module with its icon, name and one line of how it stands.
+/// A heavy module's row opens its screen; a light one's unfolds its body under it.
+fn list(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> AnyElement {
+    let muted = cx.theme().muted_foreground;
     let mut column =
-        div().flex().flex_col().pb_6().on_drop(
+        div().flex().flex_col().pt_2().pb_6().on_drop(
             cx.listener(|ws, dragged: &order::Dragged, _, cx| ws.drop_module(dragged, cx)),
         );
     let shown: Vec<Right> = ws
@@ -46,10 +85,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .copied()
         .filter(|module| ws.has_content(*module))
         .collect();
-    for (index, module) in shown.into_iter().enumerate() {
+    for module in shown {
         let title = title(module);
-        let open = !ws.folded.contains(&module);
+        let screen = heavy(ws, module);
+        let open = !screen && !ws.folded.contains(&module);
         let group = SharedString::from(format!("module-head-{}", module.key()));
+        let line = summary(ws, module);
         let header = div()
             // Named by the module, not its place, so the focus follows it when it moves.
             .id(group.clone())
@@ -57,30 +98,29 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .flex()
             .flex_row()
             .items_center()
-            .gap_2()
-            .h(px(44.))
-            .px_4()
+            .gap_3()
+            .mx_2()
+            .px_2()
+            .py(px(10.))
+            .rounded_lg()
             .cursor_pointer()
+            .hover(|header| header.bg(cx.theme().list_hover))
             .focusable_row(cx)
-            // Every header starts with its icon, on the grid of the rows below.
             .child(
                 module_icon(module)
-                    .size(px(crate::ui::size::ICON_LARGE))
+                    .size(px(crate::ui::size::ICON))
                     .text_color(muted),
             )
             .child(
                 div()
                     .flex_1()
-                    .body()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(title),
-            )
-            // A folded module still says how it stands.
-            .children(
-                (!open)
-                    .then(|| summary(ws, module))
-                    .flatten()
-                    .map(|text| div().meta().text_color(muted).child(text)),
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(div().body().font_weight(FontWeight::MEDIUM).child(title))
+                    .children(
+                        line.map(|line| div().meta().text_color(muted).truncate().child(line)),
+                    ),
             )
             .child(order::grip(module, title, group, cx))
             .child(widgets::icon(
@@ -103,6 +143,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 }
             }))
             .on_click(cx.listener(move |ws, _, _, cx| {
+                if screen {
+                    return ws.open_right(module, cx);
+                }
                 if !ws.folded.remove(&module) {
                     ws.folded.insert(module);
                 } else {
@@ -112,57 +155,166 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 crate::ui::theme::change(cx, |prefs| prefs.right_folded = Some(kept));
                 cx.notify();
             }));
-        // The rule between modules stops short of the column's edges.
-        let mut section = div()
-            .relative()
-            .flex()
-            .flex_col()
-            .when(index > 0, |section| {
-                section.child(div().mx_4().h(px(1.)).bg(border))
-            })
-            .child(header);
+        let mut section = div().relative().flex().flex_col().child(header);
         if open {
             let body = match module {
                 Right::Arbiter => arbiter_summary(ws, cx),
-                Right::Overview => overview_column(ws, cx),
-                Right::Team => crate::pages::team::module::render(ws, cx),
                 Right::Screenshots => screenshots::render(ws, cx),
-                Right::Git => git::render(ws, cx),
-                Right::Files => files::render(ws, cx),
                 Right::Touched => touched::render(ws, cx),
-                Right::Plan => plan::render(ws, window, cx),
                 Right::Todo => todo::render(ws, cx),
                 Right::Jobs => jobs::render(ws, cx),
                 Right::Sources => sources::render(ws, cx),
+                Right::Git => tall(module, git::render(ws, cx)),
+                Right::Files => tall(module, files::render(ws, cx)),
+                // Heavy modules open as screens, never here.
+                Right::Overview | Right::Team | Right::Plan => div(),
             };
             section = section.child(widgets::unfold(
                 SharedString::from(format!("module-{}", module.key())),
-                div().pb_3().child(body),
+                div().pt_1().pb_3().child(body),
             ));
         }
         let section = section.children(order::indicator(ws, module, cx));
         let section = order::target(section, module, cx);
         column = column.child(order::settle(ws, module, section, window, cx));
     }
-    div()
-        .w(px(WIDTH))
-        .h_full()
+    let body = div()
+        .id("inspector-body")
+        .flex_1()
+        .min_h_0()
+        .overflow_y_scroll()
+        .track_scroll(&ws.right_scroll)
+        .child(column);
+    // Back from a screen, the list comes in from the left as the screen leaves.
+    let back = ws.right_moves;
+    match back {
+        0 => body.into_any_element(),
+        _ => div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(body)
+            .with_animation(
+                ("right-list", back),
+                Animation::new(SLIDE).with_easing(crate::ui::motion::ease_out),
+                |list, t| {
+                    list.relative()
+                        .left(px(-0.28 * WIDTH * (1. - t)))
+                        .opacity(t)
+                },
+            )
+            .into_any_element(),
+    }
+}
+
+/// A long body in the list, scrolling inside past `TALL`.
+fn tall(module: Right, body: Div) -> Div {
+    div().child(
+        div()
+            .id(SharedString::from(format!(
+                "module-scroll-{}",
+                module.key()
+            )))
+            .max_h(px(TALL))
+            .overflow_y_scroll()
+            .child(body),
+    )
+}
+
+/// A heavy module as the column's screen: Back and its name on top, its body under them.
+fn screen_view(
+    ws: &mut Workspace,
+    module: Right,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> AnyElement {
+    let theme = cx.theme();
+    let (muted, hover) = (theme.muted_foreground, theme.list_hover);
+    let back = div()
+        .id("right-back")
         .flex()
-        .flex_col()
-        .bg(panel)
-        .border_l_1()
-        .border_color(border)
+        .flex_row()
+        .items_center()
+        .gap_1()
+        .pl_1()
+        .pr_2()
+        .py_1()
+        .rounded_md()
+        .small()
+        .text_color(muted)
+        .cursor_pointer()
+        .hover(move |back| back.bg(hover))
+        .child(widgets::icon(IconName::ChevronLeft, muted))
+        .child("Back")
+        .on_click(cx.listener(|ws, _, _, cx| ws.close_right(cx)));
+    // The Team and the Overview have a page of their own as well.
+    let page: Option<fn(&mut Workspace, &mut Context<Workspace>)> = match module {
+        Right::Team => Some(|ws, cx| ws.open_team(cx)),
+        Right::Overview => Some(|ws, cx| ws.open_overview(cx)),
+        _ => None,
+    };
+    let page = page.map(|open| {
+        div()
+            .id("right-page")
+            .ml_auto()
+            .meta()
+            .text_color(muted)
+            .cursor_pointer()
+            .hover(|link| link.text_color(cx.theme().foreground))
+            .child("Open \u{203A}")
+            .on_click(cx.listener(move |ws, _, _, cx| open(ws, cx)))
+    });
+    let top = div()
+        .flex_none()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_3()
+        .px_3()
+        .pt_3()
+        .pb_2()
+        .child(back)
         .child(
             div()
-                .id("inspector-body")
+                .body()
+                .font_weight(FontWeight::MEDIUM)
+                .child(title(module)),
+        )
+        .children(page);
+    let body = match module {
+        Right::Overview => div().flex().flex_col().children(overview::sections::all(
+            ws,
+            overview::Form::Narrow,
+            cx,
+        )),
+        Right::Team => crate::pages::team::module::render(ws, cx),
+        Right::Plan => plan::render(ws, window, cx),
+        Right::Todo => todo::render(ws, cx),
+        _ => div(),
+    };
+    div()
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .child(top)
+        .child(
+            div()
+                .id(SharedString::from(format!("right-screen-{}", module.key())))
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .child(column),
+                .pt_1()
+                .pb_6()
+                .child(body),
         )
-        // Where the chat works waits folded under everything that scrolls: a bar across
-        // the column's width unfolds it.
-        .child(footer(ws, cx))
+        .with_animation(
+            ("right-screen", ws.right_moves),
+            Animation::new(SLIDE).with_easing(crate::ui::motion::ease_out),
+            |screen, t| screen.relative().left(px(WIDTH * (1. - t))),
+        )
+        .into_any_element()
 }
 
 fn title(module: Right) -> &'static str {
@@ -197,19 +349,21 @@ fn module_icon(module: Right) -> Icon {
     }
 }
 
-/// A few words for a folded module's header: its count or its state.
+/// One line under a module's name in the list: its count or how it stands.
 fn summary(ws: &Workspace, module: Right) -> Option<String> {
     let chat = ws.shown_chat();
     match module {
         Right::Arbiter => {
             let count = chat.map_or(0, |chat| chat.exchanges.len());
-            (count > 0).then(|| count.to_string())
+            (count > 0).then(|| dusk_protocol::thread::plural(count as u32, "exchange"))
         }
         Right::Overview => ws
             .context
             .as_ref()
-            .map(|report| format!("{}%", report.total * 100 / report.limit.max(1))),
-        Right::Screenshots => chat.map(|chat| chat.screenshots().count().to_string()),
+            .map(|report| format!("{}% of context", report.total * 100 / report.limit.max(1))),
+        Right::Screenshots => chat.map(|chat| {
+            dusk_protocol::thread::plural(chat.screenshots().count() as u32, "picture")
+        }),
         Right::Git => ws.git.as_ref().map(|git| {
             let branch = git.branch.as_deref().unwrap_or("detached");
             match git.changes.len() {
@@ -217,15 +371,32 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
                 changes => format!("{branch} \u{00B7} {changes}"),
             }
         }),
-        Right::Files | Right::Plan => None,
+        Right::Files => None,
+        // The pinned plan's first line, as its title.
+        Right::Plan => (ws.plan.chat == ws.shown)
+            .then_some(ws.plan.text.as_deref())
+            .flatten()
+            .and_then(|text| text.lines().map(str::trim).find(|line| !line.is_empty()))
+            .map(|line| line.trim_start_matches('#').trim().to_owned()),
         Right::Team => crate::pages::team::module::summary(ws),
-        Right::Touched => Some(ws.touched.len().to_string()),
+        Right::Touched => Some(dusk_protocol::thread::plural(
+            ws.touched.len() as u32,
+            "file",
+        )),
         Right::Todo => chat.map(|chat| {
             let items = chat.tasks.iter().flat_map(|task| &task.items);
             let (done, all) = items.fold((0, 0), |(done, all), item| {
                 (done + usize::from(item.done), all + 1)
             });
-            format!("{done}/{all}")
+            // A plan of tasks without steps counts its tasks.
+            let (done, all) = match all {
+                0 => (
+                    chat.tasks.iter().filter(|task| task.done).count(),
+                    chat.tasks.len(),
+                ),
+                _ => (done, all),
+            };
+            format!("{done} of {all} done")
         }),
         Right::Jobs => {
             let running = ws.jobs.iter().filter(|job| job.running).count();
@@ -266,9 +437,14 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(div().flex_1().text_color(muted).child(format!(
             "{asked} asked · {allowed} allowed · {denied} denied"
         )))
+        // The module stays a light tally; the full view with the agents, the sphere and
+        // the timeline is one small button away.
         .child(
             gpui_kit::component::button::Button::new("arbiter-open")
-                .label("Open")
+                .ghost()
+                .xsmall()
+                .icon(Icon::default().path(crate::ui::icons::MAXIMIZE))
+                .tooltip("Open the full arbiter view")
                 .on_click(cx.listener(|ws, _, _, cx| {
                     if let Some(thread_id) = ws.shown.clone() {
                         ws.modal = Some(crate::modal::Modal::Arbiter { thread_id });
@@ -276,22 +452,6 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     cx.notify();
                 })),
         )
-}
-
-/// The Overview's sections in one column, and the way to its page.
-fn overview_column(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let sections = overview::sections::all(ws, overview::Form::Narrow, cx);
-    div()
-        .flex()
-        .flex_col()
-        .child(
-            div().px_4().pb_1().child(
-                gpui_kit::component::button::Button::new("overview-open")
-                    .label("Open")
-                    .on_click(cx.listener(|ws, _, _, cx| ws.open_overview(cx))),
-            ),
-        )
-        .children(sections)
 }
 
 impl Workspace {
@@ -319,32 +479,69 @@ impl Workspace {
         }
     }
 
+    /// The screen the column shows: one whose module has nothing for this chat, or has
+    /// turned light (a Todo down to a short board), gives way to the list, and is kept
+    /// to come back when it is a screen again.
+    pub fn right_screen_shown(&self) -> Option<Right> {
+        self.right_screen
+            .filter(|module| self.has_content(*module) && heavy(self, *module))
+    }
+
+    /// Opens a heavy module as the column's screen, over the list.
+    pub fn open_right(&mut self, module: Right, cx: &mut Context<Self>) {
+        self.right_screen = Some(module);
+        self.right_moves += 1;
+        self.refresh_module(module, cx);
+        cx.notify();
+    }
+
+    /// Back from the column's screen to the list, where it was scrolled.
+    pub fn close_right(&mut self, cx: &mut Context<Self>) {
+        if self.right_screen.take().is_some() {
+            self.right_moves += 1;
+            cx.notify();
+        }
+    }
+
+    /// Whether a module's body is drawn now: a heavy one as the open screen, a light one
+    /// unfolded in the list.
+    pub fn module_shown(&self, module: Right) -> bool {
+        match heavy(self, module) {
+            true => self.right_screen_shown() == Some(module),
+            false => !self.folded.contains(&module),
+        }
+    }
+
     /// Asks the core again for what the open modules show.
     pub fn refresh_inspector(&mut self, cx: &mut Context<Self>) {
         for module in Right::ALL {
-            if !self.folded.contains(&module) {
+            if self.module_shown(module) {
                 self.refresh_module(module, cx);
             }
         }
         // The repository decides whether the Changes module shows at all, and the footer
-        // names it, so it is read even while the module is folded.
-        if self.folded.contains(&Right::Git) {
+        // names it, so it is read even while its screen is closed.
+        if !self.module_shown(Right::Git) {
             self.load_git(cx);
         }
         // Likewise the jobs: the module shows only when the chat has some.
-        if self.folded.contains(&Right::Jobs) {
+        if !self.module_shown(Right::Jobs) {
             self.load_jobs(cx);
         }
-        if self.folded.contains(&Right::Sources) {
+        if !self.module_shown(Right::Sources) {
             self.load_sources(cx);
         }
-        // The Overview opened as a page follows the shown chat with its module folded.
-        if self.folded.contains(&Right::Overview) && self.center == Center::Overview {
-            self.refresh_module(Right::Overview, cx);
+        // The Overview opened as a page follows the shown chat with its screen closed;
+        // the list's line of it needs the context too.
+        if !self.module_shown(Right::Overview) {
+            match self.center == Center::Overview {
+                true => self.refresh_module(Right::Overview, cx),
+                false => self.load_context(cx),
+            }
         }
     }
 
-    fn refresh_module(&mut self, module: Right, cx: &mut Context<Self>) {
+    pub fn refresh_module(&mut self, module: Right, cx: &mut Context<Self>) {
         match module {
             Right::Git => self.load_git(cx),
             Right::Files => self.load_folder(String::new(), cx),

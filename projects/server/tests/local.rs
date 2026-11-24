@@ -329,7 +329,10 @@ async fn a_hello_of_another_version_is_refused_with_versions() {
         ..hello(Some(token), &nonce())
     })
     .unwrap();
-    for (line, theirs) in [(future.to_owned(), 999), (old, OLDEST_PROTOCOL - 1)] {
+    for (line, theirs, update) in [
+        (future.to_owned(), 999, "update duskcode"),
+        (old, OLDEST_PROTOCOL - 1, "update the client"),
+    ] {
         let mut peer = core.connect().await;
         peer.say(&line).await;
         let Greeting::Refused { code, reason, core } = peer.greeting().await else {
@@ -341,7 +344,7 @@ async fn a_hello_of_another_version_is_refused_with_versions() {
             reason,
             format!(
                 "the core speaks {OLDEST_PROTOCOL} to {PROTOCOL_VERSION}, this client {theirs}; \
-                 update duskcode"
+                 {update}"
             )
         );
         assert!(peer.ends().await);

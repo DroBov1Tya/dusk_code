@@ -5,7 +5,6 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use dusk_protocol::thread::TeamBudget;
 use serde::Deserialize;
 
 use super::{
@@ -15,13 +14,16 @@ use super::{
 };
 use crate::{
     catalog::agents::Agents,
-    config::Limits,
     state::{
-        MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
-        PlanTask, State, TaskEdit, short_task_id, timestamp_ms,
+        MAX_GOAL, MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError,
+        PlanStatus, PlanTask, State, TaskEdit, short_task_id, timestamp_ms,
     },
     tools::ToolContext,
 };
+
+/// The answer to `stop`: the team winds down, it does not end at once.
+pub(super) const STOPPING: &str = "stopping: the members at work hand over first; you are \
+                                   told when the team ended";
 
 /// What a chat's `tasks` needs for the plan form, handed in by the launcher.
 pub struct Lead {
@@ -35,10 +37,10 @@ pub struct Lead {
 pub struct PlanArguments {
     action: PlanAction,
     tasks: Option<Vec<TaskArguments>>,
-    budget: Option<BudgetArguments>,
     id: Option<String>,
     ids: Option<Vec<String>>,
     text: Option<String>,
+    goal: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -51,16 +53,8 @@ enum PlanAction {
     Edit,
     Fail,
     Reopen,
+    Skip,
     Stop,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct BudgetArguments {
-    at_once: Option<u32>,
-    steps: Option<u32>,
-    tokens: Option<u64>,
-    minutes: Option<u32>,
 }
 
 /// What the lead is answered, and whether the plan changed, so clients are told.
@@ -86,6 +80,7 @@ impl PlanAction {
             Self::Edit => "edit",
             Self::Fail => "fail",
             Self::Reopen => "reopen",
+            Self::Skip => "skip",
             Self::Stop => "stop",
         }
     }
@@ -94,12 +89,12 @@ impl PlanAction {
     fn fields(self) -> &'static [&'static str] {
         match self {
             Self::Add => &["tasks"],
-            Self::Run => &["budget"],
+            Self::Run => &["goal"],
+            Self::Stop => &[],
             Self::Review => &["id", "ids", "text"],
             Self::Show | Self::Reopen => &["id"],
             Self::Edit => &["id", "tasks", "text"],
-            Self::Fail => &["id", "text"],
-            Self::Stop => &[],
+            Self::Fail | Self::Skip => &["id", "text"],
         }
     }
 }
@@ -109,10 +104,10 @@ impl PlanArguments {
     fn refuse_unused(&self) -> Result<()> {
         let given = [
             ("tasks", self.tasks.is_some()),
-            ("budget", self.budget.is_some()),
             ("id", self.id.is_some()),
             ("ids", self.ids.is_some()),
             ("text", self.text.is_some()),
+            ("goal", self.goal.is_some()),
         ];
         for (field, present) in given {
             ensure!(
@@ -146,10 +141,10 @@ impl Lead {
         let PlanArguments {
             action,
             tasks,
-            budget,
             id,
             ids,
             text,
+            goal,
         } = arguments;
         let name = action.name();
         match action {
@@ -168,10 +163,14 @@ impl Lead {
             PlanAction::Review => review(state, thread, id, ids, text).await,
             PlanAction::Fail => fail(state, thread, &needed(id, "id", name)?, text).await,
             PlanAction::Reopen => reopen(state, thread, &needed(id, "id", name)?).await,
-            PlanAction::Run => self.run(state, thread, budget, context).await,
+            PlanAction::Skip => skip(state, thread, &needed(id, "id", name)?, text).await,
+            PlanAction::Run => {
+                let goal = needed(goal, "goal", name)?;
+                self.run(state, thread, &goal, context).await
+            }
             PlanAction::Stop => {
                 self.team.stop(thread).await?;
-                Ok(changed("stopped".into()))
+                Ok(changed(STOPPING.into()))
             }
         }
     }
@@ -259,19 +258,27 @@ impl Lead {
         &self,
         state: &State,
         thread: &str,
-        budget: Option<BudgetArguments>,
+        goal: &str,
         context: &ToolContext,
     ) -> Result<Answer> {
-        let budget = team_budget(budget.unwrap_or_default(), &context.config.limits())?;
+        let goal = goal.trim();
+        ensure!(
+            !goal.is_empty(),
+            "run needs `goal`: one sentence, and how you will know it is done"
+        );
+        ensure!(
+            goal.chars().count() <= MAX_GOAL,
+            "the goal is longer than {MAX_GOAL} characters; write it shorter"
+        );
         let plan = state.plan(thread).await.map_err(explain)?;
         ensure!(
-            plan.iter()
-                .any(|task| !matches!(task.status, PlanStatus::Done | PlanStatus::Failed)),
+            plan.iter().any(|task| !task.skipped
+                && !matches!(task.status, PlanStatus::Done | PlanStatus::Failed)),
             "the plan has nothing left to do; add tasks first, or reopen a failed one"
         );
         let started = self
             .team
-            .run(thread, budget, context.progress.clone())
+            .run(thread, goal, context.progress.clone())
             .await?;
         let gates = match started.gates {
             GatesYes::Refused => {
@@ -339,6 +346,8 @@ fn same(new: &NewTask, old: &PlanTask) -> bool {
         && new.brief == old.brief
         && new.gate == old.gate
         && new.files == old.files
+        && new.tier == old.tier
+        && new.effort == old.effort
 }
 
 /// The member that holds a task, by the name its thread goes by.
@@ -490,6 +499,35 @@ async fn fail(state: &State, thread: &str, id: &str, note: Option<String>) -> Re
     Ok(changed(format!("failed #{}", short_task_id(&task_id))))
 }
 
+/// Gives up a failed or blocked task, so the wave after it can start. Run again on a
+/// skipped task, it is already so.
+async fn skip(state: &State, thread: &str, id: &str, note: Option<String>) -> Result<Answer> {
+    let note = note.unwrap_or_default();
+    let skipped = match state.skip_task(thread, id, &note).await {
+        Ok(skipped) => skipped,
+        Err(PlanError::Illegal { task, from, .. }) => {
+            let found = state.plan_task(thread, &task).await.map_err(explain)?;
+            ensure!(
+                found.skipped,
+                "task #{} is {}; skip takes a failed or blocked task",
+                short_task_id(&task),
+                from.as_str()
+            );
+            vec![found]
+        }
+        Err(error) => return Err(explain(error)),
+    };
+    let ids: Vec<String> = skipped
+        .iter()
+        .map(|task| format!("#{}", short_task_id(&task.task_id)))
+        .collect();
+    Ok(changed(match ids.as_slice() {
+        [one] => format!("skipped {one}"),
+        [first, behind @ ..] => format!("skipped {first}, and {} behind it", behind.join(" ")),
+        [] => "skipped nothing".into(),
+    }))
+}
+
 /// Run again on an open task, it is already so.
 async fn reopen(state: &State, thread: &str, id: &str) -> Result<Answer> {
     let task_id = match state.reopen_task(thread, id).await {
@@ -507,43 +545,6 @@ async fn reopen(state: &State, thread: &str, id: &str) -> Result<Answer> {
         Err(error) => return Err(explain(error)),
     };
     Ok(changed(format!("reopened #{}", short_task_id(&task_id))))
-}
-
-/// The budget the lead asked for, each part held to its ceiling; a part left out is the
-/// ceiling. Asking above one is refused with it, never cut.
-fn team_budget(asked: BudgetArguments, limits: &Limits) -> Result<TeamBudget> {
-    let at_once_ceiling = u64::try_from(limits.team_members_at_once()).unwrap_or(u64::MAX);
-    let at_once = within("at_once", asked.at_once.map(u64::from), at_once_ceiling)?;
-    let steps = within(
-        "steps",
-        asked.steps.map(u64::from),
-        u64::from(limits.team_max_steps),
-    )?;
-    let tokens = within("tokens", asked.tokens, limits.team_max_tokens)?;
-    let minutes = within(
-        "minutes",
-        asked.minutes.map(u64::from),
-        u64::from(limits.team_max_minutes),
-    )?;
-    TeamBudget::new(
-        u32::try_from(at_once)?,
-        u32::try_from(steps)?,
-        tokens,
-        u32::try_from(minutes)?,
-    )
-}
-
-fn within(name: &str, asked: Option<u64>, ceiling: u64) -> Result<u64> {
-    let Some(asked) = asked else {
-        return Ok(ceiling);
-    };
-    ensure!(asked >= 1, "budget.{name} must be at least 1");
-    ensure!(
-        asked <= ceiling,
-        "budget.{name} {asked} is above the ceiling {ceiling}; give {ceiling} or less, or \
-         ask the user to raise it in the settings"
-    );
-    Ok(asked)
 }
 
 /// The store's refusal with the call that gets past it.

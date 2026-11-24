@@ -119,8 +119,8 @@ pub enum Modal {
     StopTeam {
         thread_id: String,
     },
-    /// The budget of the shown chat's running team, being changed.
-    TeamBudget(team::BudgetForm),
+    /// How many members of the shown chat's running team work at once, being changed.
+    TeamAtOnce(team::AtOnceForm),
     /// Going back to a message of the chat erases it and all after it; asks first.
     Rollback {
         thread_id: String,
@@ -180,7 +180,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             task_card::render(ws, task_id, cx),
         ),
         Modal::StopTeam { .. } => ("Stop team".to_owned(), 480., team::stop(cx)),
-        Modal::TeamBudget(form) => ("Team budget".to_owned(), 520., team::budget(form, cx)),
+        Modal::TeamAtOnce(form) => ("Members at once".to_owned(), 400., team::at_once(form, cx)),
         // It has the whole window, not a panel with a title.
         Modal::Picture { image, size, view } => {
             return Some(picture::render(ws, image, *size, view, window, cx));
@@ -330,7 +330,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     .then(|| ws.modal_focus.clone());
     // A listing's gallery steps with Left and Right.
     let gallery = matches!(ws.modal, Some(Modal::Listing { .. }));
+    let agent_scroll =
+        matches!(ws.modal, Some(Modal::AgentChat { .. })).then(|| ws.modal_scroll.clone());
     let theme = cx.theme();
+    // A press inside is marked rather than stopped: the window's text selection hears
+    // presses only after every element, so a stopped one could not start a selection.
+    let inside = std::rc::Rc::new(std::cell::Cell::new(false));
+    let pressed = inside.clone();
     let panel = div()
         .id("modal-panel")
         // The window itself takes the keys, not its close button: a focused button
@@ -352,7 +358,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .rounded_xl()
         .elevation(Level::Floating, cx)
         // Clicks inside stay inside.
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_down(MouseButton::Left, move |_, _, _| pressed.set(true))
         .child(
             div()
                 .flex()
@@ -363,24 +369,35 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .py_3()
                 .border_b_1()
                 .border_color(theme.border)
+                // A long title is cut short instead of pushing past the panel.
                 .child(
                     div()
+                        .flex_1()
+                        .min_w_0()
                         .flex()
                         .flex_row()
                         .items_center()
                         .gap_2()
                         .children(back)
-                        .child(div().font_weight(FontWeight::SEMIBOLD).child(title)),
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(title),
+                        ),
                 )
                 .child(
-                    Button::new("modal-close")
-                        .ghost()
-                        .small()
-                        .icon(IconName::Close)
-                        .tooltip("Close")
-                        .on_click(
-                            cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
-                        ),
+                    div().flex_none().child(
+                        Button::new("modal-close")
+                            .ghost()
+                            .small()
+                            .icon(IconName::Close)
+                            .tooltip("Close")
+                            .on_click(cx.listener(|ws, _, window, cx| {
+                                ws.close_modal_from_window(window, cx)
+                            })),
+                    ),
                 ),
         )
         .child(
@@ -389,6 +406,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .when_some(agent_scroll, |body, scroll| body.track_scroll(&scroll))
                 .child(body),
         );
     Some(
@@ -404,7 +422,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .occlude()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
+                cx.listener(move |ws, _, window, cx| {
+                    if !inside.replace(false) {
+                        ws.close_modal_from_window(window, cx);
+                    }
+                }),
             )
             .child(crate::ui::widgets::appear("modal-open", panel)),
     )
@@ -422,11 +444,16 @@ impl Workspace {
     }
 
     pub fn close_modal(&mut self, cx: &mut Context<Self>) {
+        // The app is taking itself away; its last word stays until it closes.
+        if self.uninstall_busy() {
+            return;
+        }
         // A plugin's window that closes tells its plugin.
         if let Some(Modal::Plugin(key)) = self.modal.take() {
             self.close_plugin_part(key, cx);
         }
         self.modal = None;
+        self.team_unpick(cx);
         cx.notify();
     }
 }

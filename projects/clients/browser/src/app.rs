@@ -9,7 +9,7 @@ use crate::{
         customize::Customize,
         project::ProjectPage,
         settings::SettingsPage,
-        welcome::{self, ChatOrWelcome, Step},
+        welcome::{ChatOrWelcome, Welcome},
     },
     state::{AppState, View, state},
     ui::{IconDefinitions, theme},
@@ -25,6 +25,13 @@ enum Auth {
 
 #[component]
 pub fn App() -> impl IntoView {
+    #[cfg(debug_assertions)]
+    if let Some(fake) = crate::dev::asked() {
+        let app = AppState::new();
+        crate::state::install(app);
+        crate::dev::fill(app, &fake);
+        return page(app).into_any();
+    }
     let auth = RwSignal::new(Auth::Checking);
     reload_on_new_address();
     spawn_local(async move {
@@ -38,11 +45,12 @@ pub fn App() -> impl IntoView {
             Err(error) => Auth::SignedOut(Some(error)),
         });
     });
-    move || match auth.get() {
+    (move || match auth.get() {
         Auth::Checking => view! { <div class="boot">"duskcode"</div> }.into_any(),
         Auth::SignedOut(note) => view! { <SignIn note auth /> }.into_any(),
         Auth::SignedIn => view! { <Shell auth /> }.into_any(),
-    }
+    })
+    .into_any()
 }
 
 /// A new token in the address bar (the page was not reloaded) starts the page over.
@@ -99,15 +107,20 @@ fn Shell(auth: RwSignal<Auth>) -> impl IntoView {
             "The session ended. Sign in again.".into(),
         )))
     });
+    page(app)
+}
+
+/// The workspace over `app`, whatever fills it.
+fn page(app: AppState) -> impl IntoView {
     Effect::new(move |_| theme::apply(&app.theme.get()));
     crate::chat::seen::watch(app);
-    let welcome = RwSignal::new(Step::Hidden);
-    welcome::ask(welcome);
+    let welcome = Welcome::new();
+    welcome.ask();
     view! {
         <IconDefinitions />
         <Workspace>
             <main class="main">{move || match state().view.get() {
-                View::Chat(id) => view! { <ChatOrWelcome id step=welcome /> }.into_any(),
+                View::Chat(id) => view! { <ChatOrWelcome id welcome /> }.into_any(),
                 View::Settings(page) => view! { <SettingsPage page /> }.into_any(),
                 View::Customize(tab) => view! { <Customize tab /> }.into_any(),
                 View::Artifacts => view! { <Artifacts /> }.into_any(),

@@ -11,7 +11,7 @@ or browser. Chat history is stored locally, and you choose which model provider 
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh   # download and run the installer
 ```
 
 The installer asks what to install: the terminal client, the desktop client, or both.
@@ -80,9 +80,10 @@ account only in its own apps. Claude models work here with an API key.
 
 ## What it does
 
-- **Modes**: MAIN for direct work, ORCHESTRATOR to delegate, TEAM to have a
-  plan run by a team, PLAN to plan first; your own
-  modes are Markdown files.
+- **Modes**: MAIN for direct work, ORCHESTRATOR to delegate, PLAN to plan first, and
+  TEAM, where the agent leads the project like a product owner or team lead: it plans the
+  work and runs a team of agents, each with its own role and task, while you set the goal
+  and answer its questions. Your own modes are Markdown files.
 - **Tools**: read, search and edit files, run commands in the foreground or as background
   jobs, look at pictures, and on a desktop see the screen and use the mouse and keyboard.
 - **Subagents**: specialist agents by role, several at once, each in its own thread. An

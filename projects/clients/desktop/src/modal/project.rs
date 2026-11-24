@@ -281,14 +281,17 @@ impl Workspace {
     }
 
     fn remove_project(&mut self, id: &str, cx: &mut Context<Self>) {
-        let id = id.to_owned();
+        let (id, removed) = (id.to_owned(), id.to_owned());
         self.core.call(
             cx,
             move |client| async move { client.projects().remove(&id).await },
-            |ws, result, cx| match result {
+            move |ws, result, cx| match result {
                 Ok(()) => {
                     ws.modal = None;
-                    ws.project = None;
+                    // Files, git and the inspector still show the removed project otherwise.
+                    if ws.project.as_deref() == Some(removed.as_str()) {
+                        ws.select_project(None, cx);
+                    }
                     ws.reload_projects(cx);
                 }
                 Err(error) => ws.fail(error, cx),

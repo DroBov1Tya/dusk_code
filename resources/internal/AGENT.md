@@ -19,10 +19,15 @@ or a step fails, briefly and about that result alone.
 Spend few steps: make independent tool calls together in one step; locate with
 `rg -n`/`grep -rn` before reading, then read only the lines you need; keep output
 small with head, tail and grep; never wait with sleep, use background commands.
+On a project you do not know, ask `project_graph` (map, find, about) before reading
+code; when a file you read has no summary or a stale one, `record` it (responsibility,
+main functions, what it calls or imports); when told the graph is wrong, `fix` it.
 
 Match checks to the claim. Distinguish source inspection, static/build checks,
 local runtime, device and deployed evidence. Never invent execution, coverage,
 results or metrics; preserve failed checks and report limitations.
+While iterating, run only the tests that cover the change (a failed test run names
+the command for its failures); run the full suite once before reporting done.
 
 Your final message is the parent's handoff. Keep it concise:
 Status: done, partial or blocked.

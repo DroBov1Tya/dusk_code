@@ -41,7 +41,7 @@ pub struct Tasks {
 }
 
 /// Actions only the plan form has, and only the board has.
-const PLAN_ONLY: [&str; 5] = ["run", "review", "fail", "reopen", "stop"];
+const PLAN_ONLY: [&str; 6] = ["run", "review", "fail", "reopen", "skip", "stop"];
 const BOARD_ONLY: [&str; 3] = ["add_items", "start", "done"];
 
 fn action(arguments: &Value) -> &str {
@@ -211,6 +211,11 @@ impl Tasks {
 }
 
 impl Tool for Tasks {
+    /// Keeps the chat's own records or speaks to someone: no project file changes.
+    fn writes_project(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     fn name(&self) -> &'static str {
         "tasks"
     }
@@ -242,7 +247,7 @@ impl Tool for Tasks {
         }
     }
 
-    /// `show` reads. `run`, `review`, `fail`, `reopen` and `stop` set a state that setting
+    /// `show` reads. `run`, `review`, `fail`, `reopen`, `skip` and `stop` set a state that setting
     /// again does not change, and the plan's `add` finds its own tasks when run again; the
     /// board's `add` and every `edit` are left to the user after a restart.
     fn repeatable(&self, arguments: &Value) -> bool {
@@ -273,7 +278,7 @@ impl Tool for Tasks {
                 }
                 return Ok(answer.text);
             }
-            let plan_fields = ["tasks", "budget", "ids"];
+            let plan_fields = ["tasks", "ids", "goal"];
             if PLAN_ONLY.contains(&name.as_str())
                 || plan_fields
                     .iter()

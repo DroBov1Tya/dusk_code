@@ -70,6 +70,8 @@ mod tests {
             temporary: false,
             owner: None,
             unread,
+            pulls: Vec::new(),
+            branch: None,
         }
     }
 

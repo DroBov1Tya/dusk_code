@@ -84,10 +84,11 @@ fn unknown_variants_parse_as_unknown() {
 fn a_version_outside_the_range_is_refused() {
     let mut hello = Hello::new("bot");
     for (protocol, expected) in [
-        (35, Err(Refusal::Version)),
-        (36, Ok(())),
-        (37, Ok(())),
+        (36, Err(Refusal::Version)),
+        (37, Err(Refusal::Version)),
         (38, Err(Refusal::Version)),
+        (39, Ok(())),
+        (40, Err(Refusal::Version)),
     ] {
         hello.protocol = protocol;
         assert_eq!(hello.accepted(), expected, "protocol {protocol}");

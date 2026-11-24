@@ -9,15 +9,20 @@
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
 //! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all|lower`: open a window; unfold the right column, or only its lower modules;
+//! - `screen=team|overview|git|files|plan`: open that module as the right column's screen
+//!   (`screen=` goes back to the list);
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - with `DUSK_MASCOT=MS` in the environment every subagent's mascot is held that many
 //!   milliseconds into its activity, so done and failed can be seen mid-motion;
 //! - with `DUSK_SWAP=MS` in the environment a change of the working row's words is held
 //!   that many milliseconds into its swap (`fake=activity-thinking`, then `-steps`);
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
-//!   the environment the sky holds a falling star that many milliseconds into its flight;
+//!   the environment the sky holds a falling star that many milliseconds into its flight
+//!   (`DUSK_METEOR_SMALL`: a small one, `DUSK_METEOR_LEFT`: a great one from the left);
 //! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
+//! - `fake=tiers`: two providers with models and the subagent tiers set, unset and on a
+//!   provider no longer connected, for `settings=llm` (after its models load);
 //! - `fake=limits`: API rate limits; `fake=plan-limits|plan-unavailable`: ChatGPT plan usage;
 //! - `fake=plugins`: about 200 made-up plugin parts of 60 plugins in the status (see
 //!   `dev::plugins`); `plugins=menu`: open the menu of them; `plugins=search:TEXT`: type
@@ -32,13 +37,17 @@
 //!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
 //! - `fake=blocks|blocks-working|blocks-wait|blocks-decision`: a chat with a Flow, Checks and
 //!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
+//! - `fake=diagrams|diagram-KIND`: a chat with a diagram of each kind, or of one kind;
 //! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
 //!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
-//!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
+//!   the composer's panel, the Todo's finished tasks; `fake=todo-short`: its board cut to
+//!   three open tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
 //! - `fake=team|team-ended`: after `fake=chat`, the chat leads a team of seven members on
 //!   eight tasks, one in each status, running or ended on its steps (see `dev::team`);
-//! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of the chosen project in the sidebar with their
-//!   icon, and a chat that links two of them, drawn as chips;
+//! - `fake=pulls`: four pull requests in Changes, one of each state and checks, a chat of
+//!   the chosen project in the sidebar with eight pull requests of its own (merged,
+//!   closed, draft, open, one not read yet, which is not shown) under its icon, and a chat that links two of
+//!   them, drawn as chips;
 //! - `fake=forge-signin|forge-unserved`: the quiet line in Changes when the forge asks to sign in,
 //!   or no plugin serves the host;
 //! - `fake=approval|approval-long|question`: put a request for approval (a long heredoc
@@ -52,8 +61,9 @@
 //!   `up=X,Y`: press the left button there, move with it held, let it go, as a click
 //!   (`down` then `up`) or a drag (`down`, a few `move`, `up`) would;
 //!   `press=X,Y` is `down` alone, for the pressed look;
-//! - `fake=welcome`: no providers, so the chat page shows the welcome; `welcome=form`: its
-//!   form, as the button opens it; `welcome=address:URL`: type the address in it;
+//! - `fake=welcome`: no providers, so the chat page shows the welcome; `welcome=page:N`:
+//!   its Nth page; `welcome=form`: the Model page; `welcome=address:URL`: type the address
+//!   in it; `welcome=connected:NAME`: the Model page as after a connection;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
 //! - `terminal`: show or hide the terminal panel; `run=COMMAND`: type the command in its
 //!   shown shell, with Return; `select=ROW:FROM-TO`: cells of a row selected;
@@ -358,13 +368,13 @@ fn act(
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
-            // After `fake=team`: the yes Stop team asks for, the budget form and a task's card.
+            // After `fake=team`: the yes Stop team asks for, members at once and a task's card.
             "team-stop" => ws.ask_stop_team(cx),
             // The card of task #4, blocked on the lead with a note.
             "task-card" => ws.open_task_card("t4", cx),
-            "team-budget" => {
+            "team-at-once" => {
                 if let Some(team) = ws.overview.team.clone() {
-                    ws.ask_team_budget(&team, window, cx);
+                    ws.ask_team_at_once(&team, cx);
                 }
             }
             // The arbiter's window, with a few things said so its timeline has rows.
@@ -482,6 +492,8 @@ fn act(
             }
             cx.notify();
         }
+        // The removal window at a step or phase; `removed` closes the app as a removal would.
+        "uninstall" => ws.dev_uninstall(value, window, cx),
         "type" => {
             ws.edit_draft(
                 ws.shown.clone(),
@@ -539,6 +551,14 @@ fn act(
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
         }
+        // A heavy module of the right column opened as its screen, by its key.
+        "screen" => match crate::workspace::Right::ALL
+            .into_iter()
+            .find(|module| module.key() == value)
+        {
+            Some(module) => ws.open_right(module, cx),
+            None => ws.close_right(cx),
+        },
         // A board of 200 tasks in the Overview; the next real answer replaces it.
         "fake" if value == "overview" => {
             ws.overview.chat = ws.shown.clone();
@@ -554,8 +574,43 @@ fn act(
             });
             cx.notify();
         }
+        // After `fake=chat`: its board cut to three open tasks, so the Todo unfolds in place.
+        "fake" if value == "todo-short" => {
+            if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
+                let mut open = 0;
+                for task in &mut chat.tasks {
+                    open += usize::from(!task.done);
+                    task.done |= open > 3;
+                }
+            }
+            cx.notify();
+        }
         "fake" if value == "pulls" => fake_pulls(ws, cx),
         "fake" if value == "unread" => fake_unread(ws, cx),
+        // The shown chat works on a branch of its own in a worktree.
+        "fake" if value == "branch" => {
+            // A fake chat not in the list (`fake=pulls` shows one) becomes the first listed.
+            let listed = ws.threads.iter().any(|t| Some(&t.id) == ws.shown.as_ref());
+            if !listed && let Some(first) = ws.threads.first().map(|t| t.id.clone()) {
+                if let Some(chat) = ws.shown.take().and_then(|id| ws.chats.remove(&id)) {
+                    ws.chats.insert(first.clone(), chat);
+                }
+                ws.shown = Some(first);
+            }
+            let shown = ws.shown.clone();
+            if let Some(thread) = ws
+                .threads
+                .iter_mut()
+                .find(|t| Some(&t.id) == shown.as_ref())
+            {
+                thread.branch = Some(dusk_protocol::project::ThreadBranch {
+                    branch: "agent/fix-login".to_owned(),
+                    base: "main".to_owned(),
+                    dir: "/Users/you/code/app-worktrees/agent-fix-login".into(),
+                });
+            }
+            cx.notify();
+        }
         "fake" if value == "forge-signin" || value == "forge-unserved" => {
             fake_forge(ws, value == "forge-signin", cx)
         }
@@ -602,6 +657,7 @@ fn act(
             cx.notify();
         }
         "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
+        "fake" if value.starts_with("diagram") => super::diagrams::fake(ws, value, cx),
         "fake" if value == "mcp" => super::polish::mcp(ws, cx),
         "fake"
             if matches!(
@@ -612,7 +668,11 @@ fn act(
             super::polish::state(ws, value, cx)
         }
         "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
+        "fake" if value.starts_with("goal-") => super::goal::fake(ws, value, cx),
         "fake" if value == "team" || value == "team-ended" => super::team::fake(ws, value, cx),
+        "fake" if value == "subagents" || value == "subagents-ended" => {
+            super::team::subagents(ws, value, cx)
+        }
         "fake" if value.starts_with("team-") => super::team_sizes::fake(ws, value, cx),
         // The Team page's layers, and a long plan's done waves shown.
         "layer" => {
@@ -638,6 +698,7 @@ fn act(
             match value {
                 "pins" => ws.pins.open = true,
                 "plan" => ws.dock.plan_open = true,
+                "goal" => ws.dock.goal_open = true,
                 "panel" => ws.toggle_panel(cx),
                 "done" => ws.todo_done_open = true,
                 other => eprintln!("no such fold: {other}"),
@@ -663,7 +724,8 @@ fn act(
         "fake" if value == "welcome" => {
             ws.providers.clear();
             ws.center = Center::Chat;
-            ws.welcome.step = crate::pages::welcome::Step::Intro;
+            ws.welcome.page = Some(crate::pages::welcome::Page::Hello);
+            ws.load_settings(cx);
             cx.notify();
         }
         // Two providers, to look at a row's switch and buttons.
@@ -709,6 +771,46 @@ fn act(
                 failure: None,
             }];
             ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
+            cx.notify();
+        }
+        // Two providers with models and the subagent tiers in each state: strong chosen,
+        // default left on the chat's model, weak on a provider no longer connected.
+        "fake" if value == "tiers" => {
+            use dusk_protocol::config::TierState;
+            use dusk_protocol::model::{Model, ProviderStatus};
+            let provider = |name: &str, ids: &[&str]| ProviderStatus {
+                name: name.into(),
+                models: Ok(ids
+                    .iter()
+                    .map(|id| Model {
+                        id: (*id).into(),
+                        context_window: None,
+                        max_output: None,
+                    })
+                    .collect()),
+                balance: None,
+                limits: None,
+                enabled: true,
+                failure: None,
+            };
+            ws.providers = vec![
+                provider("chatgpt", &["gpt-5.5", "gpt-6.1-sol", "gpt-6.2-rigel"]),
+                provider(
+                    "openrouter",
+                    &["claude-opus-4.7", "claude-sonnet-4.6", "claude-haiku-4.5"],
+                ),
+            ];
+            ws.status.model = Some("chatgpt/gpt-5.5".into());
+            let tiers = &mut ws.status.model_tiers;
+            tiers.strong = TierState {
+                chosen: Some("openrouter/claude-opus-4.7".into()),
+                missing: false,
+            };
+            tiers.default = TierState::default();
+            tiers.weak = TierState {
+                chosen: Some("local/qwen-coder-7b".into()),
+                missing: true,
+            };
             cx.notify();
         }
         // A user's message with a picture thumbnail under it. The bytes are decoded here
@@ -795,8 +897,21 @@ fn act(
                         thread_id: thread_id.clone(),
                         agent: (*role).into(),
                         task: (*task).into(),
-                        effort: None,
-                        model: Some("chatgpt/gpt-5.5".into()),
+                        // The tiers an agent picks: strong for review and plans, weak
+                        // for scouting, the chat's model for the rest.
+                        effort: match index {
+                            3 | 7 => Some(dusk_protocol::model::Effort::High),
+                            5 => Some(dusk_protocol::model::Effort::Low),
+                            _ => Some(dusk_protocol::model::Effort::Medium),
+                        },
+                        model: Some(
+                            match index {
+                                3 | 7 => "chatgpt/gpt-6.1-sol",
+                                5 => "openrouter/claude-haiku-4.5",
+                                _ => "chatgpt/gpt-5.5",
+                            }
+                            .into(),
+                        ),
                         task_id: None,
                     });
                     let inner = match index {
@@ -882,7 +997,16 @@ fn act(
             inner.push(
                 Item::Assistant {
                     text: "Entries now expire after the time set in `ttl`; the tests pass.".into(),
-                    reasoning: String::new(),
+                    // Long enough to scroll, so the copy button rides down the open block.
+                    reasoning: (1..=30)
+                        .map(|line| {
+                            format!(
+                                "Line {line}: the entry keeps its deadline beside the value, \
+                                 so a read can drop it without a second lookup."
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
                 },
                 0,
             );
@@ -893,6 +1017,7 @@ fn act(
             use crate::pages::chat::messages::{RUN, STEP};
             ws.unfolded.insert(("fake-agent".into(), 1 | RUN));
             ws.unfolded.insert(("fake-agent".into(), 1 | STEP));
+            ws.unfolded.insert(("fake-agent".into(), 6));
             ws.modal = Some(Modal::AgentChat {
                 agent: "fake-agent".into(),
                 name: "backend-engineer".into(),
@@ -1018,10 +1143,23 @@ fn act(
             };
             crate::ui::theme::change(cx, |prefs| prefs.chats_by = order);
         }
-        "welcome" => match value.split_once(':') {
-            Some(("address", address)) => ws.welcome_address(address, window, cx),
-            _ => ws.welcome_form(window, cx),
-        },
+        "welcome" => {
+            use crate::pages::welcome::Page;
+            match value.split_once(':') {
+                Some(("address", address)) => ws.welcome_address(address, window, cx),
+                Some(("page", n)) => {
+                    let page = n
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|n| Page::ALL.get(n.checked_sub(1)?));
+                    if let Some(page) = page {
+                        ws.welcome_go(*page, window, cx);
+                    }
+                }
+                Some(("connected", name)) => ws.welcome_joined(name),
+                _ => ws.welcome_go(Page::Model, window, cx),
+            }
+        }
         "file" => {
             let (path, line) = match value.rsplit_once(':') {
                 Some((path, line)) if line.parse::<u32>().is_ok() => (path, line.parse().ok()),
@@ -1103,6 +1241,8 @@ fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
                 temporary: false,
                 owner: None,
                 unread,
+                pulls: Vec::new(),
+                branch: None,
             },
         );
     }
@@ -1114,8 +1254,8 @@ fn fake_unread(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 
 fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{
-        Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
-        RepositoryStatus,
+        Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, RepositoryStatus,
+        ThreadPull,
     };
     use dusk_protocol::project::{Forge, ForgeStatus};
     let Some(project) = ws.selected_project().cloned() else {
@@ -1205,14 +1345,57 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             checks(8, 0, 2, 0, 1, CheckState::Failing),
         ),
     ];
-    ws.pulls.insert(
-        project.id.clone(),
-        PullSummary {
-            project_id: project.id.clone(),
-            pulls: pulls[..2].to_vec(),
-            checks: Some(CheckState::Pending),
+    // The chat's own list, the first linked first: merged and closed ones stay, one with
+    // a long title, and the last not read yet.
+    let kept = |number, title: &str, state, checks: Checks| ThreadPull {
+        repository: "example/repo".to_owned(),
+        number,
+        pull: Some(pull(number, title, state, checks)),
+    };
+    let chat_pulls = vec![
+        kept(7, "Bump parking_lot", PullState::Closed, Checks::default()),
+        kept(
+            9,
+            "Split the forge",
+            PullState::Merged,
+            checks(3, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        kept(
+            14,
+            "Keep each chat's pull requests, merged ones too, through an undo",
+            PullState::Merged,
+            checks(3, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        kept(
+            16,
+            "Draft: a quieter sidebar",
+            PullState::Draft,
+            Checks::default(),
+        ),
+        kept(
+            18,
+            "Fix the theme",
+            PullState::Merged,
+            checks(3, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        kept(
+            12,
+            "Show pull requests and CI in Changes",
+            PullState::Open,
+            checks(2, 1, 0, 0, 0, CheckState::Pending),
+        ),
+        kept(
+            21,
+            "Chat pull requests in the sidebar",
+            PullState::Open,
+            checks(3, 0, 0, 0, 0, CheckState::Passing),
+        ),
+        ThreadPull {
+            repository: "example/repo".to_owned(),
+            number: 23,
+            pull: None,
         },
-    );
+    ];
     ws.repository = Some(RepositoryStatus {
         repository: "dusk_code".to_owned(),
         branch: Some("pr-status".to_owned()),
@@ -1258,6 +1441,8 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             temporary: false,
             owner: None,
             unread: false,
+            pulls: chat_pulls,
+            branch: None,
         },
     );
     crate::pages::chat::pull_link::show(ws, cx);

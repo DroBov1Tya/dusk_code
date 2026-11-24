@@ -20,9 +20,10 @@ const OUTPUTS: [&str; 6] = [
 ];
 
 /// Called as `run_command`: returns `output` as a command that exited with 101 would,
-/// and shapes it as the real tool does.
+/// and shapes it as the real tool does; names the failing tests too when `rerun`.
 struct Command {
     output: &'static str,
+    rerun: bool,
 }
 
 impl Tool for Command {
@@ -60,6 +61,12 @@ impl Tool for Command {
     fn shape(&self, arguments: &Value, result: &ToolResult) -> Option<crate::tools::Shaped> {
         RunCommand::default().shape(arguments, result)
     }
+
+    fn rerun(&self, arguments: &Value, result: &ToolResult) -> Option<String> {
+        self.rerun
+            .then(|| RunCommand::default().rerun(arguments, result))
+            .flatten()
+    }
 }
 
 /// One turn: `cargo test`, then an answer. The provider and the events.
@@ -68,6 +75,24 @@ async fn run_cargo_test(
     name: &str,
     settings: &str,
     output: &'static str,
+) -> (Arc<FakeProvider>, Vec<ThreadEvent>) {
+    run_command(
+        state,
+        name,
+        settings,
+        Command {
+            output,
+            rerun: false,
+        },
+    )
+    .await
+}
+
+async fn run_command(
+    state: &Arc<State>,
+    name: &str,
+    settings: &str,
+    tool: Command,
 ) -> (Arc<FakeProvider>, Vec<ThreadEvent>) {
     let config = Arc::new(temp_live_config_with(&format!("{name}_config"), settings));
     let call = Step::Named(
@@ -79,7 +104,7 @@ async fn run_cargo_test(
         vec![call, Step::Done],
         vec![Step::Text("done"), Step::Done],
     ]);
-    let tool = Box::new(Command { output });
+    let tool = Box::new(tool);
     let (runner, input, mut output) = runner_with(state, &provider, &config, model(None), tool);
     input.send("test it").await.unwrap();
     drop(input);
@@ -206,4 +231,34 @@ async fn output_that_shapes_to_little_less_is_sent_whole() {
     let (provider, events) = run_cargo_test(&state, "shaped_small", ON, output).await;
     assert_eq!(sent_result(&provider), output);
     assert!(shaped_events(&events).is_empty());
+}
+
+/// A failed test run gets the narrow command after its output, in what is stored and
+/// in the shaped text alike; with `limits.rerun_hint` off it gets nothing.
+#[tokio::test]
+async fn a_failed_test_run_is_followed_by_the_command_for_its_failures() {
+    let line = "Re-run only the failing tests: `cargo test -- --exact \
+                tests::another_failure tests::fails_on_purpose`";
+    let tool = Command {
+        output: CARGO_TEST,
+        rerun: true,
+    };
+    let state = thread_state("rerun_on").await;
+    let (provider, _) = run_command(&state, "rerun_on", ON, tool).await;
+    let stored = stored_result(&state).await;
+    assert_eq!(stored.content, format!("{CARGO_TEST}\n\n{line}"));
+    let sent = sent_result(&provider);
+    assert!(
+        sent.contains(&format!("\n\n{line}\n[75 lines left out")),
+        "{sent}"
+    );
+
+    let tool = Command {
+        output: CARGO_TEST,
+        rerun: true,
+    };
+    let state = thread_state("rerun_off").await;
+    let off = "limits:\n  shape_output: true\n  rerun_hint: false\n";
+    run_command(&state, "rerun_off", off, tool).await;
+    assert_eq!(stored_result(&state).await.content, CARGO_TEST);
 }

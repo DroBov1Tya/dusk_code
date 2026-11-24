@@ -7,15 +7,6 @@ use dusk_protocol::thread::TeamEnd;
 
 use super::super::PlanError;
 
-/// One part of a team's budget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BudgetPart {
-    AtOnce,
-    Steps,
-    Tokens,
-    Minutes,
-}
-
 #[derive(Debug)]
 pub enum TeamError {
     NoSuchThread(String),
@@ -28,28 +19,14 @@ pub enum TeamError {
     /// Tasks of the last run are still claimed or running: its end did not return them
     /// yet. Recovery returns them (`State::return_work`).
     WorkLeft(u32),
-    /// The lead's `run` lowers a running team's budget; only the user raises one.
-    LeadRaises(BudgetPart),
-    /// A part asked for is above the user's ceiling.
+    /// Members at once asked for are 0 or above the setting.
     PastCeiling {
-        part: BudgetPart,
-        ceiling: u64,
+        ceiling: u32,
     },
     /// The team ended, but returning its work failed. The end stands; recovery returns
     /// the work.
     Plan(PlanError),
     Store(anyhow::Error),
-}
-
-impl BudgetPart {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::AtOnce => "members at once",
-            Self::Steps => "steps",
-            Self::Tokens => "tokens",
-            Self::Minutes => "minutes",
-        }
-    }
 }
 
 /// How the store and the protocol's `TeamEnd` name a reason.
@@ -90,13 +67,8 @@ impl fmt::Display for TeamError {
                 f,
                 "{count} tasks of the last run are still at work; they go back to open first"
             ),
-            Self::LeadRaises(part) => write!(
-                f,
-                "the lead may lower {}, not raise it; the user raises a budget",
-                part.as_str()
-            ),
-            Self::PastCeiling { part, ceiling } => {
-                write!(f, "{} past the ceiling of {ceiling}", part.as_str())
+            Self::PastCeiling { ceiling } => {
+                write!(f, "members at once must be 1 to {ceiling}")
             }
             Self::Plan(error) => write!(f, "the team ended; its work was not returned: {error}"),
             Self::Store(error) => write!(f, "the team's store failed: {error:#}"),

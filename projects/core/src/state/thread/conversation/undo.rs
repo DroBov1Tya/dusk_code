@@ -66,6 +66,9 @@ impl State {
                     (SELECT message_id FROM messages WHERE thread_id = ?1 AND sequence >= ?2))",
             "DELETE FROM compactions WHERE thread_id = ?1 AND through_sequence >= ?2",
             "DELETE FROM messages WHERE thread_id = ?1 AND sequence >= ?2",
+            // The numbers of the messages gone are given again: their successors are
+            // looked through for links to pull requests.
+            "UPDATE threads SET pulls_scanned = MIN(pulls_scanned, MAX(?2 - 1, 0)) WHERE id = ?1",
         ];
         for step in steps {
             sqlx::query(step)
@@ -75,10 +78,11 @@ impl State {
                 .await
                 .context("undo")?;
         }
-        sqlx::query("UPDATE goals SET status = 'paused', verification = 'unverified',
-            verification_note = 'Thread history changed; fresh evidence is required.',
-            work_epoch = work_epoch + 1, awaiting_user = 0 WHERE thread_id = ? AND approved_at IS NOT NULL")
-            .bind(thread_id).execute(&mut *transaction).await?;
+        // A question the undo took back no longer holds the goal.
+        sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
+            .bind(thread_id)
+            .execute(&mut *transaction)
+            .await?;
         transaction.commit().await.context("commit undo")?;
         Ok(text)
     }

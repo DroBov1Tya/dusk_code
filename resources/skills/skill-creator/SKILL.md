@@ -1,8 +1,8 @@
 ---
 name: skill-creator
-description: "Create or revise a Dusk skill when the user asks for a reusable procedure, including its description, Markdown references and concrete validation."
-source: "dusk_code"
-author: "Neil Ermak"
+description: "Write or revise a Dusk skill: its name, description, steps, Markdown references and a check that it works. Use when the user asks to make, save or fix a skill or a reusable procedure; to change a skill on evidence from the current work, load skill-evolve."
+source: "Duskcode"
+author: "Duskcode"
 license: MIT
 tags: [skills, authoring]
 ---
@@ -23,12 +23,17 @@ creating another entry for the same procedure.
 The skill root is the parent of this skill's folder, supplied when it was loaded.
 Create `<skill-root>/<short-name>/SKILL.md` with `run_command` (a quoted heredoc,
 `cat > file <<'EOF'`), or make a focused edit with a short script. When the command
-leaves a valid skill, Dusk adds a skill-save notice to its result; without the notice the
-file does not read as a skill. Do not claim a save succeeded before the notice.
+leaves a valid skill, Dusk ends its result with a `[dusk_skill_saved]` line; without that
+line the file does not read as a skill. Do not claim a save succeeded before it.
 
 Use a short lowercase name with digits and hyphens. Dusk identifies skills by folder;
 `description` is required. For a user-owned skill, omit `source`, `author`, and `license`
 unless the user supplies them. Preserve provenance when revising imported material.
+
+The description is all an agent sees before it loads the skill, so it decides whether
+the skill is used. In one line, say what the skill does, then when to use it (the
+situations and the words a user would say) and, where a neighbour skill is close, when
+not to. Keep it under 400 characters: the list cuts the rest.
 
 ```markdown
 ---
@@ -41,6 +46,10 @@ State the input and result. Describe the actions, how to check the result, and t
 known stopping conditions. Name only tools and commands verified in this environment.
 ```
 
+Write the body as ordered, imperative steps; add a checklist where a step is easy to
+skip and an example only when it was run. Leave out what an agent does anyway. The
+optional `links` and `entry` fields are described in the `duskcode` skill.
+
 Keep every file in the skill directory Markdown (`.md`). Put substantial conditional
 guidance in linked `references/<topic>.md` files and explain when to read each one.
 Do not bundle scripts, binary templates, archives, or provider-specific launcher
@@ -49,7 +58,7 @@ skill directory, using the enabled tools and installed project dependencies.
 
 ## Check the result
 
-Read back the saved files. Confirm frontmatter parses through `load_skill`, every
+Read back the saved files. Confirm the front matter parses through `load_skill`, every
 local reference exists, and no non-Markdown file was added. Check a realistic request
 against the stated outcome when the available tools and authorization permit it.
 For an edit, include the case that exposed the old failure. Report an unexecuted

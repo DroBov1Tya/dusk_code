@@ -25,7 +25,7 @@ pub use hits::{
 };
 pub use keys::EFFORTS;
 pub use panels::{
-    AgentRow, AgentWindow, BudgetEdit, Connection, DiffView, FileButton, FileEditor, HitTarget,
+    AgentRow, AgentWindow, AtOnceEdit, Connection, DiffView, FileButton, FileEditor, HitTarget,
     JobsView, McpRow, ModelList, OverviewView, Panel, PluginRow, Preset, Preview, SecretEntry,
     SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };

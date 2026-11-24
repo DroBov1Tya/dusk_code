@@ -139,8 +139,11 @@ impl MemberState {
             Self::Review { for_user: true } => {
                 "handed in \u{00B7} waits for your confirmation".into()
             }
-            Self::Review { .. } => match task.and_then(|task| task.gate.as_ref()) {
-                Some(GoalCheck::Command { command }) => {
+            Self::Review { .. } => match task.map(|task| (&task.waits_on, &task.gate)) {
+                Some((Some(WaitsOn::Review(_)), _)) => {
+                    "in review \u{00B7} a fresh reviewer checks it".into()
+                }
+                Some((_, Some(GoalCheck::Command { command }))) => {
                     format!("in review \u{00B7} the gate runs {command}")
                 }
                 _ => "in review \u{00B7} the lead decides".into(),
@@ -153,7 +156,7 @@ impl MemberState {
                         None => "waits on a task".to_owned(),
                     },
                     Some(WaitsOn::Message(_)) => "waits for an answer".to_owned(),
-                    None => String::new(),
+                    Some(WaitsOn::Review(_)) | None => String::new(),
                 };
                 match on.is_empty() {
                     true => with_note("blocked".into()),
@@ -187,6 +190,7 @@ mod tests {
             role: None,
             model: None,
             task_id: "t1".into(),
+            summary: String::new(),
             status,
         }
     }
@@ -210,6 +214,7 @@ mod tests {
             name: "Ember".into(),
             role: "general".into(),
             model: None,
+            effort: None,
             call_id: "team:t1".into(),
             task: String::new(),
             task_id: Some("t1".into()),

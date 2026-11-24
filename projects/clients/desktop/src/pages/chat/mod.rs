@@ -30,7 +30,10 @@ mod welcome;
 pub mod working;
 
 use gpui_kit::{
-    component::{ActiveTheme, IconName, button::Button},
+    component::{
+        ActiveTheme, IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
     *,
 };
 
@@ -46,25 +49,40 @@ pub fn render(
     code::show(ws.shown.as_ref(), cx);
     let theme = cx.theme();
     let danger = theme.danger;
+    // The words can be selected, so the banner goes away from its own button, not from
+    // a click anywhere on it, which a drag to select would end with.
     let notice = ws.notice.clone().map(|text| {
         div()
-            .id("notice")
             .mx_4()
             .mt_2()
-            .px_3()
-            .py_2()
+            .pl_3()
+            .pr_1()
+            .py_1()
+            .flex()
+            .items_start()
+            .gap_2()
             .rounded_md()
             .meta()
             .text_color(danger)
             .bg(danger.opacity(0.1))
-            .cursor_pointer()
-            .hover(move |note| note.bg(danger.opacity(0.18)))
-            .active(move |note| note.bg(danger.opacity(0.25)))
-            .child(text)
-            .on_click(cx.listener(|ws, _, _, cx| {
-                ws.notice = None;
-                cx.notify();
-            }))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .py_1()
+                    .child(gpui_kit::base::SelectableText::new("notice-text", text)),
+            )
+            .child(
+                Button::new("notice-close")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Close)
+                    .tooltip("Dismiss")
+                    .on_click(cx.listener(|ws, _, _, cx| {
+                        ws.notice = None;
+                        cx.notify();
+                    })),
+            )
     });
     let body = if ws.shown.is_some() {
         messages::render(ws, window, cx).into_any_element()
@@ -95,7 +113,8 @@ pub fn render(
                 .children(to_bottom(ws, cx))
                 .children(pins::drawer(ws, cx)),
         )
-        .children(dock::plan_strip(ws, cx))
+        .children(dock::plan_strip(ws, window, cx))
+        .children(dock::goal_strip(ws, cx))
         .child(composer::dock_lane(approval::render(ws, window, cx)))
         .child(composer::render(ws, window, cx))
         .child(div().h(px(12.)))

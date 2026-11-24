@@ -175,16 +175,19 @@ async fn ready_is_open_with_every_dependency_done() {
         .pass_task(LEAD, &ids[1], PassedBy::Lead)
         .await
         .unwrap();
-    assert_eq!(ready(&state).await, [ids[2].clone(), ids[0].clone()]);
+    // The barrier: b's dependency is done, but `late` still holds the first wave.
+    assert_eq!(ready(&state).await, [ids[0].clone()]);
+    done(&state, &ids[0], "m2").await;
+    assert_eq!(ready(&state).await, [ids[2].clone()]);
     done(&state, &ids[2], "m1").await;
-    assert_eq!(ready(&state).await, [ids[3].clone(), ids[0].clone()]);
+    assert_eq!(ready(&state).await, [ids[3].clone()]);
     // A dependency whose row is gone is not done either.
     sqlx::query("UPDATE tasks SET depends_on = json_array('gone') WHERE task_id = ?")
         .bind(&ids[3])
         .execute(&state.pool)
         .await
         .unwrap();
-    assert_eq!(ready(&state).await, [ids[0].clone()]);
+    assert!(ready(&state).await.is_empty());
     assert!(state.claim_task(LEAD, &ids[3], claim("m2")).await.is_err());
 }
 
@@ -262,9 +265,13 @@ async fn an_edit_is_for_a_task_nobody_started() {
         gate: Some(Some(dusk_protocol::thread::GoalCheck::UserConfirmation)),
         files: Some(TaskFiles::new(["src/"]).unwrap()),
         after: Some(vec![ids[1].clone()]),
+        tier: Some(dusk_protocol::config::ModelTier::Strong),
+        effort: Some(dusk_protocol::model::Effort::High),
     };
     let edited = state.edit_plan_task(LEAD, &ids[0], &edit).await.unwrap();
     assert_eq!(edited.description, "other words");
+    assert_eq!(edited.tier, Some(dusk_protocol::config::ModelTier::Strong));
+    assert_eq!(edited.effort, Some(dusk_protocol::model::Effort::High));
     assert_eq!(edited.role.as_deref(), Some("reviewer"));
     assert_eq!(edited.files.entries(), ["src/"]);
     assert_eq!(edited.depends_on, [ids[1].clone()]);

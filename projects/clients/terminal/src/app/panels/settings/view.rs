@@ -33,7 +33,6 @@ pub struct SettingsView {
     pub branch_input: Option<Input>,
     pub model_error: Option<String>,
     pub max_agents_at_work: usize,
-    pub max_goal_rounds: u32,
     /// Seconds a model call may stay silent before it is given up on.
     pub model_timeout_seconds: u32,
     /// Tries of one model call that wrote nothing, the first included.
@@ -72,7 +71,7 @@ pub struct SettingsView {
 }
 
 /// The agent limit takes the first row of the agents list.
-pub(super) const LIMIT_ROWS: usize = 4;
+pub(super) const LIMIT_ROWS: usize = 1;
 
 /// The memory's size moves in steps this large, within these bounds.
 pub(super) const MEMORY_STEP: usize = 500;
@@ -101,7 +100,6 @@ impl SettingsView {
             branch_input: None,
             model_error: None,
             max_agents_at_work: settings.max_agents_at_work,
-            max_goal_rounds: settings.max_goal_rounds,
             model_timeout_seconds: settings.model_timeout_seconds,
             max_attempts: settings.max_attempts,
             idle_screen_minutes: settings.idle_screen_minutes,
@@ -153,7 +151,7 @@ impl SettingsView {
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Personalize) => 4,
-            Some(SettingCategory::Limits) => 2,
+            Some(SettingCategory::Limits) => 3,
             Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
             Some(SettingCategory::Access) => ACCESS_POLICIES.len() + 1,
@@ -257,8 +255,7 @@ impl SettingsView {
         };
         match self.selected {
             0 => Action::SetAgentLimit(step(self.max_agents_at_work as u32, 1, u32::MAX) as usize),
-            1 => Action::SetGoalRounds(step(self.max_goal_rounds, 1, 200)),
-            2 => Action::SetModelTimeout(step(self.model_timeout_seconds, 5, 3600)),
+            1 => Action::SetModelTimeout(step(self.model_timeout_seconds, 5, 3600)),
             _ => Action::SetMaxAttempts(step(self.max_attempts, 1, 20)),
         }
     }

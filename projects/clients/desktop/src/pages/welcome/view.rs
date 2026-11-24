@@ -1,178 +1,196 @@
-//! The welcome drawn: the greeting with its one large button, then the two boxes.
+//! The welcome drawn: the page in view in the middle, scrolling when the window is too
+//! short for it, Skip setup pinned in the corner above it, and pinned under it Back, a
+//! dot for each page and Next, so turning a page never moves them. The first and the last
+//! page are here; the Model and Tools pages have their own files.
 
-use crate::ui::press::Press;
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Sizable,
+        ActiveTheme, Sizable,
         button::{Button, ButtonVariants},
-        input::Input,
     },
+    prelude::FluentBuilder,
     *,
 };
 
-use dusk_protocol::model::CheckFailure;
-
-use super::Step;
+use super::{Page, form, tools};
 use crate::{
     platform::icon,
-    ui::{
-        Type,
-        widgets::{appear, labeled},
-    },
+    ui::{Type, motion},
     workspace::Workspace,
 };
 
-/// Wide enough for an address, narrow enough to read as one thing.
-const WIDTH: f32 = 420.;
+/// Wide enough for an address and a tool's sentence, narrow enough to read as one thing.
+pub const WIDTH: f32 = 460.;
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let body = match ws.welcome.step {
-        Step::Form => appear("welcome-form", form(ws, cx)).into_any_element(),
-        _ => appear("welcome-intro", intro(cx)).into_any_element(),
+pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
+    let page = ws.welcome.page.unwrap_or(Page::Hello);
+    let body = match page {
+        Page::Hello => hello(cx),
+        Page::Model => form::render(ws, cx),
+        Page::Tools => tools::render(ws, cx),
+        Page::Ready => ready(ws, cx),
     };
-    div()
-        .size_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .px_6()
-        .child(body)
-}
-
-fn column() -> Div {
-    div().w_full().max_w(px(WIDTH)).flex().flex_col()
-}
-
-fn intro(cx: &mut Context<Workspace>) -> Div {
-    let theme = cx.theme();
-    let (muted, foreground) = (theme.muted_foreground, theme.foreground);
-    let (primary, hover, on_primary) =
-        (theme.primary, theme.primary_hover, theme.primary_foreground);
-    let button = div()
-        .id("welcome-connect")
+    let body = div().w_full().max_w(px(WIDTH)).child(body);
+    let id = SharedString::from(format!("welcome-page-{page:?}"));
+    // Centred while it fits, scrolled when it does not; each page keeps its own place.
+    // Upright only, so a sideways swipe turns the page instead of scrolling it.
+    let scroll = div()
+        .id(SharedString::from(format!("welcome-scroll-{page:?}")))
+        .flex_1()
+        .min_h_0()
         .w_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap_1()
-        .px_6()
-        .py_4()
-        .rounded_xl()
-        .bg(primary)
-        .hover(|button| button.bg(hover))
-        .press(hover, cx)
-        .cursor_pointer()
-        .text_color(on_primary)
+        .overflow_y_scroll()
+        .restrict_scroll_to_axis()
         .child(
             div()
-                .text_size(rems(1.15))
-                .font_weight(FontWeight::BOLD)
-                .child("I want to connect my own AI"),
-        )
-        .child(div().small().opacity(0.8).child("your own provider"))
-        .on_click(cx.listener(|ws, _, window, cx| ws.welcome_form(window, cx)));
-    let not_now = div()
-        .id("welcome-not-now")
-        .small()
-        .text_color(muted)
-        .hover(|link| link.text_color(foreground))
-        .cursor_pointer()
-        .child("Not now")
-        .on_click(cx.listener(|ws, _, _, cx| ws.welcome_dismiss(cx)));
-    column()
-        .items_center()
-        .gap_6()
-        .child(
-            div()
+                .w_full()
+                .min_h_full()
                 .flex()
                 .flex_col()
                 .items_center()
-                .gap_3()
-                .child(img(icon::mark()).size(px(56.)).flex_none())
-                .child(div().display().child("duskcode"))
-                .child(
-                    div()
-                        .body()
-                        .text_center()
-                        .text_color(muted)
-                        .child("An agent that works in your projects, on the model you choose."),
-                ),
+                .justify_center()
+                .px_6()
+                .py_4()
+                .child(motion::slide(id, body, ws.welcome.toward)),
+        );
+    // Skip setup has a row of its own above the page, so a page scrolled under it never meets it.
+    let top = div()
+        .flex_none()
+        .w_full()
+        .flex()
+        .justify_end()
+        .px_6()
+        .pt_4()
+        .child(skip(cx));
+    div()
+        .id("welcome")
+        .size_full()
+        .flex()
+        .flex_col()
+        .on_scroll(cx.listener(|ws, event: &ScrollEvent, window, cx| {
+            let step = ws.welcome.swipe.feed(event);
+            if step != 0 {
+                ws.welcome_turn(step, window, cx);
+            }
+        }))
+        .child(top)
+        .child(scroll)
+        .child(
+            div()
+                .flex_none()
+                .w_full()
+                .flex()
+                .justify_center()
+                .px_6()
+                .pt_4()
+                .pb_8()
+                .child(nav(ws, page, cx)),
         )
-        .child(button)
-        .child(not_now)
 }
 
-fn form(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let welcome = &ws.welcome;
+/// Skip setup, quiet in the top corner: the whole welcome is done.
+fn skip(cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, foreground) = (theme.muted_foreground, theme.foreground);
-    let back = div()
-        .id("welcome-back")
+    div()
+        .id("welcome-skip")
         .small()
         .text_color(muted)
         .hover(|link| link.text_color(foreground))
         .cursor_pointer()
-        .child("Back")
-        .on_click(cx.listener(|ws, _, _, cx| {
-            ws.welcome_back(cx);
+        .child("Skip setup")
+        .on_click(cx.listener(|ws, _, _, cx| ws.welcome_finish(cx)))
+}
+
+/// Back, the dots and Next, a row as wide as the page.
+fn nav(ws: &Workspace, page: Page, cx: &mut Context<Workspace>) -> Div {
+    let theme = cx.theme();
+    let (accent, idle) = (theme.primary, theme.border);
+    let connected = form::connected(ws).is_some();
+    let dots = div()
+        .flex()
+        .flex_row()
+        .gap_2()
+        .children(Page::ALL.map(|dot| {
+            let on = dot == page;
+            div()
+                .id(SharedString::from(format!("welcome-dot-{dot:?}")))
+                .size(px(8.))
+                .rounded_full()
+                .bg(if on { accent } else { idle })
+                .when(!on, |dot| dot.cursor_pointer())
+                .on_click(cx.listener(move |ws, _, window, cx| ws.welcome_go(dot, window, cx)))
         }));
-    column()
-        .gap_4()
-        .child(div().title().child("Your own provider"))
-        .child(
-            labeled("Name", "how the model menu will call it", cx)
-                .child(Input::new(&welcome.name).large()),
-        )
-        .child(
-            labeled("Address", "a server with the OpenAI API", cx)
-                .child(Input::new(&welcome.address).large()),
-        )
-        .child(
-            labeled("Token", "kept in the system keychain", cx)
-                .child(Input::new(&welcome.token).large()),
-        )
-        .children(welcome.error.as_ref().map(|failed| failure(failed, cx)))
+    let next = match page {
+        // "for now": the corner's "Skip setup" ends the whole welcome, this one only a step.
+        Page::Model if !connected => "Skip for now",
+        Page::Ready => "Start",
+        _ => "Next",
+    };
+    let next = Button::new("welcome-next")
+        .large()
+        .label(next)
+        .when(page != Page::Model || connected, |button| button.primary())
+        .when(page == Page::Model && !connected, |button| button.ghost())
+        .on_click(cx.listener(|ws, _, window, cx| ws.welcome_turn(1, window, cx)));
+    let back = Button::new("welcome-back")
+        .large()
+        .ghost()
+        .label("Back")
+        .on_click(cx.listener(|ws, _, window, cx| ws.welcome_turn(-1, window, cx)));
+    div()
+        .w_full()
+        .max_w(px(WIDTH))
+        .flex()
+        .flex_row()
+        .items_center()
+        .justify_between()
         .child(
             div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .justify_between()
-                .pt_1()
-                .child(back)
-                .child(
-                    Button::new("welcome-submit")
-                        .primary()
-                        .large()
-                        .label(if welcome.busy {
-                            "Connecting..."
-                        } else {
-                            "Connect"
-                        })
-                        .disabled(welcome.busy)
-                        .on_click(cx.listener(|ws, _, window, cx| ws.welcome_connect(window, cx))),
-                ),
+                .w(px(96.))
+                .when(page != Page::Hello, |side| side.child(back)),
+        )
+        .child(dots)
+        .child(div().w(px(96.)).flex().justify_end().child(next))
+}
+
+fn hello(cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_3()
+        .child(img(icon::mark()).size(px(64.)).flex_none())
+        .child(div().display().child("duskcode"))
+        .child(
+            div()
+                .body()
+                .text_center()
+                .text_color(muted)
+                .child("An agent that works in your projects, on the model you choose."),
         )
 }
 
-/// One plain line for the kind of failure, then the core's own words, quieter; without
-/// a kind, the core's words alone.
-fn failure(failed: &super::Failed, cx: &App) -> Div {
-    let theme = cx.theme();
-    let headline = match failed.cause {
-        Some(CheckFailure::Unreachable) => Some("Cannot reach this address."),
-        Some(CheckFailure::Refused) => Some("The server refused the token."),
-        Some(CheckFailure::NotCompatible) => {
-            Some("The server did not answer like an OpenAI-compatible API.")
-        }
-        None => None,
+fn ready(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    let model = match form::connected(ws) {
+        Some(name) => format!("Your chats will use {name}."),
+        None => "Connect a model any time in Settings, under AI.".to_owned(),
     };
-    let said = div().child(failed.said.clone());
-    let column = div().flex().flex_col().gap_1();
-    match headline {
-        Some(headline) => column
-            .child(div().small().text_color(theme.danger).child(headline))
-            .child(said.meta().text_color(theme.muted_foreground)),
-        None => column.child(said.small().text_color(theme.danger)),
-    }
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_3()
+        .child(img(icon::mark()).size(px(48.)).flex_none())
+        .child(div().title().child("You are ready"))
+        .child(div().body().text_center().text_color(muted).child(model))
+        .child(
+            div()
+                .small()
+                .text_center()
+                .text_color(muted)
+                .child("Tools can be switched on or off later in Customize."),
+        )
 }

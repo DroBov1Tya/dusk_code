@@ -1,7 +1,7 @@
 //! Actions on what a thread works on: its plan, changes, sources and jobs.
 
 use dusk_core::client::Client;
-use dusk_protocol::{client::Command, thread::TeamBudget};
+use dusk_protocol::client::Command;
 
 use crate::app::{App, DiffView, OverviewView, Panel, PasteEditor};
 use crate::session::{
@@ -54,23 +54,24 @@ pub async fn stop_team(client: &Client, app: &mut App) {
     }
 }
 
-/// Gives the chat's running team `budget`; a refusal stays under the fields.
-pub async fn set_team_budget(client: &Client, app: &mut App, budget: TeamBudget) {
+/// Lets `at_once` members of the chat's running team work at once; a refusal stays under
+/// the stepper.
+pub async fn set_team_at_once(client: &Client, app: &mut App, at_once: u32) {
     let Some(thread_id) = app.thread_id.clone() else {
         return;
     };
-    let result = client.work().set_team_budget(&thread_id, budget).await;
+    let result = client.work().set_team_at_once(&thread_id, at_once).await;
     let Some(Panel::Overview(view)) = &mut app.panel else {
         return;
     };
     match result {
         Ok(()) => {
-            view.budget = None;
-            app.flash = Some("Team budget saved".into());
+            view.at_once = None;
+            app.flash = Some(format!("{at_once} members at once"));
             app.overview_stale = true;
         }
         Err(error) => {
-            if let Some(edit) = &mut view.budget {
+            if let Some(edit) = &mut view.at_once {
                 edit.error = Some(format!("{error:#}"));
             }
         }

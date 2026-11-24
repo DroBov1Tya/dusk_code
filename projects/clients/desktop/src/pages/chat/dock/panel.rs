@@ -24,20 +24,20 @@ pub fn surface(cx: &App) -> Hsla {
     crate::ui::theme::band(cx)
 }
 
-/// How long the tab takes to come and go.
-const TAB_FADE: std::time::Duration = std::time::Duration::from_millis(140);
+/// How long the tab takes to rise out of the edge and sink back into it.
+const TAB_SLIDE: std::time::Duration = std::time::Duration::from_millis(160);
 
 /// The tab over the upper edge of whatever stands on top, the band or the box, in the
 /// band's color: it is the band's handle. `border` is the edge's color. A later sibling
 /// of both, so it paints over their edge. It is in sight only while the pointer is over
 /// the box, the panel is open or the keyboard is on it; out of sight it is still there,
-/// so Tab reaches it and it shows itself.
+/// sunk below the edge, so Tab reaches it and it shows itself.
 pub fn tab(
     ws: &Workspace,
     border: Hsla,
     window: &Window,
     cx: &mut Context<Workspace>,
-) -> Option<AnimationElement<Div>> {
+) -> Option<Div> {
     ws.shown.as_ref()?;
     let open = ws.dock.panel_open;
     let theme = cx.theme();
@@ -81,31 +81,39 @@ pub fn tab(
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_panel(cx)));
     let shown = open || focused || ws.dock.box_hovered;
     let seen = ws.dock.tab_seen;
-    let tab = div()
-        .absolute()
-        .top_0()
-        .left_0()
-        .right_0()
-        .flex()
-        .justify_center()
-        .child(handle);
-    // A new name each way, so the fade plays when the state turns and only then.
-    Some(tab.with_animation(
+    // A new name each way, so the slide plays when the state turns and only then. Only
+    // the handle moves, inside a clip of fixed size, so the stack's layout (and with it
+    // the hover) never changes under the pointer.
+    let slide = div().relative().child(handle).with_animation(
         if shown {
             "composer-tab-in"
         } else {
             "composer-tab-out"
         },
-        Animation::new(TAB_FADE),
-        move |tab, delta| {
-            tab.opacity(match (shown, seen) {
-                (true, _) => delta,
-                (false, true) => 1. - delta,
-                // Never in sight yet: nothing to fade away as the chat opens.
-                (false, false) => 0.,
-            })
+        Animation::new(TAB_SLIDE).with_easing(ease_in_out),
+        move |slide, delta| {
+            let sunk = match (shown, seen) {
+                (true, _) => 1. - delta,
+                (false, true) => delta,
+                // Never in sight yet: nothing to sink as the chat opens.
+                (false, false) => 1.,
+            };
+            // Sunk all the way it is wholly below the clip: not a pixel is left on the edge.
+            slide.top(px(TAB.1 * sunk))
         },
-    ))
+    );
+    Some(
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .h(px(TAB.1))
+            .overflow_hidden()
+            .flex()
+            .justify_center()
+            .child(slide),
+    )
 }
 
 /// The band on top of the box, as wide as it, sharing its edge: the project's folder on

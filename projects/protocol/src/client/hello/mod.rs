@@ -17,11 +17,11 @@ pub use proof::{client_proof, core_proof, nonce_is_valid, proof_matches, token_k
 pub use proof::{nonce, try_nonce};
 
 /// Raised whenever a request, a response or an event changes shape.
-pub const PROTOCOL_VERSION: u32 = 37;
+pub const PROTOCOL_VERSION: u32 = 39;
 
 /// The oldest protocol the core still accepts from an external client; raised only on a
 /// change that is not additive.
-pub const OLDEST_PROTOCOL: u32 = 36;
+pub const OLDEST_PROTOCOL: u32 = 39;
 
 /// The longest client name, in characters.
 const MAX_CLIENT_NAME: usize = 40;

@@ -1,23 +1,26 @@
-//! Steering a running team: stopping it, after a yes, and changing its budget.
+//! Steering a running team: stopping it, after a yes, and changing how many members work
+//! at once.
 
-use dusk_protocol::thread::{BUDGET_FIELDS, Team, TeamBudget};
+use dusk_protocol::thread::{MAX_TEAM_AT_ONCE, Team};
 use gpui_kit::{
     component::{
         ActiveTheme,
         button::{Button, ButtonVariants},
-        input::{Input, InputState},
     },
     *,
 };
 
 use super::Modal;
-use crate::{ui::Type, workspace::Workspace};
+use crate::{
+    ui::{Type, controls},
+    workspace::Workspace,
+};
 
-/// The budget of a running team being changed.
-pub struct BudgetForm {
+/// How many members of a running team work at once, being changed.
+pub struct AtOnceForm {
     pub thread_id: String,
-    pub fields: [Entity<InputState>; 4],
-    /// Why the last save was refused, by this form or by the core.
+    pub at_once: u32,
+    /// Why the last save was refused by the core.
     pub error: Option<String>,
 }
 
@@ -54,30 +57,29 @@ pub fn stop(cx: &mut Context<Workspace>) -> Div {
         )
 }
 
-pub fn budget(form: &BudgetForm, cx: &mut Context<Workspace>) -> Div {
+pub fn at_once(form: &AtOnceForm, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (muted, danger) = (theme.muted_foreground, theme.danger);
-    let mut grid = div().grid().grid_cols(2).gap_3();
-    for (name, field) in BUDGET_FIELDS.iter().zip(&form.fields) {
-        grid = grid.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(div().small().text_color(muted).child(*name))
-                .child(Input::new(field)),
-        );
-    }
+    let at_once = u64::from(form.at_once);
+    let stepper = controls::stepper(
+        "team-at-once",
+        at_once,
+        (1, u64::from(MAX_TEAM_AT_ONCE)),
+        at_once.to_string(),
+        cx.listener(|ws, _, _, cx| ws.step_team_at_once(-1, cx)),
+        cx.listener(|ws, _, _, cx| ws.step_team_at_once(1, cx)),
+        cx,
+    );
     div()
         .flex()
         .flex_col()
         .gap_3()
         .p_5()
         .child(div().small().text_color(muted).child(
-            "What the team may spend from its start. The settings' ceilings still hold; \
-             tokens may be written as 400k or 4M.",
+            "Members of the team at work at once. Members already at work go on; fewer \
+             takes hold as they finish. The settings' team_at_once is the most.",
         ))
-        .child(grid)
+        .child(div().flex().flex_row().child(stepper))
         .children(
             form.error
                 .clone()
@@ -90,16 +92,16 @@ pub fn budget(form: &BudgetForm, cx: &mut Context<Workspace>) -> Div {
                 .justify_end()
                 .gap_2()
                 .child(
-                    Button::new("team-budget-cancel")
+                    Button::new("team-at-once-cancel")
                         .ghost()
                         .label("Cancel")
                         .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
                 )
                 .child(
-                    Button::new("team-budget-save")
+                    Button::new("team-at-once-save")
                         .primary()
-                        .label("Save budget")
-                        .on_click(cx.listener(|ws, _, _, cx| ws.save_team_budget(cx))),
+                        .label("Save")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.save_team_at_once(cx))),
                 ),
         )
 }
@@ -129,52 +131,45 @@ impl Workspace {
         );
     }
 
-    /// Opens the budget of `team` to change.
-    pub fn ask_team_budget(&mut self, team: &Team, window: &mut Window, cx: &mut Context<Self>) {
-        let fields = team.budget.fields().map(|text| {
-            cx.new(|cx| {
-                let mut state = InputState::new(window, cx);
-                state.set_value(text, window, cx);
-                state
-            })
-        });
-        self.modal = Some(Modal::TeamBudget(BudgetForm {
+    /// Opens how many members of `team` work at once, to change.
+    pub fn ask_team_at_once(&mut self, team: &Team, cx: &mut Context<Self>) {
+        self.modal = Some(Modal::TeamAtOnce(AtOnceForm {
             thread_id: team.thread_id.clone(),
-            fields,
+            at_once: team.at_once,
             error: None,
         }));
         cx.notify();
     }
 
-    fn save_team_budget(&mut self, cx: &mut Context<Self>) {
-        let Some(Modal::TeamBudget(form)) = &mut self.modal else {
+    fn step_team_at_once(&mut self, by: i32, cx: &mut Context<Self>) {
+        let Some(Modal::TeamAtOnce(form)) = &mut self.modal else {
             return;
         };
-        let texts = form
-            .fields
-            .each_ref()
-            .map(|field| field.read(cx).value().to_string());
-        let read = TeamBudget::read(texts.each_ref().map(String::as_str));
-        let budget = match read {
-            Ok(budget) => budget,
-            Err(error) => {
-                form.error = Some(format!("{error:#}"));
-                return cx.notify();
-            }
+        form.at_once = form
+            .at_once
+            .saturating_add_signed(by)
+            .clamp(1, MAX_TEAM_AT_ONCE);
+        form.error = None;
+        cx.notify();
+    }
+
+    fn save_team_at_once(&mut self, cx: &mut Context<Self>) {
+        let Some(Modal::TeamAtOnce(form)) = &self.modal else {
+            return;
         };
-        let thread_id = form.thread_id.clone();
+        let (thread_id, at_once) = (form.thread_id.clone(), form.at_once);
         self.core.call(
             cx,
-            move |client| async move { client.work().set_team_budget(&thread_id, budget).await },
+            move |client| async move { client.work().set_team_at_once(&thread_id, at_once).await },
             |ws, result, cx| {
                 match result {
                     Ok(()) => {
                         ws.modal = None;
                         ws.load_overview(cx);
                     }
-                    // The core's ceilings are lower than the protocol's: it says which.
+                    // The setting may allow fewer than the protocol's most: the core says so.
                     Err(error) => {
-                        if let Some(Modal::TeamBudget(form)) = &mut ws.modal {
+                        if let Some(Modal::TeamAtOnce(form)) = &mut ws.modal {
                             form.error = Some(format!("{error:#}"));
                         }
                     }

@@ -4,25 +4,32 @@ use super::calls::Called;
 use super::wait::waits_out;
 use super::{Agent, StepEnd, insert_project, interrupted, missing_tools, recorded_reasoning};
 use crate::runtime::ThreadEvent;
-use crate::runtime::agent::{Inbox, Loaded};
+use crate::runtime::agent::{Inbox, Loaded, repeats};
 use crate::{
     message::sources::{SourceBlock, ThreadSources},
     providers::{
         ChatMessage, ChatRequest, ProviderErrorKind, ToolSpec, is_output_limit,
         is_unsupported_pictures, text_calls,
     },
-    runtime::goal::action as goal,
+    runtime::goal::command as goal,
     state::{
-        CallPurpose, GoalStatus, MessageRole, ModelCall, ProviderFailure, Turn, TurnAnswer,
-        TurnFailure, TurnOutcome, estimate_tokens,
+        CallPurpose, MessageRole, ModelCall, ProviderFailure, Turn, TurnAnswer, TurnFailure,
+        TurnOutcome, estimate_tokens,
     },
 };
 use anyhow::{Context, Result};
+use dusk_protocol::thread::RepeatRung;
 use tracing::info;
+
+/// An answer this short may stand beside a call the model wrote in its reasoning
+/// ("Let me look."); a longer one is the answer, and its reasoning is left alone.
+const SHORT_ANSWER: usize = 200;
 
 impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     /// `waited` says the turn's provider wait is stored, to end once the model answers.
+    /// `note` goes to the model last, for this step only. With `reads_text`, the
+    /// answer is cut once its text goes round (`limits.text_loops`).
     #[tracing::instrument(name = "step", skip_all)]
     pub(super) async fn step(
         &self,
@@ -30,10 +37,12 @@ impl Agent {
         inbox: &mut Inbox,
         waited: bool,
         loaded: Option<Loaded>,
+        note: Option<String>,
+        reads_text: bool,
     ) -> Result<StepEnd> {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config_now().await;
-        // A team's member steps only while it holds its task and the team has budget.
+        // A team's member steps only while it holds its task and the team runs.
         crate::runtime::team::may_step(&self.state, &config, &self.thread_id, self.depth).await?;
         let stub_results = config.limits().stub_results;
         let mut conversation = Loaded::take(loaded, self, stub_results).await?;
@@ -49,25 +58,17 @@ impl Agent {
         if newest_user > conversation.answered_through {
             self.state.extend_turn(&turn.turn_id, newest_user).await?;
         }
-        let mut tools = self.tools.specs(&self.scope, &config);
+        self.follow_worktree().await;
+        let scope = self.working_scope();
+        let mut tools = self.tools.specs(&scope, &config);
         let screen = |spec: &ToolSpec| {
             self.tools.kind_of(&spec.name) == Some(crate::tools::ToolKind::Computer)
         };
         if tools.iter().any(screen) && !self.sees_pictures().await {
             tools.retain(|spec| !screen(spec));
         }
-        let standing = if self.depth == 0 {
-            self.state.goal(&self.thread_id).await?
-        } else {
-            None
-        };
-        if standing
-            .as_ref()
-            .is_some_and(|g| !g.approved && g.status != GoalStatus::Done)
-        {
-            tools.retain(|tool| tool.name == "goal");
-        }
-        let workspace = self.scope.workspace();
+        let standing = self.active_goal().await?;
+        let workspace = scope.workspace();
         let with_pictures = self.takes_pictures();
         let sources = ThreadSources {
             state: &self.state,
@@ -97,16 +98,18 @@ impl Agent {
             block.first_time
         });
         // The goal is said last, so it stays in view however long the context grows.
-        if let Some(goal) = standing.filter(|g| {
-            g.status == GoalStatus::Active || (!g.approved && g.status != GoalStatus::Done)
-        }) {
-            let rounds = config.limits().max_goal_rounds;
-            messages.push(ChatMessage::System(goal::reminder(&goal, rounds)));
+        if let Some(goal) = standing {
+            messages.push(ChatMessage::System(goal::reminder(&goal)?));
         }
         if let Some(note) = missing_tools(&messages, &tools) {
             messages.push(ChatMessage::System(note));
         }
+        if let Some(note) = note {
+            messages.push(ChatMessage::System(note));
+        }
         let choice = self.model.current().context("provider is unavailable")?;
+        let limits = config.limits();
+        let chant = (reads_text && limits.text_loops).then_some(limits.text_loop_repeats);
         let set = self.effort(&config).await;
         let effort = self.pace.lock().effort(set);
         let request = ChatRequest {
@@ -117,7 +120,9 @@ impl Agent {
             effort,
             cache_key: Some(&self.thread_id),
         };
-        let mut called = self.call_model(&choice, request, &config, inbox).await;
+        let mut called = self
+            .call_model(&choice, request, &config, chant, inbox)
+            .await;
         let pictures_refused = matches!(
             &called,
             Ok(Called { generated: Ok(Err(error)), .. }) if is_unsupported_pictures(error)
@@ -132,12 +137,15 @@ impl Agent {
                 effort,
                 cache_key: Some(&self.thread_id),
             };
-            called = self.call_model(&choice, request, &config, inbox).await;
+            called = self
+                .call_model(&choice, request, &config, chant, inbox)
+                .await;
         }
         let Called {
             output,
             generated,
             attempts,
+            chanted,
         } = match called {
             Ok(called) => called,
             Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
@@ -178,19 +186,57 @@ impl Agent {
             }
             self.report_progress(&turn.turn_id).await;
         }
-        let reasoning = recorded_reasoning(&config, &output);
+        // The answer went round: the step is taken again. A stream that ended before the
+        // cut took effect went round all the same.
+        if let (Some(_), Ok(_), Some(repeats)) = (chanted, &generated, chant) {
+            info!("thread {}: the model's text went round", self.thread_id);
+            // Told as a cycle: the rungs were fixed for all of the loop guards in one
+            // protocol version, with none for text. The log line above tells them apart.
+            self.emit(ThreadEvent::RepeatNotice {
+                rung: RepeatRung::Cycle,
+                count: repeats,
+            });
+            if waited {
+                self.state.end_wait(&turn.turn_id).await?;
+            }
+            return Ok(StepEnd::Chanted(repeats::chant_note(repeats)));
+        }
+        let mut reasoning = recorded_reasoning(&config, &output);
+        let mut stranded = None;
         let (content, generated) = match generated {
-            Ok(Ok(calls)) if calls.is_empty() => match text_calls::recover(&output.text, &tools) {
-                Some((content, calls)) => {
-                    info!(
-                        "thread {}: {} tool calls written as text",
-                        self.thread_id,
-                        calls.len()
-                    );
-                    (content, Ok(Ok(calls)))
+            Ok(Ok(calls)) if calls.is_empty() => {
+                // A call in the reasoning counts only beside little or no answer.
+                let short = output.text.trim().len() <= SHORT_ANSWER;
+                let in_reasoning = || {
+                    let (rest, calls) = text_calls::recover(&output.reasoning, &tools)?;
+                    Some((output.text.clone(), calls, Some(rest)))
+                };
+                let found = text_calls::recover(&output.text, &tools)
+                    .map(|(content, calls)| (content, calls, None))
+                    .or_else(|| short.then(in_reasoning).flatten());
+                match found {
+                    Some((content, calls, rest)) => {
+                        info!(
+                            "thread {}: {} tool calls written as text",
+                            self.thread_id,
+                            calls.len()
+                        );
+                        // The recorded reasoning keeps the thought, not the markup.
+                        if let Some(rest) = rest {
+                            reasoning = reasoning.and(Some(rest).filter(|r| !r.trim().is_empty()));
+                        }
+                        (content, Ok(Ok(calls)))
+                    }
+                    None => {
+                        stranded = text_calls::stranded(&output.text, &tools).or_else(|| {
+                            short
+                                .then(|| text_calls::stranded(&output.reasoning, &tools))
+                                .flatten()
+                        });
+                        (output.text, Ok(Ok(calls)))
+                    }
                 }
-                None => (output.text, Ok(Ok(calls))),
-            },
+            }
             generated => (output.text, generated),
         };
         let answer = TurnAnswer { reasoning, content };
@@ -258,7 +304,19 @@ impl Agent {
                 });
             }
             Ok(Ok(calls)) if calls.is_empty() => {
-                return Ok(StepEnd::Answered(TurnOutcome::Completed(answer)));
+                return Ok(match stranded {
+                    Some(note) => {
+                        info!(
+                            "thread {}: a tool call written as text did not run",
+                            self.thread_id
+                        );
+                        if waited {
+                            self.state.end_wait(&turn.turn_id).await?;
+                        }
+                        StepEnd::Stranded(note, answer)
+                    }
+                    None => StepEnd::Answered(TurnOutcome::Completed(answer)),
+                });
             }
             Ok(Ok(calls)) => calls,
         };

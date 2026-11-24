@@ -107,12 +107,15 @@ impl State {
     }
 }
 
+/// The lead's own tasks by status: the reviews and the critic the core adds are shown on
+/// the plan, but "3 of 7 done" counts the work.
 async fn counts(connection: &mut SqliteConnection, root: &str) -> Result<PlanCounts, PlanError> {
-    let rows: Vec<(String, i64)> =
-        sqlx::query_as("SELECT status, COUNT(*) FROM tasks WHERE thread_id = ? GROUP BY status")
-            .bind(root)
-            .fetch_all(connection)
-            .await?;
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT status, COUNT(*) FROM tasks WHERE thread_id = ? AND duty = 'work' GROUP BY status",
+    )
+    .bind(root)
+    .fetch_all(connection)
+    .await?;
     let mut counts = PlanCounts::default();
     for (status, count) in rows {
         let count = u32::try_from(count).unwrap_or(u32::MAX);
@@ -190,6 +193,10 @@ fn task_from(task: PlanTask, items: Vec<TaskItem>, owner: Option<TaskOwner>, use
         steps: used.steps,
         tokens: used.tokens,
         changes: used.changes,
+        result: task.result,
+        duty: task.duty,
+        review_of: task.review_of,
+        skipped: task.skipped,
     }
 }
 
@@ -211,6 +218,7 @@ fn waits_on(waits: WaitsOn) -> dusk_protocol::thread::WaitsOn {
         WaitsOn::Task(id) => Shown::Task(id),
         WaitsOn::Message(id) => Shown::Message(id),
         WaitsOn::Lead => Shown::Lead,
+        WaitsOn::Review(id) => Shown::Review(id),
     }
 }
 

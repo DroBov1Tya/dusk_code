@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use super::{Arrow, Edge, EdgeTone, Ends, Rect, across, arc};
-use crate::thread::{GoalCheck, Task, TaskStatus, WaitsOn};
+use crate::thread::{GoalCheck, Task, TaskDuty, TaskStatus, WaitsOn};
 
 /// A plan of more tasks than this folds its done waves.
 pub const FOLD_PAST: usize = 40;
@@ -46,6 +46,12 @@ pub struct TaskNode {
     pub note: String,
     /// Its wave, from 0.
     pub wave: usize,
+    /// How its fresh review stands (`Task::review_word`); reviews are no nodes.
+    pub review: Option<String>,
+    /// The lead gave it up.
+    pub skipped: bool,
+    /// The core's completeness check at the end.
+    pub critic: bool,
     pub rect: Rect,
 }
 
@@ -74,27 +80,38 @@ pub struct Plan {
 
 /// Each task's wave, from 0, in the order of `tasks`. A task needs those of its
 /// `depends_on` that are in the plan; one that needs itself or closes a cycle has that
-/// need left out, so every task gets a wave.
+/// need left out, so every task gets a wave. The critic stands one wave past the rest.
 pub fn depths(tasks: &[Task]) -> Vec<usize> {
-    let index: HashMap<&str, usize> = tasks
+    let nodes: Vec<(&str, &[String], TaskDuty)> = tasks
         .iter()
-        .enumerate()
-        .map(|(at, task)| (task.task_id.as_str(), at))
+        .map(|task| (task.task_id.as_str(), task.depends_on.as_slice(), task.duty))
         .collect();
-    let needs: Vec<Vec<usize>> = tasks
+    depths_of(&nodes)
+}
+
+/// `depths` for the core, which holds tasks of its own: each node is its id, its
+/// `depends_on` and its duty. The one rule of waves, so the team's barrier and every
+/// client draw the same waves.
+pub fn depths_of(nodes: &[(&str, &[String], TaskDuty)]) -> Vec<usize> {
+    let index: HashMap<&str, usize> = nodes
         .iter()
         .enumerate()
-        .map(|(at, task)| {
-            task.depends_on
+        .map(|(at, (id, _, _))| (*id, at))
+        .collect();
+    let needs: Vec<Vec<usize>> = nodes
+        .iter()
+        .enumerate()
+        .map(|(at, (_, depends_on, _))| {
+            depends_on
                 .iter()
                 .filter_map(|id| index.get(id.as_str()).copied())
                 .filter(|&need| need != at)
                 .collect()
         })
         .collect();
-    let mut depth: Vec<Option<usize>> = vec![None; tasks.len()];
-    let mut on_path = vec![false; tasks.len()];
-    for start in 0..tasks.len() {
+    let mut depth: Vec<Option<usize>> = vec![None; nodes.len()];
+    let mut on_path = vec![false; nodes.len()];
+    for start in 0..nodes.len() {
         if depth[start].is_some() {
             continue;
         }
@@ -117,14 +134,30 @@ pub fn depths(tasks: &[Task]) -> Vec<usize> {
             }
         }
     }
-    depth.into_iter().map(Option::unwrap_or_default).collect()
+    let mut depths: Vec<usize> = depth.into_iter().map(Option::unwrap_or_default).collect();
+    let is_critic = |at: usize| nodes[at].2 == TaskDuty::Critic;
+    let last = (0..nodes.len())
+        .filter(|&at| !is_critic(at))
+        .map(|at| depths[at] + 1)
+        .max()
+        .unwrap_or(0);
+    for (at, depth) in depths.iter_mut().enumerate() {
+        if is_critic(at) {
+            *depth = last;
+        }
+    }
+    depths
 }
 
-/// The plan's tasks by wave, as their indexes in `tasks`, in the plan's order.
+/// The plan's tasks by wave, as their indexes in `tasks`, in the plan's order. A review
+/// is no task of its own here: it rides on the task it reviews (`Task::review_word`).
 pub fn waves(tasks: &[Task]) -> Vec<Vec<usize>> {
     let depths = depths(tasks);
     let mut waves: Vec<Vec<usize>> = Vec::new();
     for (at, depth) in depths.into_iter().enumerate() {
+        if tasks[at].duty == TaskDuty::Review {
+            continue;
+        }
         if waves.len() <= depth {
             waves.resize_with(depth + 1, Vec::new);
         }
@@ -163,7 +196,7 @@ pub fn plan(tasks: &[Task], unfold: bool) -> Plan {
         }
         of
     };
-    let all_done = |wave: &Vec<usize>| wave.iter().all(|&at| tasks[at].status == TaskStatus::Done);
+    let all_done = |wave: &Vec<usize>| wave.iter().all(|&at| tasks[at].finished());
     // The first wave with work left; one done wave stays in sight before it.
     let first_open = waves
         .iter()
@@ -196,8 +229,12 @@ pub fn plan(tasks: &[Task], unfold: bool) -> Plan {
             .iter()
             .filter(|&&at| tasks[at].status == TaskStatus::Done)
             .count();
+        let check = members.iter().all(|&at| tasks[at].duty == TaskDuty::Critic);
         heads.push(WaveHead {
-            name: format!("wave {}", wave + 1),
+            name: match check && !members.is_empty() {
+                true => "check".into(),
+                false => format!("wave {}", wave + 1),
+            },
             done: format!("{done} of {} done", members.len()),
             rect: Rect {
                 x,
@@ -232,7 +269,7 @@ pub fn plan(tasks: &[Task], unfold: bool) -> Plan {
                 h: NODE_H,
             };
             place[at] = Some(rect);
-            nodes.push(node(&tasks[at], at + 1, wave_of[at], rect));
+            nodes.push(node(tasks, at, wave_of[at], rect));
         }
         x += NODE_W + WAVE_GAP;
     }
@@ -310,10 +347,11 @@ fn needs_of(tasks: &[Task], at: usize) -> impl Iterator<Item = usize> + '_ {
     })
 }
 
-fn node(task: &Task, number: usize, wave: usize, rect: Rect) -> TaskNode {
+fn node(tasks: &[Task], at: usize, wave: usize, rect: Rect) -> TaskNode {
+    let task = &tasks[at];
     TaskNode {
         task_id: task.task_id.clone(),
-        number,
+        number: at + 1,
         title: task.title(),
         status: task.status,
         word: task_word(task),
@@ -329,6 +367,9 @@ fn node(task: &Task, number: usize, wave: usize, rect: Rect) -> TaskNode {
         gated: task.gate.is_some(),
         note: task.note.trim().to_owned(),
         wave,
+        review: task.review_word(tasks),
+        skipped: task.skipped,
+        critic: task.duty == TaskDuty::Critic,
         rect,
     }
 }
@@ -466,5 +507,43 @@ mod tests {
             .collect();
         // Wave 1 folded; wave 2 in the plan's order, as each needs the one before it.
         assert_eq!(ids, ["w1k0", "w1k1", "w1k2", "w1k3", "w1k4"]);
+    }
+}
+
+#[cfg(test)]
+mod checks {
+    use super::*;
+
+    #[test]
+    fn a_review_rides_on_its_task_and_the_critic_is_the_last_column() {
+        let task = |id: &str, needs: &[&str], duty: TaskDuty| Task {
+            task_id: id.into(),
+            description: format!("do {id}"),
+            depends_on: needs.iter().map(|need| (*need).into()).collect(),
+            duty,
+            ..Task::default()
+        };
+        let mut review = task("r", &["a"], TaskDuty::Review);
+        review.review_of = Some("b".into());
+        review.status = TaskStatus::Done;
+        review.done = true;
+        review.result = "Problem: high | x | y | z\nVerdict: fix".into();
+        let tasks = [
+            task("a", &[], TaskDuty::Work),
+            task("b", &["a"], TaskDuty::Work),
+            review,
+            task("c", &[], TaskDuty::Critic),
+        ];
+        assert_eq!(depths(&tasks), [0, 1, 1, 2]);
+        assert_eq!(waves(&tasks), [vec![0], vec![1], vec![3]]);
+        let layout = plan(&tasks, false);
+        assert_eq!(layout.tasks.len(), 3, "the review is no node");
+        assert_eq!(layout.heads[2].name, "check");
+        let b = layout
+            .tasks
+            .iter()
+            .find(|node| node.task_id == "b")
+            .unwrap();
+        assert_eq!(b.review.as_deref(), Some("review: fix"));
     }
 }

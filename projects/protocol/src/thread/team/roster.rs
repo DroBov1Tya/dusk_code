@@ -128,13 +128,13 @@ impl Team {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thread::{TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed};
+    use crate::thread::{TeamEnd, TeamMember, TeamStatus, TeamUsed};
 
     fn team(status: TeamStatus, members: &[(&str, &str, TaskStatus)]) -> Team {
         Team {
             thread_id: "lead".into(),
             status,
-            budget: TeamBudget::new(2, 100, 1_000_000, 60).unwrap(),
+            at_once: 2,
             used: TeamUsed::default(),
             members: members
                 .iter()
@@ -144,10 +144,14 @@ mod tests {
                     role: None,
                     model: None,
                     task_id: (*task).into(),
+                    summary: String::new(),
                     status: *status,
                 })
                 .collect(),
             started_at: None,
+            ended_at: None,
+            winding_since: None,
+            goal: String::new(),
         }
     }
 

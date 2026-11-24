@@ -1,14 +1,16 @@
-//! `fake=team|team-ended`: after `fake=chat`, the shown chat leads a team of seven
-//! members on a plan of eight tasks, one in each status, as the core tells it: a `Team`
+//! `fake=team|team-ended`: after `fake=chat`, the shown chat leads a team of members on a
+//! plan of eight tasks, one in each status, with two fresh reviews (one approved, one
+//! asking for a fix), a skipped task and the critic still to come, as the core tells it: a `Team`
 //! event, `TaskChanged` for every task and the members' own events. `team-ended` is the
-//! same team after it ran out of steps. The Overview and the plan strip get the answers
-//! their requests would give. Made-up data only.
+//! same team after it ended as stalled. The Overview and the plan strip get the answers
+//! their requests would give. `fake=subagents|subagents-ended` asks three subagents in one
+//! step, one done, one at work and one failed, or all ended. Made-up data only.
 
 use dusk_protocol::{
     model::{ModelEvent, ToolCall},
     system::now_ms,
     thread::{
-        LogEntry, LogKind, Overview, PlanCounts, Task, TaskStatus, Team, TeamBudget, TeamEnd,
+        LogEntry, LogKind, Overview, PlanCounts, Task, TaskDuty, TaskStatus, Team, TeamEnd,
         TeamMember, TeamStatus, TeamUsed, ThreadEvent, agent_name,
     },
 };
@@ -54,6 +56,9 @@ fn plan() -> Vec<Made> {
             true,
             json!({ "depends_on": ["t1"], "files": ["src/entry.rs"],
                     "gate": { "kind": "command", "command": "cargo test -p cache" },
+                    "result": "Status: done\nResult: Entry carries a deadline (src/entry.rs)\n\
+                               Checked: cargo test -p cache, 14 passed\n\
+                               Not checked: the sweep under load\nOpen: nothing",
                     "steps": 22, "tokens": 118_000, "changes": 2 }),
         ),
         made(
@@ -66,8 +71,8 @@ fn plan() -> Vec<Made> {
                     "brief": "get() compares the deadline with the clock and removes an entry past it.",
                     "acceptance": "Reading an expired key returns None and frees it",
                     "gate": { "kind": "command", "command": "cargo test -p cache" },
-                    "attempts": 2, "reworks": 1,
-                    "note": "gate failed: expiry::removes_on_read panicked at src/cache.rs:88",
+                    "attempts": 1, "reworks": 1,
+                    "note": "review found 1 problem; show #t10",
                     "steps": 31, "tokens": 204_000, "changes": 1 }),
         ),
         made(
@@ -79,6 +84,7 @@ fn plan() -> Vec<Made> {
             json!({ "depends_on": ["t2"], "files": ["tests/expiry.rs"],
                     "acceptance": "Three tests: on read, by the sweep, and a live key kept",
                     "waits_on": "lead", "note": "which clock to mock: Instant or a fake clock?",
+                    "attempts": 2,
                     "steps": 12, "tokens": 84_000 }),
         ),
         made(
@@ -87,7 +93,7 @@ fn plan() -> Vec<Made> {
             TaskStatus::Failed,
             "appsec-reviewer",
             true,
-            json!({ "files": ["src/key.rs"], "attempts": 3, "reworks": 2,
+            json!({ "files": ["src/key.rs"], "attempts": 3, "reworks": 2, "skipped": true,
                     "note": "gave up after two reworks: the key is hashed with the default hasher",
                     "steps": 40, "tokens": 310_000 }),
         ),
@@ -115,6 +121,38 @@ fn plan() -> Vec<Made> {
             "docs",
             false,
             json!({ "depends_on": ["t6", "t7"], "files": ["CHANGELOG.md"] }),
+        ),
+        // The core's own rows: a fresh review of each task that changed files, and the
+        // completeness check after the last wave.
+        made(
+            9,
+            "Review 1 of #t2: Give Entry a deadline",
+            TaskStatus::Done,
+            "code-reviewer",
+            true,
+            json!({ "depends_on": ["t1"], "duty": "review", "review_of": "t2",
+                    "result": "Verdict: approve\nChecked: read src/entry.rs, ran cargo test\n\
+                               Not checked: nothing", "steps": 6, "tokens": 40_000 }),
+        ),
+        made(
+            10,
+            "Review 1 of #t3: Remove expired entries in get()",
+            TaskStatus::Done,
+            "code-reviewer",
+            true,
+            json!({ "depends_on": ["t2"], "duty": "review", "review_of": "t3",
+                    "result": "Problem: high | src/cache.rs:88 | an entry past its deadline \
+                               is returned once | compare before the read\nVerdict: fix\n\
+                               Checked: cargo test -p cache\nNot checked: nothing",
+                    "steps": 8, "tokens": 51_000 }),
+        ),
+        made(
+            11,
+            "Completeness check",
+            TaskStatus::Open,
+            "code-reviewer",
+            false,
+            json!({ "duty": "critic" }),
         ),
     ]
 }
@@ -159,6 +197,8 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
                 role: Some(made.role.into()),
                 model: Some("chatgpt/gpt-5.5".into()),
                 task_id: format!("t{}", made.number),
+                // As the core writes it: the start of the task's text.
+                summary: made.text.chars().take(60).collect(),
                 status: made.status,
             }
         })
@@ -174,7 +214,7 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
             },
         ),
         true => (
-            TeamStatus::Ended(TeamEnd::Steps),
+            TeamStatus::Ended(TeamEnd::Stalled),
             TeamUsed {
                 at_once: 0,
                 steps: 400,
@@ -186,10 +226,15 @@ fn team(lead: &str, ended: bool, plan: &[Made]) -> Team {
     Team {
         thread_id: lead.into(),
         status,
-        budget: TeamBudget::new(3, 400, 4_000_000, 120).expect("a budget within the ceilings"),
+        at_once: 3,
         used,
         members,
-        started_at: Some(now_ms() - 23 * 60_000),
+        started_at: Some(now_ms() - if ended { 60 } else { 23 } * 60_000),
+        ended_at: ended.then(|| now_ms() - 3 * 60_000),
+        winding_since: None,
+        goal: "Expired cache entries are gone on read and by the sweep; cargo test -p cache \
+               passes"
+            .into(),
     }
 }
 
@@ -239,6 +284,16 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     let tasks: Vec<Task> = made.iter().map(|made| task(made, now)).collect();
     if let Some(chat) = ws.chats.get_mut(&lead) {
         chat.tasks.clear();
+        // The lead's call that set the team to work: the chat's card of the run.
+        chat.apply(ThreadEvent::ToolStarted(ToolCall {
+            id: "call-run".into(),
+            name: "tasks".into(),
+            arguments: serde_json::json!({ "action": "run" }),
+        }));
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: "call-run".into(),
+            result: dusk_protocol::tools::ToolResult::text("The team started.".into()),
+        });
         for task in &tasks {
             chat.apply(ThreadEvent::TaskChanged(task.clone()));
         }
@@ -263,8 +318,9 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         }
         chat.apply(ThreadEvent::Team(team.clone()));
     }
+    // The core counts the lead's work only.
     let mut counts = PlanCounts::default();
-    for task in &tasks {
+    for task in tasks.iter().filter(|task| task.duty == TaskDuty::Work) {
         let count = match task.status {
             TaskStatus::Open => &mut counts.open,
             TaskStatus::Claimed => &mut counts.claimed,
@@ -304,5 +360,63 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     });
     ws.overview.plan = Some(counts);
     ws.overview.team = Some(team);
+    cx.notify();
+}
+
+/// `fake=subagents|subagents-ended`: the shown chat asks three subagents in one step, as
+/// the core tells it; they started 40 seconds ago.
+pub fn subagents(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
+    let ended = value == "subagents-ended";
+    let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) else {
+        eprintln!("fake=subagents needs a shown chat: fake=chat first");
+        return;
+    };
+    let asked = [
+        ("Read the cache module", ThreadEvent::Idle),
+        (
+            "Measure memory growth",
+            match ended {
+                true => ThreadEvent::Idle,
+                false => ThreadEvent::Model(ModelEvent::Text("Measuring".into())),
+            },
+        ),
+        (
+            "Check the cache key handling",
+            ThreadEvent::Failed("the provider is unavailable".into()),
+        ),
+    ];
+    for (index, (task, _)) in asked.iter().enumerate() {
+        chat.apply(ThreadEvent::ToolStarted(ToolCall {
+            id: format!("ask-{index}"),
+            name: "ask_agent".into(),
+            arguments: serde_json::json!({ "task": task }),
+        }));
+    }
+    for (index, (task, last)) in asked.into_iter().enumerate() {
+        let thread_id = format!("0000010{index}-fake");
+        chat.apply(ThreadEvent::SubagentStarted {
+            call_id: format!("ask-{index}"),
+            thread_id: thread_id.clone(),
+            agent: "general".into(),
+            task: task.into(),
+            effort: None,
+            model: Some("chatgpt/gpt-5.5".into()),
+            task_id: None,
+        });
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: format!("ask-{index}"),
+            result: dusk_protocol::tools::ToolResult::text("sent".into()),
+        });
+        let started = ThreadEvent::Model(ModelEvent::Text("Reading the task.".into()));
+        for event in [started, last] {
+            chat.apply(ThreadEvent::Subagent {
+                thread_id: thread_id.clone(),
+                event: Box::new(event),
+            });
+        }
+        if let Some(agent) = chat.agents.get_mut(&thread_id) {
+            agent.started_at -= 40_000;
+        }
+    }
     cx.notify();
 }

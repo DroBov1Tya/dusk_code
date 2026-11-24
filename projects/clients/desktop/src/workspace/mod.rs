@@ -167,8 +167,14 @@ pub struct Workspace {
     pub shelf_search: Entity<InputState>,
     /// Where the Customize page is scrolled to; a shelf shown whole starts at its top.
     pub shelf_scroll: ScrollHandle,
-    /// The right column's modules that are folded.
+    /// The right column's light modules that are folded; a heavy one opens as a screen.
     pub folded: HashSet<Right>,
+    /// The heavy module open as the right column's screen, and how many times a screen
+    /// opened or closed, so each move slides once.
+    pub right_screen: Option<Right>,
+    pub right_moves: usize,
+    /// Where the right column's list is scrolled, kept while a screen covers it.
+    pub right_scroll: ScrollHandle,
     /// The right column's modules top to bottom, every one once.
     pub right_order: Vec<Right>,
     /// While a module's header is dragged: the module under the pointer, and whether the
@@ -214,8 +220,6 @@ pub struct Workspace {
     pub git: Option<GitInfo>,
     /// The shown project's work tree and pull requests, kept fresh by the core.
     pub repository: Option<dusk_protocol::project::RepositoryStatus>,
-    /// The pull requests of each project's branch, by project ID, for the chat rows.
-    pub pulls: HashMap<String, dusk_protocol::project::PullSummary>,
     /// Which groups of a pull request's checks are unfolded, by its number and the
     /// group's name; a group not here has its default (Failed open, the rest closed).
     pub checks_open: HashMap<(u64, &'static str), bool>,
@@ -227,6 +231,8 @@ pub struct Workspace {
     pub agents_trigger_focus: FocusHandle,
     /// The keys of a window that takes them: the subagents' list, a listing's gallery.
     pub modal_focus: FocusHandle,
+    /// The scroll of a subagent's chat window, so it opens at its latest message.
+    pub modal_scroll: ScrollHandle,
     /// The Workshop confirmation's Cancel button, where the keyboard starts.
     pub confirm_focus: FocusHandle,
     pub file: crate::pages::file::FileView,
@@ -293,6 +299,8 @@ pub struct Workspace {
     pub models_loading: bool,
     /// Providers whose models have not come yet; each answers on its own.
     pub models_pending: HashSet<String>,
+    /// Counts model loads, so answers from a load a newer one replaced are dropped.
+    pub models_round: u64,
     pub picker: Option<Picker>,
     pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.
@@ -375,6 +383,9 @@ pub struct Workspace {
     /// The chat whose reply buttons were just pressed and how many items it had then,
     /// so one press sends once.
     pub replied: Option<(String, usize)>,
+    /// The node of a diagram the pointer is on, by chat, item index and node, which
+    /// lights the edges that touch it.
+    pub diagram_hover: Option<(String, usize, usize)>,
     /// The pinned bar: the pin it shows, whether its list is open, a pin under way.
     pub pins: chat::pins::PinsView,
     /// The first screen while no provider is connected.

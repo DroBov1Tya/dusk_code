@@ -9,9 +9,13 @@ use crate::ui::thread::{
     markdown,
     theme::{
         ACCENT, DONE, DOT, FAILED, FOLDED, GUTTER, NEGATIVE, POSITIVE, RAISED, TEXT_MUTED,
-        TEXT_SOFT, USER_BAR, bold, dim, fg, thought,
+        TEXT_SOFT, USER_BAR, WARNING, bold, dim, fg, thought,
     },
     wrap,
+};
+use dusk_protocol::{
+    system::now_ms,
+    thread::{GoalVerdict, RunCard, RunMark},
 };
 use ratatui::{
     style::Style,
@@ -151,12 +155,14 @@ pub(super) fn hidden_line(entry: &Entry, text: &str) -> Line<'static> {
         Entry::Reasoning { .. } => "thinking",
         Entry::Tool { .. } => "tool call",
         Entry::Summary { .. } => "summary",
+        Entry::Goal { .. } => "goal verdict",
         Entry::FromAgent { .. } => "agent message",
         Entry::Notice { .. } => "notice",
         Entry::Skill { .. } => "skill change",
         Entry::Job { .. } => "job result",
         Entry::Block(_) => "block",
         Entry::Suggestion(_) => "Workshop card",
+        Entry::Run { .. } => "run",
     };
     let lines = text.lines().count().max(1);
     Line::from(vec![
@@ -237,6 +243,21 @@ pub(super) fn entry_lines(
                 indent(body, &format!("   {GUTTER} "))
             })
         }
+        Entry::Goal { evaluation, open } => {
+            let tint = match evaluation.verdict {
+                GoalVerdict::NotMet => TEXT_SOFT,
+                GoalVerdict::Met => POSITIVE,
+                GoalVerdict::Impossible => NEGATIVE,
+            };
+            let header = Line::from(vec![
+                Span::styled(format!("   {} ", fold_mark(*open)), fg(TEXT_SOFT)),
+                Span::styled(format!("\u{25CE} {}", evaluation.title()), fg(tint)),
+            ]);
+            folded(header, *open, || {
+                let body = plain(&evaluation.reason, width.saturating_sub(5), dim());
+                indent(body, &format!("   {GUTTER} "))
+            })
+        }
         Entry::FromAgent {
             thread_id,
             text,
@@ -244,6 +265,7 @@ pub(super) fn entry_lines(
         } => from_agent(thread_id, text, *open, width),
         Entry::Block(block) => shown::render(block, width),
         Entry::Suggestion(card) => suggested::render(card, width),
+        Entry::Run { card, seen } => run_line(card, *seen, width),
         Entry::Notice { text, tone, .. } | Entry::Skill { text, tone, .. } => {
             let (mark, style) = match tone {
                 Tone::Info => (DOT, dim()),
@@ -275,4 +297,35 @@ pub(super) fn is_meta(entry: &Entry) -> bool {
         entry,
         Entry::Activity { .. } | Entry::Reasoning { .. } | Entry::Tool { .. }
     )
+}
+
+/// A team or subagents the chat started, in one line: a mark a task or agent, the title,
+/// "Team · 5 agents · 1m 12s". The desktop's card, as the terminal draws it.
+fn run_line(card: &RunCard, seen: i64, width: usize) -> Vec<Line<'static>> {
+    let mut card = card.clone();
+    if card.running {
+        card.elapsed_ms = card
+            .elapsed_ms
+            .map(|elapsed| elapsed + (now_ms() - seen).max(0));
+    }
+    let mut spans = vec![Span::raw("   ")];
+    for mark in &card.marks {
+        let style = match mark {
+            RunMark::Done => fg(TEXT_MUTED),
+            RunMark::Running | RunMark::Waiting | RunMark::Confirm => fg(ACCENT),
+            RunMark::Failed => fg(NEGATIVE),
+            RunMark::Blocked => fg(WARNING),
+            RunMark::Open => dim(),
+        };
+        spans.push(Span::styled(mark.char().to_string(), style));
+    }
+    if !card.marks.is_empty() {
+        spans.push(Span::raw(" "));
+    }
+    spans.push(Span::styled(card.title.clone(), bold(TEXT_SOFT)));
+    spans.push(Span::styled(format!(" {DOT} {}", card.line()), dim()));
+    wrap::words(spans, width.saturating_sub(2), 3)
+        .into_iter()
+        .map(Line::from)
+        .collect()
 }

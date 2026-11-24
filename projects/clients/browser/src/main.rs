@@ -6,6 +6,8 @@ mod app;
 mod auth;
 mod chat;
 mod columns;
+#[cfg(debug_assertions)]
+mod dev;
 mod link;
 mod pages;
 mod state;

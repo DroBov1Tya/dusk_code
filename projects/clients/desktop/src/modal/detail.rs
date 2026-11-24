@@ -2,15 +2,26 @@
 //! switches, a skill or an agent with its file, a plugin with what it brings, a tool
 //! with what it tells the model.
 
-use dusk_protocol::{catalog::NodeText, client::Switch as CoreSwitch, config::McpState};
+use dusk_protocol::{
+    catalog::{NodeText, SkillKind},
+    client::Switch as CoreSwitch,
+    config::McpState,
+    plugin::Kind,
+};
 use gpui_kit::{
-    component::{ActiveTheme, Sizable, input::InputState, switch::Switch},
+    base::SelectableText,
+    component::{
+        ActiveTheme, Sizable,
+        button::{Button, ButtonVariants},
+        input::InputState,
+        switch::Switch,
+    },
     *,
 };
 
 use super::Modal;
 use crate::{
-    pages::chat::links,
+    pages::{chat::links, customize::plugins::Confirm},
     ui::{Type, widgets},
     workspace::Workspace,
 };
@@ -40,6 +51,7 @@ impl Detail {
 }
 
 pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> Div {
+    let remove = remove(ws, detail, cx);
     let theme = cx.theme();
     let (muted, success, danger, warning) = (
         theme.muted_foreground,
@@ -51,7 +63,7 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
     let Some(settings) = &ws.settings else {
         return page.child(widgets::muted("Loading...", cx));
     };
-    match detail {
+    let shown = match detail {
         Detail::Mcp(name) => {
             let Some(server) = settings.mcp.iter().find(|server| &server.name == name) else {
                 return page.child(widgets::muted("This server is gone.", cx));
@@ -62,9 +74,16 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                 McpState::Ready(_) => ("Ready".to_owned(), success),
                 McpState::Failed(error) => (format!("Failed: {error}"), danger),
             };
+            // Selectable, so an error or the command can be copied in part.
             let mut page = page
-                .child(div().small().text_color(color).child(state))
-                .child(div().meta().text_color(muted).child(server.target.clone()));
+                .child(div().small().text_color(color).child(SelectableText::new(
+                    SharedString::from(format!("detail-state-{name}")),
+                    state,
+                )))
+                .child(div().meta().text_color(muted).child(SelectableText::new(
+                    SharedString::from(format!("detail-target-{name}")),
+                    server.target.clone(),
+                )));
             if server.tools.is_empty() {
                 page = page
                     .child(widgets::muted("Its tools show once the server is ready.", cx).px_0());
@@ -218,7 +237,64 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                 )))
             }
         },
+    };
+    shown.children(remove)
+}
+
+/// Remove, which asks first. A plugin or skill put in its folder by hand gets one too:
+/// only the core knows what the Workshop installed, and it says why it refuses.
+fn remove(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> Option<Div> {
+    let confirm = match detail {
+        Detail::Mcp(name) => {
+            let server = ws.settings.as_ref()?.mcp.iter().find(|s| &s.name == name)?;
+            match server.added_from {
+                Some(_) => Confirm::Remove(name.clone(), Kind::Connector),
+                None => Confirm::RemoveServer(name.clone()),
+            }
+        }
+        Detail::Plugin(name) => Confirm::Remove(name.clone(), Kind::Plugin),
+        Detail::Skill { name, .. } => {
+            // A built-in skill comes with duskcode; there is nothing to remove.
+            let skills = &ws.settings.as_ref()?.skills;
+            if skills
+                .iter()
+                .any(|s| &s.name == name && s.kind == SkillKind::Builtin)
+            {
+                return None;
+            }
+            Confirm::Remove(name.clone(), Kind::Skill)
+        }
+        Detail::Agent { .. } | Detail::Tool(_) => return None,
+    };
+    if ws.workshop.busy.contains_key(detail.title()) {
+        return None;
     }
+    let failed = ws.workshop.failed.get(detail.title()).map(|error| {
+        div()
+            .flex_1()
+            .small()
+            .text_color(cx.theme().danger)
+            .child(error.clone())
+    });
+    Some(
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_3()
+            .justify_end()
+            .pt_2()
+            .children(failed)
+            .child(
+                Button::new("detail-remove")
+                    .danger()
+                    .outline()
+                    .label("Remove")
+                    .on_click(cx.listener(move |ws, _, window, cx| {
+                        ws.confirm_store(confirm.clone(), window, cx)
+                    })),
+            ),
+    )
 }
 
 /// The file without its front matter, which the rows above already show.
@@ -250,12 +326,15 @@ fn row(name: &str, description: &str, control: impl IntoElement, cx: &App) -> Di
                 .flex_1()
                 .min_w_0()
                 .child(div().font_family("Menlo").small().child(name.to_owned()))
+                // Whole and selectable: this window is where a description is read.
                 .child(
                     div()
                         .meta()
                         .text_color(theme.muted_foreground)
-                        .line_clamp(3)
-                        .child(description.to_owned()),
+                        .child(SelectableText::new(
+                            SharedString::from(format!("detail-description-{name}")),
+                            description.to_owned(),
+                        )),
                 ),
         )
         .child(control)

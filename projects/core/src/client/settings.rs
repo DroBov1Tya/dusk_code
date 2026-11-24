@@ -26,10 +26,6 @@ impl Settings<'_> {
             .await
     }
 
-    pub async fn max_goal_rounds(&self, rounds: u32) -> Result<()> {
-        self.done(SettingsRequest::MaxGoalRounds(rounds)).await
-    }
-
     /// Seconds a model call may stay silent before it is given up on.
     pub async fn model_timeout(&self, seconds: u32) -> Result<()> {
         self.done(SettingsRequest::ModelTimeout(seconds)).await
@@ -62,6 +58,20 @@ impl Settings<'_> {
     /// How auto mode's arbiter judges; empty fields go back to the defaults.
     pub async fn arbiter(&self, arbiter: dusk_protocol::config::Arbiter) -> Result<()> {
         self.done(SettingsRequest::Arbiter(arbiter)).await
+    }
+
+    /// The model of a subagent tier as `provider/model`; `None` unsets it, which is the
+    /// asking chat's model.
+    pub async fn model_tier(
+        &self,
+        tier: dusk_protocol::config::ModelTier,
+        model: Option<&str>,
+    ) -> Result<()> {
+        self.done(SettingsRequest::ModelTier {
+            tier,
+            model: model.map(str::to_owned),
+        })
+        .await
     }
 
     /// Returns the mode switched to.

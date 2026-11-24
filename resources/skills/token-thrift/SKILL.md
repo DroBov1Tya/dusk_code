@@ -1,8 +1,8 @@
 ---
 name: token-thrift
 description: "Spending fewer tokens and steps for the same result: when to think, what to read, how to batch tool calls and keep results short. Use on long or tool-heavy work."
-source: "duskcode"
-author: "duskcode"
+source: "Duskcode"
+author: "Duskcode"
 license: MIT
 tags: [efficiency, tokens]
 ---
@@ -28,7 +28,8 @@ change the result.
 - Calls that do not depend on each other go in one step: reads of several files, a
   search and a test run, several commands.
 - Chain dependent shell commands with `&&` in one call instead of one call each.
-- Wait for long commands through their completion, never by polling with sleep.
+- Start a long command with `background: true` and go on; its result arrives by itself.
+  Never poll with `sleep`.
 
 ## Keep results short
 
