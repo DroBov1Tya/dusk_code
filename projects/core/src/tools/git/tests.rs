@@ -54,6 +54,17 @@ fn answering(
     scope: &ToolScope,
     answer: Decision,
 ) -> (ToolContext, Arc<Mutex<Vec<ApprovalRequest>>>) {
+    answering_after(state, scope, answer, || {})
+}
+
+/// `answering`, with `meanwhile` done before each answer, as the user may while a
+/// request waits.
+fn answering_after(
+    state: &Arc<State>,
+    scope: &ToolScope,
+    answer: Decision,
+    meanwhile: impl Fn() + Send + 'static,
+) -> (ToolContext, Arc<Mutex<Vec<ApprovalRequest>>>) {
     let approvals = Arc::new(Approvals::default());
     let (events, mut heard) = mpsc::unbounded_channel();
     let asked = Arc::new(Mutex::new(Vec::new()));
@@ -62,6 +73,7 @@ fn answering(
         while let Some(event) = heard.recv().await {
             if let ThreadEvent::Approval(request) = event {
                 kept.lock().push(request.clone());
+                meanwhile();
                 answers.answer(request.id, answer);
             }
         }
@@ -323,4 +335,115 @@ async fn a_confined_commit_writes_only_the_git_data_it_needs() {
             .unwrap()
             .contains("1 commit ahead")
     );
+}
+
+/// The yes was for a merge into `main`: a user who switched branch while it waited gets
+/// no merge into the other one.
+#[tokio::test]
+async fn a_merge_is_checked_again_after_the_yes() {
+    let (state, home, repo) = repository("branch-recheck").await;
+    let made = work::start(&state, "chat", "chat", &home, Some("w"))
+        .await
+        .unwrap();
+    commit_in(Path::new(&made.dir), "b.txt", "b\n");
+    let switch = repo.clone();
+    let (context, asked) = answering_after(&state, &home, Decision::Once, move || {
+        run(&switch, &["switch", "-q", "-c", "other"]);
+    });
+    let error = work::merge(&context, &state, &made).await.err().unwrap();
+    assert!(error.to_string().contains("is on other now"), "{error}");
+    assert_eq!(asked.lock().len(), 1);
+    assert!(!repo.join("b.txt").exists(), "merged into another branch");
+    assert!(!git::merging(&repo).await);
+    assert!(Path::new(&made.dir).is_dir());
+    assert!(state.thread_worktree("chat").await.unwrap().is_some());
+}
+
+/// An agent asked with `isolated` from a thread on its own branch: the agent commits on
+/// a branch made from the thread's, which the thread merges with an ordinary yes, its
+/// own branch not before. An agent asked without `isolated` works in the thread's
+/// worktree with the project's lookups. A record whose base is gone is forgotten.
+#[tokio::test]
+async fn an_agents_branch_is_merged_into_the_branch_it_came_from_first() {
+    let (state, home, repo) = repository("branch-agent").await;
+    let parent = work::start(&state, "chat", "chat", &home, Some("lead"))
+        .await
+        .unwrap();
+    let home = Arc::new(home);
+    let there = follow::scope_for(&state, "chat", &home, &home).await;
+    state
+        .create_agent_thread("helper", "chat", "general", "helper")
+        .await
+        .unwrap();
+    let child = work::start(&state, "helper", "chat", &there, Some("helper"))
+        .await
+        .unwrap();
+    assert_eq!(
+        (child.base.as_str(), child.worktree_of.as_str()),
+        ("agent/lead", parent.dir.as_str())
+    );
+    assert_eq!(child.project, repo.to_str().unwrap(), "the saved project");
+    commit_in(Path::new(&child.dir), "b.txt", "b\n");
+
+    let (context, asked) = answering(&state, &there, Decision::Once);
+    let error = work::merge(&context, &state, &parent).await.err().unwrap();
+    assert!(error.to_string().contains("agent/helper"), "{error}");
+    let error = work::abandon(&context, &state, &parent)
+        .await
+        .err()
+        .unwrap();
+    assert!(error.to_string().contains("agent/helper"), "{error}");
+    assert!(asked.lock().is_empty());
+
+    let found = work::find(&state, "chat", Some("helper")).await.unwrap();
+    let work::Done::Finished(text) = work::merge(&context, &state, &found).await.unwrap() else {
+        panic!("the merge waits");
+    };
+    assert!(text.contains("into agent/lead"), "{text}");
+    // Into an agent's branch: the mode's ordinary request, with a yes for the session.
+    let asked = asked.lock().clone();
+    assert_eq!(asked.len(), 1);
+    assert!(asked[0].session.is_some());
+    assert!(Path::new(&parent.dir).join("b.txt").is_file());
+    assert!(!repo.join("b.txt").exists());
+
+    // An agent asked without `isolated` gets the worktree as its folder.
+    state.create_thread("plain", "test").await.unwrap();
+    let plain = Arc::new(ToolScope::new(there.cwd(), home.workspace()).unwrap());
+    let scope = follow::scope_for(&state, "plain", &plain, &plain).await;
+    assert_eq!(scope.cwd(), there.cwd());
+    assert_eq!(
+        scope.project_dir(),
+        repo,
+        "memory and variables of the project"
+    );
+    assert!(!scope.git_writable().is_empty());
+
+    // Once the branch it came from is gone, only `abandon` clears the record.
+    state.create_thread("late", "test").await.unwrap();
+    let late = work::start(&state, "late", "late", &there, Some("late"))
+        .await
+        .unwrap();
+    std::fs::write(Path::new(&late.dir).join("c.txt"), "c\n").unwrap();
+    let (late_context, _) = answering(&state, &there, Decision::Once);
+    let late_context = ToolContext {
+        thread_id: "late".into(),
+        ..late_context
+    };
+    let work::Done::Finished(_) = work::merge(&context, &state, &parent).await.unwrap() else {
+        panic!("the merge waits");
+    };
+    assert!(repo.join("b.txt").is_file());
+    assert!(!git::names(&repo).await.unwrap().contains(&parent.branch));
+    let error = work::status(&late).await.err().unwrap();
+    assert!(error.to_string().contains("abandon"), "{error}");
+    assert!(work::merge(&late_context, &state, &late).await.is_err());
+    let work::Done::Finished(text) = work::abandon(&late_context, &state, &late).await.unwrap()
+    else {
+        panic!("not forgotten");
+    };
+    assert!(text.contains("left as it is"), "{text}");
+    assert_eq!(state.thread_worktree("late").await.unwrap(), None);
+    assert!(Path::new(&late.dir).join("c.txt").is_file(), "nothing lost");
+    assert!(git::names(&repo).await.unwrap().contains(&late.branch));
 }

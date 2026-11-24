@@ -164,6 +164,7 @@ pub async fn find(state: &State, thread_id: &str, agent: Option<&str>) -> Result
 /// Where the branch stands: commits ahead and behind, files not yet committed, and a
 /// merge waiting with its conflicts.
 pub async fn status(worktree: &ThreadWorktree) -> Result<String> {
+    usable(worktree).await?;
     let dir = Path::new(&worktree.dir);
     let (ahead, behind) = git::apart(dir, &worktree.base, &worktree.branch).await?;
     let unsaved = git::unsaved(dir, true).await?;
@@ -239,8 +240,110 @@ pub async fn abort(worktree: &ThreadWorktree) -> Result<String> {
 pub enum Done {
     /// The worktree and its record are gone; the thread works in its folder again.
     Finished(String),
-    /// The branch needs the agent first, such as conflicts to resolve; nothing is gone.
+    /// The worktree and its record stay: the branch needs the agent first, such as
+    /// conflicts to resolve, or a merge is done and its worktree could not be removed.
     Waits(String),
+}
+
+/// Why the branch cannot be worked on any more, when something it needs is gone: its
+/// worktree, the folder it was made from, or the branch it merges into. Such a record
+/// only `abandon` clears.
+async fn lost(worktree: &ThreadWorktree) -> Option<String> {
+    let dir = Path::new(&worktree.dir);
+    let origin = Path::new(&worktree.worktree_of);
+    if !dir.is_dir() || git::repository(dir).await.is_none() {
+        return Some(format!("the worktree {} is gone", worktree.dir));
+    }
+    if git::repository(origin).await.is_none() {
+        return Some(format!(
+            "{} it was made from is no longer a repository",
+            worktree.worktree_of
+        ));
+    }
+    match git::names(origin).await {
+        Ok(names) if names.contains(&worktree.base) => None,
+        Ok(_) => Some(format!(
+            "the branch {} it was made from is gone",
+            worktree.base
+        )),
+        Err(error) => Some(format!("its branches cannot be read: {error:#}")),
+    }
+}
+
+/// Fails with what is gone and the way out, when something is.
+async fn usable(worktree: &ThreadWorktree) -> Result<()> {
+    if let Some(reason) = lost(worktree).await {
+        bail!(
+            "{reason}: `abandon` forgets this record; the branch {} keeps its commits",
+            worktree.branch
+        );
+    }
+    Ok(())
+}
+
+/// Refused while an agent's branch made from this one is open: merging or removing this
+/// one first would leave that agent nothing to merge into.
+async fn no_agents_on(state: &State, worktree: &ThreadWorktree) -> Result<()> {
+    let open: Vec<String> = state
+        .worktrees_made_by(&worktree.thread_id)
+        .await?
+        .into_iter()
+        .filter(|other| other.thread_id != worktree.thread_id && other.base == worktree.branch)
+        .map(|other| other.branch)
+        .collect();
+    ensure!(
+        open.is_empty(),
+        "agents' branches made from {} are open ({}): merge or abandon them first",
+        worktree.branch,
+        listed(&open)
+    );
+    Ok(())
+}
+
+/// Refused unless the folder the merge goes into is on `base` with no tracked changes:
+/// a merge there must neither land on another branch nor mix in the user's work.
+async fn ready_for_merge(origin: &Path, base: &str) -> Result<()> {
+    let there = git::repository(origin)
+        .await
+        .with_context(|| format!("{} is no longer a repository", origin.display()))?;
+    ensure!(
+        there.branch.as_deref() == Some(base),
+        "{} is on {} now, not {}: merging there would change another branch; ask the user",
+        origin.display(),
+        there.branch.as_deref().unwrap_or("a detached HEAD"),
+        base
+    );
+    let theirs = git::unsaved(origin, false).await?;
+    ensure!(
+        theirs.is_empty(),
+        "{} has uncommitted changes in tracked files ({}): ask the user to commit or stash \
+         them before the merge",
+        origin.display(),
+        listed(&theirs)
+    );
+    Ok(())
+}
+
+/// The error of a merge into `origin` that did not finish, with whether the folder is
+/// left mid-merge: one is aborted when it can be, and said plainly when it cannot.
+async fn merge_failed(origin: &Path, error: anyhow::Error) -> anyhow::Error {
+    if !git::merging(origin).await {
+        return error.context(format!(
+            "the merge failed; {} is not mid-merge",
+            origin.display()
+        ));
+    }
+    match git::abort_merge(&folder(origin)).await {
+        Ok(_) => error.context(format!(
+            "the merge failed and was aborted; {} is as it was before",
+            origin.display()
+        )),
+        Err(abort) => error.context(format!(
+            "the merge failed and could not be aborted ({abort:#}): {} is left mid-merge; \
+             ask the user to finish or abort it there",
+            origin.display()
+        )),
+    }
 }
 
 /// Merges the branch into the one it was made from, as a merge commit. The base comes
@@ -252,6 +355,8 @@ pub async fn merge(
     state: &State,
     worktree: &ThreadWorktree,
 ) -> Result<Done> {
+    usable(worktree).await?;
+    no_agents_on(state, worktree).await?;
     let dir = Path::new(&worktree.dir);
     let origin = Path::new(&worktree.worktree_of);
     ensure!(
@@ -264,24 +369,7 @@ pub async fn merge(
         "commit the work first; uncommitted: {}",
         listed(&unsaved)
     );
-    let there = git::repository(origin)
-        .await
-        .with_context(|| format!("{} is no longer a repository", origin.display()))?;
-    ensure!(
-        there.branch.as_deref() == Some(worktree.base.as_str()),
-        "{} is on {} now, not {}: merging there would change another branch; ask the user",
-        origin.display(),
-        there.branch.as_deref().unwrap_or("a detached HEAD"),
-        worktree.base
-    );
-    let theirs = git::unsaved(origin, false).await?;
-    ensure!(
-        theirs.is_empty(),
-        "{} has uncommitted changes in tracked files ({}): ask the user to commit or stash \
-         them before the merge",
-        origin.display(),
-        listed(&theirs)
-    );
+    ready_for_merge(origin, &worktree.base).await?;
     let (ahead, behind) = git::apart(dir, &worktree.base, &worktree.branch).await?;
     if ahead == 0 {
         let note = finish(state, worktree).await?;
@@ -325,23 +413,36 @@ pub async fn merge(
         true => context.approve_git(&action).await?,
         false => context.ask_always(&action).await?,
     }
-    let outcome = git::merge_recorded(&folder(origin), &worktree.branch).await?;
+    // The answer can take long, and the user may switch or edit their folder meanwhile:
+    // the yes was for a merge into `base` as it was, so that is checked again.
+    ready_for_merge(origin, &worktree.base).await?;
+    let outcome = match git::merge_recorded(&folder(origin), &worktree.branch).await {
+        Ok(outcome) => outcome,
+        Err(error) => return Err(merge_failed(origin, error).await),
+    };
     if !outcome.conflicts.is_empty() {
-        git::abort_merge(&folder(origin)).await?;
-        bail!(
-            "{} moved on during the merge and it conflicted; it was aborted and {} is as \
-             before: `merge` again",
+        let moved = anyhow::anyhow!(
+            "{} moved on during the merge and it conflicted in {}: `merge` again",
             worktree.base,
-            origin.display()
+            listed(&outcome.conflicts)
         );
+        return Err(merge_failed(origin, moved).await);
     }
-    let note = finish(state, worktree).await?;
-    Ok(Done::Finished(printable(&format!(
-        "Merged {} into {} in {}. {note}",
+    let merged = format!(
+        "Merged {} into {} in {}.",
         worktree.branch,
         worktree.base,
         origin.display()
-    ))))
+    );
+    // The merge commit is there; a worktree that cannot go is a note, not a failure.
+    Ok(match finish(state, worktree).await {
+        Ok(note) => Done::Finished(printable(&format!("{merged} {note}"))),
+        Err(error) => Done::Waits(printable(&format!(
+            "{merged} The worktree {} could not be removed ({error:#}); `abandon` it once \
+             what is left there is dealt with.",
+            worktree.dir
+        ))),
+    })
 }
 
 /// Removes the worktree. Uncommitted work is committed to the branch first, and a branch
@@ -352,6 +453,10 @@ pub async fn abandon(
     state: &State,
     worktree: &ThreadWorktree,
 ) -> Result<Done> {
+    if let Some(reason) = lost(worktree).await {
+        return forget(context, state, worktree, &reason).await;
+    }
+    no_agents_on(state, worktree).await?;
     let dir = Path::new(&worktree.dir);
     ensure!(
         !git::merging(dir).await,
@@ -400,6 +505,32 @@ pub async fn abandon(
         "Abandoned {}. {note}",
         worktree.branch
     )))
+}
+
+/// Drops the record of a branch whose worktree, origin or base is gone. Nothing in git
+/// is touched: the branch keeps its commits, and a worktree folder still there stays.
+async fn forget(
+    context: &ToolContext,
+    state: &State,
+    worktree: &ThreadWorktree,
+    reason: &str,
+) -> Result<Done> {
+    context
+        .approve_git(&format!(
+            "forget branch {}, since {reason}; git is not touched",
+            worktree.branch
+        ))
+        .await?;
+    state.remove_thread_worktree(&worktree.thread_id).await?;
+    let folder = match Path::new(&worktree.dir).exists() {
+        true => format!(" The folder {} is left as it is.", worktree.dir),
+        false => String::new(),
+    };
+    Ok(Done::Finished(printable(&format!(
+        "Forgot {}: {reason}. The branch is kept with its commits, if git still has it; \
+         the thread works in its own folder again.{folder}",
+        worktree.branch
+    ))))
 }
 
 /// Every branch this thread and the agents it asked work on, with where each stands.
