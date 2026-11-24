@@ -491,6 +491,8 @@ fn act(
             }
             cx.notify();
         }
+        // The removal window at a step or phase; `removed` closes the app as a removal would.
+        "uninstall" => ws.dev_uninstall(value, window, cx),
         "type" => {
             ws.edit_draft(
                 ws.shown.clone(),

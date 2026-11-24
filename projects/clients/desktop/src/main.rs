@@ -51,7 +51,10 @@ fn main() -> Result<()> {
         .build()
         .context("cannot start the async runtime")?;
     let paths = Paths::from_home()?;
-    let _restore_guard = app::RestoreGuard::startup(&paths, None)?;
+    // Held while the window lives; given up only for the app's own removal.
+    let restore_guard = core::Hold::new(std::sync::Mutex::new(app::RestoreGuard::startup(
+        &paths, None,
+    )?));
     let telemetry =
         app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "gui", app::LogRole::Owner).ok();
     let look_file = paths.config_root().join("gui.json");
@@ -75,7 +78,12 @@ fn main() -> Result<()> {
             platform::icon::set_dock_icon();
             cx.set_reduce_motion(platform::motion::reduced());
             ui::theme::init(look_file, cx);
-            let core = core::Core::new(client, Arc::clone(&runtime), Arc::clone(&hub));
+            let core = core::Core::new(
+                client,
+                Arc::clone(&runtime),
+                Arc::clone(&hub),
+                restore_guard.clone(),
+            );
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(size(px(1440.), px(900.)), cx)),
                 titlebar: Some(TitlebarOptions {
