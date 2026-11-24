@@ -47,6 +47,8 @@ mod picture;
 mod picture_tests;
 mod record;
 #[cfg(test)]
+mod release_tests;
+#[cfg(test)]
 mod repositories_tests;
 pub mod review;
 mod source;
@@ -171,8 +173,14 @@ pub enum Placed {
 /// rules folder, when its listing is still the one
 /// the user agreed to: the same source and tier, version and permissions. A connector
 /// writes nothing here: its server comes back to be added.
-/// Answers with what it installed.
-pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> Result<Placed> {
+/// Answers with what it installed. `addable` says whether a connector may be added as
+/// its record would say, before its program is downloaded.
+pub async fn install(
+    paths: &Paths,
+    mirrors: &[Mirror],
+    agreed: &Agreed<'_>,
+    addable: impl FnOnce(&Installed) -> Result<()>,
+) -> Result<Placed> {
     let _busy = BUSY.lock().await;
     // Every source, since a mirror's tier depends on the official list.
     let (fetched, failed) = source::read(paths, mirrors).await;
@@ -196,19 +204,25 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
             .as_ref()
             .context("a connector names no server")?;
         let tier = listing::tier(source, entry);
-        if let Some(why) = server.unfit(tier) {
+        if let Some(why) = server.unfit(&entry.name, tier, entry.badge) {
             anyhow::bail!("{} cannot be added: {why}", entry.name);
         }
         if let Some(url) = &server.url {
             connector::resolves_publicly(url).await?;
         }
-        let config = server.config();
+        let config = server.config(paths, &entry.name);
         let mut added = Installed::new(source, &entry.version, "");
         added.kind = Kind::Connector;
         added.target = connector::target(&config);
         added.tier = Some(tier);
         added.author = entry.author.clone().unwrap_or_default();
         added.origin = entry.source.clone().unwrap_or_default();
+        // Before anything is downloaded, so a refused add never touches the folder of a
+        // program a server here still runs.
+        addable(&added)?;
+        if let Some(release) = &server.release {
+            connector::install::install(paths, &entry.name, release).await?;
+        }
         return Ok(Placed::Server {
             config,
             added: Box::new(added),

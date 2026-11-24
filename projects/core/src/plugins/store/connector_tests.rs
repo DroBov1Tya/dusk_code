@@ -186,11 +186,13 @@ fn a_program_comes_only_from_an_official_or_verified_source() {
     .unwrap();
     let server = index.plugins[0].server.clone().unwrap();
     for tier in [Tier::Community, Tier::Unverified, Tier::Local] {
-        let why = server.unfit(tier).unwrap();
+        let why = server
+            .unfit("browser", tier, Some(index::Badge::Verified))
+            .unwrap();
         assert!(why.contains("official or verified"), "{tier:?}: {why}");
     }
     // From the official list it is refused only when npx is missing here.
-    if let Some(why) = server.unfit(Tier::Verified) {
+    if let Some(why) = server.unfit("browser", Tier::Verified, Some(index::Badge::Verified)) {
         assert!(why.contains("needs npx"), "{why}");
     }
     assert_eq!(
@@ -271,7 +273,8 @@ fn it_adds_the_server_the_settings_would() {
         "playwright:\n  command: npx\n  args:\n  - -y\n  - '@playwright/mcp@0.0.86'\n",
     ];
     for (entry, typed) in index.plugins.iter().zip(typed) {
-        let config = entry.server.as_ref().unwrap().config();
+        let paths = crate::init::paths::Paths::new("/c", "/w");
+        let config = entry.server.as_ref().unwrap().config(&paths, &entry.name);
         let (name, by_hand) = parse_mcp_server(typed).unwrap();
         assert_eq!(name, entry.name);
         assert_eq!(
@@ -292,14 +295,15 @@ fn adding_it_again_keeps_what_the_user_filled_in() {
     ))
     .unwrap();
     let spec = index.plugins[0].server.clone().unwrap();
-    let mut old = spec.config();
+    let paths = crate::init::paths::Paths::new("/c", "/w");
+    let mut old = spec.config(&paths, "github");
     assert!(!old.enabled());
     if let McpServerConfig::Http(http) = &mut old {
         http.headers
             .insert("Authorization".into(), "Bearer t".into());
     }
     old.set_enabled(true);
-    let mut new = spec.config();
+    let mut new = spec.config(&paths, "github");
     connector::keep_secrets(&mut new, &old);
     assert!(new.enabled());
     let McpServerConfig::Http(http) = &new else {

@@ -185,10 +185,10 @@ async fn the_live_store_installs_a_plugin() {
         permissions: &telegram.permissions,
         sha256: None,
     };
-    install(&paths, &[], &agreed).await.unwrap();
+    install(&paths, &[], &agreed, |_| Ok(())).await.unwrap();
     let changed = ["connect to https://evil.example.com".to_owned()];
     agreed.permissions = &changed;
-    assert!(install(&paths, &[], &agreed).await.is_err());
+    assert!(install(&paths, &[], &agreed, |_| Ok(())).await.is_err());
     let folder = super::super::catalog::folder(&paths).join("telegram");
     assert!(folder.join("bin/telegram").is_file());
     let listed = super::list(&paths, &[], Order::Trust, None, &[], &Here::default())
