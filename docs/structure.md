@@ -216,7 +216,7 @@ columns/  (3)
 pages/  (32)
   customize/  (15)
     workshop/  (7)
-  settings/  (11)
+  settings/  (12)
 ui/  (7)
 ```
 
