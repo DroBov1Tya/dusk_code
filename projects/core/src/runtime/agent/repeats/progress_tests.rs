@@ -289,3 +289,28 @@ fn a_write_the_ledger_cannot_see_is_progress() {
         assert_eq!(step(&mut repeats, done, &limits), None, "agent {i}");
     }
 }
+
+#[test]
+fn looks_at_a_running_job_are_not_counted() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let _ = idle_after_edit(&mut repeats, 11, &limits);
+    // A build in the background shows only a counter between looks.
+    for i in 0..40 {
+        let done = Done {
+            output: &format!("job 1 running: [{i}/300] Compiling"),
+            read_only: true,
+            edits: None,
+            ..quiet(call("jobs", json!({ "action": "wait", "job_id": "1" })))
+        };
+        assert_eq!(step(&mut repeats, done, &limits), None, "look {i}");
+    }
+    // The looks neither moved the count nor started it over.
+    let done = quiet(command("echo one"));
+    assert_eq!(step(&mut repeats, done, &limits), None);
+    let done = quiet(command("echo two"));
+    assert_eq!(
+        step(&mut repeats, done, &limits).map(|n| n.0),
+        Some(RepeatRung::NoProgress)
+    );
+}

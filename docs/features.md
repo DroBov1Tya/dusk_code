@@ -76,8 +76,9 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   (`limits.no_progress_note_at`, 12), then a request for a different plan
   (`no_progress_replan_at`, 30), and again every `no_progress_note_at` steps after. Until
   the ledger records a change in the turn, and for writes it cannot see (a subagent, a
-  job, an MCP tool), a new call that may write counts as progress. Notes only: after the
-  re-plan the turn is a stall candidate for a judge, and goes on.
+  job, an MCP tool), a new call that may write counts as progress; a step of only looks
+  at background jobs is not counted. Notes only: after the re-plan the turn is a stall
+  candidate for a judge, and goes on.
 - **Goal stalls.** `limits.goal_stall` (on, needs `record_changes`): after each round of
   a goal, the state of the files its chat and agents changed and the test results of
   the round (error lines included, so a build failing with fewer errors is another

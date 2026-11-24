@@ -18,6 +18,10 @@
 //! in the turn, its silence proves nothing, so a call that may write and was not made
 //! before counts as progress: a project too large to watch is never nagged for edits.
 //! So does such a call where the ledger never looks: a subagent, a job, an MCP tool.
+//!
+//! A look at the background jobs is neither: a build or a run going on shows little more
+//! than a counter between two looks, which is not news, yet the job is moving. A step of
+//! nothing but such looks is not counted.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -31,6 +35,8 @@ use crate::{config::Limits, providers::ToolCall, tools::ToolResult};
 const MAX_SEEN: usize = 2048;
 /// Programs a turn keeps as failing, to see one pass.
 const MAX_FAILING: usize = 64;
+/// The tool that reads and waits on background jobs.
+const JOBS: &str = "jobs";
 
 /// What one call did, as the caller knows it.
 pub struct Call<'a> {
@@ -80,6 +86,8 @@ pub struct Progress {
     started: bool,
     /// The running step brought something new so far.
     moved: bool,
+    /// The running step made a call other than a look at the jobs.
+    counted: bool,
     /// Finished steps in a row that brought nothing new.
     idle: u32,
     /// The count the next notice waits for; 0 before the first since progress.
@@ -92,7 +100,7 @@ pub struct Progress {
 impl Progress {
     /// A step starts: the one before is counted.
     pub fn step(&mut self) {
-        if self.started {
+        if self.started && self.counted {
             if self.moved {
                 self.idle = 0;
                 self.next_at = 0;
@@ -103,14 +111,16 @@ impl Progress {
         }
         self.started = true;
         self.moved = false;
+        self.counted = false;
     }
 
     /// Notes a finished call; the rung, count and note when the steps before brought
     /// nothing new and neither has the step so far.
     pub fn note(&mut self, done: &Call<'_>, limits: &Limits) -> Option<(RepeatRung, u32, String)> {
-        if !limits.no_progress {
+        if !limits.no_progress || done.call.name == JOBS {
             return None;
         }
+        self.counted = true;
         if self.brings_news(done) {
             self.moved = true;
         }
