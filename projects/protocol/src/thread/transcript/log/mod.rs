@@ -20,7 +20,7 @@ use super::{AgentState, Note, Tool, ToolState, TurnSpend};
 use super::{note, turn_spend};
 use crate::{
     catalog::SkillChange,
-    model::{ModelEvent, ToolCall},
+    model::{Effort, ModelEvent, ToolCall},
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
         Block, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens,
@@ -112,6 +112,9 @@ pub struct Subagent {
     pub role: String,
     /// The model it answers on, `provider/model`; none when the core did not say.
     pub model: Option<String>,
+    /// How hard it reasons; none is the provider's default, and what a team's own event
+    /// does not say.
+    pub effort: Option<Effort>,
     /// The `ask_agent` call that started it, or `team:<task_id>` for a team member.
     pub call_id: String,
     pub task: String,
@@ -130,12 +133,17 @@ impl Subagent {
         self.state.working()
     }
 
-    /// `general · chatgpt/gpt-5.5`: what it works as and on which model.
+    /// `general · chatgpt/gpt-5.5 · high effort`: what it works as, on which model and how
+    /// hard it reasons, each part only when known.
     pub fn role_and_model(&self) -> String {
-        match &self.model {
-            Some(model) => format!("{} \u{00B7} {model}", self.role),
-            None => self.role.clone(),
-        }
+        let effort = self
+            .effort
+            .map(|effort| format!("{} effort", effort.name()));
+        [Some(self.role.clone()), self.model.clone(), effort]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" \u{00B7} ")
     }
 
     /// How long it worked, until `now` while it still does.
@@ -720,9 +728,9 @@ impl<L> ChatLog<L> {
                 thread_id,
                 agent,
                 task,
+                effort,
                 model,
                 task_id,
-                ..
             } => {
                 // Asking the same thread again brings it back to work.
                 let agent = Subagent {
@@ -730,6 +738,7 @@ impl<L> ChatLog<L> {
                     thread_id: thread_id.clone(),
                     role: agent,
                     model,
+                    effort,
                     call_id,
                     task,
                     task_id,

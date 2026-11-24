@@ -210,6 +210,7 @@ mod tests {
             name: "Ember".into(),
             role: "general".into(),
             model: None,
+            effort: None,
             call_id: "team:t1".into(),
             task: String::new(),
             task_id: Some("t1".into()),
