@@ -60,8 +60,10 @@ pub enum Row {
 }
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> AnyElement {
-    // Rows stand in a lane at most 780 px wide, with 24 px beside it.
-    ws.reading_width = (ws.chat_width(window) - 48.).clamp(0., 780.);
+    // Rows stand in a lane at most 780 px wide, with 24 px beside it. An open right dock
+    // takes its width from the chat too, or a diagram is laid out wider than its room.
+    let room = ws.chat_width(window) - crate::plugins::right_width(ws);
+    ws.reading_width = (room - 48.).clamp(0., 780.);
     let shown = ws.shown.clone().unwrap_or_default();
     let Some(chat) = ws.chats.get(&shown) else {
         return widgets::muted("Opening...", cx).into_any_element();
