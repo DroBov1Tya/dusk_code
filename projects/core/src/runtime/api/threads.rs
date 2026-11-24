@@ -98,6 +98,12 @@ impl Runtime {
         launcher.state.last_failure(thread_id).await
     }
 
+    /// The chat's goal, for a client that joins it to show what the others show.
+    pub async fn goal(&self, thread_id: &str) -> Result<Option<dusk_protocol::thread::Goal>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.goal(thread_id).await
+    }
+
     /// An agent below the chat works, so a client joining it shows it at work.
     pub async fn agents_at_work(&self, thread_id: &str) -> Result<bool> {
         let launcher = self.of(thread_id).await;
