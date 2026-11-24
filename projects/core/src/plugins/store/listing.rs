@@ -94,7 +94,7 @@ pub fn listing(
         .as_ref()
         .filter(|_| entry.kind == Kind::Connector)
     {
-        return connector(record, here, source, entry, server);
+        return connector(paths, record, here, source, entry, server);
     }
     let installed = record
         .installed_from(paths, source, &entry.name)
@@ -129,6 +129,7 @@ pub fn listing(
 /// still has that server; a server of the user's under its name is theirs, and keeps the
 /// listing from being added.
 fn connector(
+    paths: &Paths,
     record: &Record,
     here: &Here,
     source: &Fetched,
@@ -136,7 +137,7 @@ fn connector(
     server: &super::connector::Spec,
 ) -> Listing {
     let name = &entry.name;
-    let config = server.config();
+    let config = server.config(paths, name);
     let target = config.target();
     let added = record
         .connectors
@@ -153,7 +154,7 @@ fn connector(
         ConnectorState::Yours => Some(format!(
             "a connector of yours is named {name}; rename or remove it to add this one"
         )),
-        _ => server.unfit(tier),
+        _ => server.unfit(name, tier, entry.badge),
     });
     let base = listing_of_kind(source, entry, tier);
     Listing {

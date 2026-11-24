@@ -1,6 +1,7 @@
-//! A connector listing: an MCP server the store adds to the user's connectors, with no
-//! files of its own. A remote one is an `https` address; a local one is `npx` or `uvx`
-//! starting a package pinned to one version. What it asks of the user are names only,
+//! A connector listing: an MCP server the store adds to the user's connectors. A remote
+//! one is an `https` address; a local one is `npx` or `uvx` starting a package pinned to
+//! one version, or a program from a pinned GitHub release (`release`), which the store
+//! downloads into a folder of its own (`install`). What it asks of the user are names only,
 //! headers or environment variables they fill in after it is added; the list never
 //! carries a value. Signing in to a remote one is the MCP sign-in the settings already
 //! offer.
@@ -11,15 +12,21 @@ use anyhow::{Result, bail, ensure};
 use dusk_protocol::plugin::{Auth, RunBy, ServerSpec, Tier};
 use serde::Deserialize;
 
-use super::{index::Server, record::Installed, record::Record};
+use super::{
+    index::{Badge, Server},
+    record::Installed,
+    record::Record,
+};
 use crate::{
     config::{HttpServerConfig, McpServerConfig, StdioServerConfig},
     init::paths::Paths,
 };
 
 pub(super) mod check;
+pub mod install;
+pub mod release;
 
-use check::{MAX_LINE, check_command, check_url, secret_name};
+use check::{MAX_LINE, check_args, check_command, check_url, secret_name};
 pub use check::{host, resolves_publicly};
 
 const MAX_SECRETS: usize = 4;
@@ -32,6 +39,8 @@ pub struct Spec {
     pub url: Option<String>,
     /// `npx` or `uvx`, for a local one.
     pub command: Option<String>,
+    /// A program from a GitHub release, for a local one.
+    pub release: Option<release::Release>,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
@@ -54,9 +63,14 @@ pub(super) const RUNNERS: [(&str, &str, &str); 2] =
 impl Spec {
     /// The server as a plugin's would be listed, under the connector's name.
     pub fn server(&self, name: &str) -> Server {
+        let program = self
+            .release
+            .as_ref()
+            .and_then(|release| release.asset().or(release.assets.values().next()))
+            .map(|asset| release::Release::program(asset).to_owned());
         Server {
             name: name.to_owned(),
-            command: self.command.clone(),
+            command: self.command.clone().or(program),
             args: self.args.clone(),
             url: self.url.clone(),
         }
@@ -64,6 +78,15 @@ impl Spec {
 
     /// The package a local one starts and where it comes from: `@scope/x@1.2.3 from npm`.
     pub fn package(&self) -> Option<String> {
+        if let Some(release) = &self.release {
+            let file = release
+                .asset()
+                .map_or("no build for here", |asset| &asset.file);
+            return Some(format!(
+                "{file} from the release {} of github.com/{}",
+                release.tag, release.repository
+            ));
+        }
         let command = self.command.as_deref()?;
         let (_, registry, _) = RUNNERS.iter().find(|(name, ..)| *name == command)?;
         let package = self.args.iter().find(|arg| !arg.starts_with('-'))?;
@@ -82,9 +105,10 @@ impl Spec {
         }
     }
 
-    /// The MCP server it adds, as the settings would write it. With secrets to fill in it
-    /// is written off, their values empty, so it starts only once the user put them in.
-    pub fn config(&self) -> McpServerConfig {
+    /// The MCP server it adds as `name`, as the settings would write it. With secrets to
+    /// fill in it is written off, their values empty, so it starts only once the user put
+    /// them in. A release's program is started by its absolute path under `paths`.
+    pub fn config(&self, paths: &Paths, name: &str) -> McpServerConfig {
         let blank = || -> BTreeMap<String, String> {
             self.secrets
                 .iter()
@@ -100,7 +124,13 @@ impl Spec {
                 icon: None,
             }),
             (None, command) => McpServerConfig::Stdio(Box::new(StdioServerConfig {
-                command: command.clone().unwrap_or_default(),
+                command: match &self.release {
+                    Some(release) => release
+                        .binary_path(paths, name)
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    None => command.clone().unwrap_or_default(),
+                },
                 enabled,
                 args: self.args.clone(),
                 env: blank(),
@@ -121,7 +151,9 @@ impl Spec {
             false => format!("the source says {line}; nobody checked that"),
         };
         let mut lines = Vec::new();
-        if let Some(package) = self.package() {
+        if let Some(release) = &self.release {
+            lines.push(release.consent(name));
+        } else if let Some(package) = self.package() {
             lines.push(format!(
                 "download {package} the first time {name} starts, and run it as you"
             ));
@@ -155,8 +187,18 @@ impl Spec {
         lines
     }
 
-    /// Why it cannot be added here from a source of `tier`, when it cannot.
-    pub fn unfit(&self, tier: Tier) -> Option<String> {
+    /// Why it cannot be added here from a source of `tier`, the listing carrying `badge`,
+    /// when it cannot. A release's program comes only from the official list's own work.
+    pub fn unfit(&self, name: &str, tier: Tier, badge: Option<Badge>) -> Option<String> {
+        if let Some(release) = &self.release {
+            if tier != Tier::Official || badge != Some(Badge::Official) {
+                return Some(
+                    "it runs a program from a release, so only the official list may bring it, under its Official badge"
+                        .into(),
+                );
+            }
+            return release.unfit(name);
+        }
         let command = self.command.as_deref()?;
         if !matches!(tier, Tier::Official | Tier::Verified) {
             return Some(
@@ -171,10 +213,14 @@ impl Spec {
 
     /// The rules of a list's entry.
     pub fn check(&self) -> Result<()> {
-        match (&self.url, &self.command) {
-            (Some(url), None) => check_url(url)?,
-            (None, Some(command)) => check_command(command, &self.args)?,
-            _ => bail!("a connector names an address or a command, not both"),
+        match (&self.url, &self.command, &self.release) {
+            (Some(url), None, None) => check_url(url)?,
+            (None, Some(command), None) => check_command(command, &self.args)?,
+            (None, None, Some(release)) => {
+                release.check()?;
+                check_args(&self.args)?;
+            }
+            _ => bail!("a connector names one of an address, a command or a release"),
         }
         let line = self.server("x").line();
         ensure!(
@@ -263,6 +309,37 @@ pub fn remember(paths: &Paths, name: &str, added: Installed) -> Result<()> {
         record.connectors.insert(name.to_owned(), added);
         Ok(())
     })
+}
+
+/// Whether `new` reaches or runs what `old` did: the same target, or another version of
+/// `name`'s release program with the same arguments.
+pub fn same_program(
+    paths: &Paths,
+    name: &str,
+    new: &McpServerConfig,
+    old: &McpServerConfig,
+) -> bool {
+    if target(new) == target(old) {
+        return true;
+    }
+    let (McpServerConfig::Stdio(new), McpServerConfig::Stdio(old)) = (new, old) else {
+        return false;
+    };
+    let program = |command: &str| {
+        let path = std::path::Path::new(command);
+        release::tag_of(paths, name, path)?;
+        path.file_name().map(|file| file.to_owned())
+    };
+    new.args == old.args
+        && program(&new.command).is_some()
+        && program(&new.command) == program(&old.command)
+}
+
+/// The release version the store's record of `name` runs, its tag folder, if any.
+pub fn kept_version(paths: &Paths, name: &str) -> Option<String> {
+    let added = added(paths, name).ok()??;
+    let line: Vec<String> = serde_json::from_str(&added.target).ok()?;
+    release::tag_of(paths, name, std::path::Path::new(line.first()?))
 }
 
 /// Forgets that the store added `name`.

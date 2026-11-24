@@ -82,7 +82,8 @@ impl Runtime {
                     permissions: &agreed,
                     sha256: sha256.as_deref(),
                 };
-                match store::install(self.paths(), &mirrors, &agreed).await? {
+                let addable = |added: &store::Installed| self.connector_addable(&name, added);
+                match store::install(self.paths(), &mirrors, &agreed, addable).await? {
                     store::Placed::Files(kind) => {
                         tracing::info!("{kind:?} {name} {version} installed from {source}");
                         if kind == Kind::Plugin {
@@ -90,7 +91,11 @@ impl Runtime {
                         }
                     }
                     store::Placed::Server { config, added } => {
-                        self.add_connector(&name, config, *added)?;
+                        let result = self.add_connector(&name, config, *added);
+                        // A release's program in place for a failed add, or the version
+                        // an update replaced, is not kept.
+                        self.tidy_connector(&name);
+                        result?;
                         tracing::info!("connector {name} {version} added from {source}");
                     }
                 }
@@ -188,6 +193,29 @@ impl Runtime {
         mut server: crate::config::McpServerConfig,
         added: crate::plugins::store::Installed,
     ) -> Result<()> {
+        use crate::plugins::store::connector;
+        // Again, as the config may have changed while the program was downloaded.
+        self.connector_addable(name, &added)?;
+        let config = self.config().current();
+        let old = config.mcp().get(name).map(|old| {
+            // Keys the user typed went to that address or program, or another version
+            // of the same release; one the listing moved elsewhere starts without them.
+            if connector::same_program(self.paths(), name, &server, old) {
+                connector::keep_secrets(&mut server, old);
+            }
+            name
+        });
+        self.put_mcp_server(old, name, server)?;
+        connector::remember(self.paths(), name, added)
+    }
+
+    /// Why a connector the store would record as `added` cannot be added as `name`: the
+    /// name is taken, or a server under it is not exactly the one this source added.
+    fn connector_addable(
+        &self,
+        name: &str,
+        added: &crate::plugins::store::Installed,
+    ) -> Result<()> {
         use crate::plugins::store::{Here, connector, taken_name};
         let config = self.config().current();
         // The Workshop shows this on the listing; a client may send the install anyway.
@@ -195,31 +223,21 @@ impl Runtime {
         if let Some(why) = taken_name(&here, &added.source, name) {
             anyhow::bail!(why);
         }
-        let old = match config.mcp().get(name) {
-            None => None,
-            Some(old) => {
-                // Ours only when this source added exactly this server: a server the
-                // user set up by hand, or another source's, is never replaced.
-                let ours = connector::added(self.paths(), name)?.is_some_and(|before| {
-                    before.source == added.source
-                        && before.key == added.key
-                        && before.url == added.url
-                        && before.target == connector::target(old)
-                });
-                ensure!(
-                    ours,
-                    "a connector of yours is named {name}; rename or remove it to add this one"
-                );
-                // Keys the user typed went to that address or program; one the listing
-                // moved elsewhere starts without them.
-                if connector::target(&server) == connector::target(old) {
-                    connector::keep_secrets(&mut server, old);
-                }
-                Some(name)
-            }
-        };
-        self.put_mcp_server(old, name, server)?;
-        connector::remember(self.paths(), name, added)
+        if let Some(old) = config.mcp().get(name) {
+            // Ours only when this source added exactly this server: a server the user
+            // set up by hand, or another source's, is never replaced.
+            let ours = connector::added(self.paths(), name)?.is_some_and(|before| {
+                before.source == added.source
+                    && before.key == added.key
+                    && before.url == added.url
+                    && before.target == connector::target(old)
+            });
+            ensure!(
+                ours,
+                "a connector of yours is named {name}; rename or remove it to add this one"
+            );
+        }
+        Ok(())
     }
 
     /// Removes the connector the store added as `name`, when it added one: its server goes
@@ -239,7 +257,30 @@ impl Runtime {
             self.save_mcp_server(Some(name), "")?;
         }
         connector::forget(self.paths(), name)?;
+        self.tidy_connector(name);
         Ok(true)
+    }
+
+    /// Keeps of a release connector's programs only the version the store's record of it
+    /// runs and any a server in the config still starts, whatever its name: none once
+    /// nothing does.
+    pub(crate) fn tidy_connector(&self, name: &str) {
+        use crate::{config::McpServerConfig, plugins::store::connector};
+        let paths = self.paths();
+        let config = self.config().current();
+        let started = config.mcp().values().filter_map(|server| match server {
+            McpServerConfig::Stdio(stdio) => {
+                connector::release::tag_of(paths, name, std::path::Path::new(&stdio.command))
+            }
+            McpServerConfig::Http(_) => None,
+        });
+        let keep: Vec<String> = connector::kept_version(paths, name)
+            .into_iter()
+            .chain(started)
+            .collect();
+        if let Err(error) = connector::install::tidy(paths, name, &keep) {
+            tracing::warn!("connector {name}: {error:#}");
+        }
     }
 
     /// Switches a plugin on, allowing what its manifest asks for now, or off; it applies
