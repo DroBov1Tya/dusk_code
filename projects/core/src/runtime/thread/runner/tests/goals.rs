@@ -333,12 +333,17 @@ async fn a_stop_pauses_the_goal_and_a_message_goes_on_with_it() {
     let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
     let client = {
         let state = Arc::clone(&state);
+        let provider = Arc::clone(&provider);
         async move {
             input.send("/goal build it").await.unwrap();
             loop {
                 if let Some(ThreadEvent::TurnStarted(_)) = output.next_event().await {
                     break;
                 }
+            }
+            // A stop before the turn asks the model would leave the hang to the next one.
+            while provider.requests.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
             input.cancel().await.unwrap();
             let (note, goal) = next_goal_note(&mut output).await;
