@@ -162,6 +162,8 @@ pub struct Repeats {
     cycle_replan_step: u32,
     /// A cycle asked twice for a different plan and the judge has not been told yet.
     cycle_stall: Option<Stall>,
+    /// The same failing tests reached the ladder's top and the judge has not been told.
+    tests_stall: Option<Stall>,
     /// Judge calls made in the turn.
     judged: u32,
     /// Stall candidates to let pass before the next judge call: each judge that let
@@ -223,6 +225,9 @@ impl Repeats {
         }
         let tests = tests.filter(|_| limits.test_reruns);
         let signature = tests.as_ref().and_then(test_runs::TestRun::signature);
+        // The same failing tests come back through real edits when some fail for another
+        // reason: their count never ends the turn by itself; at the top it is the judge's.
+        let by_ids = signature.is_some();
         let rerun = match tests {
             Some(run) => self.test_runs.run(self.steps, run, facts.ledger, limits),
             None => {
@@ -240,7 +245,7 @@ impl Repeats {
             .flatten();
         let climbed = counted
             .filter(|_| limits.failure_ladder)
-            .and_then(|key| self.ladder.climb(key, limits));
+            .and_then(|key| self.ladder.climb(key, limits, !by_ids));
         if limits.loop_judge {
             self.keep_recent(call, result);
         }
@@ -248,6 +253,12 @@ impl Repeats {
         if let Some(climbed) = climbed {
             if climbed.stop.is_some() {
                 self.stop = climbed.stop;
+            }
+            if by_ids && climbed.count >= limits.failure_stop_at {
+                self.tests_stall = Some(Stall {
+                    count: climbed.count,
+                    what: format!("the same tests failed {} times in this turn", climbed.count),
+                });
             }
             notices.push((climbed.rung, climbed.count, climbed.note));
         }
@@ -342,9 +353,10 @@ impl Repeats {
     }
 
     /// The turn `turn_id` as a stall candidate, once a rule asked for a different plan
-    /// and nothing came of it: steps in a row with nothing new past the re-plan, or a
-    /// cycle asked twice. Given once per mark, and only while the judge is on and has
-    /// calls left; marks that come while a judge's redirect is being given time pass.
+    /// and nothing came of it: steps in a row with nothing new past the re-plan, a
+    /// cycle asked twice, or the same failing tests at the ladder's top. Given once per
+    /// mark, and only while the judge is on and has calls left; marks that come while a
+    /// judge's redirect is being given time pass.
     pub fn take_stall(&mut self, turn_id: &str, limits: &Limits) -> Option<Stall> {
         if self.turn != turn_id {
             return None;
@@ -353,7 +365,11 @@ impl Repeats {
             count: idle,
             what: format!("{idle} steps in a row brought nothing new"),
         });
-        let stall = self.cycle_stall.take().or(idle)?;
+        let stall = self
+            .cycle_stall
+            .take()
+            .or_else(|| self.tests_stall.take())
+            .or(idle)?;
         if !limits.loop_judge || self.judged >= limits.loop_judge_calls {
             return None;
         }

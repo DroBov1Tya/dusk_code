@@ -409,6 +409,46 @@ fn the_same_failing_tests_climb_the_ladder_whatever_else_the_output_says() {
 }
 
 #[test]
+fn the_same_failing_tests_never_stop_the_turn_alone() {
+    let mut repeats = Repeats::default();
+    let limits = Limits::default();
+    let mut last = None;
+    // Real edits, each seen by the ledger, with the same tests failing for some reason
+    // the edits do not touch.
+    for round in 0..limits.failure_stop_at + 1 {
+        other(
+            &mut repeats,
+            &format!("sed -i 's/{round}/x/' src/lib.rs"),
+            false,
+            &limits,
+        );
+        let output = exited(
+            101,
+            &cargo_output(&["tests::flaky"], &format!("src/a.rs:{round}")),
+        );
+        let test = command(&format!("cargo test --test t{round}"));
+        last = run(
+            &mut repeats,
+            &test,
+            &output,
+            Some(10 + u64::from(round)),
+            &limits,
+        );
+    }
+    let (rung, _, note) = last.expect("a note");
+    assert_eq!(rung, RepeatRung::Replan);
+    assert!(!note.contains("turn stops"), "{note}");
+    assert!(!repeats.stopping("t"));
+    // The judge reads the turn instead.
+    let stall = repeats.take_stall("t", &limits).expect("a stall candidate");
+    assert!(
+        stall.what.contains("the same tests failed"),
+        "{}",
+        stall.what
+    );
+}
+
+#[test]
 fn test_runners_are_told_from_other_commands() {
     for (line, expected) in [
         ("cargo test", "cargo test"),

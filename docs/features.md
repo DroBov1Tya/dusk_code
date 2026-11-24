@@ -76,7 +76,9 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   ledger cannot see (a subagent, a background job, an MCP tool, a command whose walk
   gave up on a project or change too large or slow to compare) always counts. The
   command still runs. The failing test ids also stand for a run's error in the failure
-  ladder, so the same failures under another filter climb it.
+  ladder, so the same failures under another filter climb it; at its top they do not
+  end the turn but make it a stall candidate for the judge, since tests failing for
+  another reason come back through real edits.
 - **No progress.** `limits.no_progress` (on): a step makes progress when one of its
   calls changed a project file to a state not seen in the turn (by the change ledger),
   gave a result not seen in the turn (ids and times made alike), read a file, range or
@@ -89,10 +91,11 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   at background jobs is not counted. Notes only: after the re-plan the turn is a stall
   candidate for a judge, and goes on.
 - **Loop judge.** `limits.loop_judge` (on): a turn still without progress after the
-  no-progress re-plan, or a cycle asked twice for a different plan, is read by a judge:
-  the arbiter's helper model when the user set one (`arbiter.model`), else, or when it
-  cannot be had, the turn's own model, at low effort (asked again without one when the
-  model refuses it, as one without reasoning does) and without tools, given the
+  no-progress re-plan, a cycle asked twice for a different plan, or the same failing
+  tests at the failure ladder's top, is read by a judge: the arbiter's helper model
+  when the user set one (`arbiter.model`), else, or when it cannot be had, the turn's
+  own model, at low effort (asked again without one when the model refuses it, as one
+  without reasoning does) and without tools, given the
   user's request, the last 20 calls one line each, what the rule saw and the error that came back most
   (`resources/internal/LOOP_JUDGE.md`, which says varied retries and batch edits are not
   loops). It answers `{stuck, confidence, redirect}`. Only `stuck` at 0.9 or more ends
