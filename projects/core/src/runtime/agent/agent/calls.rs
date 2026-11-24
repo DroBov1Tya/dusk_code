@@ -569,9 +569,11 @@ impl Agent {
         let notice = match &finished {
             Some(result) => {
                 let limits = config.limits();
+                let read_only = self.tools.read_only(&call.name, &call.arguments);
                 let facts = repeats::Facts {
-                    read_only: self.tools.read_only(&call.name, &call.arguments),
+                    read_only,
                     ledger: self.ledger_count(call, &limits).await,
+                    edits: self.call_edits(call, read_only, &limits).await,
                 };
                 let mut repeats = self.repeats.lock();
                 repeats.note(&turn.turn_id, call, result, &content, &facts, &limits)
@@ -653,6 +655,26 @@ impl Agent {
             Ok(count) => Some(count),
             Err(error) => {
                 warn!("cannot count the thread's changes: {error:#}");
+                None
+            }
+        }
+    }
+
+    /// What the call changed in the project by the change ledger, when the no-progress
+    /// rule reads it; None otherwise or when it cannot be read.
+    async fn call_edits(
+        &self,
+        call: &ToolCall,
+        read_only: bool,
+        limits: &Limits,
+    ) -> Option<Vec<(String, String)>> {
+        if read_only || !(limits.no_progress && limits.record_changes) {
+            return None;
+        }
+        match self.state.call_changes(&self.thread_id, &call.id).await {
+            Ok(edits) => Some(edits),
+            Err(error) => {
+                warn!("cannot read what a call changed: {error:#}");
                 None
             }
         }

@@ -1,0 +1,2 @@
+Added
+A guard against work that goes nowhere, on by default (`limits.no_progress`): steps in a row that change no project file to a new state, show nothing new, read nothing not read before and pass nothing that failed get a note asking where the turn stands at the 12th (`no_progress_note_at`) and a request for a different plan at the 30th (`no_progress_replan_at`), as `NoProgress` and `NoProgressReplan` notices. Notes only: the turn is then a stall candidate for a judge to come, and goes on.

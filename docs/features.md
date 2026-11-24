@@ -68,6 +68,16 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
   one; a write the ledger cannot see (a subagent, a background job, an MCP tool) always
   counts. The command still runs. The failing test ids also stand for a run's
   error in the failure ladder, so the same failures under another filter climb it.
+- **No progress.** `limits.no_progress` (on): a step makes progress when one of its
+  calls changed a project file to a state not seen in the turn (by the change ledger),
+  gave a result not seen in the turn (ids and times made alike), read a file, range or
+  search not asked for before, or passed a command that failed earlier in the turn.
+  Steps in a row without any get a note asking where the turn stands
+  (`limits.no_progress_note_at`, 12), then a request for a different plan
+  (`no_progress_replan_at`, 30), and again every `no_progress_note_at` steps after. Until
+  the ledger records a change in the turn, and for writes it cannot see (a subagent, a
+  job, an MCP tool), a new call that may write counts as progress. Notes only: after the
+  re-plan the turn is a stall candidate for a judge, and goes on.
 
 ## Project knowledge
 

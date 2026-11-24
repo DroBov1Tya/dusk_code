@@ -388,6 +388,26 @@ fn the_loop_guards_are_on_and_their_rungs_rise() {
 }
 
 #[test]
+fn the_progress_guards_are_on_and_their_steps_rise() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.no_progress);
+    assert_eq!(
+        (plain.no_progress_note_at, plain.no_progress_replan_at),
+        (12, 30)
+    );
+    let set = parse("limits:\n  no_progress: false\n  no_progress_note_at: 20\n").unwrap();
+    assert!(!set.limits().no_progress);
+    assert_eq!(set.limits().no_progress_note_at, 20);
+    for bad in [
+        "limits:\n  no_progress_note_at: 2\n",
+        "limits:\n  no_progress_note_at: 30\n",
+        "limits:\n  no_progress_replan_at: 501\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
 fn the_team_parts_are_off_and_its_ceilings_have_defaults() {
     let plain = parse(PROVIDERS).unwrap().limits();
     // The team itself is chosen by the mode; `plan_graph` only switches it off.

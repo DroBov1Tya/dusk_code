@@ -34,6 +34,14 @@ macro_rules! select {
     };
 }
 
+/// A file's state after a change: its content hash, `deleted`, or the row's own id when
+/// the content was not read, so a state not known is never taken for one seen before.
+macro_rules! state_after {
+    () => {
+        "COALESCE(hash_after, CASE kind WHEN 'deleted' THEN 'deleted' ELSE change_id END)"
+    };
+}
+
 impl State {
     /// Records what one call changed, in the thread's running turn when there is one.
     pub async fn record_changes(
@@ -125,6 +133,25 @@ impl State {
             .await
             .context("count the thread's changes")?;
         u64::try_from(count).context("negative change count")
+    }
+
+    /// What the call `call_id` of the thread changed, as (path, state after), in the
+    /// order recorded; see `state_after!`.
+    pub async fn call_changes(
+        &self,
+        thread_id: &str,
+        call_id: &str,
+    ) -> Result<Vec<(String, String)>> {
+        sqlx::query_as(concat!(
+            "SELECT path, ",
+            state_after!(),
+            " FROM changes WHERE thread_id = ? AND call_id = ? ORDER BY rowid"
+        ))
+        .bind(thread_id)
+        .bind(call_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("list what a call changed")
     }
 
     /// The thread's own changes for a client, newest first, at most `MAX_FILE_CHANGES`.

@@ -19,6 +19,14 @@ const MAX_SHRINKS: u32 = 2;
 const MAX_STRANDED: u32 = 2;
 
 impl Agent {
+    /// A turn a stall candidate: `idle` steps in a row brought nothing new, and the model
+    /// was asked for a different plan. Why the turn must end, when a judge reads it and
+    /// confirms it is stuck; until there is one, the turn goes on and the notes stand.
+    async fn judge_stall(&self, turn: &Turn, idle: u32) -> Option<String> {
+        info!(turn = %turn.turn_id, idle, "the turn is a stall candidate");
+        None
+    }
+
     /// Starts a turn when something is queued and the context fits the input limit.
     pub async fn start_turn(&self) -> Result<Option<Turn>> {
         if self.model.current().is_none() {
@@ -136,6 +144,18 @@ impl Agent {
             let repeated = match end {
                 StepEnd::CalledTools => self.repeats.lock().take_stop(&turn.turn_id),
                 _ => None,
+            };
+            // Steps went by with nothing new even after a re-plan: only a judge may end
+            // the turn for that.
+            let stalled = match end {
+                StepEnd::CalledTools if repeated.is_none() => {
+                    self.repeats.lock().take_stall(&turn.turn_id)
+                }
+                _ => None,
+            };
+            let repeated = match stalled {
+                Some(idle) => self.judge_stall(turn, idle).await,
+                None => repeated,
             };
             if let Some(why) = repeated {
                 outcome = TurnOutcome::Failed(dusk_protocol::thread::TurnFailure {

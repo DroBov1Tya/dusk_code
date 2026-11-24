@@ -107,6 +107,19 @@ pub struct Limits {
     /// Runs before the model is asked for a different plan.
     #[serde(default = "default_test_rerun_replan_at")]
     pub test_rerun_replan_at: u32,
+    /// Whether steps in a row that bring nothing new get a note asking where the turn
+    /// stands, then a request for a different plan: no project file changed, nothing new
+    /// read or shown, nothing that failed passed. Notes only: past the re-plan the turn
+    /// is a stall candidate, which only a judge may end.
+    #[serde(default = "yes")]
+    pub no_progress: bool,
+    /// Steps in a row with nothing new before the note, and between notes after the
+    /// re-plan.
+    #[serde(default = "default_no_progress_note_at")]
+    pub no_progress_note_at: u32,
+    /// Steps before the model is asked for a different plan.
+    #[serde(default = "default_no_progress_replan_at")]
+    pub no_progress_replan_at: u32,
     /// Whether the files a command changes in the project are recorded, with a diff when
     /// the text before is known, so the agent and clients can ask what changed. Off, no
     /// command is watched and the chat's list of changed files stays empty too.
@@ -221,6 +234,9 @@ impl Default for Limits {
             test_reruns: true,
             test_rerun_note_at: default_test_rerun_note_at(),
             test_rerun_replan_at: default_test_rerun_replan_at(),
+            no_progress: true,
+            no_progress_note_at: default_no_progress_note_at(),
+            no_progress_replan_at: default_no_progress_replan_at(),
             record_changes: true,
             stub_results: true,
             stub_keep_steps: default_stub_keep_steps(),
@@ -333,6 +349,20 @@ fn default_test_rerun_note_at() -> u32 {
 fn default_test_rerun_replan_at() -> u32 {
     4
 }
+
+/// A step that only rereads is common; a dozen in a row is not research any more.
+fn default_no_progress_note_at() -> u32 {
+    12
+}
+
+fn default_no_progress_replan_at() -> u32 {
+    30
+}
+
+/// Steps in a row with nothing new have to span a few at least, and stay well short of a
+/// turn that burns itself out.
+pub const MIN_NO_PROGRESS_STEPS: u32 = 3;
+pub const MAX_NO_PROGRESS_STEPS: u32 = 500;
 
 /// Two steps at least, so the result the model is reading is never put away under it.
 pub const MIN_STUB_KEEP_STEPS: u32 = 2;

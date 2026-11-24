@@ -53,6 +53,7 @@ fn run(
     let facts = Facts {
         read_only: false,
         ledger,
+        edits: None,
     };
     repeats
         .note("t", call, result, &result.content, &facts, limits)
@@ -65,6 +66,7 @@ fn other(repeats: &mut Repeats, text: &str, read_only: bool, limits: &Limits) {
     let facts = Facts {
         read_only,
         ledger: None,
+        edits: None,
     };
     repeats.note(
         "t",
@@ -181,6 +183,7 @@ fn writes_the_ledger_cannot_see_are_changes() {
             let facts = Facts {
                 read_only,
                 ledger: None,
+                edits: None,
             };
             repeats.note("t", call, &result, &result.content, &facts, &limits);
         }

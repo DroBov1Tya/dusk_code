@@ -6,6 +6,8 @@
 //!   short run of calls coming round again, or a read giving the same result with
 //!   nothing changed between; with `limits.loop_cycles` on they escalate to a re-plan;
 //! - tests run again with no project file changed (`test_runs`, `limits.test_reruns`);
+//! - steps in a row that bring nothing new (`progress`, `limits.no_progress`), which also
+//!   mark the turn a stall candidate for a judge;
 //! - when `limits.failure_ladder` is on, the same error through calls that differ
 //!   (`ladder`, with `signature` saying when two errors are the same, and a test run's
 //!   failing ids standing for its error). The same count tells, with `limits.episodes`
@@ -17,6 +19,9 @@ mod cycles;
 #[cfg(test)]
 mod cycles_tests;
 mod ladder;
+mod progress;
+#[cfg(test)]
+mod progress_tests;
 mod signature;
 #[cfg(test)]
 mod signature_tests;
@@ -57,6 +62,9 @@ pub struct Facts {
     /// The change ledger's count for the thread after the call; read only for a test run
     /// (`is_test_run`) with `limits.test_reruns` and `limits.record_changes` on.
     pub ledger: Option<u64>,
+    /// The ledger's rows for the call, as (path, state after); read only for a call that
+    /// may write, with `limits.no_progress` and `limits.record_changes` on.
+    pub edits: Option<Vec<(String, String)>>,
 }
 
 /// Kept per turn: a new turn starts every count over.
@@ -67,6 +75,7 @@ pub struct Repeats {
     steps: u32,
     cycles: cycles::Cycles,
     test_runs: test_runs::TestRuns,
+    progress: progress::Progress,
     ladder: ladder::Ladder,
     /// Why the turn must end, once the ladder reached its top.
     stop: Option<String>,
@@ -79,6 +88,7 @@ impl Repeats {
     pub fn step(&mut self, turn_id: &str) {
         self.enter(turn_id);
         self.steps = self.steps.saturating_add(1);
+        self.progress.step();
     }
 
     /// Notes a call that ran; `content` is what the model will read of its result. When
@@ -95,14 +105,28 @@ impl Repeats {
     ) -> Option<Notice> {
         self.enter(turn_id);
         let call_hash = hash((&call.name, call.arguments.to_string()));
-        let result_hash = if limits.loop_cycles {
-            cycles::result_hash(content)
-        } else {
-            hash(content)
+        // Progress compares results with times and ids made alike too, or every test run
+        // would bring news.
+        let alike =
+            (limits.loop_cycles || limits.no_progress).then(|| cycles::result_hash(content));
+        let result_hash = match alike {
+            Some(alike) if limits.loop_cycles => alike,
+            _ => hash(content),
         };
         let cycle = self
             .cycles
             .note(self.steps, facts.read_only, call_hash, result_hash, limits);
+        let moved = self.progress.note(
+            &progress::Call {
+                call,
+                result,
+                call_hash,
+                result_hash: alike.unwrap_or(result_hash),
+                read_only: facts.read_only,
+                edits: facts.edits.as_deref(),
+            },
+            limits,
+        );
         let tests = limits
             .test_reruns
             .then(|| test_runs::TestRun::of(call, result))
@@ -135,10 +159,24 @@ impl Repeats {
         }
         notices.extend(rerun);
         notices.extend(cycle);
-        notices
+        notices.extend(moved);
+        let notice = notices
             .into_iter()
             .min_by_key(|(rung, ..)| weight(*rung))
-            .map(|(rung, count, note)| Notice { rung, count, note })
+            .map(|(rung, count, note)| Notice { rung, count, note })?;
+        // A no-progress note that lost to another rule's comes with a later call.
+        self.progress.noticed(notice.rung, limits);
+        Some(notice)
+    }
+
+    /// Steps in a row with nothing new in the turn `turn_id`, once the model was asked
+    /// for a different plan for that: a turn a judge should look at. Given once per
+    /// re-plan; None after progress.
+    pub fn take_stall(&mut self, turn_id: &str) -> Option<u32> {
+        if self.turn != turn_id {
+            return None;
+        }
+        self.progress.take_stall()
     }
 
     /// The loop a call that passed ended, for an episode. Only asked with

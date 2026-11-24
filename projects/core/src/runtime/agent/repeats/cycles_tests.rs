@@ -46,6 +46,7 @@ fn ran(
     let facts = Facts {
         read_only,
         ledger: None,
+        edits: None,
     };
     repeats
         .note("t", call, &result, &result.content, &facts, limits)
