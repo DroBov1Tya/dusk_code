@@ -6,6 +6,7 @@
 use crate::{
     api,
     chat::{blocks::copy, markdown::Markdown},
+    state::state,
     ui::{Icon, IconName, run, size},
 };
 use dusk_protocol::thread::{Source, SourceChunk, SourceKind};
@@ -18,9 +19,18 @@ const MAX_SHOWN: usize = 1024 * 1024;
 pub fn SourcesTab(id: String) -> impl IntoView {
     let sources = RwSignal::new(Vec::<Source>::new());
     let open = RwSignal::new(None::<Source>);
+    let app = state();
+    // Asks when the tab opens, then when the core takes in a message, which may attach a
+    // source, and when a turn ends, which marks them sent.
     let thread = id.clone();
-    run(async move { api::sources(&thread).await }, move |list| {
-        sources.set(list)
+    Effect::new(move |_| {
+        if let Some(chat) = app.chat(&thread) {
+            chat.with(|data| (data.moved, data.pending.len()));
+        }
+        let thread = thread.clone();
+        run(async move { api::sources(&thread).await }, move |list| {
+            sources.set(list)
+        });
     });
     view! {
         <div class="sources">
