@@ -10,6 +10,10 @@ use dusk_protocol::{thread::Block, tools::Question};
 
 use super::{Action, App, Entry, Input};
 
+/// The reply row's words for a proposed session.
+const START_SESSION: &str = "Start session";
+const DISMISS: &str = "Dismiss";
+
 pub struct Poll {
     pub question: Question,
     /// The row under the cursor: an option, or the own answer after them.
@@ -164,6 +168,9 @@ impl App {
         if self.is_busy() {
             return Vec::new();
         }
+        if self.waiting_proposal().is_some() {
+            return vec![START_SESSION, DISMISS];
+        }
         // An activity line is the app's own summary of steps, not something said after.
         let last = self
             .transcript
@@ -195,6 +202,18 @@ impl App {
             let text = poll.question.answer(&[index], "");
             return self.answer_with(text);
         }
+        if let Some(call_id) = self.waiting_proposal()
+            && !self.is_busy()
+            && self.approvals.is_empty()
+        {
+            if index > 1 {
+                return Action::None;
+            }
+            return Action::Proposal {
+                call_id: call_id.to_owned(),
+                start: index == 0,
+            };
+        }
         let Some(label) = self
             .reply_labels()
             .get(index)
@@ -204,6 +223,22 @@ impl App {
         };
         self.show_sent(&label);
         Action::Send(label)
+    }
+
+    /// The call of the newest session the agent proposed that waits for the user.
+    pub fn waiting_proposal(&self) -> Option<&str> {
+        self.transcript
+            .entries
+            .iter()
+            .rev()
+            .find_map(|entry| match entry {
+                Entry::Proposal {
+                    call_id,
+                    state: dusk_protocol::thread::ProposalState::Pending,
+                    ..
+                } => Some(call_id.as_str()),
+                _ => None,
+            })
     }
 
     /// Shows a question the agent asked; a second one waits behind the first instead of
@@ -378,6 +413,42 @@ mod tests {
         let mut app = with_choices(&["Yes", "No"]);
         let action = press(&mut app, KeyCode::Char('3'), KeyModifiers::ALT);
         assert!(matches!(action, Action::Tab(TabMove::Go(2))));
+    }
+
+    /// A proposed session waiting for the user is the reply row: Alt+1 starts it, Alt+2
+    /// dismisses it, and nothing is sent to the agent as a message.
+    #[test]
+    fn a_waiting_proposal_is_started_or_dismissed_from_the_row() {
+        use dusk_protocol::thread::{PROPOSE_SESSION_TOOL, Proposal, ProposalState};
+        let mut app = test_app();
+        app.transcript.add_user("go");
+        let card = Proposal {
+            title: "Fix the gate".into(),
+            brief: "Run pytest.".into(),
+            project: None,
+            branch: None,
+            mode: None,
+        };
+        let call = ToolCall {
+            id: "p".into(),
+            name: PROPOSE_SESSION_TOOL.into(),
+            arguments: json!({}),
+        };
+        app.transcript.apply(ThreadEvent::ToolStarted(call));
+        app.transcript.apply(ThreadEvent::ToolFinished {
+            call_id: "p".into(),
+            result: dusk_protocol::tools::ToolResult::text(card.result()),
+        });
+        assert_eq!(app.reply_labels(), ["Start session", "Dismiss"]);
+        let action = press(&mut app, KeyCode::Char('1'), KeyModifiers::ALT);
+        assert!(matches!(action, Action::Proposal { call_id, start: true } if call_id == "p"));
+        let action = press(&mut app, KeyCode::Char('2'), KeyModifiers::ALT);
+        assert!(matches!(action, Action::Proposal { start: false, .. }));
+        app.transcript.apply(ThreadEvent::ProposalSettled {
+            call_id: "p".into(),
+            state: ProposalState::Dismissed,
+        });
+        assert!(app.reply_labels().is_empty());
     }
 
     #[test]

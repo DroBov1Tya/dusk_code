@@ -241,6 +241,7 @@ impl Workspace {
             list_chat: None,
             texts: Default::default(),
             measure_again: false,
+            briefs_open: Default::default(),
             welcome: crate::pages::welcome::Welcome::new(window, cx),
         };
         workspace.pump_events(events, cx);

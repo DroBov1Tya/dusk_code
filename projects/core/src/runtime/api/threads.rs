@@ -7,6 +7,7 @@ use crate::{
     state::{LocalUnsent, Message, State, Task, Thread},
 };
 use anyhow::{Result, ensure};
+use dusk_protocol::thread::{Proposal, ProposalState};
 use std::{collections::HashSet, path::Path};
 use tracing::info;
 
@@ -152,6 +153,56 @@ impl Runtime {
     /// ends once the client drops every `ThreadInput` and the queue is done.
     pub async fn new_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
         self.launcher.new_thread(source, cwd).await
+    }
+
+    /// Starts the session the agent of `thread_id` proposed with `call_id`: a new chat in
+    /// the proposal's project (the chat's own when none) and mode, opened before its brief
+    /// is sent. Refused when the proposal was answered already.
+    pub async fn start_proposal(
+        &self,
+        source: &str,
+        thread_id: &str,
+        call_id: &str,
+    ) -> Result<(ThreadHandle, Proposal)> {
+        use crate::tools::propose_session;
+        let launcher = self.of(thread_id).await;
+        let state = &launcher.state;
+        let (proposal, settled) = propose_session::find(state, thread_id, call_id).await?;
+        anyhow::ensure!(
+            settled == ProposalState::Pending,
+            "this proposal was answered already"
+        );
+        let cwd = match &proposal.project {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => {
+                let chat = state.load_thread(thread_id).await?;
+                chat.and_then(|chat| chat.project)
+                    .map_or_else(|| self.paths().workspace_root().to_path_buf(), Into::into)
+            }
+        };
+        let mode = match &proposal.mode {
+            Some(mode) => mode.clone(),
+            None => self.config().current().mode().to_owned(),
+        };
+        let handle = launcher.new_thread_in(source, &cwd, &mode, None).await?;
+        Ok((handle, proposal))
+    }
+
+    /// Stores how the user answered the proposal of `call_id`, for the chat's next turn;
+    /// false when it was answered already.
+    pub async fn settle_proposal(
+        &self,
+        thread_id: &str,
+        call_id: &str,
+        state: &ProposalState,
+    ) -> Result<bool> {
+        use crate::tools::propose_session;
+        let store = &self.of(thread_id).await.state;
+        let (proposal, settled) = propose_session::find(store, thread_id, call_id).await?;
+        if settled != ProposalState::Pending {
+            return Ok(false);
+        }
+        propose_session::settle(store, thread_id, call_id, &proposal.title, state).await
     }
 
     /// A new thread that asks `model`, as `provider/model`, instead of the chosen one.

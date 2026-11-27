@@ -1005,3 +1005,69 @@ fn goal_verdicts_read_the_same_from_history_and_live() {
     assert_eq!(reopened.items[2], Item::Goal(first));
     assert_eq!(reopened.items.last(), Some(&Item::Goal(last)));
 }
+
+/// A proposal's card takes its step's place, and the core's note of the answer settles
+/// it without being drawn, read back or live; the event does the same.
+#[test]
+fn a_proposal_card_is_settled_by_its_note_and_its_event() {
+    let card = Proposal {
+        title: "Fix the gate".into(),
+        brief: "Run pytest.".into(),
+        project: None,
+        branch: None,
+        mode: None,
+    };
+    let started = ProposalState::Started {
+        thread_id: "new".into(),
+    };
+    let note = Message {
+        from_thread_id: Some("t".into()),
+        ..message(
+            MessageRole::User,
+            &crate::thread::outcome_note("p", &card.title, &started),
+        )
+    };
+    let history = [
+        calling(vec![call("p", PROPOSE_SESSION_TOOL, json!({}))]),
+        result("p", &card.result()),
+        note.clone(),
+    ];
+    let stored = Chat::from_history(&history);
+    assert_eq!(stored.items.len(), 1, "{:?}", stored.items);
+    assert!(matches!(
+        &stored.items[0],
+        Item::Proposal { call_id, proposal, state } if call_id == "p" && *proposal == card && *state == started
+    ));
+
+    let mut live = Chat::from_history(&history[..2]);
+    assert!(matches!(
+        &live.items[0],
+        Item::Proposal {
+            state: ProposalState::Pending,
+            ..
+        }
+    ));
+    live.apply(
+        ThreadEvent::ProposalSettled {
+            call_id: "p".into(),
+            state: ProposalState::Dismissed,
+        },
+        1,
+    );
+    assert!(matches!(
+        &live.items[0],
+        Item::Proposal {
+            state: ProposalState::Dismissed,
+            ..
+        }
+    ));
+    // A note for no card of this chat is an agent's message like any other.
+    live.apply(
+        ThreadEvent::FromAgent(Message {
+            content: crate::thread::outcome_note("other", "x", &started),
+            ..note
+        }),
+        2,
+    );
+    assert!(matches!(&live.items[1], Item::Agent { .. }));
+}

@@ -20,6 +20,25 @@ pub async fn approve(client: &Client, app: &mut App, thread_id: &str, id: u64, d
     }
 }
 
+/// Starts or dismisses a proposed session. A started one runs as a chat of its own,
+/// which the chat list offers; this tab stays where it is.
+pub async fn proposal(client: &Client, app: &mut App, call_id: &str, start: bool) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    let threads = client.threads();
+    app.flash = Some(match start {
+        true => match threads.start_proposal(&thread_id, call_id).await {
+            Ok(started) => format!("Started the session as chat {started}"),
+            Err(error) => format!("cannot start the session: {error:#}"),
+        },
+        false => match threads.dismiss_proposal(&thread_id, call_id).await {
+            Ok(()) => "Dismissed the proposed session".into(),
+            Err(error) => format!("cannot dismiss the session: {error:#}"),
+        },
+    });
+}
+
 pub async fn access(client: &Client, app: &mut App, name: Option<String>) {
     let Some(thread_id) = app.thread_id.clone() else {
         app.flash = Some("Send a message first; the access mode belongs to a chat".into());

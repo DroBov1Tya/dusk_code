@@ -51,6 +51,8 @@ named! {
     R::Thread(T::Pin { .. }) => "thread.pin",
     R::Thread(T::Pins { .. }) => "thread.pins",
     R::Thread(T::Seen { .. }) => "thread.seen",
+    R::Thread(T::StartProposal { .. }) => "thread.start_proposal",
+    R::Thread(T::DismissProposal { .. }) => "thread.dismiss_proposal",
     R::Work(W::Jobs { .. }) => "work.jobs",
     R::Work(W::JobOutput { .. }) => "work.job_output",
     R::Work(W::StopJob { .. }) => "work.stop_job",

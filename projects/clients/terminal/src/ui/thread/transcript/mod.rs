@@ -4,6 +4,7 @@
 mod blocks;
 mod diagram;
 mod lines;
+mod proposal;
 mod shown;
 mod suggested;
 

@@ -1138,3 +1138,12 @@ a.pr-chip:hover .pr-card, a.pr-chip:focus-visible .pr-card { display: flex; anim
 .skill-diff > div { padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .skill-diff .added { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .skill-diff .removed { background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--muted); text-decoration: line-through; }
+/* A session the agent proposed: its brief folds open, Start and Dismiss under it. */
+.proposal { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.proposal h3 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.proposal-kicker, .proposal-about, .proposal-state { margin: 0; font-size: 12px; color: var(--muted); }
+.proposal-brief, .proposal-brief pre { margin: 0; font: inherit; font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg2); }
+.proposal-brief summary { cursor: pointer; white-space: pre-wrap; }
+.proposal-brief[open] summary { display: none; }
+.proposal-actions { display: flex; gap: var(--s2); }
+button.proposal-state { align-self: flex-start; }

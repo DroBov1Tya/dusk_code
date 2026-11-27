@@ -103,6 +103,14 @@ fn threads() -> Vec<T> {
             policy: None,
         },
         T::GetApprovals { thread_id: id() },
+        T::StartProposal {
+            thread_id: id(),
+            call_id: word(),
+        },
+        T::DismissProposal {
+            thread_id: id(),
+            call_id: word(),
+        },
         T::Pin {
             thread_id: id(),
             message_id: word(),

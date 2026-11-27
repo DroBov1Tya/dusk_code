@@ -520,6 +520,40 @@ impl AppState {
         });
     }
 
+    /// Starts the session the agent of `from` proposed with `call_id`, shown once made.
+    pub fn start_proposal(self, from: String, call_id: String) {
+        let navigation = self.navigation.get_untracked();
+        spawn_local(async move {
+            let made = async {
+                let thread_id = api::start_proposal(&from, &call_id).await?;
+                let history = api::messages(&thread_id).await?;
+                api::Res::Ok((thread_id, history))
+            };
+            match made.await {
+                Ok((thread_id, history)) => {
+                    let data = ChatData::from_history(&history);
+                    self.chats.update(|chats| {
+                        chats.insert(thread_id.clone(), RwSignal::new(data));
+                    });
+                    if self.navigation.get_untracked() == navigation {
+                        self.show(View::Chat(Some(thread_id)));
+                    }
+                    self.refresh();
+                }
+                Err(error) => self.fail(error),
+            }
+        });
+    }
+
+    /// Drops the session the agent of `thread_id` proposed with `call_id`.
+    pub fn dismiss_proposal(self, thread_id: String, call_id: String) {
+        spawn_local(async move {
+            if let Err(error) = api::dismiss_proposal(&thread_id, &call_id).await {
+                self.fail(error);
+            }
+        });
+    }
+
     /// Stops using a chat on this page; the core closes it when no client keeps it.
     pub fn close_chat(self, thread_id: String) {
         spawn_local(async move {

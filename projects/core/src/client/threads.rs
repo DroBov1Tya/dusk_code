@@ -46,6 +46,24 @@ impl Threads<'_> {
         .await
     }
 
+    /// Starts the session the agent proposed with `call_id` in `thread_id`; answers with
+    /// the new chat.
+    pub async fn start_proposal(&self, thread_id: &str, call_id: &str) -> Result<String> {
+        self.opened(ThreadRequest::StartProposal {
+            thread_id: thread_id.to_owned(),
+            call_id: call_id.to_owned(),
+        })
+        .await
+    }
+
+    pub async fn dismiss_proposal(&self, thread_id: &str, call_id: &str) -> Result<()> {
+        let request = ThreadRequest::DismissProposal {
+            thread_id: thread_id.to_owned(),
+            call_id: call_id.to_owned(),
+        };
+        self.done(request).await
+    }
+
     pub async fn list(&self) -> Result<Vec<Thread>> {
         match self.call(ThreadRequest::List).await? {
             Response::Threads(threads) => Ok(threads),

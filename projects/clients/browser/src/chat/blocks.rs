@@ -10,7 +10,7 @@ use super::{
     markdown::Markdown, shown::ShownBlock, skill_change::SkillChanges, voice, working::Working,
 };
 use crate::{
-    state::{Chat, state},
+    state::{Chat, View, state},
     ui::{Icon, IconName},
 };
 use dusk_protocol::thread::{ChatLog, GoalVerdict, Tool, ToolState, labelled};
@@ -136,6 +136,7 @@ fn folds(item: &Item) -> bool {
             | Item::Job(_)
             | Item::Block(_)
             | Item::Suggestion(_)
+            | Item::Proposal { .. }
             | Item::Run(_)
             | Item::Goal(_)
             | Item::Error(_)
@@ -440,6 +441,11 @@ fn item_view(
         Item::Suggestion(card) => {
             view! { <crate::pages::customize::SuggestedCard card /> }.into_any()
         }
+        Item::Proposal {
+            call_id,
+            proposal,
+            state,
+        } => view! { <ProposalCard call_id proposal settled=state thread read_only /> }.into_any(),
         Item::Image { card, .. } => view! { <ImageCard card /> }.into_any(),
         Item::Audio(card) => view! { <AudioCard card /> }.into_any(),
         Item::Run(_) => view! { <RunCardView id source /> }.into_any(),
@@ -1177,5 +1183,83 @@ fn RunCardView(id: u64, source: Source) -> impl IntoView {
                 </button>
             </div>
         })
+    }
+}
+
+/// A session the agent proposed: its title, the brief's first lines that open in full,
+/// and Start or Dismiss while it waits; afterwards where it went.
+#[component]
+fn ProposalCard(
+    call_id: String,
+    proposal: dusk_protocol::thread::Proposal,
+    settled: dusk_protocol::thread::ProposalState,
+    thread: Option<String>,
+    read_only: bool,
+) -> impl IntoView {
+    use dusk_protocol::thread::ProposalState;
+    let lines: Vec<&str> = proposal.brief.lines().collect();
+    let head = lines.iter().take(3).copied().collect::<Vec<_>>().join("\n");
+    let more = lines.len() > 3;
+    let mut about = Vec::new();
+    about.extend(proposal.mode.clone().map(|mode| format!("mode {mode}")));
+    about.extend(
+        proposal
+            .branch
+            .clone()
+            .map(|branch| format!("branch {branch}")),
+    );
+    about.extend(
+        proposal
+            .project
+            .clone()
+            .map(|project| format!("in {project}")),
+    );
+    let about = about.join(" \u{b7} ");
+    let actions = match (settled, thread) {
+        (ProposalState::Pending, Some(thread)) if !read_only => {
+            let (start_thread, start_call) = (thread.clone(), call_id.clone());
+            view! {
+                <div class="proposal-actions">
+                    <button class="primary" on:click=move |_| {
+                        state().start_proposal(start_thread.clone(), start_call.clone())
+                    }>"Start session"</button>
+                    <button class="ghost" on:click=move |_| {
+                        state().dismiss_proposal(thread.clone(), call_id.clone())
+                    }>"Dismiss"</button>
+                </div>
+            }
+            .into_any()
+        }
+        (ProposalState::Pending, _) => {
+            view! { <p class="proposal-state">"Waiting for the user"</p> }.into_any()
+        }
+        (ProposalState::Started { thread_id }, _) => view! {
+            <button class="ghost proposal-state" on:click=move |_| {
+                state().show(View::Chat(Some(thread_id.clone())))
+            }>"Started \u{2192} open the session"</button>
+        }
+        .into_any(),
+        (ProposalState::Dismissed, _) => {
+            view! { <p class="proposal-state">"Dismissed"</p> }.into_any()
+        }
+    };
+    let brief = proposal.brief.clone();
+    view! {
+        <section class="proposal" aria-label="Proposed session">
+            <p class="proposal-kicker">"Proposed session"</p>
+            <h3>{proposal.title}</h3>
+            {(!about.is_empty()).then(|| view! { <p class="proposal-about">{about}</p> })}
+            {match more {
+                true => view! {
+                    <details class="proposal-brief">
+                        <summary>{head}</summary>
+                        <pre>{brief}</pre>
+                    </details>
+                }
+                .into_any(),
+                false => view! { <pre class="proposal-brief">{brief}</pre> }.into_any(),
+            }}
+            {actions}
+        </section>
     }
 }

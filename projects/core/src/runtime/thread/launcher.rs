@@ -200,6 +200,8 @@ impl Launcher {
             tools.add(Box::new(SuggestNext));
             let terminals = Arc::clone(&self.terminals);
             tools.add(Box::new(crate::tools::console::Terminal(terminals)));
+            let modes = self.paths.modes_dir();
+            tools.add(Box::new(crate::tools::ProposeSession::new(modes)));
             tools.add(Box::new(PlanEdit::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
@@ -238,7 +240,18 @@ impl Launcher {
         model: Option<Arc<ModelChoice>>,
     ) -> Result<ThreadHandle> {
         let mode = self.config.current().mode().to_owned();
-        let thread = start_thread(&self.state, &self.paths, source, &mode, cwd).await?;
+        self.new_thread_in(source, cwd, &mode, model).await
+    }
+
+    /// A new thread that starts in `mode`, a known mode, instead of the chosen one.
+    pub async fn new_thread_in(
+        &self,
+        source: &str,
+        cwd: &Path,
+        mode: &str,
+        model: Option<Arc<ModelChoice>>,
+    ) -> Result<ThreadHandle> {
+        let thread = start_thread(&self.state, &self.paths, source, mode, cwd).await?;
         info!(
             "thread {} started in {}",
             thread.thread_id,
@@ -368,6 +381,7 @@ mod tests {
         ("suggest_from_workshop", true, false),
         ("suggest_next", true, false),
         ("terminal", false, false), // true for list and read only, both ways
+        ("propose_session", false, false),
         ("tasks", false, false),
         ("type_text", false, false),
         ("window_session", false, false),

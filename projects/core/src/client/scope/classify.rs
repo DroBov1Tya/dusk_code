@@ -109,7 +109,9 @@ fn thread(request: &Thread) -> Access<'_> {
             apart(Area::ThreadCreate)
         }
         // A new thread, but with what one thread said: only from a thread in reach.
-        Thread::ForkAt { thread_id, .. } => of(Area::ThreadCreate, thread_id),
+        Thread::ForkAt { thread_id, .. } | Thread::StartProposal { thread_id, .. } => {
+            of(Area::ThreadCreate, thread_id)
+        }
         Thread::List | Thread::Search { .. } => all(Area::ThreadRead),
         Thread::Messages { thread_id }
         | Thread::Tasks { thread_id }
@@ -127,7 +129,8 @@ fn thread(request: &Thread) -> Access<'_> {
         | Thread::Close { thread_id }
         | Thread::StopAgent { thread_id }
         | Thread::Rename { thread_id, .. }
-        | Thread::Pin { thread_id, .. } => of(Area::ThreadWrite, thread_id),
+        | Thread::Pin { thread_id, .. }
+        | Thread::DismissProposal { thread_id, .. } => of(Area::ThreadWrite, thread_id),
         Thread::Approve { thread_id, .. } => of(Area::ThreadApprove, thread_id),
         Thread::RunCommand { thread_id, .. } | Thread::StopRun { thread_id, .. } => {
             of(Area::ThreadCommand, thread_id)
