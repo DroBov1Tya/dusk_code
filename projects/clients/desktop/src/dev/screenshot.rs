@@ -222,6 +222,47 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                         window.dispatch_event(event, cx);
                     });
                 }
+                // Frames drawn back to back, as a mascot's ticks or a fast wheel ask for
+                // them, and how long each took to build, lay out and paint.
+                "frames" => {
+                    let parts: Vec<f32> = value.split(',').filter_map(|v| v.parse().ok()).collect();
+                    let (count, wheel) = match parts[..] {
+                        [count] => (count as usize, None),
+                        [count, x, y, dy] => (count as usize, Some((x, y, dy))),
+                        _ => {
+                            eprintln!("frames=N[,X,Y,DY]: {value}");
+                            continue;
+                        }
+                    };
+                    let mut took = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        let workspace = workspace.clone();
+                        let _ = cx.update_window(window, |_, window, cx| {
+                            if let Some((x, y, dy)) = wheel {
+                                window.dispatch_event(
+                                    PlatformInput::Scroll(ScrollEvent {
+                                        position: point(px(x), px(y)),
+                                        delta: ScrollDelta::Pixels(point(px(0.), px(dy))),
+                                        ..Default::default()
+                                    }),
+                                    cx,
+                                );
+                            }
+                            workspace.update(cx, |_, cx| cx.notify());
+                            let start = std::time::Instant::now();
+                            window.draw(cx).clear(cx);
+                            took.push(start.elapsed());
+                        });
+                    }
+                    took.sort();
+                    if let (Some(first), Some(last)) = (took.first(), took.last()) {
+                        let mean = took.iter().sum::<Duration>() / took.len() as u32;
+                        eprintln!(
+                            "frames {value}: mean {mean:.2?}, median {:.2?}, min {first:.2?}, max {last:.2?}",
+                            took[took.len() / 2]
+                        );
+                    }
+                }
                 "quit" => break,
                 other => {
                     let (other, value) = (other.to_owned(), value.to_owned());
@@ -950,6 +991,9 @@ fn act(
             }
             cx.notify();
         }
+        "fake" if value.starts_with("agentchat-") => {
+            long_agent_chat(ws, value.trim_start_matches("agentchat-"), cx);
+        }
         "fake" if value == "agentchat" => {
             // A subagent's chat with a run of steps and an answer, in the window.
             use crate::pages::chat::transcript::Item;
@@ -1468,5 +1512,80 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     ws.chats.insert(thread_id.clone(), chat);
     ws.shown = Some(thread_id);
     ws.center = crate::workspace::Center::Chat;
+    cx.notify();
+}
+
+/// `fake=agentchat-N`: a subagent of the shown chat at work, whose chat holds N steps,
+/// each after a thought and a short answer, with code, paths and a long thought unfolded:
+/// the window to scroll fast and to time with `frames=`.
+fn long_agent_chat(ws: &mut Workspace, count: &str, cx: &mut Context<Workspace>) {
+    use crate::pages::chat::transcript::{Item, Log};
+    use dusk_protocol::thread::{ThreadEvent, Tool, ToolState};
+    let count: usize = count.parse().unwrap_or(300);
+    let agent = "fake-long".to_owned();
+    let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) else {
+        eprintln!("fake=agentchat-N needs a shown chat: chat or fake=chat first");
+        return;
+    };
+    chat.apply(ThreadEvent::SubagentStarted {
+        call_id: "call-long".into(),
+        thread_id: agent.clone(),
+        agent: "backend-engineer".into(),
+        task: "Add expiry to the cache".into(),
+        effort: Some(dusk_protocol::model::Effort::Medium),
+        model: Some("chatgpt/gpt-5.5".into()),
+        task_id: None,
+    });
+    let mut inner = Log::default();
+    inner.push(
+        Item::User {
+            text: "Add expiry to the cache, test it, and say what changed.".into(),
+            sequence: Some(1),
+            answered: Vec::new(),
+        },
+        0,
+    );
+    for step in 0..count {
+        let text = match step % 4 {
+            0 => format!(
+                "Step {step}: `src/cache.rs` keeps the deadline beside the value.\n\n\
+                 ```rust\nfn expired(&self, now: Instant) -> bool {{\n    self.deadline <= now\n}}\n```"
+            ),
+            1 => format!("Reading the tests of step {step}, then running them."),
+            _ => String::new(),
+        };
+        inner.push(
+            Item::Assistant {
+                text,
+                reasoning: format!(
+                    "Thought {step}: a read drops an entry past its deadline.\n\
+                     The writer sets it from `ttl`; nothing else touches it."
+                ),
+            },
+            0,
+        );
+        let (name, detail) = match step % 3 {
+            0 => ("read_file", format!("src/cache/part_{step}.rs")),
+            1 => ("search_files", format!("ttl_{step}")),
+            _ => ("run_command", format!("cargo test -p cache step_{step}")),
+        };
+        inner.push(
+            Item::Tool(Tool {
+                call_id: format!("long-{step}"),
+                name: name.into(),
+                detail: detail.clone(),
+                arguments: format!("{{\"path\": \"{detail}\"}}"),
+                output: "ok".into(),
+                state: ToolState::Done,
+            }),
+            0,
+        );
+    }
+    inner.working = true;
+    chat.agent_chats.insert(agent.clone(), inner);
+    ws.modal = Some(Modal::AgentChat {
+        agent,
+        name: "backend-engineer".into(),
+    });
     cx.notify();
 }
