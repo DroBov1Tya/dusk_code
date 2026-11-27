@@ -98,7 +98,8 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
             );
         for (id, agent) in members {
             let progress = chat.agent_chats.get(id.as_str()).map(progress);
-            card = card.child(figure(id, agent, progress, cx));
+            let asked = chat.approval_waits_on(id);
+            card = card.child(figure(id, agent, progress, asked, cx));
         }
         stage = stage.child(card);
     }
@@ -167,6 +168,7 @@ fn figure(
     id: &str,
     agent: &Agent,
     progress: Option<Progress>,
+    asked: bool,
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     let theme = cx.theme();
@@ -283,30 +285,33 @@ fn figure(
                         .child(format!("\u{201C}{said}\u{201D}"))
                 })),
         )
-        // One agent is stopped or put away from its own row; the row itself opens it.
-        .child(if agent.working() {
-            let id = id.to_owned();
-            Button::new(SharedString::from(format!("agent-stop-{id}")))
-                .ghost()
-                .small()
-                .icon(IconName::Square)
-                .tooltip("Stop this agent")
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    cx.stop_propagation();
-                    ws.stop_agent(&id, cx);
-                }))
-        } else {
-            let id = id.to_owned();
-            Button::new(SharedString::from(format!("agent-clear-{id}")))
-                .ghost()
-                .small()
-                .icon(IconName::Close)
-                .tooltip("Take it off the list")
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    cx.stop_propagation();
-                    ws.clear_agents(Some(&id), cx);
-                }))
-        })
+        // One agent is stopped or put away from its own row; the row itself opens it. One
+        // a request of the user's waits on is not put away before it is answered.
+        .children((!asked || agent.working()).then(|| {
+            if agent.working() {
+                let id = id.to_owned();
+                Button::new(SharedString::from(format!("agent-stop-{id}")))
+                    .ghost()
+                    .small()
+                    .icon(IconName::Square)
+                    .tooltip("Stop this agent")
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        cx.stop_propagation();
+                        ws.stop_agent(&id, cx);
+                    }))
+            } else {
+                let id = id.to_owned();
+                Button::new(SharedString::from(format!("agent-clear-{id}")))
+                    .ghost()
+                    .small()
+                    .icon(IconName::Close)
+                    .tooltip("Take it off the list")
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        cx.stop_propagation();
+                        ws.clear_agents(Some(&id), cx);
+                    }))
+            }
+        }))
         .child(widgets::icon(IconName::ChevronRight, muted))
         .on_click(cx.listener(move |ws, _, window, cx| {
             ws.open_agent_chat(&open, cx);

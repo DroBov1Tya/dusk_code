@@ -23,8 +23,26 @@ pub fn AgentsTab(id: String) -> impl IntoView {
             })
             .unwrap_or_default()
     });
+    let clear = {
+        let thread = id.clone();
+        move |_| {
+            if let Some(chat) = app.chat(&thread) {
+                chat.update(|c| {
+                    c.clear_agents(None);
+                });
+            }
+        }
+    };
+    let finished = move || agents.with(|agents| agents.iter().any(|agent| !agent.working()));
     view! {
         <div class="agents">
+            // Finished agents leave the list for as long as the chat is open on this page;
+            // one an approval waits on stays, and work brings one back.
+            <Show when=finished>
+                <div class="agents-head">
+                    <button class="ghost quiet" title="Take the agents that are done off the list" on:click=clear.clone()>"Clear finished"</button>
+                </div>
+            </Show>
             <Show when=move || !agents.get().is_empty() fallback=|| view! { <p class="muted">"No subagents in this chat."</p> }>
                 // Keyed by what a row shows, so a row is drawn again only when it changes and
                 // a finished sun does not replay its hop at every event of another agent.

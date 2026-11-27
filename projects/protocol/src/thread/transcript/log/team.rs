@@ -35,6 +35,13 @@ impl<L> ChatLog<L> {
                 }
                 TeamChange::Join(member) => {
                     let working = member.state.working();
+                    // A member put away stays away until it works again.
+                    if self.cleared(&member.thread_id) {
+                        if !working {
+                            continue;
+                        }
+                        self.unclear(&member.thread_id);
+                    }
                     let agent = Subagent {
                         name: agent_name(&member.thread_id),
                         thread_id: member.thread_id.clone(),

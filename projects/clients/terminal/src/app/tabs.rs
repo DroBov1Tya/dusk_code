@@ -98,6 +98,7 @@ per_thread! {
     jobs: Vec<JobInfo>,
     jobs_stale: bool,
     subagents: Vec<SubagentView>,
+    cleared_agents: HashSet<String>,
     tasks: Vec<Task>,
     unfolded_tasks: Vec<String>,
     task_scroll: usize,

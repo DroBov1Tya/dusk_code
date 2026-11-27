@@ -158,6 +158,9 @@ pub struct App {
     /// What the folder of a path being typed holds.
     pub paths: Option<PathPopup>,
     pub subagents: Vec<SubagentView>,
+    /// Finished subagents `/agents clear` put away; the team's roster does not bring them
+    /// back until they work again.
+    pub cleared_agents: std::collections::HashSet<String>,
     /// The agent's task board in the open thread.
     pub tasks: Vec<Task>,
     /// A newer release the core found in the background, such as `v0.66.5`.
@@ -301,6 +304,7 @@ impl App {
             previews: Vec::new(),
             pictures: Default::default(),
             subagents: Vec::new(),
+            cleared_agents: Default::default(),
             tasks: Vec::new(),
             mcp: Vec::new(),
             turn_started_at: None,
@@ -376,6 +380,7 @@ impl App {
         self.agent_max_scroll = 0;
         self.mcp_max_scroll = 0;
         self.subagents.clear();
+        self.cleared_agents.clear();
         self.tasks.clear();
         self.goal = None;
         self.turn_started_at = None;

@@ -10,13 +10,14 @@
 //! thinking stopped being blank, or a turn boundary was drawn.
 
 mod approvals;
+mod cleared;
 mod history;
 mod run;
 mod team;
 
 pub use approvals::CHAT_ASKS;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -241,6 +242,8 @@ pub struct ChatLog<L = Infallible> {
     pub agents: BTreeMap<String, Subagent>,
     /// What each subagent said and did, by its thread ID.
     pub agent_chats: BTreeMap<String, ChatLog<L>>,
+    /// The finished agents the user put away, which the team's roster must not bring back.
+    cleared: BTreeSet<String>,
     /// The open requests for approval, the chat's own and its agents' at any depth,
     /// oldest first.
     pub approvals: Vec<ApprovalRequest>,
@@ -287,6 +290,7 @@ impl<L> Default for ChatLog<L> {
             skill_changes: Vec::new(),
             agents: BTreeMap::new(),
             agent_chats: BTreeMap::new(),
+            cleared: BTreeSet::new(),
             approvals: Vec::new(),
             asked_by: BTreeMap::new(),
             title: None,
@@ -765,7 +769,8 @@ impl<L> ChatLog<L> {
                 task_id,
             } => {
                 self.touch_agent_run(&call_id);
-                // Asking the same thread again brings it back to work.
+                // Asking the same thread again brings it back to work, and to the list.
+                self.unclear(&thread_id);
                 let agent = Subagent {
                     name: agent_name(&thread_id),
                     thread_id: thread_id.clone(),

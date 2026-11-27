@@ -716,4 +716,36 @@ mod team_tests {
         app.team_heard(running, true);
         assert!(app.team.as_ref().is_some_and(|team| team.ended().is_some()));
     }
+
+    /// `/agents clear` takes the finished members off and the roster does not bring them
+    /// back; the working one and one whose request waits stay.
+    #[test]
+    fn cleared_members_stay_away_but_not_the_asked_or_working() {
+        use dusk_protocol::tools::{ApprovalRequest, Request};
+        let mut app = app();
+        let roster = team(
+            TeamStatus::Running,
+            &[
+                ("m1", "t1", TaskStatus::Running),
+                ("m2", "t2", TaskStatus::Done),
+                ("m3", "t3", TaskStatus::Done),
+            ],
+        );
+        app.team_heard(roster.clone(), false);
+        app.apply(ThreadEvent::Subagent {
+            thread_id: "m3".into(),
+            event: Box::new(ThreadEvent::Approval(ApprovalRequest {
+                id: 4,
+                request: Request::Command {
+                    command: "make".into(),
+                },
+                session: None,
+                steps: Vec::new(),
+            })),
+        });
+        assert_eq!(app.clear_agents(), 1);
+        app.team_heard(roster, false);
+        let listed: Vec<&str> = app.subagents.iter().map(|c| c.thread_id.as_str()).collect();
+        assert_eq!(listed, ["m1", "m3"]);
+    }
 }

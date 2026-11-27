@@ -217,6 +217,7 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .tab { background: none; border: 0; padding: 4px 10px; border-radius: 8px; color: var(--fg2); }
 .tab.active { background: var(--raised); color: var(--fg); }
 .tab-body { flex: 1; overflow: auto; padding: 4px 12px 16px; }
+.agents-head { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 .agent { display: flex; gap: 10px; width: 100%; text-align: left; background: var(--surface); border: 0; border-radius: 12px; padding: 10px; margin-bottom: 8px; }
 /* Sundown, the subagents' mascot, as Desktop draws it (columns/inspector/mascot.rs). An em is
    the box and 0.01em one unit of the prototype's 100-unit box, so its numbers carry over. The

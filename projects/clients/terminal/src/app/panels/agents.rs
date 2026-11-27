@@ -216,14 +216,18 @@ impl App {
                 model,
                 task_id,
                 ..
-            } => self.start_subagent(
-                child,
-                agent,
-                task,
-                (effort, model),
-                Some(thread_id.to_owned()),
-                task_id,
-            ),
+            } => {
+                // Asked again, a cleared agent is back on the list.
+                self.cleared_agents.remove(&child);
+                self.start_subagent(
+                    child,
+                    agent,
+                    task,
+                    (effort, model),
+                    Some(thread_id.to_owned()),
+                    task_id,
+                )
+            }
             ThreadEvent::Subagent {
                 thread_id: child,
                 event,
@@ -236,7 +240,7 @@ impl App {
                     .iter()
                     .find(|view| view.thread_id == thread_id)
                     .map_or(name.clone(), |view| format!("{name} ({})", view.agent));
-                self.ask_approval(request, Some(agent));
+                self.ask_approval(request, Some((thread_id.to_owned(), agent)));
             }
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
             ThreadEvent::ArbiterDecided {
@@ -358,6 +362,11 @@ impl App {
                 }
                 TeamChange::Join(member) => {
                     let thread_id = member.thread_id.clone();
+                    // A member put away stays away until it works again.
+                    if !member.state.working() && self.cleared_agents.contains(&thread_id) {
+                        continue;
+                    }
+                    self.cleared_agents.remove(&thread_id);
                     let parent = Some(team.thread_id.clone());
                     let shown = (None, member.model);
                     let task_id = Some(member.task_id);
@@ -391,6 +400,27 @@ impl App {
                     .iter()
                     .any(|item| item.started_at.is_some() && !item.done)
         })
+    }
+
+    /// `/agents clear`: takes the finished subagents off the list, but not one a request
+    /// of the user's waits on; gives how many went.
+    pub fn clear_agents(&mut self) -> usize {
+        let asked: Vec<String> = self
+            .approvals
+            .iter()
+            .filter_map(|asked| asked.thread_id.clone())
+            .collect();
+        let gone: Vec<String> = self
+            .subagents
+            .iter()
+            .filter(|view| !view.is_working() && !asked.contains(&view.thread_id))
+            .map(|view| view.thread_id.clone())
+            .collect();
+        self.subagents
+            .retain(|view| !gone.contains(&view.thread_id));
+        let count = gone.len();
+        self.cleared_agents.extend(gone);
+        count
     }
 
     pub fn agents_at_work(&self) -> bool {
