@@ -202,19 +202,7 @@ impl Server {
                 Response::Done
             }
             ThreadRequest::Delete { thread_id } => {
-                // Its turn ends first, so nothing writes to what is being erased.
-                self.close(&thread_id).await;
-                let runtime = &self.runtime;
-                let (state, paths) = runtime.places_of(&thread_id).await;
-                for folder in state.delete_thread(&thread_id).await? {
-                    // Only plain names under the workspace root are taken.
-                    let path = paths.workspace_folder(&folder)?;
-                    match tokio::fs::remove_dir_all(&path).await {
-                        Ok(()) => {}
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(error) => warn!("cannot remove a deleted chat's folder: {error}"),
-                    }
-                }
+                self.erase(&thread_id).await?;
                 Response::Done
             }
             ThreadRequest::Approve {
@@ -263,15 +251,27 @@ impl Server {
                 proposal_id,
             } => {
                 let started = runtime.start_proposal(self.source(), &thread_id, &proposal_id);
-                let (handle, proposal) = started.await?;
+                let (handle, proposal, _answering) = started.await?;
                 let new_id = handle.thread_id.clone();
                 let opened = self.open(handle);
-                let state = ProposalState::Started {
-                    thread_id: new_id.clone(),
-                };
-                self.proposal_settled(thread_id.clone(), proposal_id, state);
                 let brief = proposal.first_message(&thread_id);
-                self.open_thread(&new_id)?.input.send(brief).await?;
+                let sent = match self.open_thread(&new_id) {
+                    Ok(open) => open.input.send(brief).await,
+                    Err(error) => Err(error),
+                };
+                // The card is settled only once the brief went: a chat with no brief is
+                // taken away again and the card waits to be started once more.
+                if let Err(error) = sent {
+                    if let Err(error) = self.erase(&new_id).await {
+                        warn!("cannot remove the chat whose brief failed to send: {error:#}");
+                    }
+                    return Err(error.context("cannot send the proposal's brief"));
+                }
+                runtime
+                    .proposal_started(&thread_id, &proposal, &new_id)
+                    .await?;
+                let state = ProposalState::Started { thread_id: new_id };
+                self.proposal_settled(thread_id, proposal_id, state);
                 opened
             }
             ThreadRequest::DismissProposal {
@@ -285,6 +285,23 @@ impl Server {
                 Response::Done
             }
         })
+    }
+
+    /// Deletes the chat `thread_id` and the folders it made.
+    async fn erase(&mut self, thread_id: &str) -> Result<()> {
+        // Its turn ends first, so nothing writes to what is being erased.
+        self.close(thread_id).await;
+        let (state, paths) = self.runtime.places_of(thread_id).await;
+        for folder in state.delete_thread(thread_id).await? {
+            // Only plain names under the workspace root are taken.
+            let path = paths.workspace_folder(&folder)?;
+            match tokio::fs::remove_dir_all(&path).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => warn!("cannot remove a deleted chat's folder: {error}"),
+            }
+        }
+        Ok(())
     }
 
     /// Every client showing the chat redraws the proposal's card.

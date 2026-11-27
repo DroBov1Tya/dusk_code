@@ -155,20 +155,22 @@ impl Runtime {
         self.launcher.new_thread(source, cwd).await
     }
 
-    /// Starts the session the agent of `thread_id` proposed as `proposal_id`: a new chat
-    /// in the proposal's project (the chat's own when none) and mode, opened before its
-    /// brief is sent. The outcome is stored as soon as the chat exists, so a brief that
-    /// fails to send leaves a linked chat, never a second one on a retry. Refused, with
-    /// nothing made, when the proposal was answered already or its mode is gone.
+    /// Makes the session the agent of `thread_id` proposed as `proposal_id`: a new chat
+    /// in the proposal's project (the chat's own when none) and mode, for the caller to
+    /// open and send the brief to. The proposal stays waiting until the caller stores the
+    /// outcome with `proposal_started` once the brief is sent, holding the lock returned
+    /// until then, so two clicks cannot both start it and a brief that fails to send
+    /// leaves the card to start again. Refused, with nothing made, when the proposal was
+    /// answered already or its mode is gone.
     pub async fn start_proposal(
         &self,
         source: &str,
         thread_id: &str,
         proposal_id: &str,
-    ) -> Result<(ThreadHandle, Proposal)> {
+    ) -> Result<(ThreadHandle, Proposal, tokio::sync::MutexGuard<'static, ()>)> {
         use crate::tools::propose_session;
         // One answer at a time, so two clicks cannot both find it waiting.
-        let _answering = propose_session::ANSWERING.lock().await;
+        let answering = propose_session::ANSWERING.lock().await;
         let launcher = self.of(thread_id).await;
         let state = &launcher.state;
         let (proposal, settled) = propose_session::find(state, thread_id, proposal_id).await?;
@@ -196,11 +198,29 @@ impl Runtime {
             None => self.config().current().mode().to_owned(),
         };
         let handle = launcher.new_thread_in(source, &cwd, &mode, None).await?;
-        let started = ProposalState::Started {
-            thread_id: handle.thread_id.clone(),
+        Ok((handle, proposal, answering))
+    }
+
+    /// Stores that the proposal `proposal` of `thread_id` started as the chat `started`,
+    /// once its brief was sent; the caller still holds `start_proposal`'s lock.
+    pub async fn proposal_started(
+        &self,
+        thread_id: &str,
+        proposal: &Proposal,
+        started: &str,
+    ) -> Result<bool> {
+        let state = ProposalState::Started {
+            thread_id: started.to_owned(),
         };
-        propose_session::settle(state, thread_id, proposal_id, &proposal.title, &started).await?;
-        Ok((handle, proposal))
+        let store = &self.of(thread_id).await.state;
+        crate::tools::propose_session::settle(
+            store,
+            thread_id,
+            &proposal.id,
+            &proposal.title,
+            &state,
+        )
+        .await
     }
 
     /// Stores how the user answered the proposal `proposal_id`, for the chat's next turn;
