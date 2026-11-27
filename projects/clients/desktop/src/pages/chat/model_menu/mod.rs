@@ -354,7 +354,12 @@ pub fn back_row(label: &str, side_by_side: bool, cx: &mut Context<Workspace>) ->
 
 impl Workspace {
     /// Opens a submenu, or goes back to the menu alone when it is open.
-    fn open_submenu(&mut self, submenu: Picker, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_submenu(
+        &mut self,
+        submenu: Picker,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.picker = Some(if self.picker == Some(submenu) {
             Picker::Model
         } else {

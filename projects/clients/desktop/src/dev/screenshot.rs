@@ -462,10 +462,11 @@ fn act(
                 "more" => Picker::MoreModels,
                 _ => Picker::Model,
             });
-            // As a click opens it: the search has the keys, so `key=` steps type into it.
+            // As a click opens it: the provider in use unfolded and the search has the
+            // keys, so `key=` steps type into it.
             if ws.picker == Some(Picker::MoreModels) {
-                ws.models_search
-                    .update(cx, |search, cx| search.focus(window, cx));
+                ws.picker = Some(Picker::Model);
+                ws.open_submenu(Picker::MoreModels, window, cx);
             }
             cx.notify();
         }
