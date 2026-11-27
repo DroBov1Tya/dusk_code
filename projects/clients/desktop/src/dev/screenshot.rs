@@ -11,6 +11,9 @@
 //! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all|lower`: open a window; unfold the right column, or only its lower modules;
 //! - `screen=team|overview|git|files|plan`: open that module as the right column's screen
 //!   (`screen=` goes back to the list);
+//! - `fake=plans`: the shown chat's plan with three earlier plans, one finished, under it
+//!   (after `screen=plan` and a wait, which read the real ones); `modal=plan-delete`,
+//!   `modal=plan-delete-old`: the yes deleting the current plan or the old ones asks for;
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - with `DUSK_MASCOT=MS` in the environment every subagent's mascot is held that many
 //!   milliseconds into its activity, so done and failed can be seen mid-motion;
@@ -411,6 +414,13 @@ fn act(
             "schedule" => ws.open_schedule_editor(None, window, cx),
             // After `fake=team`: the yes Stop team asks for, members at once and a task's card.
             "team-stop" => ws.ask_stop_team(cx),
+            // After `fake=plans`.
+            "plan-delete" => {
+                if let Some(plan) = ws.plan.plans.first().cloned() {
+                    ws.ask_delete_plan(plan, cx);
+                }
+            }
+            "plan-delete-old" => ws.ask_delete_old_plans(cx),
             // The card of task #4, blocked on the lead with a note; #5 failed, with Retry.
             "task-card" => ws.open_task_card("t4", cx),
             "task-card-failed" => ws.open_task_card("t5", cx),
@@ -607,6 +617,32 @@ fn act(
             Some(module) => ws.open_right(module, cx),
             None => ws.close_right(cx),
         },
+        "fake" if value == "plans" => {
+            let plan = |name: &str, bytes: u64, current: bool, finished: bool| {
+                dusk_protocol::thread::PlanFile {
+                    source_id: format!("plan-{name}"),
+                    name: name.to_owned(),
+                    bytes,
+                    written_at: 0,
+                    current,
+                    finished,
+                }
+            };
+            ws.plan.text = Some(
+                "# Ship the settings profiles\n\n- [x] Read how config layers load\n\
+                 - [x] Profiles in their own folders\n- [ ] Switch a chat's profile from \
+                 the composer\n- [ ] Migrate the old project layers\n"
+                    .to_owned(),
+            );
+            ws.plan.plans = vec![
+                plan("plan.md", 212, true, false),
+                plan("settings-scoping.md", 1840, false, false),
+                plan("first-pass.md", 960, false, true),
+                plan("spike-notes.md", 3120, false, false),
+            ];
+            ws.plan.chat = ws.shown.clone();
+            cx.notify();
+        }
         // A board of 200 tasks in the Overview; the next real answer replaces it.
         "fake" if value == "overview" => {
             ws.overview.chat = ws.shown.clone();

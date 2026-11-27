@@ -24,7 +24,7 @@ use super::threads::draw_threads;
 use super::unsent::unsent;
 use super::update::draw_update;
 use super::workshop::workshop;
-use crate::app::{App, EFFORTS, Panel, compact_number, paste};
+use crate::app::{App, EFFORTS, Panel, PlansAsk, compact_number, paste};
 use crate::ui::windows::{
     agent_window, settings,
     theme::{DOT, DUSK, HAIRLINE, ON, RAISED, TEXT_MUTED, bold, dim, fg},
@@ -156,6 +156,53 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             (
                 "undo: go back to before",
                 "up/down choose  enter go back, the text returns to the box  esc close",
+                lines,
+                Some(*selected),
+            )
+        }
+        Panel::Plans {
+            plans,
+            selected,
+            asking,
+        } => {
+            let room = screen.width.saturating_sub(34).min(44) as usize;
+            let lines = plans
+                .iter()
+                .enumerate()
+                .map(|(index, plan)| {
+                    let (mark, what) = match (plan.current, plan.finished) {
+                        (true, false) => (ON, "current"),
+                        (true, true) => (ON, "current, finished"),
+                        (false, true) => (DOT, "finished"),
+                        (false, false) => (DOT, "replaced"),
+                    };
+                    selectable(
+                        vec![
+                            Span::styled(format!(" {mark} "), fg(TEXT_MUTED)),
+                            Span::raw(wrap::clip(&plan.name, room)),
+                        ],
+                        Span::styled(
+                            format!("{} {DOT} {what} ", compact_number(plan.bytes)),
+                            dim(),
+                        ),
+                        index == *selected,
+                    )
+                })
+                .collect();
+            let current = plans.get(*selected).is_some_and(|plan| plan.current);
+            (
+                "plans of this chat",
+                match asking {
+                    Some(PlansAsk::Delete) if current => {
+                        "delete the current plan? the model stops reading it  y yes  \
+                         any other key keeps it"
+                    }
+                    Some(PlansAsk::Delete) => "delete this plan?  y yes  any other key keeps it",
+                    Some(PlansAsk::Old) => {
+                        "delete every plan replaced or finished?  y yes  any other key keeps them"
+                    }
+                    None => "d delete  o delete old plans  esc close",
+                },
                 lines,
                 Some(*selected),
             )

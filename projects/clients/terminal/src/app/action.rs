@@ -59,6 +59,12 @@ pub enum Action {
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
     OpenPlan,
+    /// `/plans`: list the chat's plans to delete old ones.
+    OpenPlans,
+    /// Delete one plan of the chat by its source ID.
+    RemovePlan(String),
+    /// Delete the chat's plans a newer one replaced and finished ones.
+    RemoveOldPlans,
     /// Read the Overview and open its panel.
     Overview,
     /// Stop the chat's running team, after the second `s`.
@@ -174,6 +180,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "a new tab; /tab 2 shows tab 2, /tab next, /tab prev, /tab close",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
+        ("/plans", "this chat's plans; delete old ones"),
         (
             "/overview",
             "how the chat's work stands: plan, tokens, changes, activity, log",

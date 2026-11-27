@@ -37,7 +37,10 @@ pub use harness::{
     Question, ReadHistory, Remember, SearchWorkshop, Show, Started, SuggestFromWorkshop,
     SuggestNext, Tasks, TeamRunner, is_sound, save_sound,
 };
-pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_plan};
+pub(crate) use harness::{
+    clear_plan, current_plan_name, list_plans, project_folder, read_plan, remove_old_plans,
+    save_plan,
+};
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::{Place, ToolScope};

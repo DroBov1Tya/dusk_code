@@ -63,6 +63,7 @@ pub const KEYS: [(&str, &str); 47] = [
         "view saved local messages; Enter explicitly sends one",
     ),
     ("/plan", "read and edit this chat's pinned plan"),
+    ("/plans", "this chat's plans; delete old ones"),
     ("/files", "the files this chat's commands changed"),
     (
         "/link",

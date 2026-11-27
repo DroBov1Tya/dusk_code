@@ -5,7 +5,7 @@ use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, WorkRequest},
     project::{Change, FileChange, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanPage, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanFile, PlanPage, Team},
 };
 
 /// A thread's background jobs and sources.
@@ -171,6 +171,32 @@ impl Work<'_> {
                 at_once,
             }))
             .await
+    }
+
+    /// Every plan of the chat, newest written first.
+    pub async fn plans(&self, thread_id: &str) -> Result<Vec<PlanFile>> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::Plans { thread_id }))
+            .await?
+        {
+            Response::Plans(plans) => Ok(plans),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Deletes the plans a newer one replaced and finished ones; says how many.
+    pub async fn remove_old_plans(&self, thread_id: &str) -> Result<u64> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::RemoveOldPlans { thread_id }))
+            .await?
+        {
+            Response::Number(removed) => Ok(removed),
+            other => Err(unexpected(other)),
+        }
     }
 
     /// Rewrites the plan; empty text removes it.

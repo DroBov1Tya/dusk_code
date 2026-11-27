@@ -62,6 +62,8 @@ named! {
     R::Work(W::Card { .. }) => "work.card",
     R::Work(W::Plan { .. }) => "work.plan",
     R::Work(W::SavePlan { .. }) => "work.save_plan",
+    R::Work(W::Plans { .. }) => "work.plans",
+    R::Work(W::RemoveOldPlans { .. }) => "work.remove_old_plans",
     R::Work(W::Diff { .. }) => "work.diff",
     R::Work(W::ChangedFiles { .. }) => "work.changed_files",
     R::Work(W::FileChanges { .. }) => "work.file_changes",

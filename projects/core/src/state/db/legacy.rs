@@ -776,7 +776,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls', 'subagent models', 'goal stall', 'goal evaluator', 'goal verdicts', 'team no budget', 'team flow', 'team wind down', 'team resume', 'thread worktrees', 'chat model', 'task retries'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages', 'drop project graph', 'chat mode', 'thread owner', 'skill changes', 'query indexes', 'thread unread', 'thread pulls', 'subagent models', 'goal stall', 'goal evaluator', 'goal verdicts', 'team no budget', 'team flow', 'team wind down', 'team resume', 'thread worktrees', 'chat model', 'task retries', 'source plans'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

@@ -55,7 +55,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                                 .meta()
                                 .text_color(if pinned { accent } else { muted })
                                 .child(format!(
-                                    "{} \u{00B7} {state}",
+                                    "{}{} \u{00B7} {state}",
+                                    if source.plan { "plan \u{00B7} " } else { "" },
                                     widgets::short(source.bytes)
                                 )),
                         ),

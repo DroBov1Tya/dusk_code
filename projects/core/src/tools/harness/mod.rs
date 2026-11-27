@@ -25,7 +25,8 @@ pub use display_image::{DisplayImage, picture_card};
 pub use draw_diagram::DrawDiagram;
 pub use load_skill::LoadSkill;
 pub use plan_edit::{
-    PLAN_NAME, PlanEdit, clear as clear_plan, read as read_plan, save as save_plan,
+    PlanEdit, clear as clear_plan, current_name as current_plan_name, list as list_plans,
+    read as read_plan, remove_old as remove_old_plans, save as save_plan,
 };
 pub use read_history::ReadHistory;
 pub use recall::RecallTool;

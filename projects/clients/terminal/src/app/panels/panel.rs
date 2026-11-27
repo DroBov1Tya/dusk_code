@@ -6,7 +6,7 @@ use dusk_protocol::{
     config::ProviderKind,
     model::{Model, ProviderStatus},
     release::{InstallProgress, UpdateInfo},
-    thread::{ContextReport, JobInfo, Message, MessageRole, Source, Thread, UndoPoint},
+    thread::{ContextReport, JobInfo, Message, MessageRole, PlanFile, Source, Thread, UndoPoint},
 };
 
 use super::{AgentWindow, SettingsView};
@@ -71,6 +71,21 @@ pub enum Panel {
         selected: usize,
         removing: bool,
     },
+    /// `/plans`: the chat's plans, newest written first; `asking` waits for `y`.
+    Plans {
+        plans: Vec<PlanFile>,
+        selected: usize,
+        asking: Option<PlansAsk>,
+    },
+}
+
+/// What the plans panel asks `y` for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlansAsk {
+    /// `d`: delete the chosen plan.
+    Delete,
+    /// `o`: delete every old plan.
+    Old,
 }
 
 /// The core's Overview and context report for the /overview panel; the plan and team

@@ -27,6 +27,7 @@ impl App {
                 return Action::None;
             }
             "/plan" => return Action::OpenPlan,
+            "/plans" => return Action::OpenPlans,
             "/overview" => return Action::Overview,
             "/schedules" => return Action::Schedule(ScheduleAction::Open),
             "/files" => return Action::ChangedFiles,
