@@ -1010,6 +1010,13 @@ ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-directio
 .welcome-connected p { margin-top: var(--s1); }
 .welcome-tick { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 13px; }
 .welcome-tools { margin-top: var(--s2); }
+.welcome-access { display: flex; flex-direction: column; margin-top: var(--s2); }
+.welcome-access .option { width: 100%; margin: 0; padding: var(--s3); }
+.welcome-access .option.disabled { opacity: .5; cursor: default; }
+.welcome-access .option.disabled:hover { background: none; }
+.welcome-access-text { display: flex; flex-direction: column; gap: 2px; }
+.welcome-access-name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); }
+.welcome-badge { padding: 1px 6px; border-radius: 5px; font-size: 12px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .welcome-count { padding-left: var(--s1); }
 .welcome-links { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s3); }
 .welcome-link { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: 12px; background: none; color: var(--fg); text-align: left; font-size: 13px; transition: background var(--t-open) var(--ease); }
