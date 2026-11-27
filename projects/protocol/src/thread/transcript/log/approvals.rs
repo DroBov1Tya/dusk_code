@@ -63,6 +63,26 @@ impl<L> ChatLog<L> {
         })
     }
 
+    /// The request a client shows of the open ones, one at a time: `shown` while it still
+    /// waits, else the oldest; with its place from 1 and how many wait.
+    pub fn shown_approval(&self, shown: Option<u64>) -> Option<(&ApprovalRequest, usize, usize)> {
+        let at = shown
+            .and_then(|id| self.approvals.iter().position(|open| open.id == id))
+            .unwrap_or(0);
+        let request = self.approvals.get(at)?;
+        Some((request, at + 1, self.approvals.len()))
+    }
+
+    /// The request one place after the shown one, or before it, around the ends.
+    pub fn step_approval(&self, shown: Option<u64>, forward: bool) -> Option<u64> {
+        let (_, place, total) = self.shown_approval(shown)?;
+        let at = match forward {
+            true => place % total,
+            false => (place + total - 2) % total,
+        };
+        Some(self.approvals[at].id)
+    }
+
     /// Whether an approval of the chat or of an agent below it waits on agent `thread_id`
     /// or on the agents below it.
     pub fn approval_waits_on(&self, thread_id: &str) -> bool {
@@ -156,6 +176,27 @@ mod tests {
         assert_eq!(ids, [1, 4]);
         assert!(chat.agent_chats["lead-a"].approvals.is_empty());
         assert!(!chat.approval_waits_on("lead-a"));
+    }
+
+    #[test]
+    fn approvals_show_one_at_a_time_and_step_around() {
+        let mut chat = ChatLog::<std::convert::Infallible>::default();
+        assert!(chat.shown_approval(None).is_none());
+        for id in [3, 5, 8] {
+            chat.apply(ThreadEvent::Approval(asked(id)), 0);
+        }
+        let place = |chat: &ChatLog, shown| {
+            chat.shown_approval(shown)
+                .map(|(request, at, total)| (request.id, at, total))
+        };
+        assert_eq!(place(&chat, None), Some((3, 1, 3)));
+        assert_eq!(chat.step_approval(None, true), Some(5));
+        assert_eq!(chat.step_approval(Some(3), false), Some(8));
+        assert_eq!(chat.step_approval(Some(8), true), Some(3));
+        assert_eq!(place(&chat, Some(5)), Some((5, 2, 3)));
+        // The shown one answered, the oldest left shows.
+        chat.apply(ThreadEvent::ApprovalClosed { id: 5 }, 0);
+        assert_eq!(place(&chat, Some(5)), Some((3, 1, 2)));
     }
 
     #[test]

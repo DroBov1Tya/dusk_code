@@ -4,26 +4,52 @@ use super::shown::{ReplyRow, question_labels};
 use crate::{
     api,
     state::{Chat, state},
-    ui::run,
+    ui::{Icon, IconName, run},
 };
 use dusk_protocol::tools::{ApprovalRequest, Decision, QuestionQueue};
 use leptos::prelude::*;
 
+/// One request at a time, with its place among the open ones: answering it shows the
+/// next, and the arrows step through them, so none waits unseen behind another. A
+/// subagent's or a team member's request is answered here too, named.
 #[component]
 pub fn Approvals(chat: Chat, id: Option<String>) -> impl IntoView {
+    let shown = RwSignal::new(None::<u64>);
+    let step = move |forward: bool| {
+        let next = chat.with_untracked(|c| c.step_approval(shown.get_untracked(), forward));
+        if next.is_some() {
+            shown.set(next);
+        }
+    };
+    let current = move || {
+        chat.with(|c| {
+            c.shown_approval(shown.get())
+                .map(|(request, place, total)| {
+                    (request.clone(), c.approval_asker(request.id), place, total)
+                })
+        })
+    };
     view! {
         <div class="approvals">
-            // A subagent's or a team member's request is answered here too, named.
-            <For
-                each=move || chat.with(|c| {
-                    c.approvals.iter().map(|a| (a.clone(), c.approval_asker(a.id))).collect::<Vec<_>>()
-                })
-                key=|(a, _)| a.id
-                let:pair
-            >
+            <For each=move || current().into_iter() key=|(a, _, place, total)| (a.id, *place, *total) let:shown_one>
                 {
-                    let (request, who) = pair;
-                    view! { <ApprovalCard request who thread=id.clone().unwrap_or_default() /> }
+                    let (request, who, place, total) = shown_one;
+                    view! {
+                        <div class="approval">
+                            {(total > 1).then(|| view! {
+                                <div class="approval-place">
+                                    <span class="muted">{format!("Approval {place} of {total}")}</span>
+                                    <button class="icon" title="The request before" aria-label="The request before" on:click=move |_| step(false)>
+                                        <Icon name=IconName::ChevronLeft />
+                                    </button>
+                                    <button class="icon" title="The next request" aria-label="The next request" on:click=move |_| step(true)>
+                                        <Icon name=IconName::ChevronRight />
+                                    </button>
+                                </div>
+                            })}
+                            <ApprovalCard request who thread=id.clone().unwrap_or_default() />
+                        </div>
+                    }
                 }
             </For>
         </div>
@@ -44,7 +70,7 @@ fn ApprovalCard(request: ApprovalRequest, who: String, thread: String) -> impl I
         });
     };
     view! {
-        <div class="approval">
+        <div class="approval-body">
             <div class="approval-text">{request.title(&who)}</div>
             // A batch lists every step, numbered: the yes covers all of them.
             {(!lines.is_empty()).then(|| view! {

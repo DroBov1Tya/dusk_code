@@ -6,7 +6,7 @@ use std::rc::Rc;
 use dusk_protocol::tools::{Decision, Question, Request};
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName,
+        ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -43,7 +43,9 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
     let theme = cx.theme();
     let (border, warning) = (theme.border, theme.warning);
     let thread_id = ws.shown.clone().unwrap_or_default();
-    for request in &chat.approvals {
+    // One request at a time, with its place among the open ones: answering it shows the
+    // next, and the arrows step through them, so none waits unseen behind another.
+    if let Some((request, place, total)) = chat.shown_approval(ws.approval_shown) {
         let id = request.id;
         // A subagent's or a team member's request is answered here too, named.
         let who = chat.approval_asker(id);
@@ -121,6 +123,7 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
         cards = cards.child(
             card(cx)
                 .border_color(warning.opacity(0.6))
+                .when(total > 1, |card| card.child(stepper(place, total, cx)))
                 .child(what)
                 .child(buttons.flex_none()),
         );
@@ -207,6 +210,43 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
         cards = cards.child(card);
     }
     cards
+}
+
+/// `Approval 2 of 3` with the arrows to the one before and after.
+fn stepper(place: usize, total: usize, cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    let step = |name: &'static str, icon: IconName, tip: &'static str, forward: bool| {
+        Button::new(name)
+            .ghost()
+            .xsmall()
+            .icon(icon)
+            .tooltip(tip)
+            .on_click(cx.listener(move |ws, _, _, cx| ws.step_approval(forward, cx)))
+    };
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_1()
+        .child(
+            div()
+                .flex_1()
+                .meta()
+                .text_color(muted)
+                .child(format!("Approval {place} of {total}")),
+        )
+        .child(step(
+            "approval-before",
+            IconName::ChevronLeft,
+            "The request before",
+            false,
+        ))
+        .child(step(
+            "approval-after",
+            IconName::ChevronRight,
+            "The next request",
+            true,
+        ))
 }
 
 /// A command in a box of three lines that scrolls inside; long lines wrap. `key` is the
@@ -354,6 +394,17 @@ fn card(cx: &App) -> Div {
 }
 
 impl Workspace {
+    fn step_approval(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let shown = self.approval_shown;
+        if let Some(next) = self
+            .shown_chat()
+            .and_then(|chat| chat.step_approval(shown, forward))
+        {
+            self.approval_shown = Some(next);
+            cx.notify();
+        }
+    }
+
     fn approve(&mut self, thread_id: &str, id: u64, decision: Decision, cx: &mut Context<Self>) {
         self.core.call(
             cx,
