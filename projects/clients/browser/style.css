@@ -339,6 +339,8 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .model { display: flex; justify-content: space-between; width: 100%; background: none; border: 0; padding: 4px 8px; border-radius: 8px; text-align: left; }
 .model:hover { background: var(--raised); } .model.active { color: var(--accent); }
 .provider-head { display: flex; gap: 10px; align-items: center; }
+.model-row { display: flex; align-items: center; gap: 8px; }
+.model-row.hidden .model { opacity: .55; }
 .editor { margin-top: 16px; }
 
 /* Overlays */
