@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 
 use dusk_protocol::{
     config::ProviderKind,
-    model::ProviderStatus,
+    model::{Model, ProviderStatus},
     release::{InstallProgress, UpdateInfo},
     thread::{ContextReport, JobInfo, Message, MessageRole, Source, Thread, UndoPoint},
 };
@@ -137,6 +137,8 @@ pub struct ModelList {
     pub selected: usize,
     /// The provider a first `d` asked to remove; a second `d` removes it.
     pub removing: Option<String>,
+    /// What `/` typed to filter the list by model or provider name; `None` when not filtering.
+    pub filter: Option<String>,
 }
 
 /// A row of the model list: a provider, which can be checked again or removed, or one of
@@ -162,6 +164,7 @@ impl ModelList {
             providers: None,
             selected: 0,
             removing: None,
+            filter: None,
         }
     }
 
@@ -171,6 +174,7 @@ impl ModelList {
             providers: Some(providers),
             selected: 0,
             removing: None,
+            filter: None,
         };
         list.selected = list
             .rows()
@@ -180,12 +184,44 @@ impl ModelList {
         list
     }
 
+    /// The providers as the list shows them, each with its models: those hidden in the
+    /// settings are left out but for the one in use, and a filter keeps the providers whose
+    /// name or models match it.
+    pub fn shown(&self) -> Vec<(&ProviderStatus, Vec<&Model>)> {
+        let wanted = self
+            .filter
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase();
+        let mut shown = Vec::new();
+        for provider in self.providers.iter().flatten() {
+            let name_matches = provider.name.to_lowercase().contains(&wanted);
+            let models: Vec<&Model> = provider
+                .models
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .filter(|model| {
+                    !provider.is_hidden(&model.id)
+                        || self.current.as_deref()
+                            == Some(format!("{}/{}", provider.name, model.id).as_str())
+                })
+                .filter(|model| name_matches || model.id.to_lowercase().contains(&wanted))
+                .collect();
+            if name_matches || !models.is_empty() {
+                shown.push((provider, models));
+            }
+        }
+        shown
+    }
+
     /// Each provider followed by its models, as `provider/model`, in order.
     pub fn rows(&self) -> Vec<ModelRow> {
         let mut rows = Vec::new();
-        for provider in self.providers.iter().flatten() {
+        for (provider, models) in self.shown() {
             rows.push(ModelRow::Provider(provider.name.clone()));
-            for model in provider.models.as_deref().unwrap_or_default() {
+            for model in models {
                 rows.push(ModelRow::Model {
                     provider: provider.name.clone(),
                     name: format!("{}/{}", provider.name, model.id),
