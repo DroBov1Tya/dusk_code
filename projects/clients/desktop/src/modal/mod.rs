@@ -115,6 +115,8 @@ pub enum Modal {
     TaskCard {
         task_id: String,
     },
+    /// Deleting a plan of the shown chat, or its old ones; asks first.
+    DeletePlan(crate::columns::inspector::plan::PlanDelete),
     /// Stopping the shown chat's team; asks first.
     StopTeam {
         thread_id: String,
@@ -180,6 +182,14 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             task_card::render(ws, task_id, cx),
         ),
         Modal::StopTeam { .. } => ("Stop team".to_owned(), 480., team::stop(cx)),
+        Modal::DeletePlan(delete) => {
+            let title = match delete {
+                crate::columns::inspector::plan::PlanDelete::One { .. } => "Delete plan",
+                crate::columns::inspector::plan::PlanDelete::Old { .. } => "Delete old plans",
+            };
+            let body = crate::columns::inspector::plan::confirm(delete, cx);
+            (title.to_owned(), 480., body)
+        }
         Modal::TeamAtOnce(form) => ("Members at once".to_owned(), 400., team::at_once(form, cx)),
         // It has the whole window, not a panel with a title.
         Modal::Picture { image, size, view } => {
