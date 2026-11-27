@@ -82,7 +82,7 @@ fn SignIn(note: Option<String>, auth: RwSignal<Auth>) -> impl IntoView {
     };
     view! {
         <div class="signin">
-            <h1><img class="brand-emblem" src="mark.png" alt="" width="36" height="36" />"duskcode"</h1>
+            <h1>"duskcode"</h1>
             <p>"Paste the token this run of duskcode printed, or open the address it showed."</p>
             <input
                 type="password"

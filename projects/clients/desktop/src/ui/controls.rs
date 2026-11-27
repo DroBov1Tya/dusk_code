@@ -192,3 +192,37 @@ pub fn stat(label: &str, value: String, hint: &str, cx: &App) -> Div {
                 .child(hint.to_owned()),
         )
 }
+
+/// What `mark` draws: a box to check, or a ring for one choice of several.
+pub enum Mark {
+    Check,
+    Radio,
+}
+
+/// A box with a check, or a ring with a dot, an icon's size.
+pub fn mark(kind: Mark, on: bool, cx: &App) -> Div {
+    let theme = cx.theme();
+    let (accent, on_accent, border) = (theme.primary, theme.primary_foreground, theme.input);
+    let frame = div()
+        .size(px(crate::ui::size::ICON))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .border_1();
+    match (kind, on) {
+        (Mark::Check, true) => frame.rounded_sm().border_color(accent).bg(accent).child(
+            Icon::new(IconName::Check)
+                .size(px(crate::ui::size::ICON - crate::ui::size::GAP_XS))
+                .text_color(on_accent),
+        ),
+        (Mark::Check, false) => frame.rounded_sm().border_color(border),
+        (Mark::Radio, true) => frame.rounded_full().border_color(accent).child(
+            div()
+                .size(px(crate::ui::size::GAP_S))
+                .rounded_full()
+                .bg(accent),
+        ),
+        (Mark::Radio, false) => frame.rounded_full().border_color(border),
+    }
+}

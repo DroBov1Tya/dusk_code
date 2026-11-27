@@ -1,7 +1,7 @@
 //! The welcome drawn: the page in view in the middle, scrolling when the window is too
 //! short for it, Skip setup pinned in the corner above it, and pinned under it Back, a
 //! dot for each page and Next, so turning a page never moves them. The first and the last
-//! page are here; the Model and Tools pages have their own files.
+//! page are here; the Model, Access and Tools pages have their own files.
 
 use gpui_kit::{
     component::{
@@ -12,9 +12,8 @@ use gpui_kit::{
     *,
 };
 
-use super::{Page, form, tools};
+use super::{Page, access, form, tools};
 use crate::{
-    platform::icon,
     ui::{Type, motion},
     workspace::Workspace,
 };
@@ -27,6 +26,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let body = match page {
         Page::Hello => hello(cx),
         Page::Model => form::render(ws, cx),
+        Page::Access => access::render(ws, cx),
         Page::Tools => tools::render(ws, cx),
         Page::Ready => ready(ws, cx),
     };
@@ -110,7 +110,7 @@ fn nav(ws: &Workspace, page: Page, cx: &mut Context<Workspace>) -> Div {
     let dots = div()
         .flex()
         .flex_row()
-        .gap_2()
+        .gap_1p5()
         .children(Page::ALL.map(|dot| {
             let on = dot == page;
             div()
@@ -144,14 +144,16 @@ fn nav(ws: &Workspace, page: Page, cx: &mut Context<Workspace>) -> Div {
         .flex()
         .flex_row()
         .items_center()
-        .justify_between()
+        .gap_2()
+        // Two equal sides keep the dots centred, and a wide Next never covers them.
         .child(
             div()
-                .w(px(96.))
+                .flex_1()
+                .flex()
                 .when(page != Page::Hello, |side| side.child(back)),
         )
-        .child(dots)
-        .child(div().w(px(96.)).flex().justify_end().child(next))
+        .child(dots.flex_none())
+        .child(div().flex_1().flex().justify_end().child(next))
 }
 
 fn hello(cx: &mut Context<Workspace>) -> Div {
@@ -161,7 +163,6 @@ fn hello(cx: &mut Context<Workspace>) -> Div {
         .flex_col()
         .items_center()
         .gap_3()
-        .child(img(icon::mark()).size(px(64.)).flex_none())
         .child(div().display().child("duskcode"))
         .child(
             div()
@@ -183,7 +184,6 @@ fn ready(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex_col()
         .items_center()
         .gap_3()
-        .child(img(icon::mark()).size(px(48.)).flex_none())
         .child(div().title().child("You are ready"))
         .child(div().body().text_center().text_color(muted).child(model))
         .child(

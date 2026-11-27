@@ -23,6 +23,7 @@ fn source(n: usize, name: &str, bytes: u64, pinned: bool, delivered: bool) -> So
         bytes,
         pinned,
         delivered,
+        plan: false,
     }
 }
 
