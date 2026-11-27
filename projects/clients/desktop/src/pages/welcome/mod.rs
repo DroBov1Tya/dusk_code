@@ -1,14 +1,16 @@
 //! The first screen of a clean install: while the core has no provider, the chat page
-//! shows four pages in order, turned sideways: hello, a model to connect, the tools that
-//! stay off until switched on, and ready. Once shown it stays until Start or Skip setup,
+//! shows five pages in order, turned sideways: hello, a model to connect, how much the
+//! agent may do without asking, the tools that stay off until switched on, and ready. Once shown it stays until Start or Skip setup,
 //! even after a provider connects on the way; finishing is kept in the window's
 //! preferences, so it never comes back. People who already have a provider never see it.
 //! - `view`: the frame, the dots and buttons, the first and last pages;
 //! - `form`: the Model page, the connection the Model settings page makes;
+//! - `access`: the Access page, the default approval mode;
 //! - `tools`: the Tools page and its switches;
 //! - `swipe`: a sideways trackpad swipe, from the scroll events;
 //! - `name`: the provider's name, taken from the address.
 
+mod access;
 mod form;
 mod name;
 mod swipe;
@@ -34,12 +36,19 @@ use crate::workspace::{Center, Workspace};
 pub enum Page {
     Hello,
     Model,
+    Access,
     Tools,
     Ready,
 }
 
 impl Page {
-    pub const ALL: [Page; 4] = [Page::Hello, Page::Model, Page::Tools, Page::Ready];
+    pub const ALL: [Page; 5] = [
+        Page::Hello,
+        Page::Model,
+        Page::Access,
+        Page::Tools,
+        Page::Ready,
+    ];
 
     fn index(self) -> usize {
         Self::ALL.iter().position(|page| *page == self).unwrap_or(0)
@@ -146,7 +155,7 @@ impl Workspace {
             |ws, result, cx| match result {
                 Ok(Answer::Providers { providers, .. }) if providers.is_empty() => {
                     ws.welcome.page = Some(Page::Hello);
-                    // The Tools page lists the tools from the settings.
+                    // The Access and Tools pages read the settings.
                     ws.load_settings(cx);
                     cx.notify();
                 }

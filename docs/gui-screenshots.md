@@ -20,7 +20,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `center=chat\|review\|settings\|customize\|artifacts\|overview\|team` | switches the middle column (`connectors` still names Customize) (it does not load that page's data; use the click paths for that) |
 | `review` | opens the review page |
 | `file=PATH[:LINE]` | opens a file in the viewer |
-| `fake=welcome`, `welcome=page:N`, `welcome=form`, `welcome=address:URL`, `welcome=connected:NAME` | the first run's welcome, its Nth page (1 Hello, 2 Model, 3 Tools, 4 Ready), the Model page, an address typed in it (`key=enter` connects), the Model page as after a connection to NAME |
+| `fake=welcome`, `welcome=page:N`, `welcome=form`, `welcome=address:URL`, `welcome=connected:NAME` | the first run's welcome, its Nth page (1 Hello, 2 Model, 3 Access, 4 Tools, 5 Ready), the Model page, an address typed in it (`key=enter` connects), the Model page as after a connection to NAME |
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
 | `fake=models` | two providers with models, one long, each with a model hidden, and one model in use: `picker=more` opens More models as a click does (the provider in use unfolded, its search focused): a digit picks while the search is empty, other `key=` steps type into it; `settings=llm` shows each provider's switches |
 | `fake=tiers` | two providers with models and the subagent tiers in each state (chosen, the chat's model, a provider no longer connected), for `settings=llm` after its models loaded |
