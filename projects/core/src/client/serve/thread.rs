@@ -187,6 +187,10 @@ impl Server {
                 }
                 Response::Done
             }
+            ThreadRequest::Unqueue { thread_id } => {
+                let state = runtime.state_of(&thread_id).await;
+                Response::Unqueued(state.take_back_pending(&thread_id).await?)
+            }
             ThreadRequest::Background { thread_id, call_id } => {
                 runtime.send_to_background(&thread_id, &call_id).await?;
                 Response::Done

@@ -188,6 +188,26 @@ impl State {
         thread_id: &str,
         pending: &PendingMessage,
     ) -> Result<Message> {
+        let admitted = self.admit_unless_taken_back(thread_id, pending, false);
+        admitted.await?.context("admit a sent message")
+    }
+
+    /// `admit_pending` for a message the user may have taken back since it was read:
+    /// `None` then, and nothing is added.
+    pub async fn admit_if_waiting(
+        &self,
+        thread_id: &str,
+        pending: &PendingMessage,
+    ) -> Result<Option<Message>> {
+        self.admit_unless_taken_back(thread_id, pending, true).await
+    }
+
+    async fn admit_unless_taken_back(
+        &self,
+        thread_id: &str,
+        pending: &PendingMessage,
+        only_waiting: bool,
+    ) -> Result<Option<Message>> {
         let mut transaction = self
             .pool
             .begin()
@@ -200,6 +220,18 @@ impl State {
             .await
             .context("remove sent message")?
             .rows_affected();
+        if only_waiting && removed == 0 {
+            let admitted: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM messages WHERE request_uid = ?)")
+                    .bind(&pending.request_uid)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .context("look up an admitted message")?;
+            // Neither waiting nor in the thread: the user took it back to edit it.
+            if !admitted {
+                return Ok(None);
+            }
+        }
         let message = match &pending.from_job_id {
             Some(job) => {
                 messages::job_message(&mut transaction, thread_id, job, &pending.content).await?
@@ -233,7 +265,22 @@ impl State {
             .commit()
             .await
             .context("commit admitting a message")?;
-        Ok(message)
+        Ok(Some(message))
+    }
+
+    /// Takes back the newest message the user sent to the thread that it has not taken
+    /// in, for the user to edit; its text, or `None` when nothing of theirs waits.
+    pub async fn take_back_pending(&self, thread_id: &str) -> Result<Option<String>> {
+        sqlx::query_scalar(
+            "DELETE FROM pending_messages WHERE pending_id = (
+                 SELECT MAX(pending_id) FROM pending_messages WHERE thread_id = ?
+                     AND from_thread_id IS NULL AND from_job_id IS NULL)
+             RETURNING content",
+        )
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("take back a sent message")
     }
 
     /// For a sent message that was not a message after all, such as a command.
@@ -263,6 +310,38 @@ mod tests {
         assert_eq!(first, again);
         assert!(state.pending_messages("thread").await.unwrap().is_empty());
         assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
+    }
+
+    /// The user takes back their newest waiting message, never another agent's; one the
+    /// thread read before it was taken back is not added after all.
+    #[tokio::test]
+    async fn a_message_taken_back_is_never_admitted() {
+        let state = temp_state("pending_taken_back").await;
+        state.create_thread("thread", "test").await.unwrap();
+        state.create_thread("agent", "test").await.unwrap();
+        state.add_pending("thread", "first").await.unwrap();
+        let second = state.add_pending("thread", "second").await.unwrap();
+        state
+            .add_pending_from("thread", "report", Some("agent"))
+            .await
+            .unwrap();
+
+        let back = state.take_back_pending("thread").await.unwrap();
+        assert_eq!(back.as_deref(), Some("second"));
+        assert!(
+            state
+                .admit_if_waiting("thread", &second)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(state.list_messages("thread").await.unwrap().is_empty());
+        let back = state.take_back_pending("thread").await.unwrap();
+        assert_eq!(back.as_deref(), Some("first"));
+        assert_eq!(state.take_back_pending("thread").await.unwrap(), None);
+        let left = state.pending_messages("thread").await.unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].content, "report");
     }
 
     /// Another agent's message leaves a goal as it is; the user's message ends its wait

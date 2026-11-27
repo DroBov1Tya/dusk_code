@@ -44,6 +44,8 @@ pub enum Response {
     /// A thread's pins, oldest message first.
     Pins(Vec<Pin>),
     LocalUnsent(Vec<LocalUnsent>),
+    /// The text of a message taken back before the thread took it in.
+    Unqueued(Option<String>),
     Jobs(Vec<JobInfo>),
     Node(NodeText),
     Mcp(Vec<McpInfo>),

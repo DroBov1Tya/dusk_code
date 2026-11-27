@@ -309,7 +309,14 @@ impl ThreadRunner {
                 Some(turn) => Ok(Some((turn, true))),
                 None => match self.agent.compact_if_needed(None, &mut self.inbox).await {
                     Err(stop) => Err(stop),
-                    Ok(_) => Ok(self.agent.start_turn().await?.map(|turn| (turn, false))),
+                    Ok(checked) => {
+                        // What was sent while the summary was written joins the turn it
+                        // was written for, rather than waiting until that turn ends.
+                        if checked.is_none() {
+                            self.take_in().await?;
+                        }
+                        Ok(self.agent.start_turn().await?.map(|turn| (turn, false)))
+                    }
                 },
             };
             let stop = match turn {

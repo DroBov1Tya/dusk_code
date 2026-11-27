@@ -263,6 +263,7 @@ pub fn Transcript(
         }
     });
     let empty = move || source.with(|c| c.items.is_empty()) && pending().is_empty();
+    let queued_thread = thread.clone();
     view! {
         <div class="transcript" node_ref=scroller>
             <Show when=empty>
@@ -272,7 +273,31 @@ pub fn Transcript(
                 <BlockView all index key source thread=thread.clone() read_only />
             </For>
             <For each=pending key=|(at, text)| (*at, text.clone()) let:pair>
-                <div class="msg user queued"><div class="bubble">{pair.1}</div><div class="muted">"queued"</div></div>
+                <div class="msg user queued">
+                    <div class="bubble">{pair.1}</div>
+                    <div class="muted">
+                        "queued"
+                        // The core gives back its newest: only that one can be edited.
+                        {
+                            let thread = queued_thread.clone();
+                            let at = pair.0;
+                            move || {
+                                let newest = chat.with(|c| c.pending.len()) == at + 1;
+                                let thread = thread.clone().filter(|_| newest && !read_only)?;
+                                Some(view! {
+                                    " · "
+                                    <button
+                                        class="link quiet"
+                                        title="Back into the composer; it is not sent"
+                                        on:click=move |_| super::composer::take_back(thread.clone(), chat)
+                                    >
+                                        "Edit"
+                                    </button>
+                                })
+                            }
+                        }
+                    </div>
+                </div>
             </For>
             // Agents below the chat may work on after its own turn: the row stays for them.
             <Show when=move || source.with(|c| c.work(super::data::now_ms()).is_some())>

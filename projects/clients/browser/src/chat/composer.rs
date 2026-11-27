@@ -148,6 +148,7 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
     // The box's edge flares once as Tab takes the suggestion in; the class goes when the
     // animation ends, so the next one plays again.
     let taken = RwSignal::new(false);
+    let key_id = id.clone();
     let on_key = move |ev: leptos::ev::KeyboardEvent| {
         if ev.key() == "Enter" && !ev.shift_key() && !ev.is_composing() {
             ev.prevent_default();
@@ -168,6 +169,18 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                     }
                     text.set(taken_text);
                     taken.set(true);
+                }
+            }
+            // Over the empty box, Up takes the newest queued message back to edit.
+            "ArrowUp"
+                if !modified
+                    && text.with_untracked(String::is_empty)
+                    && pictures.with_untracked(Vec::is_empty)
+                    && chat.with_untracked(|c| !c.pending.is_empty()) =>
+            {
+                if let Some(id) = key_id.clone() {
+                    ev.prevent_default();
+                    take_back(id, chat);
                 }
             }
             "Escape"
@@ -365,6 +378,19 @@ fn type_in(area: &web_sys::HtmlTextAreaElement, before: &str) -> bool {
 }
 
 /// Restore the undone message before any text already in the draft.
+/// Asks the core for the newest message it has not taken in, so it is not sent, and puts
+/// it in the box. One already taken in stays in the chat.
+pub fn take_back(thread_id: String, chat: Chat) {
+    crate::ui::run(async move { api::unqueue(&thread_id).await }, move |text| {
+        chat.update(|c: &mut ChatData| {
+            if text.is_some() {
+                c.pending.pop();
+            }
+            c.offered = text;
+        })
+    });
+}
+
 fn restore_offered(draft: &mut String, mut offered: String) {
     if !offered.is_empty() && !draft.is_empty() {
         offered.push_str("\n\n");

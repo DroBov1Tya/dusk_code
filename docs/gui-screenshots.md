@@ -43,6 +43,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `fake=team-2\|team-6\|team-24\|team-24-ended\|team-empty` | after `fake=chat`: a team of two members on four tasks, six on eight, or twenty-four on forty-four whose first waves are done (its done members fold by role, its done waves fold), the large one ended as stalled, or a TEAM chat with no plan yet; `center=team` shows the Team page and `layer=people\|plan\|both\|unfold` its layers or a long plan's done waves |
 | `fake=model-own` | the shown chat tells its own model and effort (`deepseek/deepseek-chat`, high), which its Models button shows instead of the one new chats start with |
 | `fake=mcp` | five connectors, one of each state, in the place of the config's |
+| `fake=queued` | after `fake=chat`: two messages queued above the composer and one the core holds while it compacts the context |
 | `screen=team\|overview\|plan\|todo` | opens that module as the right column's screen (the Todo only with more than three open tasks, else the list shows); `screen=` goes back to the list (take a `shot` before a click on it: the window draws no frames of its own, so a click lands on the last drawn frame) |
 | `open=pins\|plan\|goal\|panel\|done`, `scroll=N`, `right=lower` | the pins drawer, the plan's rows, the goal's card, the composer's panel, the Todo's finished tasks; the transcript from its Nth row; the right column with its tall upper modules folded |
 | `hover=X,Y` | moves the pointer to a point of the window, for what shows only under it (the composer's tab, a module header's grip) |

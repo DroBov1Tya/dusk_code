@@ -1,7 +1,7 @@
 //! Keys of the message box and the command list.
 
 use super::QUIT_WINDOW;
-use crate::app::{Action, App, Focus, Panel, commands};
+use crate::app::{Action, App, Focus, Panel, QueueButton, commands};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::Instant;
 
@@ -83,6 +83,14 @@ impl App {
             KeyCode::Up | KeyCode::Down if shift => {
                 self.input.mark(true);
                 self.input.vertical(key.code == KeyCode::Down);
+            }
+            // Over the empty box, Up takes the newest queued message back to edit.
+            KeyCode::Up
+                if self.input.text.is_empty()
+                    && self.recall.is_none()
+                    && !self.queued.is_empty() =>
+            {
+                return self.press_queued(self.queued.len() - 1, QueueButton::Edit);
             }
             KeyCode::Up | KeyCode::Down => {
                 self.input.mark(false);

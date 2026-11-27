@@ -345,7 +345,10 @@ impl Agent {
     /// Adds a sent message to the thread, with its effect on the goal, and tells the
     /// clients. `admit` says what else taking it in does.
     pub(crate) async fn admit(&self, pending: &PendingMessage, admit: Admit) -> Result<()> {
-        let message = self.state.admit_pending(&self.thread_id, pending).await?;
+        let admitted = self.state.admit_if_waiting(&self.thread_id, pending);
+        let Some(message) = admitted.await? else {
+            return Ok(());
+        };
         let from_user = message.from_thread_id.is_none() && message.from_job_id.is_none();
         if admit.title && message.from_job_id.is_none() {
             self.title_from_first_message(&message).await?;

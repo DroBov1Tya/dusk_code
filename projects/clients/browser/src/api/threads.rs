@@ -65,6 +65,12 @@ pub async fn send(thread_id: &str, text: String, now: bool) -> Res<()> {
     .await
 }
 
+/// Takes back the newest message the thread has not taken in yet; its text, or none.
+pub async fn unqueue(thread_id: &str) -> Res<Option<String>> {
+    let thread_id = thread_id.to_owned();
+    ask!(thread(ThreadRequest::Unqueue { thread_id }), Response::Unqueued(t) => t)
+}
+
 pub async fn cancel(thread_id: &str) -> Res<()> {
     done(thread(ThreadRequest::Cancel {
         thread_id: thread_id.to_owned(),
