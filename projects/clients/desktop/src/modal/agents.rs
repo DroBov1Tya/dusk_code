@@ -144,6 +144,8 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
 struct Progress {
     steps: usize,
     said: Option<String>,
+    /// `42% context · 1 compaction`, once known.
+    context: Option<String>,
 }
 
 fn progress(transcript: &crate::pages::chat::transcript::Log) -> Progress {
@@ -161,7 +163,11 @@ fn progress(transcript: &crate::pages::chat::transcript::Log) -> Progress {
             .map(str::to_owned),
         _ => None,
     });
-    Progress { steps, said }
+    Progress {
+        steps,
+        said,
+        context: transcript.context_line(),
+    }
 }
 
 fn figure(
@@ -269,6 +275,9 @@ fn figure(
                                 .text_color(muted)
                                 .child(widgets::count(p.steps, "step"))
                         }))
+                        .children(progress.as_ref().and_then(|p| p.context.clone()).map(
+                            |context| div().meta().flex_none().text_color(muted).child(context),
+                        ))
                         .child(
                             div()
                                 .meta()
@@ -342,4 +351,52 @@ fn headline(task: &str) -> String {
         .find(|line| !line.is_empty())
         .unwrap_or_default()
         .to_owned()
+}
+
+impl Workspace {
+    /// Asks the core how full the context of each subagent of the shown chat is, or of
+    /// agent `only`, when this window heard nothing of it: an agent that worked before
+    /// the chat was open here sent its numbers to no one.
+    pub fn read_agent_contexts(&mut self, only: Option<&str>, cx: &mut Context<Self>) {
+        use dusk_protocol::client::{Answer, Command};
+        let Some(parent) = self.shown.clone() else {
+            return;
+        };
+        let Some(chat) = self.chats.get(&parent) else {
+            return;
+        };
+        let unknown: Vec<String> = chat
+            .agents
+            .keys()
+            .filter(|id| only.is_none_or(|only| only == id.as_str()))
+            .filter(|id| {
+                chat.agent_chats
+                    .get(id.as_str())
+                    .is_none_or(|log| log.context_unknown())
+            })
+            .cloned()
+            .collect();
+        for agent in unknown {
+            let (asked, parent) = (agent.clone(), parent.clone());
+            self.core.call(
+                cx,
+                move |client| async move {
+                    let thread_id = Some(asked);
+                    client.command(Command::Context { thread_id }).await
+                },
+                move |ws, result, cx| match result {
+                    Ok(Answer::Context(report)) => {
+                        if let Some(chat) = ws.chats.get_mut(&parent) {
+                            let log = chat.agent_chats.entry(agent).or_default();
+                            log.context_report(&report);
+                            cx.notify();
+                        }
+                    }
+                    Ok(_) => {}
+                    // The line is an extra: the list stands without it.
+                    Err(error) => tracing::warn!("no context for agent {agent}: {error:#}"),
+                },
+            );
+        }
+    }
 }

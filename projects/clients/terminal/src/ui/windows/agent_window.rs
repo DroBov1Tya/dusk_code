@@ -1,7 +1,7 @@
 //! One subagent's thread in a window over the screen: its numbers at the top, beside its
 //! loader, and below them its conversation and actions as they happen.
 
-use dusk_protocol::thread::{AUTO_COMPACT_PERCENT, clock_words};
+use dusk_protocol::thread::{AUTO_COMPACT_PERCENT, clock_words, plural};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -198,6 +198,10 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
                         .map(|cost| format!("  {DOT}  {cost}"))
                         .unwrap_or_default(),
                 ),
+                fg(TEXT_SOFT),
+            ),
+            Span::styled(
+                format!("{}  {DOT}  ", plural(card.compactions, "compaction")),
                 fg(TEXT_SOFT),
             ),
             Span::styled(rate, fg(TEXT_SOFT)),

@@ -43,6 +43,8 @@ pub struct SubagentView {
     /// When its event stream was lost, without an observed completion.
     pub unavailable_at: Option<i64>,
     pub tokens: ThreadTokens,
+    /// How many times its context was compacted while this client watched.
+    pub compactions: u32,
     /// Where it is in its work, with what it said about it.
     pub phase: Option<(AgentPhase, String)>,
     /// What it does this moment, from its events, as every client follows it.
@@ -87,6 +89,12 @@ impl SubagentView {
             AgentState::Done => "done",
             AgentState::Failed => "failed",
         }
+    }
+
+    /// `42% context · 1 compaction`, as every client says it; none before its numbers.
+    pub fn context_line(&self) -> Option<String> {
+        let tokens = (self.limit > 0).then_some((self.tokens.context, self.limit));
+        dusk_protocol::thread::context_line(tokens, self.compactions)
     }
 
     pub fn is_working(&self) -> bool {
@@ -302,9 +310,10 @@ impl App {
             .iter()
             .position(|view| view.thread_id == thread_id)
             .map(|at| self.subagents.remove(at));
-        let (tokens, limit) = earlier.map_or((ThreadTokens::default(), 0), |view| {
-            (view.tokens, view.limit)
-        });
+        let (tokens, limit, compactions) = earlier
+            .map_or((ThreadTokens::default(), 0, 0), |view| {
+                (view.tokens, view.limit, view.compactions)
+            });
         self.subagents.push(SubagentView {
             thread_id,
             agent,
@@ -317,6 +326,7 @@ impl App {
             finished_at: None,
             unavailable_at: None,
             tokens,
+            compactions,
             limit,
             phase: None,
             state: AgentState::Thinking,
@@ -527,6 +537,7 @@ impl App {
                 card.tokens = *tokens;
                 card.limit = *limit;
             }
+            ThreadEvent::CompactionFinished(_) => card.compactions += 1,
             ThreadEvent::AgentPhase { phase, note } => card.phase = Some((*phase, note.clone())),
             ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) if card.finished_at.is_none() => {
                 card.finished_at = Some(now_ms());

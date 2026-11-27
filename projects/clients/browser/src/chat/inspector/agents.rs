@@ -15,14 +15,25 @@ pub fn AgentsTab(id: String) -> impl IntoView {
         app.chat(&thread)
             .map(|c| {
                 c.with(|c| {
-                    // In the order they started.
-                    let mut agents: Vec<Agent> = c.agents.values().cloned().collect();
-                    agents.sort_by_key(|agent| agent.started_at);
+                    // In the order they started, each with how full its context is.
+                    let mut agents: Vec<(Agent, Option<String>)> = c
+                        .agents
+                        .values()
+                        .map(|agent| {
+                            let context = c
+                                .agent_chats
+                                .get(&agent.thread_id)
+                                .and_then(|log| log.context_line());
+                            (agent.clone(), context)
+                        })
+                        .collect();
+                    agents.sort_by_key(|(agent, _)| agent.started_at);
                     agents
                 })
             })
             .unwrap_or_default()
     });
+    read_contexts(&id);
     let clear = {
         let thread = id.clone();
         move |_| {
@@ -33,7 +44,7 @@ pub fn AgentsTab(id: String) -> impl IntoView {
             }
         }
     };
-    let finished = move || agents.with(|agents| agents.iter().any(|agent| !agent.working()));
+    let finished = move || agents.with(|agents| agents.iter().any(|(agent, _)| !agent.working()));
     view! {
         <div class="agents">
             // Finished agents leave the list for as long as the chat is open on this page;
@@ -47,7 +58,7 @@ pub fn AgentsTab(id: String) -> impl IntoView {
                 // Keyed by what a row shows, so a row is drawn again only when it changes and
                 // a finished sun does not replay its hop at every event of another agent.
                 {let id = id.clone(); view! {
-                    <For each=move || agents.get() key=row_key children=move |agent| {
+                    <For each=move || agents.get() key=row_key children=move |(agent, context)| {
                         let (parent, thread_id) = (id.clone(), agent.thread_id.clone());
                         view! {
                             <button class="agent" on:click=move |_| app.subagent.set(Some((parent.clone(), thread_id.clone())))>
@@ -56,6 +67,7 @@ pub fn AgentsTab(id: String) -> impl IntoView {
                                     <div class="agent-name">{agent.name.clone()}<span class="muted">{format!(" · {}", agent.role)}</span></div>
                                     <div class="muted">{agent.task.clone()}</div>
                                     <div class=agent_class(&agent.state)>{state_text(&agent.state)}</div>
+                                    {context.map(|context| view! { <div class="agent-context muted">{context}</div> })}
                                 </div>
                             </button>
                         }
@@ -66,14 +78,50 @@ pub fn AgentsTab(id: String) -> impl IntoView {
     }
 }
 
-fn row_key(agent: &Agent) -> (String, String, String, String, String) {
+type RowKey = (String, String, String, String, String, Option<String>);
+
+fn row_key((agent, context): &(Agent, Option<String>)) -> RowKey {
     (
         agent.thread_id.clone(),
         agent.name.clone(),
         agent.role.clone(),
         agent.task.clone(),
         format!("{:?}", agent.state),
+        context.clone(),
     )
+}
+
+/// Asks the core how full the context of each subagent of chat `id` is when the page
+/// heard nothing of it: an agent that worked before the page opened the chat told no one.
+pub fn read_contexts(id: &str) {
+    let app = state();
+    let Some(chat) = app.chat(id) else {
+        return;
+    };
+    let unknown: Vec<String> = chat.with_untracked(|c| {
+        c.agents
+            .keys()
+            .filter(|agent| {
+                c.agent_chats
+                    .get(agent.as_str())
+                    .is_none_or(|log| log.context_unknown())
+            })
+            .cloned()
+            .collect()
+    });
+    for agent in unknown {
+        leptos::task::spawn_local(async move {
+            // The line is an extra: the list stands without it.
+            if let Ok(report) = crate::api::context_report(Some(agent.clone())).await {
+                chat.update(|c| {
+                    c.agent_chats
+                        .entry(agent)
+                        .or_default()
+                        .context_report(&report)
+                });
+            }
+        });
+    }
 }
 
 pub fn agent_class(state: &AgentState) -> &'static str {

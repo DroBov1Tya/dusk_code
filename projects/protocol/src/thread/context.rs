@@ -13,6 +13,9 @@ pub struct ContextReport {
     /// broken down.
     #[serde(default)]
     pub sources: Vec<ContextSource>,
+    /// How many times the thread's context was compacted.
+    #[serde(default)]
+    pub compactions: u32,
 }
 
 /// One source category's share of the request; only categories with tokens are listed.

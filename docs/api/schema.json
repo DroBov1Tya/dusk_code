@@ -2031,6 +2031,13 @@
     },
     "ContextReport": {
       "properties": {
+        "compactions": {
+          "default": 0,
+          "description": "How many times the thread's context was compacted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "limit": {
           "format": "uint64",
           "minimum": 0,

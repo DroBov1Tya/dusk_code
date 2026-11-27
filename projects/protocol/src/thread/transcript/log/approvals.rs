@@ -21,7 +21,7 @@ impl<L> ChatLog<L> {
     }
 
     /// A request heard twice, as one a joining client is told again, is listed once.
-    fn open_approval(&mut self, request: ApprovalRequest, asker: Option<&str>) {
+    pub(super) fn open_approval(&mut self, request: ApprovalRequest, asker: Option<&str>) {
         if let Some(asker) = asker {
             self.asked_by.insert(request.id, asker.to_owned());
         }

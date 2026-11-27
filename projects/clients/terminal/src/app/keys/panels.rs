@@ -573,6 +573,7 @@ mod tests {
             limit: 0,
             sections: Vec::new(),
             sources: Vec::new(),
+            compactions: 0,
         };
         app.panel = Some(Panel::Overview(Box::new(OverviewView::new(
             Overview::default(),

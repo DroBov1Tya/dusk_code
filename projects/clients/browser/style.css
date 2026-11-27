@@ -272,6 +272,7 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 @keyframes sun-set { 0% { transform: none; } 7% { transform: translateX(.02em); } 14% { transform: translateX(-.016em); } 21% { transform: translateX(.012em); }
   28% { transform: translateX(-.006em); } 30% { transform: none; } 100% { transform: translateY(.12em); } }
 @keyframes sun-grey { 0%, 15% { color: var(--bad); } }
+.agent-context { font-size: 12px; }
 .agent-state { font-size: 12px; color: var(--muted); } .agent-state.live { color: var(--accent); } .agent-state.bad { color: var(--bad); }
 .task { margin-bottom: 10px; } .task.done .task-name, li.done { text-decoration: line-through; color: var(--muted); }
 .pulls { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

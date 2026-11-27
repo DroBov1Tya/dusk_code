@@ -188,6 +188,10 @@ fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div>
         AgentState::Done => "Done".to_owned(),
         AgentState::Failed => "Failed".to_owned(),
     };
+    let context = ws
+        .shown_chat()
+        .and_then(|chat| chat.agent_chats.get(agent))
+        .and_then(|log| log.context_line());
     let id = agent.to_owned();
     let asked = ws
         .shown_chat()
@@ -242,7 +246,12 @@ fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div>
                         dusk_protocol::thread::duration_words(
                             seen.run_ms(dusk_protocol::system::now_ms())
                         )
-                    ))),
+                    )))
+                    .children(
+                        context.map(|context| {
+                            div().small().text_color(muted).truncate().child(context)
+                        }),
+                    ),
             )
             .children(action),
     )
@@ -261,6 +270,7 @@ impl Workspace {
         });
         self.modal_scroll.scroll_to_bottom();
         cx.notify();
+        self.read_agent_contexts(Some(agent), cx);
         let known = self
             .shown_chat()
             .and_then(|chat| chat.agent_chats.get(agent))

@@ -11,11 +11,13 @@
 
 mod approvals;
 mod cleared;
+mod context;
 mod history;
 mod run;
 mod team;
 
 pub use approvals::CHAT_ASKS;
+pub use context::context_line;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
@@ -227,6 +229,9 @@ pub struct ChatLog<L = Infallible> {
     pub spend: Option<TurnSpend>,
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
+    /// How many times the context was compacted, as far as this client knows: those it
+    /// saw finish, or the core's count when it was asked (`context_report`).
+    pub compactions: u32,
     /// The token report as the core last sent it.
     pub usage: Option<ThreadTokens>,
     /// What the chat cost so far, when any call's cost is known.
@@ -282,6 +287,7 @@ impl<L> Default for ChatLog<L> {
             waiting: None,
             spend: None,
             tokens: None,
+            compactions: 0,
             usage: None,
             cost: None,
             tasks: Vec::new(),
@@ -414,6 +420,14 @@ impl<L> ChatLog<L> {
             self.meta[index].message_id = meta.message_id;
         }
         self.working = later.working;
+        // What the live events told of the context and the requests outlasts the history.
+        self.tokens = later.tokens.or(self.tokens);
+        self.usage = later.usage.or(self.usage.take());
+        self.compactions = self.compactions.max(later.compactions);
+        for request in later.approvals {
+            let asker = later.asked_by.get(&request.id).cloned();
+            self.open_approval(request, asker.as_deref());
+        }
     }
 
     /// The item at `index` to change in place; it is marked changed.
@@ -626,9 +640,11 @@ impl<L> ChatLog<L> {
                 self.waiting = turn.waiting;
             }
             ThreadEvent::CompactionStarted => self.compacting = true,
-            ThreadEvent::CompactionFinished(_) | ThreadEvent::CompactionFailed { .. } => {
-                self.compacting = false
+            ThreadEvent::CompactionFinished(_) => {
+                self.compacting = false;
+                self.compactions += 1;
             }
+            ThreadEvent::CompactionFailed { .. } => self.compacting = false,
             ThreadEvent::TurnFailed(_) => self.end_turn(),
             _ => {}
         }

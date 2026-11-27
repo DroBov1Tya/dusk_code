@@ -93,6 +93,7 @@ pub fn render(
                     thread_id: thread.clone(),
                 });
                 ws.modal_focus.focus(window, cx);
+                ws.read_agent_contexts(None, cx);
                 cx.notify();
             }
         }))

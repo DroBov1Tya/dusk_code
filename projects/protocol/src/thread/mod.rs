@@ -63,8 +63,8 @@ pub use tokens::{
 pub use transcript::{
     AgentState, Applied, CHAT_ASKS, ChatLog, DETAIL_KEYS, FAILED_PREFIXES, MAX_MARK_CHARS, Note,
     Retry, RetryRow, Run, RunCard, RunKind, RunMark, SHOWN_CHARS, Span, Subagent, Tone, Tool,
-    ToolState, TurnSpend, clip, marks, note, retry_row, stored_failure, tool_detail, turn_spend,
-    unmarked,
+    ToolState, TurnSpend, clip, context_line, marks, note, retry_row, stored_failure, tool_detail,
+    turn_spend, unmarked,
 };
 pub use turn::{
     Turn, TurnFailure, TurnStatus, TurnWait, age_words, ago_words, clock_words, duration_words,

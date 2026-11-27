@@ -158,8 +158,13 @@ impl Sidebar<'_> {
 
 /// The agent it works as and, when known, the model it answers on.
 fn agent_and_model(view: &crate::app::SubagentView) -> String {
-    match &view.model {
-        Some(model) => format!("{} \u{00B7} {model}", view.agent),
-        None => view.agent.clone(),
-    }
+    [
+        Some(view.agent.clone()),
+        view.model.clone(),
+        view.context_line(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" \u{00B7} ")
 }

@@ -115,6 +115,7 @@ pub fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div>
                 thread_id: thread_id.clone(),
             });
             ws.modal_focus.focus(window, cx);
+            ws.read_agent_contexts(None, cx);
             cx.notify();
         }));
     // The count sits on the circle's upper right, half outside it.
