@@ -117,6 +117,7 @@ impl OpenAiCompatible {
             .messages
             .iter()
             .any(|message| matches!(message, ChatMessage::UserWithPictures { .. }));
+        let model = request.model.to_owned();
         let request = CompletionRequest::new(request, self.completion_tokens);
         let response = self
             .with_authorization(self.client.post(self.completions_url.clone()))
@@ -153,7 +154,7 @@ impl OpenAiCompatible {
             http::is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(stream::stream(response, effort))
+        Ok(stream::stream(response, effort, model))
     }
 
     fn with_authorization(&self, request: RequestBuilder) -> RequestBuilder {

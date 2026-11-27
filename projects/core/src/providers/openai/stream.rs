@@ -1,15 +1,18 @@
 //! The streamed completion, parsed from raw bytes into model events.
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use reqwest::Response;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::providers::{
     cost,
-    errors::{RefusedEffort, UnsupportedEffort, ended_early},
+    errors::{RefusedEffort, UnsupportedEffort, ended_early, unreadable_event},
     output::{FinishReason, ModelEvent, Usage},
-    transport::sse::{EventParser, SseDecoder, SseStream},
+    transport::{
+        shape::shape,
+        sse::{EventParser, SseDecoder, SseStream},
+    },
 };
 
 use super::client::error_rejects_effort;
@@ -17,11 +20,41 @@ use crate::config::Effort;
 
 const DONE_MARKER: &str = "[DONE]";
 
+/// The names `Chunk` reads, and so the only ones a log of a bad chunk may show.
+const CHUNK_FIELDS: &[&str] = &[
+    "choices",
+    "index",
+    "delta",
+    "content",
+    "reasoning_content",
+    "reasoning",
+    "tool_calls",
+    "id",
+    "type",
+    "function",
+    "name",
+    "arguments",
+    "finish_reason",
+    "usage",
+    "prompt_tokens",
+    "completion_tokens",
+    "prompt_tokens_details",
+    "cached_tokens",
+    "completion_tokens_details",
+    "reasoning_tokens",
+    "prompt_cache_hit_tokens",
+    "cost",
+    "cost_in_usd_ticks",
+    "error",
+];
+
 pub type CompletionStream = SseStream<CompletionParser>;
 
-pub fn stream(response: Response, effort: Option<Effort>) -> CompletionStream {
+pub fn stream(response: Response, effort: Option<Effort>, model: String) -> CompletionStream {
     let parser = CompletionParser {
         effort,
+        host: response.url().host_str().unwrap_or_default().to_owned(),
+        model,
         ..CompletionParser::default()
     };
     SseStream::new(response, parser)
@@ -33,13 +66,16 @@ pub struct CompletionParser {
     decoder: SseDecoder,
     /// The level the request carried, to tell a refusal of it from another error.
     effort: Option<Effort>,
+    /// Where the answer comes from, for the log of a chunk that does not parse.
+    host: String,
+    model: String,
     finish_seen: bool,
     done: bool,
 }
 
 #[derive(Deserialize)]
 struct Chunk {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty")]
     choices: Vec<Choice>,
     usage: Option<WireUsage>,
     error: Option<Value>,
@@ -59,7 +95,7 @@ struct Delta {
     /// Field name differs between servers (vLLM/LiteLLM vs. OpenRouter).
     #[serde(alias = "reasoning")]
     reasoning_content: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty")]
     tool_calls: Vec<ToolCallDelta>,
 }
 
@@ -140,8 +176,10 @@ impl EventParser for CompletionParser {
 impl CompletionParser {
     fn parse_chunk(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
         // Upstream payloads can echo input; never copy them into errors.
-        let chunk: Chunk = serde_json::from_str(data)
-            .map_err(|_| anyhow!("invalid provider stream chunk JSON"))?;
+        let chunk: Chunk = serde_json::from_str(data).map_err(|error| {
+            self.log_unreadable(data, &error);
+            unreadable_event("chunk")
+        })?;
         if let Some(error) = chunk.error {
             let refused = self.effort.is_some() && error_rejects_effort(&error);
             if refused && self.effort == Some(Effort::Off) {
@@ -187,6 +225,28 @@ impl CompletionParser {
         }
         Ok(events)
     }
+
+    /// serde's own message can quote a value, so only its category and place are logged.
+    fn log_unreadable(&self, data: &str, error: &serde_json::Error) {
+        tracing::warn!(
+            host = %self.host,
+            model = %self.model,
+            category = ?error.classify(),
+            line = error.line(),
+            column = error.column(),
+            shape = %shape(data, CHUNK_FIELDS),
+            "a provider stream chunk did not parse"
+        );
+    }
+}
+
+/// Some servers send an absent list as `null`, which `default` alone does not cover.
+fn null_as_empty<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 fn delta_events(delta: Delta) -> Vec<ModelEvent> {
@@ -380,6 +440,35 @@ mod tests {
             events.last(),
             Some(&ModelEvent::Finished(FinishReason::Stop))
         );
+    }
+
+    /// Recorded shape from a GLM proxy: absent lists are sent as `null`.
+    #[test]
+    fn null_lists_read_as_empty() {
+        let body = [
+            chunk(r#"{"content":"Hi","reasoning_content":null,"tool_calls":null}"#),
+            "data: {\"choices\":null,\"usage\":null}\n\n".to_owned(),
+        ]
+        .concat();
+        let events = CompletionParser::default().feed(body.as_bytes()).unwrap();
+        assert_eq!(events, [ModelEvent::Text("Hi".into())]);
+    }
+
+    /// A proxy can send a broken chunk now and then; the step is sent again, not failed.
+    #[test]
+    fn a_chunk_that_does_not_parse_may_pass_later() {
+        let bodies = [
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"secret\"\n\n",
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":[\"secret\"]}}]}\n\n",
+            "data: secret\n\n",
+        ];
+        for body in bodies {
+            let error = CompletionParser::default()
+                .feed(body.as_bytes())
+                .unwrap_err();
+            assert!(crate::providers::is_transient(&error), "{body}");
+            assert!(!format!("{error:#}").contains("secret"), "{body}");
+        }
     }
 
     #[test]
