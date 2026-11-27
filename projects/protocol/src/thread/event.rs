@@ -244,10 +244,10 @@ pub enum ThreadEvent {
     NextSuggested {
         text: String,
     },
-    /// The user answered the session the agent proposed with the call `call_id`
+    /// The user answered the session the agent proposed as `proposal_id`
     /// (`propose_session`): the chat's card shows it started or dismissed.
     ProposalSettled {
-        call_id: String,
+        proposal_id: String,
         state: super::ProposalState,
     },
     /// Nothing is running and nothing will start until the next message.

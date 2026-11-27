@@ -46,20 +46,20 @@ impl Threads<'_> {
         .await
     }
 
-    /// Starts the session the agent proposed with `call_id` in `thread_id`; answers with
+    /// Starts the session the agent proposed as `proposal_id` in `thread_id`; answers with
     /// the new chat.
-    pub async fn start_proposal(&self, thread_id: &str, call_id: &str) -> Result<String> {
+    pub async fn start_proposal(&self, thread_id: &str, proposal_id: &str) -> Result<String> {
         self.opened(ThreadRequest::StartProposal {
             thread_id: thread_id.to_owned(),
-            call_id: call_id.to_owned(),
+            proposal_id: proposal_id.to_owned(),
         })
         .await
     }
 
-    pub async fn dismiss_proposal(&self, thread_id: &str, call_id: &str) -> Result<()> {
+    pub async fn dismiss_proposal(&self, thread_id: &str, proposal_id: &str) -> Result<()> {
         let request = ThreadRequest::DismissProposal {
             thread_id: thread_id.to_owned(),
-            call_id: call_id.to_owned(),
+            proposal_id: proposal_id.to_owned(),
         };
         self.done(request).await
     }

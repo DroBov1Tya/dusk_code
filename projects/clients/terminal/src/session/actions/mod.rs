@@ -71,7 +71,9 @@ pub async fn apply(
             id,
             decision,
         } => thread::approve(client, app, &thread_id, id, decision).await,
-        Action::Proposal { call_id, start } => thread::proposal(client, app, &call_id, start).await,
+        Action::Proposal { proposal_id, start } => {
+            thread::proposal(client, app, &proposal_id, start).await
+        }
         Action::SendNow(text) => send(client, app, open, text, true).await,
         Action::Connect {
             kind,

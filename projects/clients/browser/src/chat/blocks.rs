@@ -441,11 +441,9 @@ fn item_view(
         Item::Suggestion(card) => {
             view! { <crate::pages::customize::SuggestedCard card /> }.into_any()
         }
-        Item::Proposal {
-            call_id,
-            proposal,
-            state,
-        } => view! { <ProposalCard call_id proposal settled=state thread read_only /> }.into_any(),
+        Item::Proposal { proposal, state } => {
+            view! { <ProposalCard proposal settled=state thread read_only /> }.into_any()
+        }
         Item::Image { card, .. } => view! { <ImageCard card /> }.into_any(),
         Item::Audio(card) => view! { <AudioCard card /> }.into_any(),
         Item::Run(_) => view! { <RunCardView id source /> }.into_any(),
@@ -1190,7 +1188,6 @@ fn RunCardView(id: u64, source: Source) -> impl IntoView {
 /// and Start or Dismiss while it waits; afterwards where it went.
 #[component]
 fn ProposalCard(
-    call_id: String,
     proposal: dusk_protocol::thread::Proposal,
     settled: dusk_protocol::thread::ProposalState,
     thread: Option<String>,
@@ -1217,14 +1214,15 @@ fn ProposalCard(
     let about = about.join(" \u{b7} ");
     let actions = match (settled, thread) {
         (ProposalState::Pending, Some(thread)) if !read_only => {
-            let (start_thread, start_call) = (thread.clone(), call_id.clone());
+            let id = proposal.id.clone();
+            let (start_thread, start_id) = (thread.clone(), id.clone());
             view! {
                 <div class="proposal-actions">
                     <button class="primary" on:click=move |_| {
-                        state().start_proposal(start_thread.clone(), start_call.clone())
+                        state().start_proposal(start_thread.clone(), start_id.clone())
                     }>"Start session"</button>
                     <button class="ghost" on:click=move |_| {
-                        state().dismiss_proposal(thread.clone(), call_id.clone())
+                        state().dismiss_proposal(thread.clone(), id.clone())
                     }>"Dismiss"</button>
                 </div>
             }

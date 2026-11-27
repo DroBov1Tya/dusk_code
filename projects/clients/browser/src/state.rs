@@ -520,12 +520,12 @@ impl AppState {
         });
     }
 
-    /// Starts the session the agent of `from` proposed with `call_id`, shown once made.
-    pub fn start_proposal(self, from: String, call_id: String) {
+    /// Starts the session the agent of `from` proposed as `proposal_id`, shown once made.
+    pub fn start_proposal(self, from: String, proposal_id: String) {
         let navigation = self.navigation.get_untracked();
         spawn_local(async move {
             let made = async {
-                let thread_id = api::start_proposal(&from, &call_id).await?;
+                let thread_id = api::start_proposal(&from, &proposal_id).await?;
                 let history = api::messages(&thread_id).await?;
                 api::Res::Ok((thread_id, history))
             };
@@ -545,10 +545,10 @@ impl AppState {
         });
     }
 
-    /// Drops the session the agent of `thread_id` proposed with `call_id`.
-    pub fn dismiss_proposal(self, thread_id: String, call_id: String) {
+    /// Drops the session the agent of `thread_id` proposed as `proposal_id`.
+    pub fn dismiss_proposal(self, thread_id: String, proposal_id: String) {
         spawn_local(async move {
-            if let Err(error) = api::dismiss_proposal(&thread_id, &call_id).await {
+            if let Err(error) = api::dismiss_proposal(&thread_id, &proposal_id).await {
                 self.fail(error);
             }
         });

@@ -11726,11 +11726,11 @@
         },
         {
           "additionalProperties": false,
-          "description": "The user answered the session the agent proposed with the call `call_id`\n(`propose_session`): the chat's card shows it started or dismissed.",
+          "description": "The user answered the session the agent proposed as `proposal_id`\n(`propose_session`): the chat's card shows it started or dismissed.",
           "properties": {
             "ProposalSettled": {
               "properties": {
-                "call_id": {
+                "proposal_id": {
                   "type": "string"
                 },
                 "state": {
@@ -11738,7 +11738,7 @@
                 }
               },
               "required": [
-                "call_id",
+                "proposal_id",
                 "state"
               ],
               "type": "object"
@@ -12427,11 +12427,11 @@
         },
         {
           "additionalProperties": false,
-          "description": "Starts the session the agent proposed with the call `call_id` of the chat: a new\nchat with the proposal's brief as its first message; answers `Opened`. The chat\nhears `ThreadEvent::ProposalSettled`, its agent the outcome on its next turn. A\nproposal answered already starts nothing again.",
+          "description": "Starts the session the agent proposed in the chat as `proposal_id`: a new\nchat with the proposal's brief as its first message; answers `Opened`. The chat\nhears `ThreadEvent::ProposalSettled`, its agent the outcome on its next turn. A\nproposal answered already starts nothing again.",
           "properties": {
             "StartProposal": {
               "properties": {
-                "call_id": {
+                "proposal_id": {
                   "type": "string"
                 },
                 "thread_id": {
@@ -12440,7 +12440,7 @@
               },
               "required": [
                 "thread_id",
-                "call_id"
+                "proposal_id"
               ],
               "type": "object"
             }
@@ -12456,7 +12456,7 @@
           "properties": {
             "DismissProposal": {
               "properties": {
-                "call_id": {
+                "proposal_id": {
                   "type": "string"
                 },
                 "thread_id": {
@@ -12465,7 +12465,7 @@
               },
               "required": [
                 "thread_id",
-                "call_id"
+                "proposal_id"
               ],
               "type": "object"
             }

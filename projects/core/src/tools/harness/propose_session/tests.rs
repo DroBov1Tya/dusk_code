@@ -20,6 +20,7 @@ async fn rig(name: &str) -> Rig {
     std::fs::create_dir_all(dir.join("modes")).unwrap();
     let state = Arc::new(State::open(&dir.join("state.db")).await.unwrap());
     state.create_thread("chat", "test").await.unwrap();
+    state.create_thread("other", "test").await.unwrap();
     let scope = ToolScope::new(&dir.join("project"), &dir.join("project")).unwrap();
     Rig {
         state,
@@ -31,10 +32,16 @@ async fn rig(name: &str) -> Rig {
 impl Rig {
     /// A call as the chat makes it; its result is stored as the runtime stores it.
     async fn propose(&self, call_id: &str, arguments: Value) -> Result<String> {
+        self.propose_in("chat", call_id, arguments).await
+    }
+
+    /// The same in the chat `thread_id`, whose message gets an id of its own while the
+    /// model's call id may repeat.
+    async fn propose_in(&self, thread_id: &str, call_id: &str, arguments: Value) -> Result<String> {
         let (events, _heard) = tokio::sync::mpsc::unbounded_channel();
         let context = ToolContext {
             state: Some(Arc::clone(&self.state)),
-            thread_id: "chat".into(),
+            thread_id: thread_id.into(),
             progress: Some(Progress {
                 call_id: call_id.into(),
                 events,
@@ -47,16 +54,27 @@ impl Rig {
         sqlx::query(
             "INSERT INTO messages (message_id, thread_id, sequence, role, content,
                 tool_call_id, content_tokens, tool_calls_tokens, reasoning_tokens, created_at)
-             VALUES (?1, 'chat',
-                (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = 'chat'),
-                'tool', ?2, ?1, 0, 0, 0, 1)",
+             VALUES (?1, ?2,
+                (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?2),
+                'tool', ?3, ?4, 0, 0, 0, 1)",
         )
-        .bind(call_id)
+        .bind(uuid::Uuid::now_v7().to_string())
+        .bind(thread_id)
         .bind(&result)
+        .bind(call_id)
         .execute(&self.state.pool)
         .await
         .unwrap();
         Ok(result)
+    }
+
+    /// The id of the proposal a call made.
+    async fn proposed(&self, thread_id: &str, call_id: &str, arguments: Value) -> String {
+        let shown = self
+            .propose_in(thread_id, call_id, arguments)
+            .await
+            .unwrap();
+        Proposal::read(&shown).unwrap().id
     }
 }
 
@@ -90,7 +108,7 @@ async fn a_proposal_is_checked_and_stored_as_its_card() {
     assert_eq!(card.title, "Fix gate");
     assert_eq!(card.brief, "b");
     assert_eq!(card.mode.as_deref(), Some("PLAN"));
-    let (found, state) = find(&rig.state, "chat", "c1").await.unwrap();
+    let (found, state) = find(&rig.state, "chat", &card.id).await.unwrap();
     assert_eq!((found, state), (card, ProposalState::Pending));
 }
 
@@ -99,8 +117,9 @@ async fn a_proposal_is_checked_and_stored_as_its_card() {
 #[tokio::test]
 async fn pending_proposals_are_capped_and_an_answer_counts_once() {
     let rig = rig("propose-cap").await;
+    let mut ids = Vec::new();
     for at in 0..MAX_PENDING_PROPOSALS {
-        rig.propose(&format!("c{at}"), brief("t")).await.unwrap();
+        ids.push(rig.proposed("chat", &format!("c{at}"), brief("t")).await);
     }
     let refused = rig.propose("over", brief("t")).await.unwrap_err();
     assert!(
@@ -109,12 +128,21 @@ async fn pending_proposals_are_capped_and_an_answer_counts_once() {
     );
 
     let state = ProposalState::Dismissed;
-    assert!(settle(&rig.state, "chat", "c0", "t", &state).await.unwrap());
+    let first = &ids[0];
+    assert!(
+        settle(&rig.state, "chat", first, "t", &state)
+            .await
+            .unwrap()
+    );
     let again = ProposalState::Started {
         thread_id: "chat".into(),
     };
-    assert!(!settle(&rig.state, "chat", "c0", "t", &again).await.unwrap());
-    assert_eq!(find(&rig.state, "chat", "c0").await.unwrap().1, state);
+    assert!(
+        !settle(&rig.state, "chat", first, "t", &again)
+            .await
+            .unwrap()
+    );
+    assert_eq!(find(&rig.state, "chat", first).await.unwrap().1, state);
     rig.propose("next", brief("t")).await.unwrap();
 
     // Waiting for the next turn: from the chat, so never a command nor an answer.
@@ -138,4 +166,51 @@ async fn nothing_to_propose_to_without_a_user() {
     let tool = ProposeSession::new(rig.modes.clone());
     assert!(tool.call(brief("t"), context).await.is_err());
     assert!(tool.root_only());
+}
+
+/// Models that number their calls `call_0` in every turn, or leave the id empty, still
+/// get proposals told apart: across chats, and within one chat across turns.
+#[tokio::test]
+async fn repeated_call_ids_name_different_proposals() {
+    let rig = rig("propose-repeated").await;
+    let first = rig.proposed("chat", "call_0", brief("first")).await;
+    let elsewhere = rig.proposed("other", "call_0", brief("elsewhere")).await;
+    let later = rig.proposed("chat", "call_0", brief("later")).await;
+    assert!(first != later && first != elsewhere && later != elsewhere);
+
+    let dismissed = ProposalState::Dismissed;
+    assert!(
+        settle(&rig.state, "chat", &first, "first", &dismissed)
+            .await
+            .unwrap()
+    );
+    // The other chat's and the later card still wait, each with its own brief.
+    let (card, state) = find(&rig.state, "other", &elsewhere).await.unwrap();
+    assert_eq!(
+        (card.title.as_str(), state),
+        ("elsewhere", ProposalState::Pending)
+    );
+    let (card, state) = find(&rig.state, "chat", &later).await.unwrap();
+    assert_eq!(
+        (card.title.as_str(), state),
+        ("later", ProposalState::Pending)
+    );
+    assert_eq!(find(&rig.state, "chat", &first).await.unwrap().1, dismissed);
+    // A card is found only in its own chat.
+    assert!(find(&rig.state, "other", &first).await.is_err());
+
+    let started = ProposalState::Started {
+        thread_id: "new".into(),
+    };
+    assert!(
+        settle(&rig.state, "other", &elsewhere, "elsewhere", &started)
+            .await
+            .unwrap()
+    );
+    assert!(
+        settle(&rig.state, "chat", &later, "later", &started)
+            .await
+            .unwrap()
+    );
+    assert_eq!(pending(&rig.state, "chat").await.unwrap(), 0);
 }

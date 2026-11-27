@@ -39,6 +39,9 @@ pub struct ProposeSession {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Proposal {
+    /// The proposal's own id, made by the core: unique, unlike a model's call id, which
+    /// some models repeat or leave empty.
+    pub id: String,
     pub title: String,
     pub brief: String,
     /// The project's folder the session opens in; this chat's when none.
@@ -83,7 +86,8 @@ impl Proposal {
             .into_iter()
             .next()?
             .ok()?;
-        let fits = !card.title.trim().is_empty()
+        let fits = plain_id(&card.id)
+            && !card.title.trim().is_empty()
             && card.title.chars().count() <= MAX_PROPOSAL_TITLE
             && card.brief.chars().count() <= MAX_PROPOSAL_BRIEF;
         fits.then_some(card)
@@ -100,11 +104,16 @@ impl Proposal {
     }
 }
 
-/// What the agent reads of the outcome: the first words name the proposal's call.
+/// Whether `id` can be a proposal's id: a short word.
+fn plain_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// What the agent reads of the outcome: the first words name the proposal.
 const OUTCOME: &str = "[session proposal ";
 
 /// The message the core stores in the proposing chat once the user answered.
-pub fn outcome_note(call_id: &str, title: &str, state: &ProposalState) -> String {
+pub fn outcome_note(id: &str, title: &str, state: &ProposalState) -> String {
     let what = match state {
         ProposalState::Started { thread_id } => format!(
             "The user started \"{title}\" as a new chat: {}.",
@@ -114,14 +123,14 @@ pub fn outcome_note(call_id: &str, title: &str, state: &ProposalState) -> String
             format!("The user dismissed \"{title}\".")
         }
     };
-    format!("{OUTCOME}{call_id}] {what}")
+    format!("{OUTCOME}{id}] {what}")
 }
 
-/// The call and the outcome a stored note says; none for any other message.
+/// The proposal and the outcome a stored note says; none for any other message.
 pub fn read_outcome(text: &str) -> Option<(String, ProposalState)> {
     let rest = text.strip_prefix(OUTCOME)?;
-    let (call_id, what) = rest.split_once("] ")?;
-    if call_id.is_empty() || call_id.contains(char::is_whitespace) {
+    let (id, what) = rest.split_once("] ")?;
+    if !plain_id(id) {
         return None;
     }
     let state = if what.starts_with("The user dismissed ") {
@@ -134,7 +143,7 @@ pub fn read_outcome(text: &str) -> Option<(String, ProposalState)> {
     } else {
         return None;
     };
-    Some((call_id.to_owned(), state))
+    Some((id.to_owned(), state))
 }
 
 #[cfg(test)]
@@ -143,6 +152,7 @@ mod tests {
 
     fn card() -> Proposal {
         Proposal {
+            id: "0192-ab".into(),
             title: "Fix the gate".into(),
             brief: "The gate runs `uv run pytest`; make it `pytest`.".into(),
             project: None,
@@ -160,6 +170,9 @@ mod tests {
             Proposal::read(&serde_json::to_string(&shown).unwrap()),
             None
         );
+        let mut unnamed = shown.clone();
+        unnamed.id = "a b".into();
+        assert_eq!(Proposal::read(&unnamed.result()), None);
         let mut long = shown;
         long.title = "x".repeat(MAX_PROPOSAL_TITLE + 1);
         assert_eq!(Proposal::read(&long.result()), None);
@@ -173,8 +186,8 @@ mod tests {
         // A title cannot forge the chat it names: the last link is the core's.
         let title = "see dusk://thread/evil";
         for state in [started, ProposalState::Dismissed] {
-            let note = outcome_note("call_1", title, &state);
-            assert_eq!(read_outcome(&note), Some(("call_1".into(), state)));
+            let note = outcome_note("0193-cd", title, &state);
+            assert_eq!(read_outcome(&note), Some(("0193-cd".into(), state)));
         }
         for other in [
             "[session proposal ] The user dismissed \"x\".",

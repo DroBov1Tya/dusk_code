@@ -24,15 +24,15 @@ const BRIEF_LINES: usize = 3;
 pub fn card(
     ws: &Workspace,
     shown: &str,
-    call_id: &str,
     proposal: &Proposal,
     state: &ProposalState,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
     let theme = cx.theme();
     let (muted, foreground) = (theme.muted_foreground, theme.foreground);
-    let key = format!("proposal-{shown}-{call_id}");
-    let open_key = (shown.to_owned(), call_id.to_owned());
+    let id = proposal.id.as_str();
+    let key = format!("proposal-{shown}-{id}");
+    let open_key = (shown.to_owned(), id.to_owned());
     let open = ws.briefs_open.contains(&open_key);
     let lines: Vec<&str> = proposal.brief.lines().collect();
     let folded = lines.len() > BRIEF_LINES && !open;
@@ -84,8 +84,8 @@ pub fn card(
     body = body.child(match state {
         ProposalState::Pending => {
             let (start, dismiss) = (
-                (shown.to_owned(), call_id.to_owned()),
-                (shown.to_owned(), call_id.to_owned()),
+                (shown.to_owned(), id.to_owned()),
+                (shown.to_owned(), id.to_owned()),
             );
             actions
                 .child(
@@ -131,13 +131,13 @@ pub fn card(
 
 impl Workspace {
     /// Starts the proposed session and shows it, as a fork is shown.
-    pub fn start_proposal(&mut self, thread_id: &str, call_id: &str, cx: &mut Context<Self>) {
-        let (from, call_id) = (thread_id.to_owned(), call_id.to_owned());
+    pub fn start_proposal(&mut self, thread_id: &str, proposal_id: &str, cx: &mut Context<Self>) {
+        let (from, proposal_id) = (thread_id.to_owned(), proposal_id.to_owned());
         self.core.call(
             cx,
             move |client| async move {
                 let threads = client.threads();
-                let thread_id = threads.start_proposal(&from, &call_id).await?;
+                let thread_id = threads.start_proposal(&from, &proposal_id).await?;
                 let history = threads.messages(&thread_id).await?;
                 anyhow::Ok((thread_id, history))
             },
@@ -153,14 +153,14 @@ impl Workspace {
         );
     }
 
-    pub fn dismiss_proposal(&mut self, thread_id: &str, call_id: &str, cx: &mut Context<Self>) {
-        let (thread_id, call_id) = (thread_id.to_owned(), call_id.to_owned());
+    pub fn dismiss_proposal(&mut self, thread_id: &str, proposal_id: &str, cx: &mut Context<Self>) {
+        let (thread_id, proposal_id) = (thread_id.to_owned(), proposal_id.to_owned());
         self.core.call(
             cx,
             move |client| async move {
                 client
                     .threads()
-                    .dismiss_proposal(&thread_id, &call_id)
+                    .dismiss_proposal(&thread_id, &proposal_id)
                     .await
             },
             |ws, result, cx| {

@@ -84,9 +84,8 @@ pub enum Entry {
     /// The Workshop listings the agent suggested, in place of that tool step.
     Suggestion(dusk_protocol::plugin::Suggestion),
     /// A session the agent proposed, and where it stands; the reply row starts or
-    /// dismisses the newest one waiting.
+    /// dismisses it while it is the last thing in the chat.
     Proposal {
-        call_id: String,
         proposal: dusk_protocol::thread::Proposal,
         state: dusk_protocol::thread::ProposalState,
     },
@@ -535,12 +534,7 @@ impl Transcript {
             }
             Item::Block(block) => Entry::Block(block.clone()),
             Item::Suggestion(card) => Entry::Suggestion(card.clone()),
-            Item::Proposal {
-                call_id,
-                proposal,
-                state,
-            } => Entry::Proposal {
-                call_id: call_id.clone(),
+            Item::Proposal { proposal, state } => Entry::Proposal {
                 proposal: proposal.clone(),
                 state: state.clone(),
             },

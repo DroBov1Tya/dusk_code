@@ -258,33 +258,38 @@ impl Server {
                 unread::set(&runtime, &self.subscribers, &thread_id, false).await;
                 Response::Done
             }
-            ThreadRequest::StartProposal { thread_id, call_id } => {
-                let started = runtime.start_proposal(self.source(), &thread_id, &call_id);
+            ThreadRequest::StartProposal {
+                thread_id,
+                proposal_id,
+            } => {
+                let started = runtime.start_proposal(self.source(), &thread_id, &proposal_id);
                 let (handle, proposal) = started.await?;
                 let new_id = handle.thread_id.clone();
                 let opened = self.open(handle);
+                let state = ProposalState::Started {
+                    thread_id: new_id.clone(),
+                };
+                self.proposal_settled(thread_id.clone(), proposal_id, state);
                 let brief = proposal.first_message(&thread_id);
                 self.open_thread(&new_id)?.input.send(brief).await?;
-                let state = ProposalState::Started { thread_id: new_id };
-                runtime
-                    .settle_proposal(&thread_id, &call_id, &state)
-                    .await?;
-                self.proposal_settled(thread_id, call_id, state);
                 opened
             }
-            ThreadRequest::DismissProposal { thread_id, call_id } => {
+            ThreadRequest::DismissProposal {
+                thread_id,
+                proposal_id,
+            } => {
                 let state = ProposalState::Dismissed;
-                let settled = runtime.settle_proposal(&thread_id, &call_id, &state);
+                let settled = runtime.settle_proposal(&thread_id, &proposal_id, &state);
                 ensure!(settled.await?, "this proposal was answered already");
-                self.proposal_settled(thread_id, call_id, state);
+                self.proposal_settled(thread_id, proposal_id, state);
                 Response::Done
             }
         })
     }
 
     /// Every client showing the chat redraws the proposal's card.
-    fn proposal_settled(&self, thread_id: String, call_id: String, state: ProposalState) {
-        let event = ThreadEvent::ProposalSettled { call_id, state };
+    fn proposal_settled(&self, thread_id: String, proposal_id: String, state: ProposalState) {
+        let event = ThreadEvent::ProposalSettled { proposal_id, state };
         publish(
             &self.subscribers,
             Event::Thread {

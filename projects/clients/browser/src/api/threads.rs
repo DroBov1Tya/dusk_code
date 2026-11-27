@@ -44,20 +44,23 @@ pub async fn fork_at(thread_id: &str, message_id: &str, cwd: String) -> Res<Stri
     )
 }
 
-/// Starts the session the agent proposed with `call_id`; answers with the new chat.
-pub async fn start_proposal(thread_id: &str, call_id: &str) -> Res<String> {
-    let (thread_id, call_id) = (thread_id.to_owned(), call_id.to_owned());
+/// Starts the session the agent proposed as `proposal_id`; answers with the new chat.
+pub async fn start_proposal(thread_id: &str, proposal_id: &str) -> Res<String> {
+    let (thread_id, proposal_id) = (thread_id.to_owned(), proposal_id.to_owned());
     ask!(
-        thread(ThreadRequest::StartProposal { thread_id, call_id }),
+        thread(ThreadRequest::StartProposal {
+            thread_id,
+            proposal_id
+        }),
         Response::Opened { thread_id } => thread_id
     )
 }
 
-pub async fn dismiss_proposal(thread_id: &str, call_id: &str) -> Res<()> {
-    let (thread_id, call_id) = (thread_id.to_owned(), call_id.to_owned());
+pub async fn dismiss_proposal(thread_id: &str, proposal_id: &str) -> Res<()> {
+    let (thread_id, proposal_id) = (thread_id.to_owned(), proposal_id.to_owned());
     done(thread(ThreadRequest::DismissProposal {
         thread_id,
-        call_id,
+        proposal_id,
     }))
     .await
 }

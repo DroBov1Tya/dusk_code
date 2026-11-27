@@ -1007,10 +1007,12 @@ fn goal_verdicts_read_the_same_from_history_and_live() {
 }
 
 /// A proposal's card takes its step's place, and the core's note of the answer settles
-/// it without being drawn, read back or live; the event does the same.
+/// it without being drawn, read back or live; the event does the same. Cards are told
+/// apart by their own id, so a model that repeats its call ids settles the right one.
 #[test]
 fn a_proposal_card_is_settled_by_its_note_and_its_event() {
     let card = Proposal {
+        id: "first".into(),
         title: "Fix the gate".into(),
         brief: "Run pytest.".into(),
         project: None,
@@ -1024,19 +1026,29 @@ fn a_proposal_card_is_settled_by_its_note_and_its_event() {
         from_thread_id: Some("t".into()),
         ..message(
             MessageRole::User,
-            &crate::thread::outcome_note("p", &card.title, &started),
+            &crate::thread::outcome_note("first", &card.title, &started),
         )
     };
+    let later = Proposal {
+        id: "second".into(),
+        ..card.clone()
+    };
     let history = [
-        calling(vec![call("p", PROPOSE_SESSION_TOOL, json!({}))]),
-        result("p", &card.result()),
+        calling(vec![call("call_0", PROPOSE_SESSION_TOOL, json!({}))]),
+        result("call_0", &card.result()),
+        calling(vec![call("call_0", PROPOSE_SESSION_TOOL, json!({}))]),
+        result("call_0", &later.result()),
         note.clone(),
     ];
     let stored = Chat::from_history(&history);
-    assert_eq!(stored.items.len(), 1, "{:?}", stored.items);
+    assert_eq!(stored.items.len(), 2, "{:?}", stored.items);
     assert!(matches!(
         &stored.items[0],
-        Item::Proposal { call_id, proposal, state } if call_id == "p" && *proposal == card && *state == started
+        Item::Proposal { proposal, state } if *proposal == card && *state == started
+    ));
+    assert!(matches!(
+        &stored.items[1],
+        Item::Proposal { proposal, state: ProposalState::Pending } if *proposal == later
     ));
 
     let mut live = Chat::from_history(&history[..2]);
@@ -1049,7 +1061,7 @@ fn a_proposal_card_is_settled_by_its_note_and_its_event() {
     ));
     live.apply(
         ThreadEvent::ProposalSettled {
-            call_id: "p".into(),
+            proposal_id: "first".into(),
             state: ProposalState::Dismissed,
         },
         1,

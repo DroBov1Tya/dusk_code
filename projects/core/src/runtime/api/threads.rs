@@ -155,19 +155,23 @@ impl Runtime {
         self.launcher.new_thread(source, cwd).await
     }
 
-    /// Starts the session the agent of `thread_id` proposed with `call_id`: a new chat in
-    /// the proposal's project (the chat's own when none) and mode, opened before its brief
-    /// is sent. Refused when the proposal was answered already.
+    /// Starts the session the agent of `thread_id` proposed as `proposal_id`: a new chat
+    /// in the proposal's project (the chat's own when none) and mode, opened before its
+    /// brief is sent. The outcome is stored as soon as the chat exists, so a brief that
+    /// fails to send leaves a linked chat, never a second one on a retry. Refused, with
+    /// nothing made, when the proposal was answered already or its mode is gone.
     pub async fn start_proposal(
         &self,
         source: &str,
         thread_id: &str,
-        call_id: &str,
+        proposal_id: &str,
     ) -> Result<(ThreadHandle, Proposal)> {
         use crate::tools::propose_session;
+        // One answer at a time, so two clicks cannot both find it waiting.
+        let _answering = propose_session::ANSWERING.lock().await;
         let launcher = self.of(thread_id).await;
         let state = &launcher.state;
-        let (proposal, settled) = propose_session::find(state, thread_id, call_id).await?;
+        let (proposal, settled) = propose_session::find(state, thread_id, proposal_id).await?;
         anyhow::ensure!(
             settled == ProposalState::Pending,
             "this proposal was answered already"
@@ -181,28 +185,40 @@ impl Runtime {
             }
         };
         let mode = match &proposal.mode {
-            Some(mode) => mode.clone(),
+            Some(mode) => {
+                let known = crate::catalog::modes::Modes::new(&self.paths().modes_dir()).list();
+                anyhow::ensure!(
+                    known.contains(mode),
+                    "the mode {mode} of this proposal no longer exists"
+                );
+                mode.clone()
+            }
             None => self.config().current().mode().to_owned(),
         };
         let handle = launcher.new_thread_in(source, &cwd, &mode, None).await?;
+        let started = ProposalState::Started {
+            thread_id: handle.thread_id.clone(),
+        };
+        propose_session::settle(state, thread_id, proposal_id, &proposal.title, &started).await?;
         Ok((handle, proposal))
     }
 
-    /// Stores how the user answered the proposal of `call_id`, for the chat's next turn;
+    /// Stores how the user answered the proposal `proposal_id`, for the chat's next turn;
     /// false when it was answered already.
     pub async fn settle_proposal(
         &self,
         thread_id: &str,
-        call_id: &str,
+        proposal_id: &str,
         state: &ProposalState,
     ) -> Result<bool> {
         use crate::tools::propose_session;
+        let _answering = propose_session::ANSWERING.lock().await;
         let store = &self.of(thread_id).await.state;
-        let (proposal, settled) = propose_session::find(store, thread_id, call_id).await?;
+        let (proposal, settled) = propose_session::find(store, thread_id, proposal_id).await?;
         if settled != ProposalState::Pending {
             return Ok(false);
         }
-        propose_session::settle(store, thread_id, call_id, &proposal.title, state).await
+        propose_session::settle(store, thread_id, proposal_id, &proposal.title, state).await
     }
 
     /// A new thread that asks `model`, as `provider/model`, instead of the chosen one.

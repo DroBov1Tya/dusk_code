@@ -15,9 +15,9 @@ pub enum Action {
     Send(String),
     SendNow(String),
     Cancel,
-    /// Starts (`true`) or dismisses the session the agent proposed with this call.
+    /// Starts (`true`) or dismisses the session the agent proposed as `proposal_id`.
     Proposal {
-        call_id: String,
+        proposal_id: String,
         start: bool,
     },
     /// The answer to a tool's request for approval.

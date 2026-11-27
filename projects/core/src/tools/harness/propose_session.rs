@@ -1,7 +1,8 @@
 //! `propose_session`: the agent proposes a new session for work that is a task of its
 //! own. The call checks the proposal and puts a card in the chat; it starts nothing. The
 //! user's Start or Dismiss reaches the core as `ThreadRequest::Proposal`, which stores
-//! the outcome for the agent's next turn under the call (`uid`), once.
+//! the outcome for the agent's next turn under the proposal (`uid`), once. A proposal
+//! is named by an id of its own, not by the model's call id, which some models repeat.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -19,6 +20,10 @@ use dusk_protocol::thread::{
     MAX_PENDING_PROPOSALS, MAX_PROPOSAL_BRIEF, MAX_PROPOSAL_TITLE, MessageRole,
     PROPOSE_SESSION_TOOL, Proposal, ProposalState, ProposeSession as Arguments, read_outcome,
 };
+
+/// Held while a proposal is answered, so two clicks cannot both find it waiting.
+pub static ANSWERING: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 /// The longest branch name taken.
 const MAX_BRANCH: usize = 100;
@@ -147,6 +152,7 @@ async fn check(arguments: Arguments, state: &State, modes: &std::path::Path) -> 
         }
     };
     Ok(Proposal {
+        id: uuid::Uuid::now_v7().to_string(),
         title,
         brief,
         project,
@@ -155,29 +161,34 @@ async fn check(arguments: Arguments, state: &State, modes: &std::path::Path) -> 
     })
 }
 
-/// Where the outcome of the proposal of call `call_id` is stored, once.
-pub fn uid(call_id: &str) -> String {
-    format!("proposal:{call_id}")
+/// Where the outcome of the proposal `id` of the chat `thread_id` is stored, once. The
+/// chat is part of it, so a forked chat's copy of a card is answered on its own.
+pub fn uid(thread_id: &str, id: &str) -> String {
+    format!("proposal:{thread_id}:{id}")
 }
 
-/// The proposal of call `call_id` in the chat `thread_id`, and where it stands.
-pub async fn find(
-    state: &State,
-    thread_id: &str,
-    call_id: &str,
-) -> Result<(Proposal, ProposalState)> {
+/// The cards the chat `thread_id` holds, oldest first.
+async fn cards(state: &State, thread_id: &str) -> Result<Vec<Proposal>> {
     let messages = state.list_messages(thread_id).await?;
-    let proposal = messages
+    Ok(messages
         .iter()
         .filter(|message| message.role == MessageRole::Tool)
-        .filter(|message| message.tool_call_id.as_deref() == Some(call_id))
-        .find_map(|message| Proposal::read(&message.content))
-        .context("no such proposal in this chat")?;
-    Ok((proposal, settled(state, call_id).await?))
+        .filter_map(|message| Proposal::read(&message.content))
+        .collect())
 }
 
-async fn settled(state: &State, call_id: &str) -> Result<ProposalState> {
-    let stored = state.stored_under(&uid(call_id)).await?;
+/// The proposal `id` in the chat `thread_id`, and where it stands.
+pub async fn find(state: &State, thread_id: &str, id: &str) -> Result<(Proposal, ProposalState)> {
+    let proposal = cards(state, thread_id)
+        .await?
+        .into_iter()
+        .rfind(|card| card.id == id)
+        .context("no such proposal in this chat")?;
+    Ok((proposal, settled(state, thread_id, id).await?))
+}
+
+async fn settled(state: &State, thread_id: &str, id: &str) -> Result<ProposalState> {
+    let stored = state.stored_under(&uid(thread_id, id)).await?;
     Ok(stored
         .and_then(|note| read_outcome(&note))
         .map_or(ProposalState::Pending, |(_, state)| state))
@@ -185,15 +196,9 @@ async fn settled(state: &State, call_id: &str) -> Result<ProposalState> {
 
 /// How many proposals of the chat wait for the user.
 async fn pending(state: &State, thread_id: &str) -> Result<usize> {
-    let messages = state.list_messages(thread_id).await?;
     let mut waiting = 0;
-    for message in messages.iter().filter(|m| m.role == MessageRole::Tool) {
-        let Some(call_id) = message.tool_call_id.as_deref() else {
-            continue;
-        };
-        if Proposal::read(&message.content).is_some()
-            && settled(state, call_id).await? == ProposalState::Pending
-        {
+    for card in cards(state, thread_id).await? {
+        if settled(state, thread_id, &card.id).await? == ProposalState::Pending {
             waiting += 1;
         }
     }
@@ -205,14 +210,14 @@ async fn pending(state: &State, thread_id: &str) -> Result<usize> {
 pub async fn settle(
     state: &Arc<State>,
     thread_id: &str,
-    call_id: &str,
+    id: &str,
     title: &str,
     outcome: &ProposalState,
 ) -> Result<bool> {
-    let note = dusk_protocol::thread::outcome_note(call_id, title, outcome);
+    let note = dusk_protocol::thread::outcome_note(id, title, outcome);
     // From the chat itself: never a command, and no answer to a question it waits on.
     state
-        .add_pending_once(thread_id, &uid(call_id), &note, Some(thread_id))
+        .add_pending_once(thread_id, &uid(thread_id, id), &note, Some(thread_id))
         .await
 }
 

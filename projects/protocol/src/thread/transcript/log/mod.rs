@@ -69,9 +69,9 @@ pub enum Item<L = Infallible> {
     /// that call's step.
     Suggestion(Suggestion),
     /// A session the agent proposed with `propose_session`, in place of that call's step,
-    /// and where it stands: the user starts or dismisses it from the card.
+    /// and where it stands: the user starts or dismisses it from the card, which names
+    /// it by `proposal.id`.
     Proposal {
-        call_id: String,
         proposal: Proposal,
         state: ProposalState,
     },
@@ -800,7 +800,7 @@ impl<L> ChatLog<L> {
             ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Pins(pins) => self.pins = pins,
-            ThreadEvent::ProposalSettled { call_id, state } => self.settle(&call_id, state),
+            ThreadEvent::ProposalSettled { proposal_id, state } => self.settle(&proposal_id, state),
             ThreadEvent::SkillChanged(change) => self.skill_changed(change),
             ThreadEvent::Undone { text } => {
                 // The core forgot the message and all after it; so does the chat.
@@ -1053,7 +1053,6 @@ impl<L> ChatLog<L> {
             return false;
         };
         self.items[index] = Item::Proposal {
-            call_id: call_id.to_owned(),
             proposal,
             state: ProposalState::Pending,
         };
@@ -1062,12 +1061,12 @@ impl<L> ChatLog<L> {
         true
     }
 
-    /// Marks the card of the call `call_id` started or dismissed.
-    fn settle(&mut self, call_id: &str, settled: ProposalState) {
+    /// Marks the card of the proposal `id` started or dismissed.
+    fn settle(&mut self, id: &str, settled: ProposalState) {
         let index = self
             .items
             .iter()
-            .rposition(|item| matches!(item, Item::Proposal { call_id: id, .. } if id == call_id));
+            .rposition(|item| matches!(item, Item::Proposal { proposal, .. } if proposal.id == id));
         if let Some(index) = index
             && let Item::Proposal { state, .. } = &mut self.items[index]
         {
@@ -1079,15 +1078,15 @@ impl<L> ChatLog<L> {
     /// Whether `text`, a message from a thread, is the core's note of how a proposal of
     /// this chat was answered: it settles the card and is not drawn itself.
     fn settled_by(&mut self, text: &str) -> bool {
-        let Some((call_id, state)) = read_outcome(text) else {
+        let Some((id, state)) = read_outcome(text) else {
             return false;
         };
         let carded = self
             .items
             .iter()
-            .any(|item| matches!(item, Item::Proposal { call_id: id, .. } if *id == call_id));
+            .any(|item| matches!(item, Item::Proposal { proposal, .. } if proposal.id == id));
         if carded {
-            self.settle(&call_id, state);
+            self.settle(&id, state);
         }
         carded
     }

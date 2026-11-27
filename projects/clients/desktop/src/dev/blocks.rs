@@ -131,6 +131,7 @@ pub fn proposals(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use crate::pages::chat::transcript::{Item, Transcript};
     use dusk_protocol::thread::{Proposal, ProposalState};
     let proposal = |title: &str, brief: &str, mode: Option<&str>, branch: Option<&str>| Proposal {
+        id: String::new(),
         title: title.into(),
         brief: brief.into(),
         project: None,
@@ -196,8 +197,10 @@ pub fn proposals(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     for (call_id, proposal, state) in items {
         chat.push(
             Item::Proposal {
-                call_id: call_id.into(),
-                proposal,
+                proposal: Proposal {
+                    id: call_id.into(),
+                    ..proposal
+                },
                 state,
             },
             0,

@@ -202,7 +202,7 @@ impl App {
             let text = poll.question.answer(&[index], "");
             return self.answer_with(text);
         }
-        if let Some(call_id) = self.waiting_proposal()
+        if let Some(proposal_id) = self.waiting_proposal()
             && !self.is_busy()
             && self.approvals.is_empty()
         {
@@ -210,7 +210,7 @@ impl App {
                 return Action::None;
             }
             return Action::Proposal {
-                call_id: call_id.to_owned(),
+                proposal_id: proposal_id.to_owned(),
                 start: index == 0,
             };
         }
@@ -225,18 +225,20 @@ impl App {
         Action::Send(label)
     }
 
-    /// The call of the newest session the agent proposed that waits for the user.
+    /// The newest session the agent proposed in its last turn that waits for the user.
+    /// A card from before the user's last message no longer takes the reply row; the
+    /// chat list or another client still answers it.
     pub fn waiting_proposal(&self) -> Option<&str> {
         self.transcript
             .entries
             .iter()
             .rev()
+            .take_while(|entry| !matches!(entry, Entry::User { .. }))
             .find_map(|entry| match entry {
                 Entry::Proposal {
-                    call_id,
+                    proposal,
                     state: dusk_protocol::thread::ProposalState::Pending,
-                    ..
-                } => Some(call_id.as_str()),
+                } => Some(proposal.id.as_str()),
                 _ => None,
             })
     }
@@ -423,6 +425,7 @@ mod tests {
         let mut app = test_app();
         app.transcript.add_user("go");
         let card = Proposal {
+            id: "first".into(),
             title: "Fix the gate".into(),
             brief: "Run pytest.".into(),
             project: None,
@@ -441,14 +444,35 @@ mod tests {
         });
         assert_eq!(app.reply_labels(), ["Start session", "Dismiss"]);
         let action = press(&mut app, KeyCode::Char('1'), KeyModifiers::ALT);
-        assert!(matches!(action, Action::Proposal { call_id, start: true } if call_id == "p"));
+        assert!(
+            matches!(action, Action::Proposal { proposal_id, start: true } if proposal_id == "first")
+        );
         let action = press(&mut app, KeyCode::Char('2'), KeyModifiers::ALT);
         assert!(matches!(action, Action::Proposal { start: false, .. }));
         app.transcript.apply(ThreadEvent::ProposalSettled {
-            call_id: "p".into(),
+            proposal_id: "first".into(),
             state: ProposalState::Dismissed,
         });
         assert!(app.reply_labels().is_empty());
+
+        // A card the user wrote past no longer takes the row.
+        let later = Proposal {
+            id: "second".into(),
+            ..card
+        };
+        let call = ToolCall {
+            id: "q".into(),
+            name: PROPOSE_SESSION_TOOL.into(),
+            arguments: json!({}),
+        };
+        app.transcript.apply(ThreadEvent::ToolStarted(call));
+        app.transcript.apply(ThreadEvent::ToolFinished {
+            call_id: "q".into(),
+            result: dusk_protocol::tools::ToolResult::text(later.result()),
+        });
+        assert_eq!(app.reply_labels(), ["Start session", "Dismiss"]);
+        app.transcript.add_user("something else");
+        assert!(app.waiting_proposal().is_none());
     }
 
     #[test]
