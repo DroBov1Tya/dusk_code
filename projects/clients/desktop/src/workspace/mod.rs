@@ -280,6 +280,8 @@ pub struct Workspace {
     pub repositories: crate::pages::settings::Repositories,
     /// The Advanced page's number being typed in place of its minus and plus.
     pub limit_edit: crate::pages::settings::LimitEdit,
+    /// The Chat page's share of the context at which a compaction starts.
+    pub compact_slider: Entity<gpui_kit::component::slider::SliderState>,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.
