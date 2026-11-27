@@ -402,7 +402,10 @@ impl App {
                         if let Some(ModelRow::Model { name, .. }) =
                             list.rows().get(list.selected).cloned()
                         {
-                            return Action::Command(Command::Model { name: Some(name) });
+                            return Action::Command(Command::Model {
+                                name: Some(name),
+                                thread_id: None,
+                            });
                         }
                         return Action::None;
                     }
@@ -773,7 +776,7 @@ mod tests {
         assert_eq!(names(&app), ["or/qwen-max"]);
         assert!(matches!(
             press(&mut app, KeyCode::Enter),
-            Action::Command(dusk_protocol::client::Command::Model { name: Some(name) }) if name == "or/qwen-max"
+            Action::Command(dusk_protocol::client::Command::Model { name: Some(name), .. }) if name == "or/qwen-max"
         ));
         press(&mut app, KeyCode::Esc);
         assert_eq!(names(&app).len(), 2);

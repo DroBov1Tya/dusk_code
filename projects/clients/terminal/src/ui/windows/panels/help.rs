@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 47] = [
+pub const KEYS: [(&str, &str); 48] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
