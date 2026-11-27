@@ -97,6 +97,16 @@ impl SubagentView {
         dusk_protocol::thread::context_line(tokens, self.compactions)
     }
 
+    /// The core's report on its thread, asked when this client heard none of its numbers:
+    /// live events heard since stand over it.
+    pub fn context_report(&mut self, report: &dusk_protocol::thread::ContextReport) {
+        if self.limit == 0 {
+            self.tokens.context = report.total;
+            self.limit = report.limit;
+        }
+        self.compactions = self.compactions.max(report.compactions);
+    }
+
     pub fn is_working(&self) -> bool {
         self.finished_at.is_none() && self.unavailable_at.is_none()
     }

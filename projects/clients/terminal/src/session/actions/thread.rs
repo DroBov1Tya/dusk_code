@@ -142,10 +142,37 @@ pub async fn open_agent(client: &Client, app: &mut App, thread_id: String) {
                 .iter()
                 .find(|card| card.thread_id == thread_id);
             let parent = card.and_then(|card| card.parent.clone());
-            let window = AgentWindow::new(thread_id, parent, transcript);
+            let unknown = card.is_some_and(|card| card.limit == 0);
+            let window = AgentWindow::new(thread_id.clone(), parent, transcript);
             app.panel = Some(Panel::Agent(window));
+            if unknown {
+                read_agent_context(client, app, thread_id).await;
+            }
         }
         Err(error) => app.error(format!("cannot open the agent: {error:#}")),
+    }
+}
+
+/// Asks the core how full the context of agent `thread_id` is: one that worked before the
+/// chat was open here sent its numbers to no one. The line is an extra; without it the
+/// window stands.
+async fn read_agent_context(client: &Client, app: &mut App, thread_id: String) {
+    use dusk_protocol::client::Answer;
+    let command = Command::Context {
+        thread_id: Some(thread_id.clone()),
+    };
+    match client.command(command).await {
+        Ok(Answer::Context(report)) => {
+            if let Some(card) = app
+                .subagents
+                .iter_mut()
+                .find(|card| card.thread_id == thread_id)
+            {
+                card.context_report(&report);
+            }
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!("no context for agent {thread_id}: {error:#}"),
     }
 }
 
