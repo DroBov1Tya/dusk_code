@@ -233,6 +233,8 @@ pub struct Workspace {
     pub modal_focus: FocusHandle,
     /// The rows of a subagent's chat window, drawn as a list like the chat's.
     pub agent_list: crate::modal::AgentList,
+    /// The steps of each subagent, as the list of subagents shows them.
+    pub agent_steps: crate::modal::StepCounts,
     /// The Workshop confirmation's Cancel button, where the keyboard starts.
     pub confirm_focus: FocusHandle,
     pub file: crate::pages::file::FileView,

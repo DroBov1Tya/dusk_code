@@ -32,6 +32,7 @@ use gpui_kit::{
 use crate::workspace::Workspace;
 
 pub use agent_chat::AgentList;
+pub use agents::StepCounts;
 pub use chat_menu::{FADE, render as chat_menu};
 
 use crate::pages::customize::plugins::workshop::detail as listing;
