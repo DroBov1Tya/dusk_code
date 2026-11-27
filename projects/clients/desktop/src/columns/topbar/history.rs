@@ -100,6 +100,7 @@ impl Workspace {
                 None => {
                     self.drafts.new_chat();
                     self.shown = None;
+                    self.access_next = None;
                 }
             }
         }

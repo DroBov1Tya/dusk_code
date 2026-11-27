@@ -379,6 +379,7 @@ impl Workspace {
                     if ws.shown.as_deref() == Some(id.as_str()) {
                         ws.drafts.new_chat();
                         ws.shown = None;
+                        ws.access_next = None;
                     }
                     theme::change(cx, |prefs| prefs.pinned.retain(|pinned| *pinned != id));
                     ws.modal = None;

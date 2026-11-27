@@ -205,6 +205,9 @@ pub struct Workspace {
     pub jump: Option<(String, String)>,
     /// The chat about to start is a temporary one: kept in memory, gone with the app.
     pub temporary_next: bool,
+    /// The access mode picked for the chat about to start; none keeps the default. It is
+    /// given to the core with the first message and dropped for each new chat.
+    pub access_next: Option<dusk_protocol::config::ApprovalPolicy>,
     pub composer: Entity<TextareaState>,
     /// Text for the composer, put there on the next frame, which has the window.
     pub fill_composer: Vec<chat::composer::Edit>,

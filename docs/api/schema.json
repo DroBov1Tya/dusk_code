@@ -11730,9 +11730,21 @@
         },
         {
           "additionalProperties": false,
+          "description": "`approvals` is the chat's own approval mode from its start, as `SetApprovals`\nsets it later; none keeps the default in settings.",
           "properties": {
             "New": {
               "properties": {
+                "approvals": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ApprovalPolicy"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
                 "cwd": {
                   "type": "string"
                 }
@@ -11754,6 +11766,17 @@
           "properties": {
             "NewTemporary": {
               "properties": {
+                "approvals": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ApprovalPolicy"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
                 "cwd": {
                   "type": "string"
                 }

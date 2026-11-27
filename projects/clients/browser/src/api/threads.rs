@@ -15,14 +15,15 @@ pub async fn threads() -> Res<Vec<Thread>> {
     ask!(thread(ThreadRequest::List), Response::Threads(t) => t)
 }
 
-pub async fn new_thread(cwd: String) -> Res<String> {
+/// A new chat; `approvals` is its own mode from the start, none keeps the default.
+pub async fn new_thread(cwd: String, approvals: Option<ApprovalPolicy>) -> Res<String> {
     let cwd = cwd.into();
-    ask!(thread(ThreadRequest::New { cwd }), Response::Opened { thread_id } => thread_id)
+    ask!(thread(ThreadRequest::New { cwd, approvals }), Response::Opened { thread_id } => thread_id)
 }
 
-pub async fn new_temporary_thread(cwd: String) -> Res<String> {
+pub async fn new_temporary_thread(cwd: String, approvals: Option<ApprovalPolicy>) -> Res<String> {
     let cwd = cwd.into();
-    ask!(thread(ThreadRequest::NewTemporary { cwd }), Response::Opened { thread_id } => thread_id)
+    ask!(thread(ThreadRequest::NewTemporary { cwd, approvals }), Response::Opened { thread_id } => thread_id)
 }
 
 pub async fn resume(thread_id: &str, cwd: String) -> Res<String> {

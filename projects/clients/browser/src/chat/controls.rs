@@ -9,11 +9,17 @@ use crate::{
 use dusk_protocol::config::ApprovalPolicy;
 use leptos::prelude::*;
 
-/// What this chat's tools may do without asking; it belongs to the chat once it exists.
+/// What this chat's tools may do without asking. A chat not started yet keeps the
+/// choice until its first message, which starts it with that mode.
 #[component]
 pub fn Access(id: Option<String>, chat: ChatSignal) -> impl IntoView {
     let app = state();
-    let access = move || match chat.with(|c| c.access) {
+    let started = id.is_some();
+    let own = move || match started {
+        true => chat.with(|c| c.access),
+        false => app.access_next.get(),
+    };
+    let access = move || match own() {
         None => "default",
         Some(ApprovalPolicy::Ask) => "ask",
         Some(ApprovalPolicy::Sandbox) => "sandbox",
@@ -27,7 +33,8 @@ pub fn Access(id: Option<String>, chat: ChatSignal) -> impl IntoView {
             other => ApprovalPolicy::parse_stored(other).ok(),
         };
         let Some(id) = id.clone() else {
-            return app.fail("Send a message first: the access belongs to the chat.");
+            app.access_next.set(policy);
+            return;
         };
         run(
             async move { api::set_approvals(&id, policy).await },

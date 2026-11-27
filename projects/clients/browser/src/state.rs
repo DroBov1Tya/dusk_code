@@ -10,6 +10,7 @@ use crate::{
 };
 use dusk_protocol::{
     client::{Event, Status},
+    config::ApprovalPolicy,
     project::{Project, RepositoryStatus},
     thread::{Thread, ThreadEvent},
 };
@@ -43,6 +44,9 @@ pub struct AppState {
     pub project: RwSignal<Option<String>>,
     /// The chat about to start is a temporary one: kept in memory, gone with the core.
     pub temporary_next: RwSignal<bool>,
+    /// The access mode picked for the chat about to start; none keeps the default. It
+    /// goes to the core with the first message and is dropped for each new chat.
+    pub access_next: RwSignal<Option<ApprovalPolicy>>,
     /// Unsent messages by chat, none for the draft chat; in memory only.
     drafts: StoredValue<HashMap<Option<String>, crate::chat::Draft>>,
     pub dictations: RwSignal<HashMap<Option<String>, Vec<String>>>,
@@ -92,6 +96,7 @@ impl AppState {
             draft_generation: RwSignal::new(0),
             project: RwSignal::new(None),
             temporary_next: RwSignal::new(false),
+            access_next: RwSignal::new(None),
             drafts: StoredValue::new(HashMap::new()),
             dictations: RwSignal::new(HashMap::new()),
             pending_pictures: RwSignal::new(HashMap::new()),
@@ -310,6 +315,7 @@ impl AppState {
         self.project.set(project);
         self.advance_draft();
         self.temporary_next.set(false);
+        self.access_next.set(None);
         self.show(View::Chat(None));
     }
 
@@ -419,14 +425,16 @@ impl AppState {
             None => self.workspace_dir(),
         };
         let temporary = self.temporary_next.get_untracked();
+        let access = self.access_next.get_untracked();
         if thread_id.is_none() {
             self.advance_draft();
             self.temporary_next.set(false);
+            self.access_next.set(None);
         }
         spawn_local(async move {
             let thread_id = match thread_id {
                 Some(id) => id,
-                None => match self.start_thread(cwd, temporary, navigation).await {
+                None => match self.start_thread(cwd, temporary, access, navigation).await {
                     Ok(id) => id,
                     Err(error) => return self.fail(error),
                 },
@@ -462,14 +470,19 @@ impl AppState {
         self,
         cwd: String,
         temporary: bool,
+        access: Option<ApprovalPolicy>,
         navigation: u64,
     ) -> Result<String, String> {
         let thread_id = match temporary {
-            true => api::new_temporary_thread(cwd).await?,
-            false => api::new_thread(cwd).await?,
+            true => api::new_temporary_thread(cwd, access).await?,
+            false => api::new_thread(cwd, access).await?,
+        };
+        let data = ChatData {
+            access,
+            ..ChatData::default()
         };
         self.chats.update(|chats| {
-            chats.insert(thread_id.clone(), RwSignal::new(ChatData::default()));
+            chats.insert(thread_id.clone(), RwSignal::new(data));
         });
         if self.navigation.get_untracked() == navigation {
             self.show(View::Chat(Some(thread_id.clone())));

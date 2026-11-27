@@ -10,13 +10,19 @@ use crate::tools::Decision;
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadRequest {
+    /// `approvals` is the chat's own approval mode from its start, as `SetApprovals`
+    /// sets it later; none keeps the default in settings.
     New {
         cwd: PathBuf,
+        #[serde(default)]
+        approvals: Option<ApprovalPolicy>,
     },
     /// A new chat that is never written to disk: its messages stay in memory and its
     /// files in the system's temporary folder, and all of it goes when the core stops.
     NewTemporary {
         cwd: PathBuf,
+        #[serde(default)]
+        approvals: Option<ApprovalPolicy>,
     },
     Resume {
         thread_id: String,
