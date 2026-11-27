@@ -9087,7 +9087,7 @@
           "type": "integer"
         },
         "path": {
-          "description": "The file on the core's machine, for a client there to open in its own app.",
+          "description": "The file on the core's machine, for a client there to open in its own app; empty\nfor a client elsewhere.",
           "type": "string"
         },
         "text": {

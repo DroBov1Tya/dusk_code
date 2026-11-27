@@ -239,6 +239,14 @@ impl Server {
             .map_or(HostFiles::Left, |attached| attached.scope.host_files())
     }
 
+    /// Whether the client being answered runs in this process, on this machine, so a path
+    /// of the core's files means something to it.
+    pub(super) fn in_process(&self) -> bool {
+        self.clients
+            .get(&self.caller)
+            .is_some_and(|attached| attached.transport == "in-process")
+    }
+
     /// Answers calls until the client asks to shut down or goes away, then closes every
     /// thread and stops the runtime.
     pub async fn run(mut self, mut calls: mpsc::UnboundedReceiver<Message>) {

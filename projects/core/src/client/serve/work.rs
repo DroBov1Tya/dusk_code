@@ -60,7 +60,15 @@ impl Server {
                 thread_id,
                 source_id,
                 offset,
-            } => Response::SourceText(runtime.source_text(&thread_id, &source_id, offset).await?),
+            } => {
+                let mut chunk = runtime.source_text(&thread_id, &source_id, offset).await?;
+                // The core's own path names its user's home; only a client on this
+                // machine can open it, so no other is told it.
+                if !self.in_process() {
+                    chunk.path.clear();
+                }
+                Response::SourceText(chunk)
+            }
             WorkRequest::Card {
                 thread_id,
                 card_id,

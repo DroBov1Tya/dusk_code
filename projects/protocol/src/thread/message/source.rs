@@ -42,6 +42,7 @@ pub struct SourceChunk {
     pub next: Option<u64>,
     /// The file's whole length.
     pub bytes: u64,
-    /// The file on the core's machine, for a client there to open in its own app.
+    /// The file on the core's machine, for a client there to open in its own app; empty
+    /// for a client elsewhere.
     pub path: String,
 }
