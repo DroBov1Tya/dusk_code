@@ -3,11 +3,15 @@
 use super::EFFORTS;
 use crate::app::{
     Action, App, Panel,
-    panels::{AtOnceEdit, Connection, ModelRow, Preset, SecretEntry, step},
+    panels::{AtOnceEdit, Connection, ModelRow, PlansAsk, Preset, SecretEntry, step},
     schedule::ScheduleAction,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dusk_protocol::{client::Command, release::InstallStage, thread::MAX_TEAM_AT_ONCE};
+use dusk_protocol::{
+    client::Command,
+    release::InstallStage,
+    thread::{MAX_TEAM_AT_ONCE, PlanFile},
+};
 
 impl App {
     pub(super) fn panel_key(&mut self, key: KeyEvent) -> Action {
@@ -196,6 +200,37 @@ impl App {
                     _ => {}
                 }
                 *removing = false;
+                return Action::None;
+            }
+            Panel::Plans {
+                plans,
+                selected,
+                asking,
+            } => {
+                // A key held down sends `d` twice: only `y` answers yes.
+                if let Some(ask) = asking.take() {
+                    if key.code != KeyCode::Char('y') {
+                        return Action::None;
+                    }
+                    return match ask {
+                        PlansAsk::Delete => plans.get(*selected).map_or(Action::None, |plan| {
+                            Action::RemovePlan(plan.source_id.clone())
+                        }),
+                        PlansAsk::Old => Action::RemoveOldPlans,
+                    };
+                }
+                match key.code {
+                    KeyCode::Char('d') if !plans.is_empty() => *asking = Some(PlansAsk::Delete),
+                    KeyCode::Char('o') if plans.iter().any(PlanFile::old) => {
+                        *asking = Some(PlansAsk::Old);
+                    }
+                    KeyCode::Char('o') => {
+                        self.flash = Some("no old plans: none is replaced or finished".into());
+                    }
+                    _ if up || down => step(selected, plans.len(), down),
+                    KeyCode::Esc => self.panel = None,
+                    _ => {}
+                }
                 return Action::None;
             }
             Panel::Jobs(view) => {
@@ -648,6 +683,46 @@ mod tests {
             panic!("no member opened");
         };
         assert_eq!(thread, "m2");
+    }
+
+    /// `d` and `o` ask first; only `y` deletes, any other key, `d` again too, keeps.
+    #[test]
+    fn a_plan_is_deleted_only_on_yes() {
+        use crate::app::PlansAsk;
+        use dusk_protocol::thread::PlanFile;
+        let plan = |id: &str, current: bool| PlanFile {
+            source_id: id.into(),
+            name: format!("{id}.md"),
+            bytes: 1,
+            written_at: 0,
+            current,
+            finished: false,
+        };
+        let mut app = app();
+        app.panel = Some(Panel::Plans {
+            plans: vec![plan("now", true), plan("before", false)],
+            selected: 0,
+            asking: None,
+        });
+        let asking = |app: &App| match &app.panel {
+            Some(Panel::Plans { asking, .. }) => *asking,
+            _ => None,
+        };
+        press(&mut app, KeyCode::Char('d'));
+        assert_eq!(asking(&app), Some(PlansAsk::Delete));
+        assert!(matches!(press(&mut app, KeyCode::Char('d')), Action::None));
+        assert_eq!(asking(&app), None);
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Char('d'));
+        let Action::RemovePlan(id) = press(&mut app, KeyCode::Char('y')) else {
+            panic!("no plan deleted");
+        };
+        assert_eq!(id, "before");
+        press(&mut app, KeyCode::Char('o'));
+        assert!(matches!(
+            press(&mut app, KeyCode::Char('y')),
+            Action::RemoveOldPlans
+        ));
     }
 }
 

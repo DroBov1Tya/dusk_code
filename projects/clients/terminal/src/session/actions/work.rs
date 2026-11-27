@@ -92,6 +92,54 @@ pub async fn save_plan(client: &Client, app: &mut App, text: String) {
     }
 }
 
+/// Opens the plans panel, or reads it again, keeping the row chosen; none closes it.
+pub async fn plans(client: &Client, app: &mut App) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        app.flash = Some("Send a message first; the plans belong to a chat".into());
+        return;
+    };
+    match client.work().plans(&thread_id).await {
+        Ok(plans) if plans.is_empty() => {
+            app.panel = None;
+            app.flash = Some("No plans; the agent pins one when the work needs it".into());
+        }
+        Ok(plans) => {
+            let selected = match &app.panel {
+                Some(Panel::Plans { selected, .. }) => (*selected).min(plans.len() - 1),
+                _ => 0,
+            };
+            app.panel = Some(Panel::Plans {
+                plans,
+                selected,
+                asking: None,
+            });
+        }
+        Err(error) => app.error(format!("cannot read the plans: {error:#}")),
+    }
+}
+
+/// Deletes the plan with the source ID `id`, or with none every old plan, then lists
+/// what is left.
+pub async fn remove_plan(client: &Client, app: &mut App, id: Option<String>) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    let work = client.work();
+    let done = match id {
+        Some(id) => work.remove_source(&thread_id, &id).await.map(|()| 1),
+        None => work.remove_old_plans(&thread_id).await,
+    };
+    match done {
+        Ok(count) => app.flash = Some(format!("{count} plan{} deleted", plural(count))),
+        Err(error) => return app.error(format!("cannot delete the plan: {error:#}")),
+    }
+    plans(client, app).await;
+}
+
+fn plural(count: u64) -> &'static str {
+    if count == 1 { "" } else { "s" }
+}
+
 pub async fn diff(client: &Client, app: &mut App) {
     let Some(thread_id) = app.thread_id.clone() else {
         app.flash = Some("Send a message first; the changes belong to a chat".into());
