@@ -112,6 +112,25 @@ fn removing_a_provider_takes_its_models_policies_with_it() {
 }
 
 #[test]
+fn hidden_models_load_save_and_stay_out_of_a_file_without_them() {
+    // A file written before the field still loads, and an empty list is not written.
+    let mut config = parse(PROVIDERS).unwrap();
+    assert!(config.providers()["main"].hidden_models.is_empty());
+    assert!(!config.to_yaml().unwrap().contains("hidden_models"));
+    let models = ["b".to_owned(), "a".to_owned()];
+    assert!(config.set_models_hidden("main", &models, true));
+    assert!(!config.set_models_hidden("other", &models, true));
+    let again = parse(&config.to_yaml().unwrap()).unwrap();
+    let hidden: Vec<_> = again.providers()["main"].hidden_models.iter().collect();
+    assert_eq!(hidden, ["a", "b"]);
+    assert!(config.set_models_hidden("main", &models[..1], false));
+    let hidden: Vec<_> = config.providers()["main"].hidden_models.iter().collect();
+    assert_eq!(hidden, ["a"]);
+    let listed = parse(&format!("{PROVIDERS}    hidden_models: [x]\n")).unwrap();
+    assert!(listed.providers()["main"].hidden_models.contains("x"));
+}
+
+#[test]
 fn mcp_servers_are_one_kind_and_reached_safely() {
     let server = |body: &str| parse(&format!("mcp:\n  docs:\n{body}"));
     assert!(server("    command: docs-server\n").is_ok());

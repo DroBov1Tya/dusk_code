@@ -90,6 +90,7 @@ named! {
     R::Settings(S::ReconnectProvider { .. }) => "settings.reconnect_provider",
     R::Settings(S::RemoveProvider { .. }) => "settings.remove_provider",
     R::Settings(S::ProviderEnabled { .. }) => "settings.provider_enabled",
+    R::Settings(S::ModelsHidden { .. }) => "settings.models_hidden",
     R::Settings(S::RemoveAllProviders) => "settings.remove_all_providers",
     R::Settings(S::SetSecret { .. }) => "settings.set_secret",
     R::Settings(S::DeleteSecret { .. }) => "settings.delete_secret",

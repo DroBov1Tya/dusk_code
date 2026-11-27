@@ -251,12 +251,11 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         Panel::Models(list) => {
             let width = screen.width.saturating_sub(8).min(72) as usize;
             let (lines, row) = models(list, &app.status.provider_health, width);
-            (
-                "model",
-                "enter choose  c connect  t on/off  d remove  r check  esc close",
-                lines,
-                Some(row),
-            )
+            let hints = match list.filter {
+                Some(_) => "type to filter  enter choose  esc clear",
+                None => "enter choose  / filter  c connect  t on/off  d remove  r check  esc close",
+            };
+            ("model", hints, lines, Some(row))
         }
         Panel::Paste(_) | Panel::Agent(_) | Panel::Update { .. } => return,
     };

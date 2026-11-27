@@ -1,0 +1,2 @@
+Added
+More models has a search box at the top: it filters by model and provider name, unfolds the providers that match, and Escape clears it before it closes the menu. Each provider in the settings lists its models with a switch, to leave models out of More models in every app; a model stays usable where it is already chosen, and a model the provider lists later is shown. The browser's model settings filter their list the same way, and the terminal's models panel filters with `/` and leaves hidden models out.

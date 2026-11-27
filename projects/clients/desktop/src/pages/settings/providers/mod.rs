@@ -6,6 +6,7 @@ mod check;
 mod confirm;
 mod connect;
 mod list;
+mod models;
 mod state;
 
 pub use check::Check;

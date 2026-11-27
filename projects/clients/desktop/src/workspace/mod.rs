@@ -284,6 +284,9 @@ pub struct Workspace {
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.
     pub models_open: HashSet<String>,
+    /// The search at the top of More models; while it holds text, every provider with a
+    /// match is unfolded.
+    pub models_search: Entity<InputState>,
     /// Pictures of the user's messages, by thread and source name, as the core gave them.
     pub sent_pictures: HashMap<(String, String), chat::messages::SentPicture>,
     /// The last click or key, for the mist that rises when the window is left alone.

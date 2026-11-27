@@ -8,8 +8,11 @@ use crate::workspace::{Center, Picker, Workspace};
 
 impl Workspace {
     /// The first models of the provider in use, as `provider/model`, each picked by its
-    /// digit in More models while that provider is unfolded there.
-    pub fn first_models(&self) -> Vec<String> {
+    /// digit in More models while that provider is unfolded there and nothing is searched.
+    pub fn first_models(&self, cx: &App) -> Vec<String> {
+        if !super::more::models_query(self, cx).is_empty() {
+            return Vec::new();
+        }
         let current = self.chat_model().unwrap_or_default();
         let provider = current.split('/').next().unwrap_or_default();
         let mine = self
@@ -17,17 +20,26 @@ impl Workspace {
             .iter()
             .find(|p| p.name == provider)
             .or(self.providers.first());
-        let Some((p, Ok(models))) = mine.map(|p| (p, &p.models)) else {
+        let Some(p) = mine else {
             return Vec::new();
         };
         if !self.models_open.contains(&p.name) {
             return Vec::new();
         }
-        models
-            .iter()
+        super::more::shown_models(p, &current)
+            .into_iter()
             .take(FIRST)
             .map(|model| format!("{}/{}", p.name, model.id))
             .collect()
+    }
+
+    /// Gives the keys back to the composer when the More models search had them, so
+    /// typing after a pick or an Escape lands in the message again.
+    pub fn leave_models_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.models_search.focus_handle(cx).is_focused(window) {
+            self.composer
+                .update(cx, |composer, cx| composer.focus(window, cx));
+        }
     }
 
     /// While a menu over the model bar is open, Escape closes it; in More models the
@@ -48,7 +60,15 @@ impl Workspace {
         }
         if keys.key == "escape" {
             cx.stop_propagation();
+            // The first Escape empties the search, the next one closes the menu.
+            if picker == Picker::MoreModels && !super::more::models_query(self, cx).is_empty() {
+                self.models_search
+                    .update(cx, |search, cx| search.set_value("", window, cx));
+                cx.notify();
+                return;
+            }
             self.picker = None;
+            self.leave_models_search(window, cx);
             cx.notify();
             return;
         }
@@ -57,11 +77,17 @@ impl Workspace {
             .parse::<usize>()
             .ok()
             .filter(|d| (1..=FIRST).contains(d));
-        if picker != Picker::MoreModels || self.model_input.focus_handle(cx).is_focused(window) {
+        // Digits typed into a box are text, not picks; the search takes them only once
+        // something is typed there, which is also when the hints go away.
+        if picker != Picker::MoreModels
+            || self.model_input.focus_handle(cx).is_focused(window)
+            || !super::more::models_query(self, cx).is_empty()
+        {
             return;
         }
-        if let Some(name) = digit.and_then(|digit| self.first_models().get(digit - 1).cloned()) {
+        if let Some(name) = digit.and_then(|digit| self.first_models(cx).get(digit - 1).cloned()) {
             cx.stop_propagation();
+            self.leave_models_search(window, cx);
             self.choose_model(name, cx);
         }
     }

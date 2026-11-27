@@ -340,7 +340,44 @@ impl App {
             }
             Panel::Paste(_) => return self.editor_key(key),
             Panel::Agent(_) => return self.agent_window_key(key),
+            // While filtering, letters are the filter's; Escape empties it, then stops it.
+            Panel::Models(list) if list.filter.is_some() => {
+                let filter = list.filter.get_or_insert_default();
+                match key.code {
+                    KeyCode::Char(typed) => filter.push(typed),
+                    KeyCode::Backspace => {
+                        filter.pop();
+                    }
+                    KeyCode::Esc if filter.is_empty() => list.filter = None,
+                    KeyCode::Esc => filter.clear(),
+                    KeyCode::Up | KeyCode::Down => {
+                        let count = list.rows().len();
+                        step(&mut list.selected, count, key.code == KeyCode::Down);
+                        return Action::None;
+                    }
+                    KeyCode::Enter => {
+                        if let Some(ModelRow::Model { name, .. }) =
+                            list.rows().get(list.selected).cloned()
+                        {
+                            return Action::Command(Command::Model { name: Some(name) });
+                        }
+                        return Action::None;
+                    }
+                    _ => return Action::None,
+                }
+                // The first match is selected as the filter changes.
+                list.selected = list
+                    .rows()
+                    .iter()
+                    .position(|row| matches!(row, ModelRow::Model { .. }))
+                    .unwrap_or(0);
+                list.removing = None;
+            }
             Panel::Models(list) => match key.code {
+                KeyCode::Char('/') => {
+                    list.filter = Some(String::new());
+                    list.removing = None;
+                }
                 _ if up || down => {
                     let count = list.rows().len();
                     step(&mut list.selected, count, down);
@@ -598,6 +635,58 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) -> Action {
         app.panel_key(KeyEvent::from(code))
+    }
+
+    /// Hidden models are left out but for the one in use; `/` filters, letters are its
+    /// text, and Escape empties it before it stops filtering.
+    #[test]
+    fn the_model_list_filters_and_leaves_hidden_models_out() {
+        use crate::app::{ModelList, panels::ModelRow};
+        use dusk_protocol::model::{Model, ProviderStatus};
+
+        let model = |id: &str| Model {
+            id: id.into(),
+            context_window: None,
+            max_output: None,
+        };
+        let provider = ProviderStatus {
+            name: "or".into(),
+            models: Ok(vec![model("qwen-max"), model("qwen-coder"), model("glm")]),
+            balance: None,
+            limits: None,
+            enabled: true,
+            failure: None,
+            hidden: vec!["qwen-coder".into(), "glm".into()],
+        };
+        let mut app = app();
+        let list = ModelList::checked(Some("or/glm".into()), vec![provider]);
+        app.panel = Some(Panel::Models(list));
+        let names = |app: &App| match &app.panel {
+            Some(Panel::Models(list)) => list
+                .rows()
+                .into_iter()
+                .filter_map(|row| match row {
+                    ModelRow::Model { name, .. } => Some(name),
+                    ModelRow::Provider(_) => None,
+                })
+                .collect::<Vec<_>>(),
+            _ => panic!("the list closed"),
+        };
+        assert_eq!(names(&app), ["or/qwen-max", "or/glm"]);
+        press(&mut app, KeyCode::Char('/'));
+        for typed in "max".chars() {
+            press(&mut app, KeyCode::Char(typed));
+        }
+        assert_eq!(names(&app), ["or/qwen-max"]);
+        assert!(matches!(
+            press(&mut app, KeyCode::Enter),
+            Action::Command(dusk_protocol::client::Command::Model { name: Some(name) }) if name == "or/qwen-max"
+        ));
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(names(&app).len(), 2);
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Esc);
+        assert!(app.panel.is_none());
     }
 
     /// `s` asks before a team stops: only `y` stops it, and any other key, a second

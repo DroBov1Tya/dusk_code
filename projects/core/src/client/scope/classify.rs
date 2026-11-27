@@ -229,6 +229,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::ReconnectProvider { .. }
         | Settings::RemoveProvider { .. }
         | Settings::ProviderEnabled { .. }
+        | Settings::ModelsHidden { .. }
         | Settings::RemoveAllProviders
         | Settings::SetSecret { .. }
         | Settings::DeleteSecret { .. }

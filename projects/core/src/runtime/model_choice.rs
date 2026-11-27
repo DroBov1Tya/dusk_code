@@ -494,6 +494,9 @@ pub async fn check_provider(
             Some(dusk_protocol::model::CheckFailure::Unreachable),
         ),
     };
+    let hidden = settings
+        .map(|settings| settings.hidden_models.into_iter().collect())
+        .unwrap_or_default();
     ProviderStatus {
         name,
         models,
@@ -501,6 +504,7 @@ pub async fn check_provider(
         limits: provider.limits(),
         enabled: true,
         failure,
+        hidden,
     }
 }
 
@@ -529,6 +533,7 @@ mod tests {
             limits: None,
             enabled: true,
             failure: None,
+            hidden: Vec::new(),
         };
         assert!(selected.learn(&[status]));
         assert_eq!(selected.current().unwrap().model.max_output, Some(262144));

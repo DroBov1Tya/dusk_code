@@ -18,7 +18,9 @@ pub async fn check(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
 
 /// The providers that are switched on, found without asking any of them: no models yet.
 pub fn unasked(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
-    let registry = ProviderRegistry::from_config(&runtime.config().current())?;
+    let config = runtime.config().current();
+    let registry = ProviderRegistry::from_config(&config)?;
+    let all = config.all_providers();
     let mut names: Vec<&str> = registry.names().collect();
     names.sort();
     Ok(names
@@ -30,6 +32,10 @@ pub fn unasked(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
             limits: None,
             enabled: true,
             failure: None,
+            hidden: all
+                .get(name)
+                .map(|settings| settings.hidden_models.iter().cloned().collect())
+                .unwrap_or_default(),
         })
         .collect())
 }

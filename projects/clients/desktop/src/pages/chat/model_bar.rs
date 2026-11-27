@@ -222,6 +222,7 @@ impl Workspace {
                     limits: None,
                     enabled: true,
                     failure: None,
+                    hidden: Vec::new(),
                 })
             })
             .collect();

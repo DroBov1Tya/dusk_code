@@ -230,6 +230,11 @@ fn settings() -> Vec<S> {
             name: word(),
             enabled: true,
         },
+        S::ModelsHidden {
+            provider: word(),
+            models: vec![word()],
+            hidden: true,
+        },
         S::RemoveAllProviders,
         S::SetSecret {
             name: word(),

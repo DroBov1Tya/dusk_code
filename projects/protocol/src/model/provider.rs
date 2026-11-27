@@ -23,6 +23,9 @@ pub struct ProviderStatus {
     /// Why `models` failed, when the core can tell; the text there says it in full.
     #[serde(default)]
     pub failure: Option<CheckFailure>,
+    /// Model IDs the user hid from the model menus; the settings still list them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden: Vec<String>,
 }
 
 /// What kind of failure a provider check met, so a client can say it plainly.
@@ -39,6 +42,11 @@ pub enum CheckFailure {
 }
 
 impl ProviderStatus {
+    /// Whether the user hid this model ID from the model menus.
+    pub fn is_hidden(&self, model: &str) -> bool {
+        self.hidden.iter().any(|id| id == model)
+    }
+
     /// A provider that is switched off: not asked, with nothing to offer.
     pub fn disabled(name: String) -> Self {
         Self {
@@ -48,6 +56,7 @@ impl ProviderStatus {
             limits: None,
             enabled: false,
             failure: None,
+            hidden: Vec::new(),
         }
     }
 }

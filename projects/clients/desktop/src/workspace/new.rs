@@ -46,6 +46,18 @@ impl Workspace {
             cx.notify()
         })
         .detach();
+        let providers_page = crate::pages::settings::providers::State::new(window, cx);
+        cx.subscribe_in(
+            &providers_page.models_filter,
+            window,
+            |_, _, _: &InputEvent, _, cx| cx.notify(),
+        )
+        .detach();
+        let models_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search models"));
+        cx.subscribe_in(&models_search, window, |_, _, _: &InputEvent, _, cx| {
+            cx.notify()
+        })
+        .detach();
         let model_input = cx.new(|cx| InputState::new(window, cx).placeholder("provider/model"));
         cx.subscribe_in(&model_input, window, |ws, _, event: &InputEvent, _, cx| {
             if let InputEvent::PressEnter { .. } = event {
@@ -171,7 +183,7 @@ impl Workspace {
             dock: crate::pages::chat::dock::Dock::new(cx),
             alerts: Default::default(),
             plan: crate::columns::inspector::plan::Plan::new(window, cx),
-            providers_page: crate::pages::settings::providers::State::new(window, cx),
+            providers_page,
             secrets: None,
             voice: None,
             voice_models: None,
@@ -189,6 +201,7 @@ impl Workspace {
             team_page: Default::default(),
             overview: Default::default(),
             models_open: HashSet::new(),
+            models_search,
             sent_pictures: HashMap::new(),
             last_input: std::time::Instant::now(),
             fog_cleared: None,

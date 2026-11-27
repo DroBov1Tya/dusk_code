@@ -69,6 +69,13 @@ pub enum SettingsRequest {
         name: String,
         enabled: bool,
     },
+    /// Hides models of a saved provider from the model menus, or shows them again. A
+    /// hidden model stays usable where it is already chosen.
+    ModelsHidden {
+        provider: String,
+        models: Vec<String>,
+        hidden: bool,
+    },
     /// Forgets every provider and the chosen model.
     RemoveAllProviders,
     /// Keeps a secret in the system keychain; only the names the core knows are taken.

@@ -32,14 +32,21 @@ pub fn models(
     health: &[ProviderHealth],
     width: usize,
 ) -> (Vec<Line<'static>>, usize) {
-    let Some(providers) = &list.providers else {
+    let Some(all) = &list.providers else {
         let checking = format!(" checking the providers {ELLIPSIS}");
         return (vec![Line::from(Span::styled(checking, thought()))], 0);
     };
     let mut lines = Vec::new();
+    if let Some(filter) = &list.filter {
+        lines.push(Line::from(vec![
+            Span::styled(" / ", fg(ACCENT)),
+            Span::styled(format!("{filter}\u{258F}"), bold(TEXT)),
+        ]));
+    }
     let mut selected_line = 0;
     let mut index = 0;
-    for provider in providers {
+    let shown = list.shown();
+    for (provider, models) in &shown {
         if !lines.is_empty() {
             lines.push(Line::default());
         }
@@ -91,7 +98,7 @@ pub fn models(
                     .map(|spans| Line::from([vec![Span::raw("    ")], spans].concat())),
             );
         }
-        for model in provider.models.as_deref().unwrap_or_default() {
+        for model in models {
             let name = format!("{}/{}", provider.name, model.id);
             let mark = if list.current.as_deref() == Some(name.as_str()) {
                 Span::styled(format!("    {SUN_GLYPH} "), fg(ACCENT))
@@ -113,7 +120,10 @@ pub fn models(
             index += 1;
         }
     }
-    if providers.is_empty() {
+    if list.filter.is_some() && shown.is_empty() && !all.is_empty() {
+        lines.push(Line::from(Span::styled(" no models match", thought())));
+    }
+    if all.is_empty() {
         lines.push(Line::from(Span::styled(
             " no providers yet; c connects one",
             thought(),
