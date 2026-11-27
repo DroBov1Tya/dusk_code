@@ -79,6 +79,7 @@ per_thread! {
     thread_id: Option<String>,
     temporary_next: bool,
     temporary: bool,
+    access_next: Option<dusk_protocol::config::ApprovalPolicy>,
     title: Option<String>,
     transcript: Transcript,
     input: Input,

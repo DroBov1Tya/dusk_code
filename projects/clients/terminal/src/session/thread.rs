@@ -146,9 +146,10 @@ pub async fn ensure_open(
         None => {
             let threads = client.threads();
             app.temporary = std::mem::take(&mut app.temporary_next);
+            let access = app.access_next.take();
             let thread_id = match app.temporary {
-                true => threads.start_temporary(cwd, None).await?,
-                false => threads.start(cwd).await?,
+                true => threads.start_temporary(cwd, access).await?,
+                false => threads.start_with(cwd, access).await?,
             };
             app.thread_id = Some(thread_id.clone());
             *open = Some(OpenThread::new(thread_id));

@@ -33,6 +33,9 @@ pub struct App {
     /// The chat about to start is a temporary one; and whether the open one is.
     pub temporary_next: bool,
     pub temporary: bool,
+    /// The access mode set by /access for the chat about to start; none keeps the
+    /// default. It goes to the core with the first message.
+    pub access_next: Option<dusk_protocol::config::ApprovalPolicy>,
     pub title: Option<String>,
     /// The open chat's pins, as the core last listed them.
     pub pins: Vec<dusk_protocol::thread::Pin>,
@@ -214,6 +217,7 @@ impl App {
             thread_id: None,
             temporary_next: false,
             temporary: false,
+            access_next: None,
             title: None,
             pins: Vec::new(),
             transcript: Transcript::default(),
@@ -329,6 +333,7 @@ impl App {
             self.input = self.drafts.remove(&thread_id).unwrap_or_default();
         }
         self.temporary = false;
+        self.access_next = None;
         self.pins.clear();
         (self.sent_ids, self.sent) = history
             .iter()
