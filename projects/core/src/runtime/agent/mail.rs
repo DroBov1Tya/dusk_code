@@ -6,7 +6,6 @@ use std::{
     future::Future,
     path::{Path, PathBuf},
     pin::Pin,
-    sync::Arc,
 };
 
 use anyhow::{Context, Result, ensure};
@@ -17,9 +16,8 @@ use crate::{
     BoxFuture,
     catalog::agents::GENERAL_AGENT,
     runtime::{
-        Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner,
-        model_choice::{Choice, ModelChoice},
-        team, tiers,
+        Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, model_choice::Choice, team,
+        thread::ChatModel, tiers,
     },
     state::{Thread, TurnStatus},
 };
@@ -147,13 +145,20 @@ impl Launcher {
             };
             let at_work = live.values().filter(|mailbox| mailbox.agent).count();
             if self.mailboxes.is_closed()
-                || self.model.current().is_none()
                 || at_work >= self.config.current().limits().max_agents_at_work
             {
                 return Ok(());
             }
             let root = self.state.root_thread(&thread.id).await?;
-            let (runner, input, output) = self.agent_runner(thread, cwd).await?;
+            // The agent answers on its chat's model, never on one chosen in another chat.
+            let chat = match live.get(&root) {
+                Some(mailbox) => ChatModel::of(mailbox, self),
+                None => self.stored_chat_model(&root).await?,
+            };
+            if chat.choice.is_none() {
+                return Ok(());
+            }
+            let (runner, input, output) = self.agent_runner(thread, cwd, &chat).await?;
             live.insert(thread.id.clone(), runner.mailbox(&input));
             self.mailboxes.begin_agent_report(&thread.id).await;
             // The chat shows it is at work while its agents are, whatever its own turn does.
@@ -231,6 +236,7 @@ impl Launcher {
         &self,
         thread: &Thread,
         cwd: &Path,
+        chat: &ChatModel,
     ) -> Result<(ThreadRunner, ThreadInput, ThreadOutput)> {
         let depth = self.state.thread_depth(&thread.id).await?;
         let name = thread.agent.as_deref().unwrap_or(GENERAL_AGENT);
@@ -240,15 +246,16 @@ impl Launcher {
         let mut setup = self.setup(&thread.id, cwd, &workspace, identity.as_ref(), depth)?;
         setup.ends_when_idle = true;
         // A member of a team has what the core fixed for it, not what its role lists.
-        if team::is_member(thread) {
+        let own = if team::is_member(thread) {
             team::limit_tools(&mut setup.tools, &self.config.current(), name);
             // A role may answer on a model of its own; without one it is the chat's.
-            if let Some(choice) = team::member_model(self, thread).await? {
-                setup.model = Arc::new(ModelChoice::new(choice));
-            }
-        } else if let Some(choice) = self.tier_model(&thread.id).await {
-            setup.model = Arc::new(ModelChoice::new(choice));
-        }
+            team::member_model(self, thread, chat.choice.as_ref()).await?
+        } else {
+            self.tier_model(&thread.id, chat.choice.as_ref()).await
+        };
+        setup.model = self.model.own(own.or_else(|| chat.choice.clone()));
+        // It thinks from its chat's effort, whatever another chat chose.
+        setup.model.set_effort(Some(chat.effort));
         Ok(ThreadRunner::new(setup))
     }
 
@@ -263,7 +270,7 @@ impl Launcher {
     /// The model the asker picked for an agent by tier, when that is not the chat's. One
     /// that cannot be asked now (its provider removed, switched off or down) leaves the
     /// agent on the chat's model rather than failing its work.
-    async fn tier_model(&self, thread_id: &str) -> Option<Choice> {
+    async fn tier_model(&self, thread_id: &str, chat: Option<&Choice>) -> Option<Choice> {
         let name = match self.state.agent_model(thread_id).await {
             Ok(name) => name?,
             Err(error) => {
@@ -272,7 +279,7 @@ impl Launcher {
             }
         };
         let config = self.config.current();
-        let chat = self.model.current().map(|choice| choice.name());
+        let chat = chat.map(Choice::name);
         if chat.as_deref() == Some(name.as_str()) || !tiers::connected(&config, &name) {
             return None;
         }

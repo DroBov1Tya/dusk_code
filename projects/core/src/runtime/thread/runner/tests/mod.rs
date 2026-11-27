@@ -458,6 +458,7 @@ async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
 }
 
 mod chant;
+mod chat_model;
 mod episodes;
 mod goals;
 mod judge;

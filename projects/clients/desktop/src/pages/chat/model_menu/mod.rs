@@ -40,7 +40,7 @@ pub fn render(
     cx: &mut Context<Workspace>,
 ) -> Div {
     let viewport = window.viewport_size();
-    let current = ws.status.model.clone().unwrap_or_default();
+    let current = ws.chat_model().unwrap_or_default();
     let provider = current.split('/').next().unwrap_or_default();
     let max_height = (viewport.height.as_f32() - 165.).clamp(150., 440.);
     let chat_width = ws.chat_width(window);
@@ -356,7 +356,7 @@ impl Workspace {
         });
         // More models opens on the provider in use, whose first models have digit keys.
         if self.picker == Some(Picker::MoreModels)
-            && let Some(provider) = self.status.model.as_deref()
+            && let Some(provider) = self.chat_model().as_deref()
             && let Some((provider, _)) = provider.split_once('/')
         {
             self.models_open.insert(provider.to_owned());

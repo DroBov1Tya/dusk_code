@@ -343,7 +343,7 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
             <div class="composer-under">
                 <super::controls::Mode />
                 <Show when=move || voice::speaking()><span class="muted">"speaking\u{2026}"</span></Show>
-                <super::controls::Model />
+                <super::controls::Model id=id.clone() chat />
             </div>
             <super::controls::Context chat />
         </div>

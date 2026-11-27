@@ -1,5 +1,6 @@
 //! `/model [provider/model]`: without an argument, every configured provider checked
-//! live, with its models; with one, every thread switches to that model.
+//! live, with its models; with one, the open chat and the chats started from now on
+//! switch to that model. Other chats keep theirs.
 
 use anyhow::{Context, Result};
 
@@ -50,8 +51,8 @@ pub async fn check_one(runtime: &Runtime, name: &str) -> Result<ProviderStatus> 
     Ok(status)
 }
 
-pub async fn switch(runtime: &Runtime, name: &str) -> Result<Choice> {
+pub async fn switch(runtime: &Runtime, thread_id: Option<&str>, name: &str) -> Result<Choice> {
     let choice = Choice::pick(&runtime.config().current(), Some(name)).await?;
-    runtime.set_model(choice.clone())?;
+    runtime.set_model(thread_id, choice.clone()).await?;
     Ok(choice)
 }

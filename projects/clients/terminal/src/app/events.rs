@@ -47,10 +47,20 @@ impl App {
                 self.sent.push(message.content);
             }
             ThreadEvent::UserMessage(_) => {}
-            ThreadEvent::ModelSelected { name, input_limit } => {
-                self.model = name;
+            ThreadEvent::ModelSelected {
+                name,
+                input_limit,
+                effort,
+            } => {
+                self.model = name.clone();
                 self.provider_available = true;
                 self.limit = input_limit;
+                self.effort = effort;
+                self.own_model = Some(super::OwnModel {
+                    name,
+                    limit: input_limit,
+                    effort,
+                });
             }
             ThreadEvent::LocalUnsent(message) => {
                 if self.local_unsent.iter().any(|item| item.id == message.id) {

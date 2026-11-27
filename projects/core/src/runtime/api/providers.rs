@@ -164,18 +164,16 @@ impl Runtime {
         self.launcher.model.replace_provider(&name, adapter);
         // Asked off the request: picking waits on the network.
         if self.launcher.model.current().is_none() {
-            let (config, model, mailboxes) = (
-                Arc::clone(&self.launcher.config),
-                Arc::clone(&self.launcher.model),
-                Arc::clone(&self.launcher.mailboxes),
-            );
-            tokio::spawn(async move { pick_if_empty(&config, &model, &mailboxes).await });
+            let launcher = self.launcher.clone();
+            tokio::spawn(async move { pick_if_empty(&launcher).await });
         }
         Ok(name)
     }
 
     /// Forgets a provider and its key. The provider of the chosen model stays: the chat
-    /// would lose its model under the user.
+    /// would lose its model under the user. Only the last chosen model is guarded, not
+    /// each chat's own: a running chat on this provider keeps the model it holds until it
+    /// closes, and on reopening answers on the last chosen instead, with a warning logged.
     pub fn remove_provider(&self, name: &str) -> Result<()> {
         self.ensure_not_chosen(name)?;
         self.launcher.config.update(|config| {
@@ -185,7 +183,8 @@ impl Runtime {
     }
 
     /// Switches a provider of the config file on or off; its key stays. Off is refused
-    /// like a removal while it holds the chosen model.
+    /// like a removal while it holds the chosen model; a chat's own model on it falls back
+    /// as on a removal.
     pub fn set_provider_enabled(&self, name: &str, enabled: bool) -> Result<()> {
         if !enabled {
             self.ensure_not_chosen(name)?;

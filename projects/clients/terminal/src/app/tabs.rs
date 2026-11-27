@@ -90,6 +90,7 @@ per_thread! {
     queued: Vec<String>,
     forked: Option<String>,
     undone: Option<String>,
+    own_model: Option<super::OwnModel>,
     poll: Option<Poll>,
     questions: QuestionQueue,
     suggestion: dusk_protocol::thread::Suggestion,

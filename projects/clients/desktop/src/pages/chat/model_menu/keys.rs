@@ -10,7 +10,7 @@ impl Workspace {
     /// The first models of the provider in use, as `provider/model`, each picked by its
     /// digit in More models while that provider is unfolded there.
     pub fn first_models(&self) -> Vec<String> {
-        let current = self.status.model.clone().unwrap_or_default();
+        let current = self.chat_model().unwrap_or_default();
         let provider = current.split('/').next().unwrap_or_default();
         let mine = self
             .providers

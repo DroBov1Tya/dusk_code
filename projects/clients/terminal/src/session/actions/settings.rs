@@ -68,7 +68,12 @@ pub async fn connect(
             let model = client.status.borrow().model.clone();
             app.panel = Some(Panel::Models(ModelList::checking(model)));
             terminal.draw(|frame| ui::draw(frame, app))?;
-            answer(client, app, open, Command::Model { name: None }).await;
+            let thread_id = app.thread_id.clone();
+            let models = Command::Model {
+                name: None,
+                thread_id,
+            };
+            answer(client, app, open, models).await;
             app.flash =
                 Some("Provider saved; choose a model, then /resend for local messages".into());
         }
@@ -95,7 +100,12 @@ pub async fn disconnect(
                 let model = client.status.borrow().model.clone();
                 app.panel = Some(Panel::Models(ModelList::checking(model)));
                 terminal.draw(|frame| ui::draw(frame, app))?;
-                answer(client, app, open, Command::Model { name: None }).await;
+                let thread_id = app.thread_id.clone();
+                let models = Command::Model {
+                    name: None,
+                    thread_id,
+                };
+                answer(client, app, open, models).await;
             }
             app.flash = Some(format!("Provider {name} forgotten"));
         }
@@ -117,7 +127,12 @@ pub async fn provider_enabled(
             let model = client.status.borrow().model.clone();
             app.panel = Some(Panel::Models(ModelList::checking(model)));
             terminal.draw(|frame| ui::draw(frame, app))?;
-            answer(client, app, open, Command::Model { name: None }).await;
+            let thread_id = app.thread_id.clone();
+            let models = Command::Model {
+                name: None,
+                thread_id,
+            };
+            answer(client, app, open, models).await;
             let state = if on { "on" } else { "off" };
             app.flash = Some(format!("Provider {name} is {state}"));
         }

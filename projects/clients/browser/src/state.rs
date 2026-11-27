@@ -59,6 +59,9 @@ pub struct AppState {
     pub inspector_tab: RwSignal<crate::chat::inspector::Tab>,
     /// Counts the asks to show the right column, so a narrow page opens its drawer.
     pub inspector_asked: RwSignal<u64>,
+    /// The chat whose model button opened the model page: the page chooses for it and
+    /// for new chats. None for the draft chat or the settings opened on their own.
+    pub model_chat: RwSignal<Option<String>>,
 }
 
 thread_local! {
@@ -99,6 +102,7 @@ impl AppState {
             repository: RwSignal::new(None),
             inspector_tab: RwSignal::new(crate::chat::inspector::Tab::Tasks),
             inspector_asked: RwSignal::new(0),
+            model_chat: RwSignal::new(None),
         }
     }
 

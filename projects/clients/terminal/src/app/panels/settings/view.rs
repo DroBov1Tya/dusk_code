@@ -199,7 +199,10 @@ impl SettingsView {
     pub(super) fn model_action(&self, row: usize) -> Option<Action> {
         // The providers open without a chosen model too: that is where one is connected.
         if row == PROVIDERS_ROW {
-            return Some(Action::Command(Command::Model { name: None }));
+            return Some(Action::Command(Command::Model {
+                name: None,
+                thread_id: None,
+            }));
         }
         self.selected_model.as_ref()?;
         match row {
@@ -207,7 +210,10 @@ impl SettingsView {
             1..=4 => Some(Action::SetContextPolicy(ContextPolicy::Fixed(
                 ContextPreset::ALL[row - 1],
             ))),
-            6 => Some(Action::Command(Command::Effort { level: None })),
+            6 => Some(Action::Command(Command::Effort {
+                level: None,
+                thread_id: None,
+            })),
             _ => None,
         }
     }

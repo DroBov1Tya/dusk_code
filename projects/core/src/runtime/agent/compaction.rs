@@ -331,7 +331,7 @@ impl Agent {
                 messages: &messages,
                 tools,
                 max_output_tokens: choice.model.max_output,
-                effort: config.effort(),
+                effort: self.model.effort_in(&config),
                 cache_key: Some(&self.thread_id),
             };
             let (output, generated) = match self

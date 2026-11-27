@@ -103,6 +103,22 @@ pub struct Called {
 }
 
 impl Agent {
+    /// Stores a chat's effort the model's refusal put back, and shows it.
+    async fn keep_restored_effort(&self, effort: Option<Effort>) -> anyhow::Result<()> {
+        if self.depth > 0 {
+            return Ok(());
+        }
+        self.state.set_chat_effort(&self.thread_id, effort).await?;
+        if let Some(choice) = self.model.current() {
+            self.emit(ThreadEvent::ModelSelected {
+                name: choice.name(),
+                input_limit: choice.input_limit(&self.config.current()),
+                effort,
+            });
+        }
+        Ok(())
+    }
+
     /// A subagent's model that already refused the reasoning effort is asked without it.
     /// A chat keeps the level the user set, and its failure says why.
     fn drops_effort(&self, model: &str) -> bool {
@@ -174,14 +190,25 @@ impl Agent {
                 let saved = self.config.update(|config| {
                     restored = config.restore_unsupported_effort(requested_config);
                 });
-                let detail = match saved {
-                    Ok(config) if restored => format!(
+                // A chat's own `off` goes back too, or every call would be refused again.
+                let own = match self.model.restore_unsupported_effort() {
+                    Some(effort) => Some(self.keep_restored_effort(effort).await.map(|()| effort)),
+                    None => None,
+                };
+                let detail = match (own, saved) {
+                    (Some(Ok(effort)), _) => format!(
+                        "previous reasoning effort restored to {}",
+                        effort.map_or("default", Effort::name)
+                    ),
+                    (Some(Err(save_error)), _) | (None, Err(save_error)) => {
+                        format!("cannot restore previous reasoning effort: {save_error:#}")
+                    }
+                    (None, Ok(config)) if restored => format!(
                         "previous reasoning effort restored to {}",
                         config.effort().map_or("default", Effort::name)
                     ),
-                    Ok(_) => "reasoning effort changed meanwhile; current setting kept".to_owned(),
-                    Err(save_error) => {
-                        format!("cannot restore previous reasoning effort: {save_error:#}")
+                    (None, Ok(_)) => {
+                        "reasoning effort changed meanwhile; current setting kept".to_owned()
                     }
                 };
                 let rejected = std::mem::replace(error, anyhow!("reasoning effort rejected"));

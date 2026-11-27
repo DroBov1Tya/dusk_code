@@ -65,14 +65,14 @@ pub fn mode(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 /// The Models button at the right of the composer's row: one click opens the models and
 /// the effort, upward from the button.
 pub fn models(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Div {
-    let model = ws.status.model.clone().unwrap_or_else(|| {
+    let model = ws.chat_model().unwrap_or_else(|| {
         if ws.status.discovering_model {
             "looking for a model...".to_owned()
         } else {
             "no model".to_owned()
         }
     });
-    let effort = ws.status.effort.map_or("default".to_owned(), effort_name);
+    let effort = ws.chat_effort().map_or("default".to_owned(), effort_name);
     let menu = ws
         .picker
         .filter(|picker| !matches!(picker, Picker::Mode | Picker::Access));
@@ -135,6 +135,22 @@ pub fn effort_name(effort: Effort) -> String {
 }
 
 impl Workspace {
+    /// The model the shown chat answers on, its own; with no chat shown, or before the
+    /// core told it, the one new chats start with.
+    pub fn chat_model(&self) -> Option<String> {
+        self.shown_chat()
+            .and_then(|chat| chat.log.model.clone())
+            .or_else(|| self.status.model.clone())
+    }
+
+    /// The shown chat's own effort, told with its model; else the one new chats take.
+    pub fn chat_effort(&self) -> Option<Effort> {
+        match self.shown_chat() {
+            Some(chat) if chat.log.model.is_some() => chat.log.effort,
+            _ => self.status.effort,
+        }
+    }
+
     pub fn toggle_picker(&mut self, picker: Picker, cx: &mut Context<Self>) {
         // The click that closed the menu from outside must not open it again.
         let just_closed = self
@@ -263,9 +279,14 @@ impl Workspace {
 
     pub fn choose_model(&mut self, name: String, cx: &mut Context<Self>) {
         self.picker = None;
+        let thread_id = self.shown.clone();
         self.core.call(
             cx,
-            move |client| async move { client.command(Command::Model { name: Some(name) }).await },
+            // The shown chat and new chats take it; another chat keeps its own.
+            move |client| async move {
+                let name = Some(name);
+                client.command(Command::Model { name, thread_id }).await
+            },
             |ws, result, cx| {
                 if let Err(error) = result {
                     ws.fail(error, cx);
@@ -277,12 +298,10 @@ impl Workspace {
 
     pub fn choose_effort(&mut self, level: &str, cx: &mut Context<Self>) {
         self.picker = None;
-        let level = level.to_owned();
+        let (level, thread_id) = (Some(level.to_owned()), self.shown.clone());
         self.core.call(
             cx,
-            move |client| async move {
-                client.command(Command::Effort { level: Some(level) }).await
-            },
+            move |client| async move { client.command(Command::Effort { level, thread_id }).await },
             |ws, result, cx| {
                 if let Err(error) = result {
                     ws.fail(error, cx);

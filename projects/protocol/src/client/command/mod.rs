@@ -21,8 +21,14 @@ pub enum Command {
     New,
     /// The same, for a chat kept in memory only and gone when the core stops.
     Temporary,
-    /// Lists the providers with their models, or switches to `provider/model`.
-    Model { name: Option<String> },
+    /// Lists the providers with their models, or switches to `provider/model`: the
+    /// chat `thread_id` and the chats started from now on, never another chat. A client
+    /// fills in its open chat; with none, only new chats take it.
+    Model {
+        name: Option<String>,
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
     /// Answers `Providers` with the enabled providers at once, none of them asked yet
     /// (`name` none), or with the one provider checked; a client asks each on its own to
     /// show them as they answer.
@@ -36,8 +42,13 @@ pub enum Command {
     Fork { instructions: Option<String> },
     /// The newest version on the update channel; `dev` or `stable` switches it first.
     Update { channel: Option<String> },
-    /// Shows the reasoning effort, or sets it to a supported level or default.
-    Effort { level: Option<String> },
+    /// Shows the reasoning effort, or sets it to a supported level or default, for the
+    /// chat `thread_id` and the chats started from now on, as `Model` does.
+    Effort {
+        level: Option<String>,
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
     /// Sets the chat's goal and starts work on it, shows it, or clears it.
     Goal { argument: Option<String> },
     /// Lists the user's messages of a thread; a client fills in its open thread. With a
@@ -79,12 +90,14 @@ pub enum Answer {
     /// The archive contains config secrets as well as chat history.
     Migrated(PathBuf),
     Threads(Vec<Thread>),
-    /// Every configured provider, checked just now, and the model in use.
+    /// Every configured provider, checked just now, and the model in use: the chat's
+    /// own when the command named one, else the one new chats start with.
     Providers {
         current: Option<String>,
         providers: Vec<ProviderStatus>,
     },
-    /// Every thread talks to this model from now on.
+    /// The chat the command named, and every chat started from now on, talk to this
+    /// model; other chats keep theirs.
     ModelSwitched {
         name: String,
     },

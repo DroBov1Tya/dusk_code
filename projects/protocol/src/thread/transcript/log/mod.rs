@@ -227,6 +227,11 @@ pub struct ChatLog<L = Infallible> {
     pub usage: Option<ThreadTokens>,
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
+    /// The chat's own model as `provider/model`, once the core told it; until then a
+    /// client shows the one new chats start with.
+    pub model: Option<String>,
+    /// The chat's own effort, told with its model; none is the provider's default.
+    pub effort: Option<Effort>,
     pub tasks: Vec<Task>,
     /// The team running the chat's plan, as the core last told it.
     pub team: Option<Team>,
@@ -274,6 +279,8 @@ impl<L> Default for ChatLog<L> {
             tokens: None,
             usage: None,
             cost: None,
+            model: None,
+            effort: None,
             tasks: Vec::new(),
             team: None,
             pins: Vec::new(),
@@ -727,9 +734,15 @@ impl<L> ChatLog<L> {
                 self.cost = tokens.cost();
                 self.usage = Some(tokens);
             }
-            ThreadEvent::ModelSelected { input_limit, .. } => {
+            ThreadEvent::ModelSelected {
+                name,
+                input_limit,
+                effort,
+            } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);
                 self.tokens = Some((used, input_limit));
+                self.model = Some(name);
+                self.effort = effort;
             }
             ThreadEvent::Tasks(tasks) => {
                 self.tasks = tasks;

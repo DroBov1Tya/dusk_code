@@ -1104,6 +1104,12 @@ fn act(
                     ],
                     multiple: false,
                 }),
+                // The chat tells its own model, not the one new chats start with.
+                "model-own" => ThreadEvent::ModelSelected {
+                    name: "deepseek/deepseek-chat".into(),
+                    input_limit: 128_000,
+                    effort: Some(dusk_protocol::model::Effort::High),
+                },
                 "approval-long" => ThreadEvent::Approval(ApprovalRequest {
                     id: 2,
                     request: Request::Command {

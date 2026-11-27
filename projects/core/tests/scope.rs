@@ -376,7 +376,10 @@ fn apart(folder: &Path) -> Vec<Request> {
         }),
         Request::Command(Command::Settings),
         Request::Command(Command::Migrate { path: None }),
-        Request::Command(Command::Model { name: None }),
+        Request::Command(Command::Model {
+            name: None,
+            thread_id: None,
+        }),
         Request::Thread(ThreadRequest::New {
             cwd: folder.to_path_buf(),
         }),
