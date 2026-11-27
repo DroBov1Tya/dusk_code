@@ -2,23 +2,8 @@
 //! gets it at start from the picture built into the binary. On Linux the window's
 //! app ID ties it to the installed `duskcode.desktop` and its icon.
 
-use gpui_kit::{Image, ImageFormat};
-use std::sync::{Arc, OnceLock};
-
 /// The window's app ID; the installer names the desktop entry after it.
 pub const APP_ID: &str = "duskcode";
-
-/// The smaller copy of the app icon for the window's wordmark.
-pub fn mark() -> Arc<Image> {
-    static MARK: OnceLock<Arc<Image>> = OnceLock::new();
-    MARK.get_or_init(|| {
-        Arc::new(Image::from_bytes(
-            ImageFormat::Png,
-            include_bytes!("../../assets/mark.png").to_vec(),
-        ))
-    })
-    .clone()
-}
 
 #[cfg(target_os = "macos")]
 pub fn set_dock_icon() {

@@ -229,7 +229,6 @@ fn next(welcome: Welcome, page: Page) -> impl IntoView {
 fn hello() -> impl IntoView {
     view! {
         <div class="welcome-page center">
-            <img src="mark.png" alt="" width="64" height="64" />
             <h1>"duskcode"</h1>
             <p class="muted">"An agent that works in your projects, on the model you choose."</p>
             <p class="muted small">"Three short steps: a model, the tools, and you are in."</p>
@@ -244,7 +243,6 @@ fn ready(welcome: Welcome) -> impl IntoView {
     };
     view! {
         <div class="welcome-page center">
-            <img src="mark.png" alt="" width="48" height="48" />
             <h2>"Ready"</h2>
             <p class="muted">{line}</p>
             <p class="muted small">"Tools and voice stay in Customize."</p>

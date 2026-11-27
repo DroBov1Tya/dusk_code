@@ -14,7 +14,6 @@ use gpui_kit::{
 
 use super::{Page, form, tools};
 use crate::{
-    platform::icon,
     ui::{Type, motion},
     workspace::Workspace,
 };
@@ -161,7 +160,6 @@ fn hello(cx: &mut Context<Workspace>) -> Div {
         .flex_col()
         .items_center()
         .gap_3()
-        .child(img(icon::mark()).size(px(64.)).flex_none())
         .child(div().display().child("duskcode"))
         .child(
             div()
@@ -183,7 +181,6 @@ fn ready(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex_col()
         .items_center()
         .gap_3()
-        .child(img(icon::mark()).size(px(48.)).flex_none())
         .child(div().title().child("You are ready"))
         .child(div().body().text_center().text_color(muted).child(model))
         .child(

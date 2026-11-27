@@ -17,7 +17,6 @@ use gpui_kit::{
 
 use crate::{
     modal::Modal,
-    platform::icon,
     ui::layout::Part,
     ui::{Type, widgets},
     workspace::{Center, Right, Workspace},
@@ -200,7 +199,7 @@ fn nav(ws: &Workspace, width: Pixels, border: Hsla, cx: &mut Context<Workspace>)
         })
 }
 
-/// The app mark and "Dusk" in sunset colors, with "code" quiet beside it.
+/// "Dusk" in sunset colors, with "code" quiet beside it.
 fn wordmark(cx: &App) -> Div {
     const DUSK: [(f32, f32, f32); 4] = [
         (268., 0.72, 0.68),
@@ -208,12 +207,6 @@ fn wordmark(cx: &App) -> Div {
         (338., 0.76, 0.66),
         (24., 0.92, 0.62),
     ];
-    let mut word = div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .child(img(icon::mark()).size(px(22.)).flex_none());
     let mut name = div()
         .flex()
         .flex_row()
@@ -226,15 +219,12 @@ fn wordmark(cx: &App) -> Div {
                 .child(letter.to_string()),
         );
     }
-    word = word.child(
-        name.child(
-            div()
-                .font_weight(FontWeight::NORMAL)
-                .text_color(cx.theme().foreground.opacity(0.72))
-                .child("code"),
-        ),
-    );
-    word
+    name.child(
+        div()
+            .font_weight(FontWeight::NORMAL)
+            .text_color(cx.theme().foreground.opacity(0.72))
+            .child("code"),
+    )
 }
 
 /// Where you are: the page, or the chat under a folder icon that names its project on
