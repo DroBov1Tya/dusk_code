@@ -27,7 +27,7 @@ pub use keys::EFFORTS;
 pub use panels::{
     AgentRow, AgentWindow, AtOnceEdit, Connection, DiffView, FileButton, FileEditor, HitTarget,
     JobsView, McpRow, ModelList, OverviewView, Panel, PluginRow, Preset, Preview, SecretEntry,
-    SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
+    SettingCategory, SettingsHit, SettingsView, SourceReader, SubagentView, SwitchKind, ThreadList,
 };
 pub use panels::{
     Choice, Confirm, PackPage, Reviewed, Row, Step, Workshop, choices, order_word, reviewed_first,

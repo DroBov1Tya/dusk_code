@@ -6,7 +6,7 @@ use dusk_protocol::{
     config::ProviderKind,
     model::ProviderStatus,
     release::{InstallProgress, UpdateInfo},
-    thread::{ContextReport, JobInfo, Message, MessageRole, Source, Thread, UndoPoint},
+    thread::{ContextReport, JobInfo, Message, MessageRole, Source, SourceKind, Thread, UndoPoint},
 };
 
 use super::{AgentWindow, SettingsView};
@@ -71,6 +71,22 @@ pub enum Panel {
         selected: usize,
         removing: bool,
     },
+    /// One source open to read, opened from the list of sources.
+    Source(Box<SourceReader>),
+}
+
+/// A source being read, a part at a time; esc returns to the list it was opened from.
+pub struct SourceReader {
+    pub sources: Vec<Source>,
+    pub selected: usize,
+    pub source: Source,
+    /// None until the first part came.
+    pub kind: Option<SourceKind>,
+    pub text: String,
+    /// Where the next part starts; none at the end.
+    pub next: Option<u64>,
+    /// The line kept in view while scrolling.
+    pub row: usize,
 }
 
 /// The core's Overview and context report for the /overview panel; the plan and team

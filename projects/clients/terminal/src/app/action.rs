@@ -94,6 +94,11 @@ pub enum Action {
         pinned: bool,
     },
     RemoveSource(String),
+    /// A part of a source from byte `offset`, for the reader.
+    ReadSource {
+        id: String,
+        offset: u64,
+    },
     /// `/schedule`, `/schedules` and the keys of their panel.
     Schedule(crate::app::schedule::ScheduleAction),
     /// Ask a running background job of the open thread to stop.
