@@ -72,6 +72,7 @@ fn threads() -> Vec<T> {
             text: word(),
             now: false,
         },
+        T::Unqueue { thread_id: id() },
         T::Cancel { thread_id: id() },
         T::Background {
             thread_id: id(),

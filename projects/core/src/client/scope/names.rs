@@ -37,6 +37,7 @@ named! {
     R::Thread(T::LocalUnsent { .. }) => "thread.local_unsent",
     R::Thread(T::ResendLocalUnsent { .. }) => "thread.resend_local_unsent",
     R::Thread(T::Send { .. }) => "thread.send",
+    R::Thread(T::Unqueue { .. }) => "thread.unqueue",
     R::Thread(T::Cancel { .. }) => "thread.cancel",
     R::Thread(T::Background { .. }) => "thread.background",
     R::Thread(T::RunCommand { .. }) => "thread.run_command",

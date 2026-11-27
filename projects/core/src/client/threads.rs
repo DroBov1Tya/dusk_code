@@ -111,6 +111,15 @@ impl Threads<'_> {
         .await
     }
 
+    /// Takes back the newest message sent that the thread has not taken in yet.
+    pub async fn unqueue(&self, thread_id: &str) -> Result<Option<String>> {
+        let thread_id = thread_id.to_owned();
+        match self.call(ThreadRequest::Unqueue { thread_id }).await? {
+            Response::Unqueued(text) => Ok(text),
+            other => Err(unexpected(other)),
+        }
+    }
+
     /// Sends the agent's running command of `call_id` to the background.
     pub async fn send_to_background(&self, thread_id: &str, call_id: &str) -> Result<()> {
         self.done(ThreadRequest::Background {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 39,
+  "x-protocol": 40,
   "x-oldest": 39,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -7170,6 +7170,22 @@
         },
         {
           "additionalProperties": false,
+          "description": "The text of a message taken back before the thread took it in.",
+          "properties": {
+            "Unqueued": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "Unqueued"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "properties": {
             "Jobs": {
               "items": {
@@ -11945,6 +11961,27 @@
           },
           "required": [
             "Send"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Takes back the newest message the user sent that the thread has not taken in yet,\nso the user can edit it; answers `Response::Unqueued` with its text, or none when\nevery message was taken in already.",
+          "properties": {
+            "Unqueue": {
+              "properties": {
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Unqueue"
           ],
           "type": "object"
         },

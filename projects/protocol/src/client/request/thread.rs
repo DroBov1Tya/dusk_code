@@ -59,6 +59,12 @@ pub enum ThreadRequest {
         text: String,
         now: bool,
     },
+    /// Takes back the newest message the user sent that the thread has not taken in yet,
+    /// so the user can edit it; answers `Response::Unqueued` with its text, or none when
+    /// every message was taken in already.
+    Unqueue {
+        thread_id: String,
+    },
     Cancel {
         thread_id: String,
     },

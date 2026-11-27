@@ -121,6 +121,7 @@ fn thread(request: &Thread) -> Access<'_> {
         Thread::Resume { thread_id, .. }
         | Thread::ResendLocalUnsent { thread_id, .. }
         | Thread::Send { thread_id, .. }
+        | Thread::Unqueue { thread_id }
         | Thread::Cancel { thread_id }
         | Thread::Background { thread_id, .. }
         | Thread::Close { thread_id }
