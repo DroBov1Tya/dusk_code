@@ -75,6 +75,7 @@ mod tests {
             ThreadEvent::ModelSelected {
                 name: "m".into(),
                 input_limit: 100_000,
+                effort: None,
             },
             0,
         );

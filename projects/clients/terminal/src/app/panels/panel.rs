@@ -7,7 +7,8 @@ use dusk_protocol::{
     model::{Model, ProviderStatus},
     release::{InstallProgress, UpdateInfo},
     thread::{
-        ContextReport, JobInfo, Message, MessageRole, PlanFile, Source, SourceKind, Thread, UndoPoint,
+        ContextReport, JobInfo, Message, MessageRole, PlanFile, Source, SourceKind, Thread,
+        UndoPoint,
     },
 };
 
