@@ -328,7 +328,15 @@ impl Workspace {
     ) {
         self.core.call(
             cx,
-            move |client| async move { client.work().source_picture(&thread_id, &name).await },
+            // By id: names repeat, as every pasted screenshot is `image.png`.
+            {
+                let source_id = source_id.clone();
+                move |client| async move {
+                    let work = client.work();
+                    work.source_picture(&thread_id, &name, Some(&source_id))
+                        .await
+                }
+            },
             move |ws, result, cx| {
                 let Some(Modal::Source(view)) = &mut ws.modal else {
                     return;

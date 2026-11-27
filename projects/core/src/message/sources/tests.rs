@@ -408,10 +408,48 @@ async fn a_client_reads_only_a_picture_source_of_its_chat_by_name() {
         .await
         .unwrap();
     assert!(pasted.contains("pasted-2.txt"));
-    assert_eq!(sources.picture("shot.png").await.unwrap(), png);
-    assert!(sources.picture("pasted-2.txt").await.is_err());
-    assert!(sources.picture("../state.db").await.is_err());
-    assert!(sources.picture("nothing.png").await.is_err());
+    assert_eq!(sources.picture("shot.png", None).await.unwrap(), png);
+    assert!(sources.picture("pasted-2.txt", None).await.is_err());
+    assert!(sources.picture("../state.db", None).await.is_err());
+    assert!(sources.picture("nothing.png", None).await.is_err());
+}
+
+#[tokio::test]
+async fn a_picture_read_by_id_is_that_one_when_names_repeat() {
+    let state = temp_state("sources-picture-by-id").await;
+    state.create_thread("thread", "test").await.unwrap();
+    state.create_thread("other", "test").await.unwrap();
+    let workspace = temp_dir("sources-picture-by-id-workspace");
+    let sources = ThreadSources {
+        state: &state,
+        workspace: &workspace,
+        thread_id: "thread",
+    };
+    let first = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR-first".to_vec();
+    let second = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR-second".to_vec();
+    let older = sources.add_picture("image.png", &first).await.unwrap();
+    let newer = sources.add_picture("image.png", &second).await.unwrap();
+    assert_eq!(older.name, newer.name);
+    // By name the newest wins; by id each is itself, whatever name is sent with it.
+    assert_eq!(sources.picture("image.png", None).await.unwrap(), second);
+    let older_id = Some(older.source_id.as_str());
+    let newer_id = Some(newer.source_id.as_str());
+    assert_eq!(sources.picture("image.png", older_id).await.unwrap(), first);
+    assert_eq!(
+        sources.picture("image.png", newer_id).await.unwrap(),
+        second
+    );
+    assert!(sources.picture("", Some("nope")).await.is_err());
+    // Another chat's id is not found here.
+    let theirs = ThreadSources {
+        state: &state,
+        workspace: &workspace,
+        thread_id: "other",
+    };
+    assert!(theirs.picture("image.png", older_id).await.is_err());
+    // A text source by id is still no picture.
+    let text = sources.store("notes.txt", b"hello").await.unwrap();
+    assert!(sources.picture("", Some(&text.source_id)).await.is_err());
 }
 
 #[tokio::test]

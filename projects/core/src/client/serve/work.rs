@@ -47,9 +47,15 @@ impl Server {
                 name,
                 bytes,
             } => Response::Text(runtime.add_picture(&thread_id, &name, &bytes).await?),
-            WorkRequest::SourcePicture { thread_id, name } => {
-                Response::Picture(runtime.source_picture(&thread_id, &name).await?)
-            }
+            WorkRequest::SourcePicture {
+                thread_id,
+                name,
+                source_id,
+            } => Response::Picture(
+                runtime
+                    .source_picture(&thread_id, &name, source_id.as_deref())
+                    .await?,
+            ),
             WorkRequest::SourceText {
                 thread_id,
                 source_id,

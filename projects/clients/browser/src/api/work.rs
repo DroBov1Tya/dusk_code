@@ -77,10 +77,15 @@ pub async fn source_text(thread_id: &str, source_id: &str, offset: u64) -> Res<S
     )
 }
 
-/// The bytes of the picture source `name`, a PNG or JPEG the core checked.
-pub async fn source_picture(thread_id: &str, name: &str) -> Res<Vec<u8>> {
+/// The bytes of the picture source `source_id`, or else the newest named `name`, a PNG
+/// or JPEG the core checked.
+pub async fn source_picture(thread_id: &str, name: &str, source_id: Option<&str>) -> Res<Vec<u8>> {
     let (thread_id, name) = (thread_id.to_owned(), name.to_owned());
-    ask!(work(WorkRequest::SourcePicture { thread_id, name }), Response::Picture(bytes) => bytes)
+    let source_id = source_id.map(str::to_owned);
+    ask!(
+        work(WorkRequest::SourcePicture { thread_id, name, source_id }),
+        Response::Picture(bytes) => bytes
+    )
 }
 
 /// How the thread's work stands: activity, changes and the newest log lines.

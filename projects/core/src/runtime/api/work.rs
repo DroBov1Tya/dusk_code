@@ -110,8 +110,14 @@ impl Runtime {
         Ok(dusk_protocol::thread::source_tag(&source.name))
     }
 
-    /// The bytes of the thread's picture source `name`, for a client to draw.
-    pub async fn source_picture(&self, thread_id: &str, name: &str) -> Result<Vec<u8>> {
+    /// The bytes of the thread's picture source `source_id`, or else the newest named
+    /// `name`, for a client to draw.
+    pub async fn source_picture(
+        &self,
+        thread_id: &str,
+        name: &str,
+        source_id: Option<&str>,
+    ) -> Result<Vec<u8>> {
         let launcher = self.of(thread_id).await;
         let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         ThreadSources {
@@ -119,7 +125,7 @@ impl Runtime {
             workspace: &workspace,
             thread_id,
         }
-        .picture(name)
+        .picture(name, source_id)
         .await
     }
 

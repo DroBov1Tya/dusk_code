@@ -13993,12 +13993,18 @@
         },
         {
           "additionalProperties": false,
-          "description": "The bytes of the thread's picture source `name`, as its tag names it, for a\nclient to draw. Answers with `Response::Picture`; a source that is no PNG or\nJPEG is refused.",
+          "description": "The bytes of the thread's picture source `name`, as its tag names it, for a\nclient to draw. Answers with `Response::Picture`; a source that is no PNG or\nJPEG is refused. With `source_id` the source is that one, as names repeat; `name`\nis then not looked at.",
           "properties": {
             "SourcePicture": {
               "properties": {
                 "name": {
                   "type": "string"
+                },
+                "source_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "thread_id": {
                   "type": "string"

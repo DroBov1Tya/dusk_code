@@ -248,16 +248,16 @@ impl ThreadSources<'_> {
         self.store(name, bytes).await
     }
 
-    /// The bytes of the picture source `name`, the newest when names repeat. The name is
-    /// looked up among this chat's sources, never joined as a path, and only a PNG or a
-    /// JPEG is given out.
-    pub async fn picture(&self, name: &str) -> Result<Vec<u8>> {
+    /// The bytes of the picture source `id`, or without one the newest named `name`, as
+    /// names repeat. Either is looked up among this chat's sources, never joined as a
+    /// path, and only a PNG or a JPEG is given out.
+    pub async fn picture(&self, name: &str, id: Option<&str>) -> Result<Vec<u8>> {
         let sources = self.state.sources(self.thread_id).await?;
-        let source = sources
-            .iter()
-            .rev()
-            .find(|source| source.name == name)
-            .context("this chat has no such source")?;
+        let source = match id {
+            Some(id) => sources.iter().find(|source| source.source_id == id),
+            None => sources.iter().rev().find(|source| source.name == name),
+        }
+        .context("this chat has no such source")?;
         ensure!(
             Path::new(&source.file).file_name() == Some(source.file.as_ref()),
             "the source's file is not in the sources folder"

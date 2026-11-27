@@ -88,7 +88,7 @@ fn Reader(thread: String, source: Source, open: RwSignal<Option<Source>>) -> imp
             let (thread, source) = (thread.clone(), source.clone());
             leptos::task::spawn_local(async move {
                 match api::source_text(&thread, &source.source_id, offset).await {
-                    Ok(chunk) => take(reading, chunk, &thread, &source.name),
+                    Ok(chunk) => take(reading, chunk, &thread, &source),
                     Err(error) => reading.set(Reading::Failed(error)),
                 }
             });
@@ -181,14 +181,19 @@ fn Reader(thread: String, source: Source, open: RwSignal<Option<Source>>) -> imp
 }
 
 /// Puts a part the core sent into the reading; a picture's bytes are asked for next.
-fn take(reading: RwSignal<Reading>, chunk: SourceChunk, thread: &str, name: &str) {
+fn take(reading: RwSignal<Reading>, chunk: SourceChunk, thread: &str, source: &Source) {
     match chunk.kind {
         SourceKind::Binary => reading.set(Reading::Binary),
         SourceKind::Picture => {
             reading.set(Reading::Picture(None));
-            let (thread, name) = (thread.to_owned(), name.to_owned());
+            let (thread, name, id) = (
+                thread.to_owned(),
+                source.name.clone(),
+                source.source_id.clone(),
+            );
             leptos::task::spawn_local(async move {
-                match api::source_picture(&thread, &name).await {
+                // By id: names repeat, as every pasted screenshot is `image.png`.
+                match api::source_picture(&thread, &name, Some(&id)).await {
                     Ok(bytes) => match object_url(&bytes) {
                         Some(url) => reading.set(Reading::Picture(Some(url))),
                         None => reading.set(Reading::Failed("cannot show the picture".into())),
