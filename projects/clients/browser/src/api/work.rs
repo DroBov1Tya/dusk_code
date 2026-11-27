@@ -5,7 +5,7 @@ use crate::link::request;
 use dusk_protocol::{
     client::{Response, WorkRequest},
     project::{Change, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanCounts, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanCounts, PlanFile, Team},
 };
 
 use super::*;
@@ -33,6 +33,24 @@ pub async fn plan(thread_id: &str) -> Res<Option<String>> {
 pub async fn save_plan(thread_id: &str, text: String) -> Res<()> {
     let thread_id = thread_id.to_owned();
     done(work(WorkRequest::SavePlan { thread_id, text })).await
+}
+
+/// Every plan of the chat, newest written first.
+pub async fn plans(thread_id: &str) -> Res<Vec<PlanFile>> {
+    let thread_id = thread_id.to_owned();
+    ask!(work(WorkRequest::Plans { thread_id }), Response::Plans(p) => p)
+}
+
+/// Deletes the plans a newer one replaced and finished ones; says how many.
+pub async fn remove_old_plans(thread_id: &str) -> Res<u64> {
+    let thread_id = thread_id.to_owned();
+    ask!(work(WorkRequest::RemoveOldPlans { thread_id }), Response::Number(n) => n)
+}
+
+/// Forgets a source of the chat, such as a plan, and deletes its file.
+pub async fn remove_source(thread_id: &str, id: &str) -> Res<()> {
+    let (thread_id, id) = (thread_id.to_owned(), id.to_owned());
+    done(work(WorkRequest::RemoveSource { thread_id, id })).await
 }
 
 pub async fn chat_diff(thread_id: &str, path: Option<String>) -> Res<Vec<FileDiff>> {

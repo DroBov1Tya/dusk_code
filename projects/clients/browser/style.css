@@ -1052,6 +1052,12 @@ button.link.quiet:hover { color: var(--fg); }
 .plan-field { display: grid; grid-template-columns: 96px 1fr; gap: var(--s2); }
 .plan-field span:last-child { overflow-wrap: anywhere; }
 .plan-card-foot { display: flex; justify-content: flex-end; }
+.plan-older { display: flex; flex-direction: column; gap: 4px; margin-top: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--line); font-size: 13px; }
+.plan-older-row { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.plan-older-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-older-row button.ghost { opacity: 0; transition: opacity var(--t-fold, 150ms) ease; }
+.plan-older-row:hover button.ghost, .plan-older-row button.ghost:focus-visible { opacity: 1; }
+@media (hover: none) { .plan-older-row button.ghost { opacity: 1; } }
 .goal-strip { width: min(var(--chat-width), 100% - 2 * var(--chat-gutter, 16px)); margin: 0 auto var(--s2); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; flex: none; }
 .goal-head { display: flex; align-items: center; gap: var(--s1); padding-right: var(--s1); }
 .goal-line { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); height: var(--control); padding: 0 var(--s2); background: none; border: 0; text-align: left; font-size: 13px; }
