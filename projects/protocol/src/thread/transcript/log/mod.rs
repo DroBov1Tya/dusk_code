@@ -25,8 +25,8 @@ use crate::{
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
         Block, GoalEvaluation, JobResult, LiveTurn, PROPOSE_SESSION_TOOL, Pin, Proposal,
-        ProposalState, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens, TurnStatus,
-        TurnWait, Work, WorkKind, activity, agent_name, read_outcome,
+        ProposalCalls, ProposalState, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens,
+        TurnStatus, TurnWait, Work, WorkKind, activity, agent_name, read_outcome,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind},
 };
@@ -256,6 +256,8 @@ pub struct ChatLog<L = Infallible> {
     /// The blocks `show` calls ask for, by call, until their results say whether they
     /// were shown.
     showing: BTreeMap<String, Block>,
+    /// The `propose_session` calls whose result may put a card in place of their step.
+    proposing: ProposalCalls,
     /// The subagents' run of the step under way, which its next `ask_agent` joins.
     batch: Option<usize>,
 }
@@ -294,6 +296,7 @@ impl<L> Default for ChatLog<L> {
             rollback_at: None,
             asked: Asked::default(),
             showing: BTreeMap::new(),
+            proposing: ProposalCalls::default(),
             batch: None,
         }
     }
@@ -866,6 +869,7 @@ impl<L> ChatLog<L> {
         self.meta.truncate(at);
         self.asked = Asked::default();
         self.showing.clear();
+        self.proposing.clear();
         self.batch = None;
         let kept = self
             .activity_boundaries
@@ -988,6 +992,7 @@ impl<L> ChatLog<L> {
     /// A step that starts, live or read from history; a `show` call also keeps the block it
     /// asks for, which its result may put in the step's place.
     fn start_tool(&mut self, call: &ToolCall, state: ToolState, at: i64) {
+        self.proposing.call(call);
         // A suggested next message is no step: the composer shows it, from
         // `NextSuggested`, and its result finds no row to land on.
         if call.name == SUGGEST_NEXT_TOOL {
@@ -1043,15 +1048,16 @@ impl<L> ChatLog<L> {
     /// Puts the card of a finished `propose_session` call in place of its step, when
     /// `result` holds one; whether it did.
     fn proposal(&mut self, call_id: &str, result: &str) -> bool {
+        // Only the call's own result: text another tool returned is never a card.
+        let Some(proposal) = self.proposing.card(call_id, result) else {
+            return false;
+        };
         let Some(index) = self.tool_index(call_id) else {
             return false;
         };
         if !matches!(&self.items[index], Item::Tool(tool) if tool.name == PROPOSE_SESSION_TOOL) {
             return false;
         }
-        let Some(proposal) = Proposal::read(result) else {
-            return false;
-        };
         self.items[index] = Item::Proposal {
             proposal,
             state: ProposalState::Pending,

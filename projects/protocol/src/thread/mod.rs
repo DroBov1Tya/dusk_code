@@ -49,7 +49,7 @@ pub use overview::{
 pub use pin::{MAX_PINS, PIN_CHARS, Pin, excerpt};
 pub use proposal::{
     MAX_PENDING_PROPOSALS, MAX_PROPOSAL_BRIEF, MAX_PROPOSAL_TITLE, PROPOSE_SESSION_TOOL, Proposal,
-    ProposalState, ProposeSession, outcome_note, read_outcome,
+    ProposalCalls, ProposalState, ProposeSession, outcome_note, proposals, read_outcome,
 };
 pub use suggestion::{SUGGEST_NEXT_TOOL, SUGGESTION_CHARS, SuggestNext, Suggestion};
 pub use summary::{Found, Thread};

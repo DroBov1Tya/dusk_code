@@ -5,9 +5,12 @@
 //! the core stores under the proposal's call; every client reads the card's state from
 //! that message, or from `ThreadEvent::ProposalSettled` while the chat is open.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
-use super::{links_in, thread_link};
+use super::{Message, MessageRole, links_in, thread_link};
+use crate::model::ToolCall;
 
 /// The tool that proposes a session.
 pub const PROPOSE_SESSION_TOOL: &str = "propose_session";
@@ -102,6 +105,56 @@ impl Proposal {
         }
         format!("{head}\n\n{}", self.brief)
     }
+}
+
+/// The `propose_session` calls whose result is still to come, by call id. A card is read
+/// only from the result of such a call: any other tool (`read`, an MCP server) can return
+/// text that parses as a card, and it must never be drawn or started. A call id names
+/// one call of a step only, so a later call with the same id replaces it.
+#[derive(Debug, Clone, Default)]
+pub struct ProposalCalls(BTreeSet<String>);
+
+impl ProposalCalls {
+    /// Notes a call the model made.
+    pub fn call(&mut self, call: &ToolCall) {
+        if call.name == PROPOSE_SESSION_TOOL {
+            self.0.insert(call.id.clone());
+        } else {
+            self.0.remove(&call.id);
+        }
+    }
+
+    /// The card `result`, the result of the call `call_id`, holds: only when that call
+    /// is a `propose_session` call waiting for its result.
+    pub fn card(&mut self, call_id: &str, result: &str) -> Option<Proposal> {
+        if !self.0.remove(call_id) {
+            return None;
+        }
+        Proposal::read(result)
+    }
+
+    /// Forgets every call, as a cut history does.
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+/// The cards stored `messages` of one chat hold, oldest first: only results of
+/// `propose_session` calls.
+pub fn proposals(messages: &[Message]) -> Vec<Proposal> {
+    let mut calls = ProposalCalls::default();
+    let mut cards = Vec::new();
+    for message in messages {
+        match message.role {
+            MessageRole::Assistant => message.tool_calls.iter().for_each(|c| calls.call(c)),
+            MessageRole::Tool => {
+                let call_id = message.tool_call_id.as_deref().unwrap_or_default();
+                cards.extend(calls.card(call_id, &message.content));
+            }
+            _ => {}
+        }
+    }
+    cards
 }
 
 /// Whether `id` can be a proposal's id: a short word.

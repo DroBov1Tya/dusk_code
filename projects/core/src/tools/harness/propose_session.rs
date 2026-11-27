@@ -17,8 +17,8 @@ use crate::{
     tools::{Tool, ToolContext, schema, schema::parse_arguments},
 };
 use dusk_protocol::thread::{
-    MAX_PENDING_PROPOSALS, MAX_PROPOSAL_BRIEF, MAX_PROPOSAL_TITLE, MessageRole,
-    PROPOSE_SESSION_TOOL, Proposal, ProposalState, ProposeSession as Arguments, read_outcome,
+    MAX_PENDING_PROPOSALS, MAX_PROPOSAL_BRIEF, MAX_PROPOSAL_TITLE, PROPOSE_SESSION_TOOL, Proposal,
+    ProposalState, ProposeSession as Arguments, proposals, read_outcome,
 };
 
 /// Held while a proposal is answered, so two clicks cannot both find it waiting.
@@ -167,14 +167,10 @@ pub fn uid(thread_id: &str, id: &str) -> String {
     format!("proposal:{thread_id}:{id}")
 }
 
-/// The cards the chat `thread_id` holds, oldest first.
+/// The cards the chat `thread_id` holds, oldest first: only results of its
+/// `propose_session` calls, never text another tool returned that reads as a card.
 async fn cards(state: &State, thread_id: &str) -> Result<Vec<Proposal>> {
-    let messages = state.list_messages(thread_id).await?;
-    Ok(messages
-        .iter()
-        .filter(|message| message.role == MessageRole::Tool)
-        .filter_map(|message| Proposal::read(&message.content))
-        .collect())
+    Ok(proposals(&state.list_messages(thread_id).await?))
 }
 
 /// The proposal `id` in the chat `thread_id`, and where it stands.
