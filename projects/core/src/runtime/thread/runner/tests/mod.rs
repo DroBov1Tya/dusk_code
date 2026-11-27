@@ -465,6 +465,7 @@ async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
         .collect()
 }
 
+mod auto_compact;
 mod chant;
 mod chat_model;
 mod episodes;

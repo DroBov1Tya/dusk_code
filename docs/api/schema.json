@@ -8400,6 +8400,18 @@
           "description": "The built-in review prompt, for an editor to show and reset to.",
           "type": "string"
         },
+        "auto_compact": {
+          "default": true,
+          "description": "Whether the core compacts a chat's context on its own as it fills up. Off, a chat\nstops once its context is full, until it is compacted by hand.",
+          "type": "boolean"
+        },
+        "auto_compact_percent": {
+          "default": 80,
+          "description": "The share of the model's input limit, in percent, at which the context is\ncompacted, within `MIN_AUTO_COMPACT_PERCENT..=MAX_AUTO_COMPACT_PERCENT`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "idle_screen_minutes": {
           "format": "uint32",
           "minimum": 0,
@@ -8579,6 +8591,21 @@
           },
           "required": [
             "MaxAttempts"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The share of the input limit, in percent, at which a chat's context is compacted.\nAnswers with the percent saved, after the bounds of 60 to 80.",
+          "properties": {
+            "AutoCompactPercent": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "AutoCompactPercent"
           ],
           "type": "object"
         },
@@ -10047,6 +10074,11 @@
           "const": "SoundNotifications",
           "description": "Whether notifications ring the terminal bell.",
           "type": "string"
+        },
+        {
+          "const": "AutoCompact",
+          "description": "Whether the core compacts a chat's context on its own as it fills up.",
+          "type": "string"
         }
       ]
     },
@@ -11472,6 +11504,10 @@
           "properties": {
             "ContextTooLarge": {
               "properties": {
+                "auto_compact_off": {
+                  "description": "Auto-compaction is off, so only a compaction by hand makes room.",
+                  "type": "boolean"
+                },
                 "limit": {
                   "format": "uint64",
                   "minimum": 0,

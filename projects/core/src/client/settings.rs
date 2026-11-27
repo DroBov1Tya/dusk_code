@@ -36,6 +36,12 @@ impl Settings<'_> {
         self.done(SettingsRequest::MaxAttempts(attempts)).await
     }
 
+    /// Returns the percent saved, after the bounds of 60 to 80.
+    pub async fn auto_compact_percent(&self, percent: u64) -> Result<u64> {
+        self.number(SettingsRequest::AutoCompactPercent(percent))
+            .await
+    }
+
     pub async fn memory_chars(&self, chars: usize) -> Result<()> {
         self.done(SettingsRequest::MemoryChars(chars)).await
     }

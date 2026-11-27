@@ -224,6 +224,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::IdleScreenMinutes(_)
         | Settings::ModelTimeout(_)
         | Settings::MaxAttempts(_)
+        | Settings::AutoCompactPercent(_)
         | Settings::MemoryChars(_)
         | Settings::WorkHistoryChars(_)
         | Settings::Switch { .. }

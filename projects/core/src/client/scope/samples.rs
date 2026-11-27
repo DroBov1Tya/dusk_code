@@ -220,6 +220,7 @@ fn settings() -> Vec<S> {
         S::IdleScreenMinutes(1),
         S::ModelTimeout(1),
         S::MaxAttempts(1),
+        S::AutoCompactPercent(70),
         S::MemoryChars(1),
         S::WorkHistoryChars(1),
         S::Switch {

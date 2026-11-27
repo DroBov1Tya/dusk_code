@@ -590,3 +590,36 @@ fn an_old_goal_round_cap_still_loads_and_is_not_written_back() {
     let old = parse("limits:\n  max_goal_rounds: 10\n").unwrap();
     assert!(!old.to_yaml().unwrap().contains("max_goal_rounds"));
 }
+
+#[test]
+fn auto_compaction_is_on_at_eighty_and_kept_within_sixty_to_eighty() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.auto_compact);
+    assert_eq!(plain.auto_compact_percent, 80);
+    for (written, read) in [
+        (0, 60),
+        (59, 60),
+        (60, 60),
+        (72, 72),
+        (80, 80),
+        (81, 80),
+        (100, 80),
+    ] {
+        let text = format!("limits:\n  auto_compact: false\n  auto_compact_percent: {written}\n");
+        let set = parse(&text).unwrap().limits();
+        assert!(!set.auto_compact);
+        assert_eq!(set.auto_compact_percent, read, "{written}");
+    }
+    let mut config = parse(PROVIDERS).unwrap();
+    config.set_auto_compact_percent(95);
+    assert_eq!(config.limits().auto_compact_percent, 80);
+    config.set_auto_compact_percent(10);
+    assert_eq!(config.limits().auto_compact_percent, 60);
+    for bad in [
+        "limits:\n  auto_compact_percent: -70\n",
+        "limits:\n  auto_compact_percent: lots\n",
+        "limits:\n  auto_compact: maybe\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}

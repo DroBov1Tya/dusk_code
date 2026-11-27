@@ -83,6 +83,7 @@ named! {
     R::Settings(S::IdleScreenMinutes(_)) => "settings.idle_screen_minutes",
     R::Settings(S::ModelTimeout(_)) => "settings.model_timeout",
     R::Settings(S::MaxAttempts(_)) => "settings.max_attempts",
+    R::Settings(S::AutoCompactPercent(_)) => "settings.auto_compact_percent",
     R::Settings(S::MemoryChars(_)) => "settings.memory_chars",
     R::Settings(S::WorkHistoryChars(_)) => "settings.work_history_chars",
     R::Settings(S::Switch { .. }) => "settings.switch",

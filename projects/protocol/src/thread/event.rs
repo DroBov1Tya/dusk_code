@@ -151,6 +151,9 @@ pub enum ThreadEvent {
     ContextTooLarge {
         tokens: u64,
         limit: u64,
+        /// Auto-compaction is off, so only a compaction by hand makes room.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        auto_compact_off: bool,
     },
     /// The tool call `call_id` gave `task` to `agent`, or the team gave a member the
     /// plan's task `task_id`; the agent works in thread `thread_id`

@@ -272,8 +272,9 @@ impl Config {
     }
 
     pub fn parse(bytes: &[u8]) -> Result<Self> {
-        let config: Self = serde_saphyr::from_slice(bytes)
+        let mut config: Self = serde_saphyr::from_slice(bytes)
             .map_err(|error| anyhow!("invalid configuration YAML: {}", what_is_wrong(&error)))?;
+        config.limits.clamp_auto_compact();
         config.validate()?;
         Ok(config)
     }
