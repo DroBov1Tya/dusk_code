@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 39,
+  "x-protocol": 40,
   "x-oldest": 39,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -9921,6 +9921,12 @@
           "default": "",
           "type": "string"
         },
+        "retries": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "review_of": {
           "default": null,
           "type": [
@@ -14214,6 +14220,31 @@
           },
           "required": [
             "ConfirmTask"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Retries a failed task of the plan in place: the same id, its dependents with it.\nA running team gives it out again; otherwise it waits for the next run.",
+          "properties": {
+            "RetryTask": {
+              "properties": {
+                "task_id": {
+                  "type": "string"
+                },
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id",
+                "task_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "RetryTask"
           ],
           "type": "object"
         },

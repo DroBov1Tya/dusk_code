@@ -158,6 +158,7 @@ fn work(request: &Work) -> Access<'_> {
         | Work::UploadPicture { thread_id, .. }
         | Work::SavePlan { thread_id, .. }
         | Work::ConfirmTask { thread_id, .. }
+        | Work::RetryTask { thread_id, .. }
         | Work::StopTeam { thread_id } => of(Area::ThreadWrite, thread_id),
         // How many members work at once, a setting of the team, so it sits with the approval
         // mode.

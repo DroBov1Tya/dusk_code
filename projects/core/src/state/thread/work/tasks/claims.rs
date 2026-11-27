@@ -675,10 +675,11 @@ impl State {
         finish(transaction, &root, &task_id).await
     }
 
-    /// The lead's `reopen`. Either way the last owner is forgotten: the lead tries again,
-    /// maybe with a new brief, and a fresh member reads it from its card.
-    /// failed to open: the owner is cleared, `attempts` and
-    /// `reworks` start again, and tasks blocked behind it open. blocked to open, for a
+    /// The lead's `reopen` and the user's retry. Either way the last owner is forgotten:
+    /// the lead tries again, maybe with a new brief, and a fresh member reads it from its
+    /// card. failed to open, a retry in place: the id, the history and the dependents
+    /// stay, the owner is cleared, `attempts` and `reworks` start again, `retries` counts
+    /// one more, and tasks blocked or skipped behind it come back. blocked to open, for a
     /// task whose member is stuck: the owner is cleared. A task blocked behind a failed
     /// one is refused: it opens when that one is reopened.
     pub async fn reopen_task(&self, thread: &str, task: &str) -> Result<PlanTask, PlanError> {
@@ -699,9 +700,11 @@ impl State {
             "UPDATE tasks SET
                  attempts = CASE status WHEN 'failed' THEN 0 ELSE attempts END,
                  reworks = CASE status WHEN 'failed' THEN 0 ELSE reworks END,
+                 retries = CASE status WHEN 'failed' THEN retries + 1 ELSE retries END,
+                 retried_at = CASE status WHEN 'failed' THEN ?1 ELSE retried_at END,
                  status = 'open', owner_thread_id = NULL, waits_on = NULL, note = '',
-                 last_owner_thread_id = NULL, skipped = 0, updated_at = ?
-             WHERE task_id = ? AND thread_id = ? AND status IN ('failed', 'blocked')",
+                 last_owner_thread_id = NULL, skipped = 0, updated_at = ?1
+             WHERE task_id = ?2 AND thread_id = ?3 AND status IN ('failed', 'blocked')",
         )
         .bind(now)
         .bind(&task_id)

@@ -3,6 +3,7 @@
 use super::super::{
     hand_in::{Report, Status},
     lead_lines::{MAX_LINE, blocked_line, failed_line, quoted, review_line, stall_line, who},
+    review::rounds,
 };
 use dusk_protocol::thread::TaskDuty;
 
@@ -27,6 +28,8 @@ fn task(note: &str) -> PlanTask {
         lease_until: None,
         attempts: 3,
         reworks: 0,
+        retries: 0,
+        retried_at: None,
         waits_on: None,
         note: note.into(),
         gate_job: None,
@@ -290,4 +293,33 @@ fn a_card_given_out_again_says_how_the_last_attempt_ended() {
     // A first card has neither.
     let first = card(&task(""), &[]);
     assert!(!first.contains("Before you"), "{first}");
+}
+
+/// A task retried after it failed has its own fix round: the reviews of the try before
+/// do not count against it.
+#[test]
+fn a_retry_counts_review_rounds_from_its_own_start() {
+    let mut retried = task("");
+    retried.retries = 1;
+    let review = |created_at: i64, id: &str| PlanTask {
+        task_id: id.into(),
+        duty: TaskDuty::Review,
+        review_of: Some(retried.task_id.clone()),
+        status: PlanStatus::Done,
+        created_at,
+        ..task("")
+    };
+    let old = [review(10, "r1"), review(20, "r2")];
+    let plan = |retried_at: Option<i64>, rows: &[PlanTask]| {
+        let mut plan = vec![PlanTask {
+            retried_at,
+            ..retried.clone()
+        }];
+        plan.extend_from_slice(rows);
+        plan
+    };
+    assert_eq!(rounds(&plan(None, &old), &retried.task_id), 2);
+    assert_eq!(rounds(&plan(Some(30), &old), &retried.task_id), 0);
+    let new = [review(10, "r1"), review(20, "r2"), review(40, "r3")];
+    assert_eq!(rounds(&plan(Some(30), &new), &retried.task_id), 1);
 }

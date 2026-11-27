@@ -3,13 +3,13 @@
 //! task of another chat is never reached. The refusals are the store's own words; a
 //! failure of the store itself is logged here and answered without its text.
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, ensure};
 use dusk_protocol::thread::{PlanPage, Task, Team};
 use tracing::warn;
 
 use crate::{
     runtime::{Runtime, team::at_once_setting},
-    state::{PassedBy, PlanError, TeamError, timestamp_ms},
+    state::{PassedBy, PlanError, PlanStatus, TeamError, timestamp_ms},
 };
 
 impl Runtime {
@@ -47,6 +47,30 @@ impl Runtime {
         let chat = passed.plan.clone();
         let task = state.present_task(passed).await.map_err(plan_refusal)?;
         // What the task was before is ready now: a running team gives it out.
+        self.of(thread_id).await.team_changed(&chat).await;
+        Ok((chat, task))
+    }
+
+    /// Retries a failed task in place, as the lead's `reopen` does: the same id, its
+    /// dependents back with it, a fresh member on the next pass of a running team.
+    /// Answers with the chat that holds the plan and the task as it is now.
+    pub async fn retry_task(&self, thread_id: &str, task_id: &str) -> Result<(String, Task)> {
+        let state = self.state_of(thread_id).await;
+        let found = state
+            .plan_task(thread_id, task_id)
+            .await
+            .map_err(plan_refusal)?;
+        ensure!(
+            found.status == PlanStatus::Failed,
+            "only a failed task is retried; this one is {}",
+            found.status.as_str()
+        );
+        let reopened = state
+            .reopen_task(thread_id, &found.task_id)
+            .await
+            .map_err(plan_refusal)?;
+        let chat = reopened.plan.clone();
+        let task = state.present_task(reopened).await.map_err(plan_refusal)?;
         self.of(thread_id).await.team_changed(&chat).await;
         Ok((chat, task))
     }

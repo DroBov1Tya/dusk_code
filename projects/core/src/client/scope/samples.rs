@@ -174,6 +174,10 @@ fn work() -> Vec<W> {
             thread_id: id(),
             task_id: word(),
         },
+        W::RetryTask {
+            thread_id: id(),
+            task_id: word(),
+        },
         W::StopTeam { thread_id: id() },
         W::SetTeamAtOnce {
             thread_id: id(),

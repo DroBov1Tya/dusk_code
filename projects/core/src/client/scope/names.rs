@@ -69,6 +69,7 @@ named! {
     R::Work(W::Overview { .. }) => "work.overview",
     R::Work(W::Events { .. }) => "work.events",
     R::Work(W::ConfirmTask { .. }) => "work.confirm_task",
+    R::Work(W::RetryTask { .. }) => "work.retry_task",
     R::Work(W::StopTeam { .. }) => "work.stop_team",
     R::Work(W::SetTeamAtOnce { .. }) => "work.set_team_at_once",
     R::Settings(S::ContextPolicy(_)) => "settings.context_policy",

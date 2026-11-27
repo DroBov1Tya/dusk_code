@@ -92,8 +92,9 @@ impl PlanAction {
             Self::Run => &["goal"],
             Self::Stop => &[],
             Self::Review => &["id", "ids", "text"],
-            Self::Show | Self::Reopen => &["id"],
-            Self::Edit => &["id", "tasks", "text"],
+            Self::Show => &["id"],
+            Self::Reopen => &["id", "ids"],
+            Self::Edit => &["id", "ids", "tasks", "text"],
             Self::Fail | Self::Skip => &["id", "text"],
         }
     }
@@ -153,8 +154,8 @@ impl Lead {
                 self.add(state, thread, tasks, context).await
             }
             PlanAction::Edit => {
-                let id = needed(id, "id", name)?;
-                self.edit(state, thread, &id, tasks, text, context).await
+                let ids = one_or_many(id, ids, name)?;
+                self.edit(state, thread, &ids, tasks, text, context).await
             }
             PlanAction::Show => match id {
                 Some(id) => show_task(state, thread, &id).await,
@@ -162,7 +163,7 @@ impl Lead {
             },
             PlanAction::Review => review(state, thread, id, ids, text).await,
             PlanAction::Fail => fail(state, thread, &needed(id, "id", name)?, text).await,
-            PlanAction::Reopen => reopen(state, thread, &needed(id, "id", name)?).await,
+            PlanAction::Reopen => reopen(state, thread, &one_or_many(id, ids, name)?).await,
             PlanAction::Skip => skip(state, thread, &needed(id, "id", name)?, text).await,
             PlanAction::Run => {
                 let goal = needed(goal, "goal", name)?;
@@ -205,20 +206,38 @@ impl Lead {
         Ok(changed(added(&ids)))
     }
 
+    /// Changes every field given of one task, or one field set of several at once (`ids`,
+    /// such as the gate of every task in the queue). Open, failed and blocked tasks take
+    /// it; a failed one stays failed until `reopen`.
     async fn edit(
         &self,
         state: &State,
         thread: &str,
-        id: &str,
+        ids: &[String],
         tasks: Option<Vec<TaskArguments>>,
         text: Option<String>,
         context: &ToolContext,
     ) -> Result<Answer> {
+        let many = ids.len() > 1;
         let edit = match (tasks, text) {
             (Some(_), Some(_)) => bail!("edit takes `text`, or one task in `tasks`, not both"),
             (Some(mut tasks), None) => {
-                ensure!(tasks.len() == 1, "edit takes one task in `tasks`");
-                check::task_edit(tasks.remove(0), context, &self.agents).await?
+                ensure!(
+                    tasks.len() == 1,
+                    "edit takes one task in `tasks`; with `ids` its fields go to each"
+                );
+                let task = tasks.remove(0);
+                if many {
+                    ensure!(
+                        task.text.is_none() && task.files.is_none(),
+                        "an edit of several `ids` changes the same fields of each; `text` and \
+                         `files` are each task's own, so edit them one by one"
+                    );
+                }
+                check::task_edit(task, context, &self.agents).await?
+            }
+            (None, Some(_)) if many => {
+                bail!("`text` is each task's own; edit several `ids` with one task in `tasks`")
             }
             (None, Some(text)) => TaskEdit {
                 description: Some(text),
@@ -226,16 +245,29 @@ impl Lead {
             },
             (None, None) => bail!("edit needs `text`, or one task in `tasks` with what changes"),
         };
-        match state.edit_plan_task(thread, id, &edit).await {
-            Ok(task) => Ok(changed(format!("edited #{}", short_task_id(&task.task_id)))),
-            Err(PlanError::Illegal { task, from, .. }) => bail!(
-                "task #{} is {}; edit changes only a task not yet started. Fail it and add \
-                 a new one instead",
-                short_task_id(&task),
-                from.as_str()
-            ),
-            Err(error) => Err(explain(error)),
+        ensure!(
+            edit != TaskEdit::default(),
+            "edit needs what changes: a field of the task in `tasks`"
+        );
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let edited = match state.edit_plan_tasks(thread, &ids, &edit).await {
+            Ok(edited) => edited,
+            Err(PlanError::Illegal { task, from, .. }) => bail!(not_editable(&task, from)),
+            Err(error) => return Err(explain(error)),
+        };
+        let failed = edited
+            .iter()
+            .filter(|task| task.status == PlanStatus::Failed)
+            .count();
+        let ids: Vec<String> = edited
+            .iter()
+            .map(|task| format!("#{}", short_task_id(&task.task_id)))
+            .collect();
+        let mut line = format!("edited {}", ids.join(" "));
+        if failed > 0 {
+            line.push_str("; reopen a failed one to retry it");
         }
+        Ok(changed(line))
     }
 
     async fn show(&self, state: &State, thread: &str) -> Result<Answer> {
@@ -528,23 +560,81 @@ async fn skip(state: &State, thread: &str, id: &str, note: Option<String>) -> Re
     }))
 }
 
-/// Run again on an open task, it is already so.
-async fn reopen(state: &State, thread: &str, id: &str) -> Result<Answer> {
-    let task_id = match state.reopen_task(thread, id).await {
-        Ok(task) => task.task_id,
-        Err(PlanError::Illegal {
-            task,
-            from: PlanStatus::Open,
-            ..
-        }) => task,
-        Err(PlanError::Illegal { task, from, .. }) => bail!(
-            "task #{} is {}; reopen takes a failed or blocked task",
-            short_task_id(&task),
+/// Retries failed tasks in place, or frees blocked ones. Run again on an open task, it
+/// is already so. An error after some were reopened says which.
+async fn reopen(state: &State, thread: &str, ids: &[String]) -> Result<Answer> {
+    let mut reopened: Vec<String> = Vec::new();
+    for id in ids {
+        let task_id = match state.reopen_task(thread, id).await {
+            Ok(task) => task.task_id,
+            Err(PlanError::Illegal {
+                task,
+                from: PlanStatus::Open,
+                ..
+            }) => task,
+            Err(PlanError::Illegal { task, from, .. }) => {
+                let refused = anyhow!(
+                    "task #{} is {}; reopen takes a failed or blocked task",
+                    short_task_id(&task),
+                    from.as_str()
+                );
+                return Err(partly_reopened(&reopened, refused));
+            }
+            Err(error) => return Err(partly_reopened(&reopened, explain(error))),
+        };
+        let task = state.plan_task(thread, &task_id).await.map_err(explain)?;
+        let mut word = format!("#{}", short_task_id(&task_id));
+        if task.retries > 0 {
+            word.push_str(&format!(" (try {})", task.retries + 1));
+        }
+        reopened.push(word);
+    }
+    Ok(changed(format!("reopened {}", reopened.join(" "))))
+}
+
+fn partly_reopened(reopened: &[String], error: anyhow::Error) -> anyhow::Error {
+    if reopened.is_empty() {
+        return error;
+    }
+    anyhow!("reopened {}, then: {error:#}", reopened.join(" "))
+}
+
+/// Why `edit` cannot change a task in `from`, and the call that gets past it.
+fn not_editable(task: &str, from: PlanStatus) -> String {
+    let id = short_task_id(task);
+    match from {
+        PlanStatus::Done => {
+            format!("task #{id} is done, which is final; add a new task for more work")
+        }
+        PlanStatus::Blocked => {
+            format!("task #{id} is blocked and its member waits; reopen it first, then edit it")
+        }
+        PlanStatus::Review => {
+            format!("task #{id} is in review; review or fail it first, then edit it and reopen it")
+        }
+        _ => format!(
+            "task #{id} is {}: its member works from the card as it is; fail it first, \
+             then edit it and reopen it",
             from.as_str()
         ),
-        Err(error) => return Err(explain(error)),
-    };
-    Ok(changed(format!("reopened #{}", short_task_id(&task_id))))
+    }
+}
+
+/// `id`, or `ids` for several at once; not both, and at most a plan's worth.
+fn one_or_many(id: Option<String>, ids: Option<Vec<String>>, action: &str) -> Result<Vec<String>> {
+    match (id, ids) {
+        (Some(_), Some(_)) => bail!("{action} takes `id` or `ids`, not both"),
+        (Some(id), None) => Ok(vec![id]),
+        (None, Some(ids)) => {
+            ensure!(!ids.is_empty(), "{action} needs `id`, or `ids` not empty");
+            ensure!(
+                ids.len() <= MAX_OPEN_TASKS,
+                "more than {MAX_OPEN_TASKS} ids in one {action}"
+            );
+            Ok(ids)
+        }
+        (None, None) => bail!("{action} needs `id`, or `ids` for several"),
+    }
 }
 
 /// The store's refusal with the call that gets past it.
