@@ -52,6 +52,8 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `sidebar=project\|recent` | lists the chats under their projects, or all by last activity |
 | `size=WxH` | resizes the window, as a drag of its edge would |
 | `shot=NAME` | saves `$DUSK_SHOT_DIR/NAME.png`, drawn at the window's scale (2x on a Retina screen) |
+| `fake=agentchat-N` | a subagent of the shown chat at work, whose chat window opens with N steps, each after a thought and an answer (`chat` first) |
+| `frames=N[,X,Y,DY]` | draws N frames back to back, with a wheel turn of DY at a point before each when given, and prints how long they took |
 | `quit` | ends |
 
 Use a throwaway `HOME` with a copy of `config.yml` (mode 0600, folder 0700) and a project row

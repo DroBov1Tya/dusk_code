@@ -31,6 +31,8 @@ use gpui_kit::{
 
 use crate::workspace::Workspace;
 
+pub use agent_chat::AgentList;
+pub use agents::StepCounts;
 pub use chat_menu::{FADE, render as chat_menu};
 
 use crate::pages::customize::plugins::workshop::detail as listing;
@@ -330,8 +332,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     .then(|| ws.modal_focus.clone());
     // A listing's gallery steps with Left and Right.
     let gallery = matches!(ws.modal, Some(Modal::Listing { .. }));
-    let agent_scroll =
-        matches!(ws.modal, Some(Modal::AgentChat { .. })).then(|| ws.modal_scroll.clone());
+    // A subagent's chat scrolls as a list of its own.
+    let agent_chat = matches!(ws.modal, Some(Modal::AgentChat { .. }));
     let theme = cx.theme();
     // A press inside is marked rather than stopped: the window's text selection hears
     // presses only after every element, so a stopped one could not start a selection.
@@ -405,8 +407,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .id("modal-body")
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scroll()
-                .when_some(agent_scroll, |body, scroll| body.track_scroll(&scroll))
+                .when(agent_chat, |body| body.flex().flex_col())
+                .when(!agent_chat, |body| body.overflow_y_scroll())
                 .child(body),
         );
     Some(

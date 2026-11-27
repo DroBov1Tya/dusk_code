@@ -7,6 +7,7 @@ use gpui_kit::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -14,148 +15,187 @@ use super::Modal;
 use crate::{
     columns::inspector::mascot,
     pages::chat::{
-        links,
-        messages::{activity_text, agent_report, notice, run, selectable, steps},
+        messages::{
+            Row, Texts, activity_text, agent_report, notice, row_of, run, selectable, steps,
+            sync_list,
+        },
         transcript::{Item, Log},
     },
     ui::{Type, widgets},
     workspace::Workspace,
 };
 
-pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
-    let theme = cx.theme();
-    let (muted, surface, danger) = (theme.muted_foreground, theme.muted, theme.danger);
-    let mut column = div().flex().flex_col().gap_3().p_5();
-    column = column.children(head(ws, agent, cx));
-    let Some(chat) = ws.shown_chat().and_then(|chat| chat.agent_chats.get(agent)) else {
-        return column.child(widgets::muted("Loading...", cx));
+/// The rows of a subagent's chat window, drawn as a list as the chat's are: only the rows
+/// in sight are laid out and their heights kept, so a chat of hundreds of steps scrolls,
+/// and redraws for a mascot's tick, without building every row.
+pub struct AgentList {
+    pub list: ListState,
+    /// The agent shown; another one, or the same one opened again, starts at its end.
+    pub agent: Option<String>,
+    /// The chat's shape and whether it works, which the rows were built from.
+    key: Option<(u64, bool)>,
+    rows: Vec<Row>,
+    /// The parsed words of the rows, kept while the agent is shown.
+    texts: Texts,
+    /// A row was unfolded or folded: every row is measured again.
+    pub measure_again: bool,
+}
+
+impl Default for AgentList {
+    fn default() -> Self {
+        Self {
+            list: ListState::new(0, ListAlignment::Top, px(800.)),
+            agent: None,
+            key: None,
+            rows: Vec::new(),
+            texts: Texts::of(Workspace::agent_text_changed),
+            measure_again: false,
+        }
+    }
+}
+
+pub fn render(ws: &mut Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
+    let mut column = div().flex_1().min_h_0().flex().flex_col();
+    column = column.children(head(ws, agent, cx).map(|head| div().px_5().pt_5().child(head)));
+    let shown = ws.shown.as_deref().unwrap_or_default();
+    let Some(chat) = ws
+        .chats
+        .get_mut(shown)
+        .and_then(|chat| chat.agent_chats.get_mut(agent))
+    else {
+        return column.child(div().p_5().child(widgets::muted("Loading...", cx)));
     };
     if chat.items.is_empty() {
-        return column.child(widgets::muted("Nothing yet.", cx));
+        return column.child(div().p_5().child(widgets::muted("Nothing yet.", cx)));
     }
+    // The rows change only with the chat's shape: streamed text and timers keep them.
+    let key = (chat.shape(), chat.working);
+    let changed = chat.take_changed();
+    let state = &mut ws.agent_list;
+    let old = std::mem::take(&mut state.rows);
+    if state.agent.as_deref() != Some(agent) {
+        state.rows = rows(chat);
+        state.agent = Some(agent.to_owned());
+        state.texts = Texts::of(Workspace::agent_text_changed);
+        state.measure_again = false;
+        // It opens at its latest message and follows new ones while read at the end.
+        state.list.reset(state.rows.len());
+        state.list.set_follow_mode(FollowMode::Tail);
+    } else if state.key != Some(key) {
+        state.rows = rows(chat);
+        sync_list(
+            &state.list,
+            &old,
+            &state.rows,
+            changed,
+            &mut state.measure_again,
+        );
+    } else {
+        sync_list(&state.list, &old, &old, changed, &mut state.measure_again);
+        state.rows = old;
+    }
+    state.key = Some(key);
+    column.child(
+        list(
+            state.list.clone(),
+            cx.processor(|ws, ix: usize, _window, cx| ws.agent_row(ix, cx)),
+        )
+        .with_sizing_behavior(ListSizingBehavior::Infer)
+        .flex_1()
+        .min_h_0(),
+    )
+}
+
+/// The rows of a subagent's chat: its items, a run of steps folded into one as in the
+/// chat, and the working row while it works.
+fn rows(chat: &Log) -> Vec<Row> {
+    let mut rows = Vec::new();
     let mut index = 0;
     while index < chat.items.len() {
-        let item = &chat.items[index];
-        // The steps are folded as in the chat: the latest shows, the earlier ones unfold.
-        if let Item::Tool(_) = item {
+        if let Item::Tool(_) = chat.items[index] {
             let start = index;
             while index < chat.items.len() && matches!(chat.items[index], Item::Tool(_)) {
                 index += 1;
             }
-            let tools = steps(&chat.items[start..index]);
-            if !tools.is_empty() {
-                column = column.child(run(ws, agent, start, &tools, cx));
+            if !steps(&chat.items[start..index]).is_empty() {
+                rows.push(Row::Activity {
+                    start,
+                    end: index,
+                    span: None,
+                    spent: None,
+                });
             }
             continue;
         }
-        let at = index;
+        // Only a chat shows Workshop cards and has a goal; an agent has no user.
+        if !matches!(chat.items[index], Item::Suggestion(_) | Item::Goal(_)) {
+            rows.push(Row::Item(index));
+        }
         index += 1;
-        let key = |part: &str| SharedString::from(format!("agent-{part}-{agent}-{at}"));
-        // Every message copies whole, from a button that comes up under the pointer.
-        let group = key("row");
-        let copy = |text: &str, cx: &App| {
-            div()
-                .flex()
-                .justify_end()
-                .child(widgets::copy(key("copy"), &group, text, cx))
-        };
-        column = column.child(match item {
-            // What it was asked reads as it was written: lists, code and all.
-            Item::User { text, .. } => div()
-                .group(group.clone())
-                .px_3()
-                .py_2()
-                .rounded_lg()
-                .bg(surface)
-                .small()
-                .child(links::markdown(
-                    key("asked"),
-                    text.clone(),
-                    links::Links::Paths,
-                ))
-                .child(copy(text, cx))
-                .into_any_element(),
-            Item::Agent { from, text, .. } => {
-                // A modal's column is drawn whole, so its texts keep their parse.
-                agent_report(ws, agent, at, (from, text), false, cx).into_any_element()
-            }
-            Item::Assistant { text, reasoning } => {
-                let mut said = div().flex().flex_col().gap_2();
-                if !reasoning.trim().is_empty() {
-                    said = said.child(activity_text(
-                        ws,
-                        agent,
-                        at,
-                        ("Thinking", IconName::Asterisk),
-                        reasoning,
-                        || selectable(format!("agent-thought-{agent}-{at}"), reasoning),
-                        cx,
-                    ));
-                }
-                if !text.is_empty() {
-                    said = said
-                        .group(group.clone())
-                        .child(links::answer(key("said"), text.clone()))
-                        .child(copy(text, cx));
-                }
-                said.into_any_element()
-            }
-            // Only a chat shows Workshop cards and has a goal; an agent has no user.
-            Item::Tool(_) | Item::Suggestion(_) | Item::Goal(_) => div().into_any_element(),
-            // Agents an agent started read as one quiet line; their details are the chat's.
-            Item::Run(_) => div()
-                .meta()
-                .text_color(muted)
-                .children(
-                    chat.run_card(at, dusk_protocol::system::now_ms())
-                        .map(|card| format!("{} \u{00B7} {}", card.title, card.line())),
-                )
-                .into_any_element(),
-            Item::Block(shown) => crate::pages::chat::messages::block(ws, agent, at, shown, cx),
-            Item::Job(result) => {
-                crate::pages::chat::messages::job(ws, agent, at, result, cx).into_any_element()
-            }
-            Item::Local(run) => div()
-                .meta()
-                .text_color(muted)
-                .child(format!("$ {}", run.command))
-                .into_any_element(),
-            Item::Audio(card) => div()
-                .meta()
-                .text_color(muted)
-                .child(card.title.clone().unwrap_or_else(|| "A sound".to_owned()))
-                .into_any_element(),
-            Item::Image { card: picture, .. } => div()
-                .meta()
-                .text_color(muted)
-                .child(
-                    picture
-                        .title
-                        .clone()
-                        .unwrap_or_else(|| "A picture".to_owned()),
-                )
-                .into_any_element(),
-            Item::Notice(text) | Item::Summary(text) => {
-                notice(&key("notice"), div().meta().text_color(muted), text, cx).into_any_element()
-            }
-            // What went wrong must not read as one more quiet note.
-            Item::Error(text) => div()
-                .group(group.clone())
-                .child(copy(text, cx))
-                .px_3()
-                .py_2()
-                .rounded_lg()
-                .bg(danger.opacity(0.1))
-                .small()
-                .text_color(danger)
-                .child(selectable(format!("agent-error-{agent}-{at}"), text))
-                .into_any_element(),
-        });
     }
-    if let Some(work) = chat.work(dusk_protocol::system::now_ms()) {
-        use crate::pages::chat::activity;
-        column = column.child(
-            div()
+    if chat.work(dusk_protocol::system::now_ms()).is_some() {
+        rows.push(Row::Working);
+    }
+    rows
+}
+
+impl Workspace {
+    /// One row of the shown subagent's chat; space between rows lives in the rows.
+    fn agent_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
+        let ws: &Workspace = self;
+        let (Some(Modal::AgentChat { agent, .. }), Some(row)) =
+            (&ws.modal, ws.agent_list.rows.get(ix).copied())
+        else {
+            return div().into_any_element();
+        };
+        let Some(chat) = ws
+            .shown_chat()
+            .and_then(|chat| chat.agent_chats.get(agent.as_str()))
+        else {
+            return div().into_any_element();
+        };
+        let last = ix + 1 == ws.agent_list.rows.len();
+        div()
+            .px_5()
+            .pt_3()
+            .when(last, |row| row.pb_5())
+            .child(agent_item(ws, agent, chat, row, cx))
+            .into_any_element()
+    }
+
+    /// Measures again the row of the subagent's chat that shows item `item`, as when a
+    /// long parse of its words lands.
+    fn agent_text_changed(&mut self, item: usize, cx: &mut Context<Self>) {
+        if let Some(row) = row_of(&self.agent_list.rows, item) {
+            self.agent_list.list.remeasure_items(row..row + 1);
+            cx.notify();
+        }
+    }
+}
+
+fn agent_item(
+    ws: &Workspace,
+    agent: &str,
+    chat: &Log,
+    row: Row,
+    cx: &mut Context<Workspace>,
+) -> AnyElement {
+    let theme = cx.theme();
+    let (muted, surface, danger) = (theme.muted_foreground, theme.muted, theme.danger);
+    let texts = &ws.agent_list.texts;
+    let at = match row {
+        Row::Item(at) => at,
+        // The steps are folded as in the chat: the latest shows, the earlier ones unfold.
+        Row::Activity { start, end, .. } => {
+            let tools = steps(&chat.items[start..end]);
+            return run(ws, agent, start, &tools, cx).into_any_element();
+        }
+        Row::Working => {
+            use crate::pages::chat::activity;
+            let Some(work) = chat.work(dusk_protocol::system::now_ms()) else {
+                return div().into_any_element();
+            };
+            return div()
                 .h(px(28.))
                 .flex()
                 .flex_row()
@@ -164,10 +204,105 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .meta()
                 .text_color(muted)
                 .child(activity::mark(&work, cx))
-                .child(activity::words(&work, cx)),
-        );
+                .child(activity::words(&work, cx))
+                .into_any_element();
+        }
+    };
+    let key = |part: &str| SharedString::from(format!("agent-{part}-{agent}-{at}"));
+    // Every message copies whole, from a button that comes up under the pointer.
+    let group = key("row");
+    let copy = |text: &str, cx: &App| {
+        div()
+            .flex()
+            .justify_end()
+            .child(widgets::copy(key("copy"), &group, text, cx))
+    };
+    match &chat.items[at] {
+        // What it was asked reads as it was written: lists, code and all.
+        Item::User { text, .. } => div()
+            .group(group.clone())
+            .px_3()
+            .py_2()
+            .rounded_lg()
+            .bg(surface)
+            .small()
+            .child(texts.message(key("asked"), at, text, cx))
+            .child(copy(text, cx))
+            .into_any_element(),
+        Item::Agent { from, text, .. } => {
+            agent_report(ws, agent, at, (from, text), Some(texts), cx).into_any_element()
+        }
+        Item::Assistant { text, reasoning } => {
+            let mut said = div().flex().flex_col().gap_2();
+            if !reasoning.trim().is_empty() {
+                said = said.child(activity_text(
+                    ws,
+                    agent,
+                    at,
+                    ("Thinking", IconName::Asterisk),
+                    reasoning,
+                    || selectable(format!("agent-thought-{agent}-{at}"), reasoning),
+                    cx,
+                ));
+            }
+            if !text.is_empty() {
+                said = said
+                    .group(group.clone())
+                    .child(texts.answer(key("said"), at, text, cx))
+                    .child(copy(text, cx));
+            }
+            said.into_any_element()
+        }
+        Item::Tool(_) | Item::Suggestion(_) | Item::Goal(_) => div().into_any_element(),
+        // Agents an agent started read as one quiet line; their details are the chat's.
+        Item::Run(_) => div()
+            .meta()
+            .text_color(muted)
+            .children(
+                chat.run_card(at, dusk_protocol::system::now_ms())
+                    .map(|card| format!("{} \u{00B7} {}", card.title, card.line())),
+            )
+            .into_any_element(),
+        Item::Block(shown) => crate::pages::chat::messages::block(ws, agent, at, shown, cx),
+        Item::Job(result) => {
+            crate::pages::chat::messages::job(ws, agent, at, result, cx).into_any_element()
+        }
+        Item::Local(run) => div()
+            .meta()
+            .text_color(muted)
+            .child(format!("$ {}", run.command))
+            .into_any_element(),
+        Item::Audio(card) => div()
+            .meta()
+            .text_color(muted)
+            .child(card.title.clone().unwrap_or_else(|| "A sound".to_owned()))
+            .into_any_element(),
+        Item::Image { card: picture, .. } => div()
+            .meta()
+            .text_color(muted)
+            .child(
+                picture
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "A picture".to_owned()),
+            )
+            .into_any_element(),
+        Item::Notice(text) | Item::Summary(text) => {
+            notice(&key("notice"), div().meta().text_color(muted), text, cx).into_any_element()
+        }
+        // What went wrong must not read as one more quiet note.
+        Item::Error(text) => div()
+            .group(group.clone())
+            .child(copy(text, cx))
+            .px_3()
+            .py_2()
+            .rounded_lg()
+            .bg(danger.opacity(0.1))
+            .small()
+            .text_color(danger)
+            .child(selectable(format!("agent-error-{agent}-{at}"), text))
+            .into_any_element(),
     }
-    column
 }
 
 /// Who this is and how it stands, over its chat: the sun, the name and role, what it
@@ -268,7 +403,8 @@ impl Workspace {
             agent: agent.to_owned(),
             name,
         });
-        self.modal_scroll.scroll_to_bottom();
+        // Opened again, it starts anew at its latest message.
+        self.agent_list.agent = None;
         cx.notify();
         self.read_agent_contexts(Some(agent), cx);
         let known = self
@@ -293,10 +429,6 @@ impl Workspace {
                         // Events that came while the history loaded stay on top of it.
                         read.append_live(live);
                         chat.agent_chats.insert(agent.clone(), read);
-                    }
-                    let open = matches!(&ws.modal, Some(Modal::AgentChat { agent: shown, .. }) if *shown == agent);
-                    if open {
-                        ws.modal_scroll.scroll_to_bottom();
                     }
                     cx.notify();
                 }

@@ -177,7 +177,8 @@ impl Workspace {
                     }
                     Item::Local(run) => command_card(&key, run, cx),
                     Item::Agent { from, text, .. } => {
-                        agent_report(self, &shown, at, (from, text), true, cx).into_any_element()
+                        agent_report(self, &shown, at, (from, text), Some(&self.texts), cx)
+                            .into_any_element()
                     }
                     Item::Assistant { text, .. } => {
                         let group = SharedString::from(format!("answer-row-{key}"));

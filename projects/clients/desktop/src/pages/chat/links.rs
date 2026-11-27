@@ -38,13 +38,8 @@ pub fn markdown(id: impl Into<ElementId>, text: String, links: Links) -> TextVie
     }
 }
 
-/// The model's own answer: as `markdown`, and its `{{tone: label}}` drawn as labels.
-pub fn answer(id: impl Into<ElementId>, text: String) -> TextView {
-    view(TextView::markdown(id, linkify(&text, true)), Links::Paths)
-        .markdown_extensions(super::pull_link::extensions(true))
-}
-
-/// A view of a state kept apart, set up as `markdown` or, `marked`, as `answer`.
+/// A view of a state kept apart, set up as `markdown` or, `marked`, as the model's own
+/// answer, its `{{tone: label}}` drawn as labels.
 pub fn kept(state: &Entity<TextViewState>, marked: bool) -> TextView {
     view(TextView::new(state), Links::Paths)
         .markdown_extensions(super::pull_link::extensions(marked))

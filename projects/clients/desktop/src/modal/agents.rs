@@ -8,6 +8,7 @@ use dusk_protocol::{
     system::now_ms,
     thread::{AgentState, clock_words},
 };
+use std::{cell::RefCell, collections::HashMap};
 
 use gpui_kit::{
     component::{
@@ -97,7 +98,10 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
                     ),
             );
         for (id, agent) in members {
-            let progress = chat.agent_chats.get(id.as_str()).map(progress);
+            let progress = chat
+                .agent_chats
+                .get(id.as_str())
+                .map(|log| progress(&ws.agent_steps, id, log));
             let asked = chat.approval_waits_on(id);
             card = card.child(figure(id, agent, progress, asked, cx));
         }
@@ -148,13 +152,14 @@ struct Progress {
     context: Option<String>,
 }
 
-fn progress(transcript: &crate::pages::chat::transcript::Log) -> Progress {
+fn progress(
+    counts: &StepCounts,
+    id: &str,
+    transcript: &crate::pages::chat::transcript::Log,
+) -> Progress {
     use crate::pages::chat::transcript::Item;
-    let steps = transcript
-        .items
-        .iter()
-        .filter(|item| matches!(item, Item::Tool(_)))
-        .count();
+    let steps = counts.of(id, transcript);
+    // The last answer is near the end; a step between them is passed, not counted.
     let said = transcript.items.iter().rev().find_map(|item| match item {
         Item::Assistant { text, .. } => text
             .lines()
@@ -167,6 +172,31 @@ fn progress(transcript: &crate::pages::chat::transcript::Log) -> Progress {
         steps,
         said,
         context: transcript.context_line(),
+    }
+}
+
+/// The steps each subagent took, counted once for each shape of its chat: the list is
+/// drawn again for every tick of a mascot, and a long chat holds thousands of items.
+#[derive(Default)]
+pub struct StepCounts(RefCell<HashMap<String, (u64, usize)>>);
+
+impl StepCounts {
+    fn of(&self, id: &str, transcript: &crate::pages::chat::transcript::Log) -> usize {
+        use crate::pages::chat::transcript::Item;
+        let shape = transcript.shape();
+        let mut counts = self.0.borrow_mut();
+        if let Some(&(seen, steps)) = counts.get(id)
+            && seen == shape
+        {
+            return steps;
+        }
+        let steps = transcript
+            .items
+            .iter()
+            .filter(|item| matches!(item, Item::Tool(_)))
+            .count();
+        counts.insert(id.to_owned(), (shape, steps));
+        steps
     }
 }
 
