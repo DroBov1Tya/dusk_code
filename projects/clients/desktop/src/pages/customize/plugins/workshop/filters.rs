@@ -19,7 +19,11 @@ use gpui_kit::{
 
 use super::tier;
 use crate::{
-    ui::{Type, controls::choice, icons, size, widgets},
+    ui::{
+        Type,
+        controls::{Mark, choice, mark},
+        icons, size, widgets,
+    },
     workspace::Workspace,
 };
 
@@ -284,37 +288,6 @@ fn row(id: String, mark: Div, cx: &App) -> Stateful<Div> {
         .gap(px(size::GAP_S))
         .small()
         .child(mark)
-}
-
-enum Mark {
-    Check,
-    Radio,
-}
-
-/// A box with a check, or a ring with a dot, an icon's size.
-fn mark(kind: Mark, on: bool, cx: &App) -> Div {
-    let theme = cx.theme();
-    let (accent, on_accent, border) = (theme.primary, theme.primary_foreground, theme.input);
-    let frame = div()
-        .size(px(size::ICON))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .border_1();
-    match (kind, on) {
-        (Mark::Check, true) => frame.rounded_sm().border_color(accent).bg(accent).child(
-            Icon::new(IconName::Check)
-                .size(px(size::ICON - size::GAP_XS))
-                .text_color(on_accent),
-        ),
-        (Mark::Check, false) => frame.rounded_sm().border_color(border),
-        (Mark::Radio, true) => frame
-            .rounded_full()
-            .border_color(accent)
-            .child(div().size(px(size::GAP_S)).rounded_full().bg(accent)),
-        (Mark::Radio, false) => frame.rounded_full().border_color(border),
-    }
 }
 
 /// The filters that are on, as chips under the search; none while none is.
