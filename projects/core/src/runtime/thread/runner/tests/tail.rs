@@ -387,6 +387,65 @@ async fn compact_early_compacts_at_sixty_percent_only_between_turns() {
     drop(state);
 }
 
+/// A message sent while the context is compacted before a turn joins that turn: it is in
+/// the thread as soon as the summary is written, before the turn starts, and no other
+/// message is needed to deliver it.
+#[tokio::test]
+async fn a_message_sent_during_a_compaction_joins_the_turn_after_it() {
+    let name = "tail_sent_during";
+    let state = seventy_percent(name).await;
+    let config = Arc::new(temp_live_config_with(
+        &format!("{name}_next_config"),
+        "limits:\n  compact_early: true\n",
+    ));
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let summary = vec![
+        Step::Wait(Arc::clone(&gate)),
+        Step::Text("summary"),
+        Step::Done,
+    ];
+    let provider = provider(vec![summary, answered("ok"), answered("again")]);
+    let tool = Box::new(Command);
+    let (runner, input, mut output) =
+        runner_with(&state, &provider, &config, model(Some(10_000)), tool);
+    input.send("next").await.unwrap();
+    let running = tokio::spawn(runner.run());
+    let mut events = Vec::new();
+    while !matches!(events.last(), Some(ThreadEvent::CompactionStarted)) {
+        events.push(output.next_event().await.unwrap());
+    }
+    input.send("during").await.unwrap();
+    gate.notify_one();
+    drop(input);
+    running.await.unwrap();
+    events.extend(drain(&mut output).await);
+
+    let at = |what: fn(&ThreadEvent) -> bool| events.iter().position(what).unwrap();
+    let during = at(|e| matches!(e, ThreadEvent::UserMessage(m) if m.content == "during"));
+    let turn = at(|e| matches!(e, ThreadEvent::TurnStarted(_)));
+    assert!(during < turn, "taken in before the turn starts");
+    let turns = |e: &&ThreadEvent| matches!(e, ThreadEvent::TurnStarted(_));
+    assert_eq!(
+        events.iter().filter(turns).count(),
+        1,
+        "one turn answers both"
+    );
+    let asked = requests(&provider)[1].clone();
+    let users: Vec<_> = asked
+        .iter()
+        .filter_map(|message| match message {
+            ChatMessage::User(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    let next = users.iter().position(|text| text.contains("next")).unwrap();
+    let during = users
+        .iter()
+        .position(|text| text.contains("during"))
+        .unwrap();
+    assert!(next < during, "in the order sent: {users:?}");
+}
+
 const STUBS: &str = "limits:\n  compact_tail: true\n  compact_tail_tokens: 2000\n  \
 stub_results: true\n  stub_keep_steps: 2\n  stub_min_tokens: 50\n";
 /// Heads the index of stored results in a summary.

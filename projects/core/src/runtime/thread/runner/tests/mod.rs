@@ -65,6 +65,8 @@ enum Step {
     Error(ProviderErrorKind, Option<Duration>),
     /// The connection drops where this step stands.
     Break,
+    /// The stream holds still here until the test lets it go on.
+    Wait(Arc<tokio::sync::Notify>),
 }
 
 struct FakeStream {
@@ -125,6 +127,11 @@ impl ChatStream for FakeStream {
         Box::pin(async move {
             if let Some(event) = self.pending.pop_front() {
                 return Ok(Some(event));
+            }
+            while let Some(Step::Wait(gate)) = self.steps.front() {
+                let gate = Arc::clone(gate);
+                self.steps.pop_front();
+                gate.notified().await;
             }
             Ok(match self.steps.pop_front() {
                 Some(Step::Text(text)) => Some(ModelEvent::Text(text.into())),
@@ -202,9 +209,10 @@ impl ChatStream for FakeStream {
                     let kind = ProviderErrorKind::Interrupted;
                     return Err(ProviderError::new(kind, "connection reset").into());
                 }
-                Some(Step::Fail | Step::Unreachable | Step::Reject | Step::Error(..)) | None => {
-                    None
-                }
+                Some(
+                    Step::Fail | Step::Unreachable | Step::Reject | Step::Error(..) | Step::Wait(_),
+                )
+                | None => None,
             })
         })
     }
