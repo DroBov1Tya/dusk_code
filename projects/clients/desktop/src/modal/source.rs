@@ -30,21 +30,23 @@ pub struct SourceView {
     pub reading: Reading,
 }
 
+/// `local` is the file when it is on this machine, to open in its own app; a core
+/// elsewhere keeps its own.
 pub enum Reading {
     Loading,
     Text {
         text: String,
         next: Option<u64>,
-        path: PathBuf,
+        local: Option<PathBuf>,
         /// A further part is on its way.
         more: bool,
     },
     Picture {
         image: Option<Arc<Image>>,
-        path: PathBuf,
+        local: Option<PathBuf>,
     },
     Binary {
-        path: PathBuf,
+        local: Option<PathBuf>,
     },
     Error(String),
 }
@@ -52,19 +54,17 @@ pub enum Reading {
 pub fn render(view: &SourceView, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let source = &view.source;
-    let (kind, path, copied) = match &view.reading {
-        Reading::Text { text, path, .. } => ("text", Some(path), Some(text.clone())),
-        Reading::Picture { path, .. } => ("picture", Some(path), None),
-        Reading::Binary { path } => ("binary file", Some(path), None),
-        Reading::Loading | Reading::Error(_) => ("", None, None),
+    let (kind, local, text) = match &view.reading {
+        Reading::Text { local, .. } => ("text", local.clone(), true),
+        Reading::Picture { local, .. } => ("picture", local.clone(), false),
+        Reading::Binary { local } => ("binary file", local.clone(), false),
+        Reading::Loading | Reading::Error(_) => ("", None, false),
     };
     let about = if kind.is_empty() {
         widgets::short(source.bytes)
     } else {
         format!("{} \u{00B7} {kind}", widgets::short(source.bytes))
     };
-    // Only a file on this machine opens here; a core elsewhere keeps its own.
-    let local = path.filter(|path| path.is_file()).cloned();
     let copy_id = SharedString::from(format!("source-copy-{}", source.source_id));
     let header = div()
         .flex()
@@ -82,7 +82,7 @@ pub fn render(view: &SourceView, cx: &mut Context<Workspace>) -> Div {
                 .text_color(muted)
                 .child(about),
         )
-        .children(copied.map(|text| {
+        .children(text.then(|| {
             let more = matches!(view.reading, Reading::Text { next: Some(_), .. });
             Button::new("source-copy")
                 .ghost()
@@ -94,7 +94,14 @@ pub fn render(view: &SourceView, cx: &mut Context<Workspace>) -> Div {
                 } else {
                     "Copy the whole text"
                 })
-                .on_click(move |_, _, cx| clipboard::copy(&copy_id, text.clone(), cx))
+                // The text is taken at the press, not copied on every frame.
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    if let Some(Modal::Source(view)) = &ws.modal
+                        && let Reading::Text { text, .. } = &view.reading
+                    {
+                        clipboard::copy(&copy_id, text.clone(), cx);
+                    }
+                }))
         }))
         .children(local.map(|path| {
             Button::new("source-open")
@@ -352,14 +359,14 @@ impl Workspace {
 /// Puts a part the core sent into the reading; true when it is a picture whose bytes are
 /// still to be asked for.
 fn take(reading: &mut Reading, chunk: SourceChunk) -> bool {
-    let path = PathBuf::from(chunk.path);
+    let local = Some(PathBuf::from(chunk.path)).filter(|path| path.is_file());
     match chunk.kind {
         SourceKind::Picture => {
-            *reading = Reading::Picture { image: None, path };
+            *reading = Reading::Picture { image: None, local };
             true
         }
         SourceKind::Binary => {
-            *reading = Reading::Binary { path };
+            *reading = Reading::Binary { local };
             false
         }
         SourceKind::Text => {
@@ -375,7 +382,7 @@ fn take(reading: &mut Reading, chunk: SourceChunk) -> bool {
                     *reading = Reading::Text {
                         text: chunk.text,
                         next: chunk.next,
-                        path,
+                        local,
                         more: false,
                     }
                 }

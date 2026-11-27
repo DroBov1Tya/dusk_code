@@ -2,7 +2,7 @@
 //! screenshot script: `fake=sources` lists them in the side panel, `modal=source-KIND`
 //! opens one (`md`, `code`, `long`, `picture`, `binary`) without asking the core.
 
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use dusk_protocol::thread::Source;
 use gpui_kit::*;
@@ -53,14 +53,13 @@ impl<V: Clone> Cache<V> {\n    pub fn get(&mut self, key: &str) -> Option<V> {\n
 
 pub fn open(ws: &mut Workspace, kind: &str, cx: &mut Context<Workspace>) {
     let all = sources();
-    let path = PathBuf::from("/nonexistent/sources");
     let (source, reading) = match kind {
         "md" => (
             all[0].clone(),
             Reading::Text {
                 text: BRIEF.to_owned(),
                 next: None,
-                path,
+                local: None,
                 more: false,
             },
         ),
@@ -69,7 +68,7 @@ pub fn open(ws: &mut Workspace, kind: &str, cx: &mut Context<Workspace>) {
             Reading::Text {
                 text: CODE.to_owned(),
                 next: None,
-                path,
+                local: None,
                 more: false,
             },
         ),
@@ -90,7 +89,7 @@ pub fn open(ws: &mut Workspace, kind: &str, cx: &mut Context<Workspace>) {
                 Reading::Text {
                     text,
                     next,
-                    path,
+                    local: None,
                     more: false,
                 },
             )
@@ -102,10 +101,10 @@ pub fn open(ws: &mut Workspace, kind: &str, cx: &mut Context<Workspace>) {
                     ImageFormat::Png,
                     super::screenshot::demo_png(),
                 ))),
-                path,
+                local: None,
             },
         ),
-        _ => (all[4].clone(), Reading::Binary { path }),
+        _ => (all[4].clone(), Reading::Binary { local: None }),
     };
     ws.modal = Some(Modal::Source(SourceView {
         thread_id: ws.shown.clone().unwrap_or_default(),
