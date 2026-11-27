@@ -60,6 +60,7 @@ pub enum Action {
     SetAgentLimit(usize),
     SetModelTimeout(u32),
     SetMaxAttempts(u32),
+    SetAutoCompactPercent(u64),
     SetIdleMinutes(u32),
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.

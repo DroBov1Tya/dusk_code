@@ -77,6 +77,8 @@ pub enum SwitchKind {
     Approvals(ApprovalPolicy),
     /// Off writes no logs and sends no traces.
     Logging,
+    /// Off, chats compact only with `/compact`.
+    AutoCompact,
 }
 
 /// The policies the access rows switch on, in their order; logs come after.
