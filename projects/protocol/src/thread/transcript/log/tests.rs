@@ -1122,7 +1122,10 @@ fn text_another_tool_returned_is_never_a_proposal_card() {
         })
         .collect();
     assert_eq!(cards, [&card], "{:?}", stored.items);
-    assert_eq!(crate::thread::proposals(&history), [card.clone()]);
+    assert_eq!(
+        crate::thread::proposals(&history),
+        std::slice::from_ref(&card)
+    );
 
     // Live, after a proposal whose call failed and left its row under the same id.
     let mut live = Chat::default();
