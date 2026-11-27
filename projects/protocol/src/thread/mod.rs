@@ -64,7 +64,8 @@ pub use team::{
     plan_aside, role_name, short_model, task_card, task_in_work, team_call_id,
 };
 pub use tokens::{
-    AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, plural, short_count, short_size,
+    AUTO_COMPACT_OFF_HINT, AUTO_COMPACT_PERCENT, MAX_AUTO_COMPACT_PERCENT,
+    MIN_AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, plural, short_count, short_size,
 };
 pub use transcript::{
     AgentState, Applied, CHAT_ASKS, ChatLog, DETAIL_KEYS, FAILED_PREFIXES, MAX_MARK_CHARS, Note,

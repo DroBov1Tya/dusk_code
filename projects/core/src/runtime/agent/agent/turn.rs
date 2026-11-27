@@ -8,7 +8,7 @@ use crate::runtime::agent::{Inbox, Keep, Stop};
 use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::state::{AgentPhase, Goal, GoalStatus, PendingMessage, Turn, TurnOutcome, TurnStatus};
 use anyhow::Result;
-use dusk_protocol::thread::TurnWait;
+use dusk_protocol::thread::{AUTO_COMPACT_OFF_HINT, TurnWait};
 use serde_json::json;
 use tracing::{info, warn};
 
@@ -178,6 +178,8 @@ impl Agent {
                 });
                 break;
             }
+            // Read at each step, so a switch in the settings reaches a running turn.
+            let auto_compact = self.config.current().limits().auto_compact;
             match end {
                 // Tool results are what fills the context, so it is checked after each.
                 StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {
@@ -212,7 +214,7 @@ impl Agent {
                         Err(error) => outcome = TurnOutcome::failed(format!("{error:#}")),
                     }
                 }
-                StepEnd::TooLarge(_) if shrunk < MAX_SHRINKS => {
+                StepEnd::TooLarge(_) if shrunk < MAX_SHRINKS && auto_compact => {
                     shrunk += 1;
                     // A tail kept the first time may be what does not fit; the second
                     // time everything goes.
@@ -232,7 +234,14 @@ impl Agent {
                         }
                     }
                 }
-                StepEnd::TooLarge(failure) => outcome = TurnOutcome::Failed(failure),
+                StepEnd::TooLarge(mut failure) => {
+                    // Off, nothing compacted on its own: the user is told how to go on.
+                    if !auto_compact {
+                        let error = failure.error.trim_end_matches('.');
+                        failure.error = format!("{error}. {AUTO_COMPACT_OFF_HINT}");
+                    }
+                    outcome = TurnOutcome::Failed(failure);
+                }
                 StepEnd::Stranded(text, _) if stranded < MAX_STRANDED => {
                     stranded += 1;
                     // The step ended the provider wait it followed.

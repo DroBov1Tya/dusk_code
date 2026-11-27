@@ -66,6 +66,7 @@ impl Workspace {
         })
         .detach();
         let limit_edit = crate::pages::settings::LimitEdit::new(window, cx);
+        let compact_slider = crate::pages::settings::compaction::default_slider(cx);
         cx.subscribe_in(
             &limit_edit.input,
             window,
@@ -196,6 +197,7 @@ impl Workspace {
             token_box: crate::pages::settings::TokenBox::new(window, cx),
             repositories: crate::pages::settings::Repositories::new(window, cx),
             limit_edit,
+            compact_slider,
             context_open: HashSet::new(),
             context_load: Default::default(),
             team_page: Default::default(),

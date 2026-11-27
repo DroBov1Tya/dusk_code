@@ -5,6 +5,7 @@ pub mod ai;
 mod appearance;
 pub mod arbiter;
 mod behavior;
+pub mod compaction;
 pub use behavior::LimitEdit;
 pub mod providers;
 mod secrets;

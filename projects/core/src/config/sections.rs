@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 
 pub use dusk_protocol::config::yes;
 pub use dusk_protocol::config::{ApprovalPolicy, Memory, WorkHistory};
+use dusk_protocol::thread::{
+    AUTO_COMPACT_PERCENT, MAX_AUTO_COMPACT_PERCENT, MIN_AUTO_COMPACT_PERCENT,
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -168,6 +171,14 @@ pub struct Limits {
     /// model's input limit, so a compaction always frees most of it.
     #[serde(default = "default_compact_tail_tokens")]
     pub compact_tail_tokens: u64,
+    /// Whether the core compacts a context on its own as it fills up. Off, a chat whose
+    /// context is full stops with an error until the user compacts it by hand.
+    #[serde(default = "yes")]
+    pub auto_compact: bool,
+    /// The share of the model's input limit, in percent, at which a running turn compacts
+    /// the context. A value outside 60 to 80 is brought to the nearest bound on load.
+    #[serde(default = "default_auto_compact_percent")]
+    pub auto_compact_percent: u64,
     /// Whether the context is also compacted between turns once it passes 60% of the input
     /// limit, so the summary is written in the pause and not in the middle of a turn. Off
     /// until the evals show the cached share and the wall time do not get worse.
@@ -286,6 +297,8 @@ impl Default for Limits {
             stub_min_tokens: default_stub_min_tokens(),
             compact_tail: true,
             compact_tail_tokens: default_compact_tail_tokens(),
+            auto_compact: true,
+            auto_compact_percent: default_auto_compact_percent(),
             compact_early: true,
             shape_output: true,
             rerun_hint: true,
@@ -446,6 +459,22 @@ fn default_stub_min_tokens() -> u64 {
 }
 
 /// Below 2,000 tokens a tail holds about one step; above 64,000 it is most of a window.
+fn default_auto_compact_percent() -> u64 {
+    AUTO_COMPACT_PERCENT
+}
+
+impl Limits {
+    /// Brings `auto_compact_percent` within its bounds.
+    pub fn clamp_auto_compact(&mut self) {
+        self.auto_compact_percent = clamp_auto_compact_percent(self.auto_compact_percent);
+    }
+}
+
+/// The nearest share within the bounds of `limits.auto_compact_percent`.
+pub fn clamp_auto_compact_percent(percent: u64) -> u64 {
+    percent.clamp(MIN_AUTO_COMPACT_PERCENT, MAX_AUTO_COMPACT_PERCENT)
+}
+
 pub const MIN_COMPACT_TAIL_TOKENS: u64 = 2_000;
 pub const MAX_COMPACT_TAIL_TOKENS: u64 = 64_000;
 

@@ -163,6 +163,22 @@ impl Runtime {
         Ok(())
     }
 
+    /// Whether chats compact their context on its own; every chat reads it at its next check.
+    pub fn set_auto_compact(&self, on: bool) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_auto_compact(on))?;
+        Ok(())
+    }
+
+    /// The share of the input limit at which chats compact, kept within 60 to 80.
+    pub fn set_auto_compact_percent(&self, percent: u64) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_auto_compact_percent(percent))?;
+        Ok(())
+    }
+
     /// The tools a chat gets, by name.
     /// Every tool with its kind, by kind and then by name.
     /// Every switchable tool with its kind and what it tells the model.

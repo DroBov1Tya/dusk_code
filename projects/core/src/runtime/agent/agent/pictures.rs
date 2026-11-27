@@ -120,7 +120,12 @@ impl Agent {
     ) -> Option<String> {
         let tokens = conversation.tokens(specs) + attached;
         let limit = Some(self.input_limit()).filter(|&limit| tokens > limit)?;
-        self.emit(ThreadEvent::ContextTooLarge { tokens, limit });
+        let auto_compact_off = !self.config.current().limits().auto_compact;
+        self.emit(ThreadEvent::ContextTooLarge {
+            tokens,
+            limit,
+            auto_compact_off,
+        });
         Some(format!(
             "the context is about {tokens} tokens, past the input limit of {limit}"
         ))

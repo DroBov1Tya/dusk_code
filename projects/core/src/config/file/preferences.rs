@@ -129,4 +129,13 @@ impl Config {
     pub fn set_max_attempts(&mut self, attempts: u32) {
         self.limits.max_attempts = attempts;
     }
+
+    pub fn set_auto_compact(&mut self, on: bool) {
+        self.limits.auto_compact = on;
+    }
+
+    /// Kept within 60 to 80, as on load.
+    pub fn set_auto_compact_percent(&mut self, percent: u64) {
+        self.limits.auto_compact_percent = crate::config::clamp_auto_compact_percent(percent);
+    }
 }

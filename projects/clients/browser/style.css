@@ -318,7 +318,12 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .row-control code { display: block; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 10px; border-radius: 8px; background: var(--bg); border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
 .row-text { min-width: 0; } .row-hint { color: var(--muted); font-size: 13px; }
 .row-control { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; justify-content: flex-end; flex-shrink: 0; }
-.row-control input:not([type=checkbox], [type=radio]) { width: 96px; }
+.row-control input:not([type=checkbox], [type=radio], [type=range]) { width: 96px; }
+.row-control input[type=range] { width: 180px; accent-color: var(--accent); }
+.row-control input[type=range]:disabled { opacity: .45; }
+.range-value { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+.compaction { margin-top: 16px; }
+.row-warning { margin: 8px 4px 0; font-size: 13px; color: color-mix(in srgb, var(--warn) 65%, var(--fg)); }
 .row-text { flex: 1; }
 .themes { display: flex; gap: 10px; flex-wrap: wrap; }
 .theme-card { padding: 14px 20px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); background: var(--surface); }

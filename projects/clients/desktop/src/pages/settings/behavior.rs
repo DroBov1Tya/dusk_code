@@ -24,33 +24,52 @@ use crate::{
 pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -> Div {
     let body = div().flex().flex_col().gap_6();
     match page {
-        SettingsPage::Chat => body.child(list(
-            [
-                line("Mode", "What the chat may do and how it is told", cx).child(
+        SettingsPage::Chat => {
+            let compaction = ws
+                .settings
+                .clone()
+                .map(|settings| super::compaction::render(ws, &settings, cx));
+            let body = body.child(list(
+                [
+                    line("Mode", "What the chat may do and how it is told", cx).child(
+                        div()
+                            .relative()
+                            .child(
+                                Button::new("settings-mode")
+                                    .outline()
+                                    .label(ws.status.mode.to_lowercase())
+                                    .dropdown_caret(true)
+                                    .tooltip("Pick a mode")
+                                    .on_click(cx.listener(|ws, _, _, cx| {
+                                        ws.toggle_picker(crate::workspace::Picker::Mode, cx)
+                                    })),
+                            )
+                            .children(
+                                matches!(ws.picker, Some(crate::workspace::Picker::Mode)).then(
+                                    || {
+                                        widgets::on_top(widgets::appear(
+                                            "settings-mode-open",
+                                            crate::pages::chat::mode_menu::render(ws, true, cx),
+                                        ))
+                                    },
+                                ),
+                            ),
+                    ),
+                ],
+                cx,
+            ));
+            match compaction {
+                Some((rows, warning)) => body.child(
                     div()
-                        .relative()
-                        .child(
-                            Button::new("settings-mode")
-                                .outline()
-                                .label(ws.status.mode.to_lowercase())
-                                .dropdown_caret(true)
-                                .tooltip("Pick a mode")
-                                .on_click(cx.listener(|ws, _, _, cx| {
-                                    ws.toggle_picker(crate::workspace::Picker::Mode, cx)
-                                })),
-                        )
-                        .children(
-                            matches!(ws.picker, Some(crate::workspace::Picker::Mode)).then(|| {
-                                widgets::on_top(widgets::appear(
-                                    "settings-mode-open",
-                                    crate::pages::chat::mode_menu::render(ws, true, cx),
-                                ))
-                            }),
-                        ),
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(list(rows, cx))
+                        .children(warning),
                 ),
-            ],
-            cx,
-        )),
+                None => body,
+            }
+        }
         SettingsPage::Notifications => match ws.settings.clone() {
             Some(settings) => body.child(list(
                 [

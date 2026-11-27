@@ -110,6 +110,9 @@ pub async fn apply(
         Action::SetIdleMinutes(minutes) => settings::set_idle_minutes(client, app, minutes).await,
         Action::SetModelTimeout(seconds) => settings::set_model_timeout(client, app, seconds).await,
         Action::SetMaxAttempts(attempts) => settings::set_max_attempts(client, app, attempts).await,
+        Action::SetAutoCompactPercent(percent) => {
+            settings::set_auto_compact_percent(client, app, percent).await
+        }
         Action::SetMemoryChars(chars) => settings::set_memory_chars(client, app, chars).await,
         Action::SetWorkHistoryChars(chars) => {
             settings::set_work_history_chars(client, app, chars).await

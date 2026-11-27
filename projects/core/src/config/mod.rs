@@ -24,6 +24,6 @@ pub use sections::{
     Appearance, ApprovalPolicy, CoreSection, DEFAULT_MODEL_TIMEOUT_SECONDS, Limits, Logging,
     MAX_ATTEMPTS, MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
     MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, Memory, Team, ThreadConfig, Traces,
-    WorkHistory,
+    WorkHistory, clamp_auto_compact_percent,
 };
 pub use workshop::{Mirror, Workshop, is_word};
