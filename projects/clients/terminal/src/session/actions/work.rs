@@ -54,6 +54,23 @@ pub async fn stop_team(client: &Client, app: &mut App) {
     }
 }
 
+/// Retries failed tasks of the chat's plan in place; their own events move the plan.
+pub async fn retry_tasks(client: &Client, app: &mut App, ids: Vec<String>) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    for task_id in &ids {
+        if let Err(error) = client.work().retry_task(&thread_id, task_id).await {
+            return app.error(format!("cannot retry the task: {error:#}"));
+        }
+    }
+    app.flash = Some(match ids.len() {
+        1 => "Retrying the failed task".into(),
+        count => format!("Retrying {count} failed tasks"),
+    });
+    app.overview_stale = true;
+}
+
 /// Lets `at_once` members of the chat's running team work at once; a refusal stays under
 /// the stepper.
 pub async fn set_team_at_once(client: &Client, app: &mut App, at_once: u32) {
