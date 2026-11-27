@@ -38,17 +38,24 @@ const CHOICES: [(Option<ApprovalPolicy>, &str, &str); 5] = [
     ),
 ];
 
-/// The mode the shown chat works in, its own or the default.
+/// The mode the shown chat works in, its own or the default; for a new chat, the one
+/// picked for it.
 pub fn current(ws: &Workspace) -> ApprovalPolicy {
-    ws.shown_chat()
-        .and_then(|chat| chat.access)
-        .unwrap_or(ws.status.approvals)
+    own(ws).unwrap_or(ws.status.approvals)
+}
+
+/// The shown chat's own mode, or the one picked for the chat about to start.
+fn own(ws: &Workspace) -> Option<ApprovalPolicy> {
+    match ws.shown {
+        Some(_) => ws.shown_chat().and_then(|chat| chat.access),
+        None => ws.access_next,
+    }
 }
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, accent) = (picker_hint(cx), theme.primary);
-    let own = ws.shown_chat().and_then(|chat| chat.access);
+    let own = own(ws);
     let mut list = picker_panel(cx)
         .id("access-menu")
         .absolute()
@@ -100,7 +107,9 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
 impl Workspace {
     fn choose_access(&mut self, policy: Option<ApprovalPolicy>, cx: &mut Context<Self>) {
         self.picker = None;
+        // A chat not started yet keeps the choice until its first message.
         let Some(thread_id) = self.shown.clone() else {
+            self.access_next = policy;
             cx.notify();
             return;
         };

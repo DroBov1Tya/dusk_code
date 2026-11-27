@@ -139,6 +139,7 @@ impl Workspace {
             found: Default::default(),
             jump: None,
             temporary_next: false,
+            access_next: None,
             composer,
             fill_composer: Vec::new(),
             drafts: Default::default(),

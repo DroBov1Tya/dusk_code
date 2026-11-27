@@ -214,6 +214,7 @@ impl Workspace {
         self.shown = None;
         self.team_page.picked = None;
         self.temporary_next = false;
+        self.access_next = None;
         self.center = Center::Chat;
         self.context = None;
         self.jobs.clear();

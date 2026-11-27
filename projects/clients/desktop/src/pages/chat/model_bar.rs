@@ -18,9 +18,9 @@ use gpui_kit::{
 use crate::ui::widgets;
 use crate::workspace::{Picker, Workspace};
 
-/// The access of the chat's tools, beside the attach button inside the box.
+/// The access of the chat's tools, beside the attach button inside the box; on a new
+/// chat too, where the choice waits for the first message.
 pub fn access(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
-    ws.shown.as_ref()?;
     let menu = matches!(ws.picker, Some(Picker::Access))
         .then(|| popup("access", super::access_menu::render(ws, cx)));
     Some(

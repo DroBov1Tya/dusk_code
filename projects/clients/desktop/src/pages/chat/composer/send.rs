@@ -74,6 +74,7 @@ impl Workspace {
         );
         self.write_composer("", window, cx);
         let temporary = std::mem::take(&mut self.temporary_next);
+        let access = std::mem::take(&mut self.access_next);
         let origin = shown.clone();
         let generation = self.drafts.generation();
         let navigation = self.history.navigation();
@@ -90,8 +91,8 @@ impl Workspace {
             move |client| async move {
                 let threads = client.threads();
                 match dir {
-                    Some(dir) if temporary => threads.start_temporary(dir, None).await,
-                    Some(dir) => threads.start(dir).await,
+                    Some(dir) if temporary => threads.start_temporary(dir, access).await,
+                    Some(dir) => threads.start_with(dir, access).await,
                     None => anyhow::bail!("no project"),
                 }
             },
@@ -102,7 +103,9 @@ impl Workspace {
                         // The chat is on the page before the message is queued, so the
                         // turn it starts is seen from its first event.
                         let current = ws.drafts.started(&thread_id, generation);
-                        ws.chats.insert(thread_id.clone(), Transcript::default());
+                        let mut chat = Transcript::default();
+                        chat.access = access;
+                        ws.chats.insert(thread_id.clone(), chat);
                         if current
                             && ws.history.navigation() == navigation
                             && ws.shown.is_none()
@@ -115,6 +118,9 @@ impl Workspace {
                     }
                     Err(error) => {
                         ws.edit_draft_at(None, generation, super::Change::Restore(draft), cx);
+                        if ws.shown.is_none() && ws.access_next.is_none() {
+                            ws.access_next = access;
+                        }
                         ws.fail(error, cx);
                     }
                 }
