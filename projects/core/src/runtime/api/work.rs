@@ -302,41 +302,44 @@ impl Runtime {
         false
     }
 
-    /// The requests still waiting in the chat of `thread_id` and in every agent below it,
-    /// as the events that opened them: an agent's wrapped as its own, so a client that
-    /// comes after they were asked can still answer them.
+    /// The requests still waiting in `thread_id` and in every agent below it, as the events
+    /// that opened them in that thread: an agent's wrapped once for each agent between, as it
+    /// came live, so a client that comes after they were asked can still answer them.
     pub async fn waiting_approvals(&self, thread_id: &str) -> Vec<ThreadEvent> {
         let mut events = Vec::new();
         for launcher in [&self.launcher, &self.temporary] {
             let state = &launcher.state;
-            let Ok(chat) = state.root_thread(thread_id).await else {
+            if state.root_thread(thread_id).await.is_err() {
                 continue;
-            };
+            }
             for (asked, request) in launcher.approvals.waiting() {
-                match state.root_thread(&asked).await {
-                    Ok(root) if root == chat => {}
-                    Ok(_) => continue,
-                    Err(error) => {
-                        tracing::warn!("approval {} not told again: {error:#}", request.id);
-                        continue;
-                    }
-                }
-                // Wrapped once for each agent between, as it came live.
+                let id = request.id;
                 let mut event = ThreadEvent::Approval(request);
                 let mut thread = asked;
+                let mut below = false;
                 for _ in 0..MAX_DEPTH {
-                    if thread == chat {
+                    if thread == thread_id {
+                        below = true;
                         break;
                     }
-                    let parent = state.parent_thread(&thread).await.ok().flatten();
+                    let parent = match state.parent_thread(&thread).await {
+                        Ok(parent) => parent,
+                        Err(error) => {
+                            tracing::warn!("approval {id} not told again: {error:#}");
+                            None
+                        }
+                    };
+                    let Some(parent) = parent else { break };
                     event = ThreadEvent::Subagent {
                         thread_id: thread,
                         event: Box::new(event),
                     };
-                    let Some(parent) = parent else { break };
                     thread = parent;
                 }
-                events.push(event);
+                // Asked by a thread beside this one, or above it: not this thread's.
+                if below {
+                    events.push(event);
+                }
             }
         }
         events

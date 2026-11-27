@@ -298,7 +298,8 @@ async fn approve_with_an_unknown_id_answers_false() {
 }
 
 /// A request an agent asked while no client watched its chat waits for the client that
-/// opens the chat later, wrapped as it came live; another chat's request is not its.
+/// opens the chat later, wrapped as it came live; another chat's request is not its, and
+/// an agent's thread gets only the requests asked at or below it.
 #[tokio::test]
 async fn a_client_that_opens_a_chat_later_gets_its_agents_requests() {
     let (mut server, approvals) = rig_with_chats("serve_late_approvals").await;
@@ -326,10 +327,14 @@ async fn a_client_that_opens_a_chat_later_gets_its_agents_requests() {
     };
     let expected = vec![approval(own), wrap("a1", wrap("a2", approval(deep)))];
     assert_eq!(server.runtime.waiting_approvals("a").await, expected);
+    // An agent's own thread names only what it and those below it ask, wrapped from there.
+    assert_eq!(
+        server.runtime.waiting_approvals("a1").await,
+        vec![wrap("a2", approval(deep))]
+    );
     assert_eq!(
         server.runtime.waiting_approvals("a2").await,
-        expected,
-        "any thread of the chat names it"
+        vec![approval(deep)]
     );
     assert_eq!(
         server.runtime.waiting_approvals("b").await,
