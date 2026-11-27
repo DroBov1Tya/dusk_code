@@ -14,6 +14,7 @@ mod message;
 mod name;
 mod overview;
 mod pin;
+mod proposal;
 mod suggestion;
 mod summary;
 mod task;
@@ -47,6 +48,10 @@ pub use overview::{
     OVERVIEW_PATHS, OVERVIEW_TOOLS, Overview, ToolRuns,
 };
 pub use pin::{MAX_PINS, PIN_CHARS, Pin, excerpt};
+pub use proposal::{
+    MAX_PENDING_PROPOSALS, MAX_PROPOSAL_BRIEF, MAX_PROPOSAL_TITLE, PROPOSE_SESSION_TOOL, Proposal,
+    ProposalCalls, ProposalState, ProposeSession, outcome_note, proposals, read_outcome,
+};
 pub use suggestion::{SUGGEST_NEXT_TOOL, SUGGESTION_CHARS, SuggestNext, Suggestion};
 pub use summary::{Found, Thread};
 pub use task::{

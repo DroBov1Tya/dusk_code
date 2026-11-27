@@ -110,6 +110,14 @@ fn threads() -> Vec<T> {
             policy: None,
         },
         T::GetApprovals { thread_id: id() },
+        T::StartProposal {
+            thread_id: id(),
+            proposal_id: word(),
+        },
+        T::DismissProposal {
+            thread_id: id(),
+            proposal_id: word(),
+        },
         T::Pin {
             thread_id: id(),
             message_id: word(),
@@ -471,6 +479,7 @@ fn rest() -> Vec<R> {
             rows: 24,
         }),
         R::Terminal(Te::Close { id: word() }),
+        R::Terminal(Te::Host),
         part(|plugin, part| Pl::Open { plugin, part }),
         part(|plugin, part| Pl::Redetect { plugin, part }),
         part(|plugin, part| Pl::Close { plugin, part }),

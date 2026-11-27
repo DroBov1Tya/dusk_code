@@ -158,6 +158,9 @@ impl Runtime {
             agents,
             team: Arc::default(),
             temporary: false,
+            terminals: Arc::new(crate::terminal::Terminals::new(
+                crate::terminal::login_shell(),
+            )),
         };
         launcher
             .approvals

@@ -8,7 +8,7 @@ use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
 use dusk_protocol::config::ApprovalPolicy;
-use dusk_protocol::thread::{ThreadEvent, TurnWait};
+use dusk_protocol::thread::{ProposalState, ThreadEvent, TurnWait};
 use parking_lot::Mutex;
 use std::{
     collections::HashSet,
@@ -225,19 +225,7 @@ impl Server {
                 Response::Done
             }
             ThreadRequest::Delete { thread_id } => {
-                // Its turn ends first, so nothing writes to what is being erased.
-                self.close(&thread_id).await;
-                let runtime = &self.runtime;
-                let (state, paths) = runtime.places_of(&thread_id).await;
-                for folder in state.delete_thread(&thread_id).await? {
-                    // Only plain names under the workspace root are taken.
-                    let path = paths.workspace_folder(&folder)?;
-                    match tokio::fs::remove_dir_all(&path).await {
-                        Ok(()) => {}
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(error) => warn!("cannot remove a deleted chat's folder: {error}"),
-                    }
-                }
+                self.erase(&thread_id).await?;
                 Response::Done
             }
             ThreadRequest::Approve {
@@ -281,10 +269,76 @@ impl Server {
                 unread::set(&runtime, &self.subscribers, &thread_id, false).await;
                 Response::Done
             }
+            ThreadRequest::StartProposal {
+                thread_id,
+                proposal_id,
+            } => {
+                let started = runtime.start_proposal(self.source(), &thread_id, &proposal_id);
+                let (handle, proposal, _answering) = started.await?;
+                let new_id = handle.thread_id.clone();
+                let opened = self.open(handle);
+                let brief = proposal.first_message(&thread_id);
+                let sent = match self.open_thread(&new_id) {
+                    Ok(open) => open.input.send(brief).await,
+                    Err(error) => Err(error),
+                };
+                // The card is settled only once the brief went: a chat with no brief is
+                // taken away again and the card waits to be started once more.
+                if let Err(error) = sent {
+                    if let Err(error) = self.erase(&new_id).await {
+                        warn!("cannot remove the chat whose brief failed to send: {error:#}");
+                    }
+                    return Err(error.context("cannot send the proposal's brief"));
+                }
+                runtime
+                    .proposal_started(&thread_id, &proposal, &new_id)
+                    .await?;
+                let state = ProposalState::Started { thread_id: new_id };
+                self.proposal_settled(thread_id, proposal_id, state);
+                opened
+            }
+            ThreadRequest::DismissProposal {
+                thread_id,
+                proposal_id,
+            } => {
+                let state = ProposalState::Dismissed;
+                let settled = runtime.settle_proposal(&thread_id, &proposal_id, &state);
+                ensure!(settled.await?, "this proposal was answered already");
+                self.proposal_settled(thread_id, proposal_id, state);
+                Response::Done
+            }
         })
     }
 
-    /// Keeps the thread's input and forwards its events until its task ends.
+    /// Deletes the chat `thread_id` and the folders it made.
+    async fn erase(&mut self, thread_id: &str) -> Result<()> {
+        // Its turn ends first, so nothing writes to what is being erased.
+        self.close(thread_id).await;
+        let (state, paths) = self.runtime.places_of(thread_id).await;
+        for folder in state.delete_thread(thread_id).await? {
+            // Only plain names under the workspace root are taken.
+            let path = paths.workspace_folder(&folder)?;
+            match tokio::fs::remove_dir_all(&path).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => warn!("cannot remove a deleted chat's folder: {error}"),
+            }
+        }
+        Ok(())
+    }
+
+    /// Every client showing the chat redraws the proposal's card.
+    fn proposal_settled(&self, thread_id: String, proposal_id: String, state: ProposalState) {
+        let event = ThreadEvent::ProposalSettled { proposal_id, state };
+        publish(
+            &self.subscribers,
+            Event::Thread {
+                thread_id,
+                event: Box::new(event),
+            },
+        );
+    }
+
     /// Opens a new chat with its own approval mode, stored before the client can send
     /// to it, so its first turn already runs under that mode.
     async fn open_with(
@@ -301,6 +355,7 @@ impl Server {
         Ok(self.open(handle))
     }
 
+    /// Keeps the thread's input and forwards its events until its task ends.
     pub(super) fn open(&mut self, handle: ThreadHandle) -> Response {
         let ThreadHandle {
             thread_id,
@@ -489,6 +544,7 @@ impl Server {
         self.clients.remove(&client);
         if self.owner == Some(client) {
             self.owner = None;
+            self.terminals.set_app(None);
         }
         self.pulls.forget(client);
         self.user_runs.stop_client(client);

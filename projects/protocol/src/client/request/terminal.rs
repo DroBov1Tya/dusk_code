@@ -38,4 +38,9 @@ pub enum TerminalRequest {
     Close {
         id: String,
     },
+    /// The client shows terminals in a panel, so the agent may reach its terminals and
+    /// open new ones there (`Event::TerminalOpened`). Only the app that owns the core
+    /// may say it; a client without a panel never does, and the agent hears that no
+    /// terminal is open here.
+    Host,
 }

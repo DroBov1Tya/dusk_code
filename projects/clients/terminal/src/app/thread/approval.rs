@@ -40,7 +40,9 @@ impl Asked {
                 Request::Command { .. } => format!("allow `{grant}` commands"),
                 Request::Screen { .. } => "allow the screen".into(),
                 Request::SystemPointer { .. } => "allow control of the system pointer".into(),
-                Request::Keyboard { .. } | Request::Settings { .. } => String::new(),
+                Request::Keyboard { .. } | Request::Settings { .. } | Request::Terminal { .. } => {
+                    String::new()
+                }
                 Request::Window { .. } => format!("allow {grant}"),
                 Request::Git { .. } => format!("allow {grant}"),
             };

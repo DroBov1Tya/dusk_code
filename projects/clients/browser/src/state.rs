@@ -242,6 +242,7 @@ impl AppState {
             // Terminals and plugin parts are drawn by the desktop app only.
             Event::Terminal { .. }
             | Event::TerminalClosed { .. }
+            | Event::TerminalOpened { .. }
             | Event::PluginView { .. }
             | Event::PluginFrame { .. }
             | Event::PluginNotice { .. }
@@ -532,6 +533,40 @@ impl AppState {
                     self.refresh();
                 }
                 Err(error) => self.fail(error),
+            }
+        });
+    }
+
+    /// Starts the session the agent of `from` proposed as `proposal_id`, shown once made.
+    pub fn start_proposal(self, from: String, proposal_id: String) {
+        let navigation = self.navigation.get_untracked();
+        spawn_local(async move {
+            let made = async {
+                let thread_id = api::start_proposal(&from, &proposal_id).await?;
+                let history = api::messages(&thread_id).await?;
+                api::Res::Ok((thread_id, history))
+            };
+            match made.await {
+                Ok((thread_id, history)) => {
+                    let data = ChatData::from_history(&history);
+                    self.chats.update(|chats| {
+                        chats.insert(thread_id.clone(), RwSignal::new(data));
+                    });
+                    if self.navigation.get_untracked() == navigation {
+                        self.show(View::Chat(Some(thread_id)));
+                    }
+                    self.refresh();
+                }
+                Err(error) => self.fail(error),
+            }
+        });
+    }
+
+    /// Drops the session the agent of `thread_id` proposed as `proposal_id`.
+    pub fn dismiss_proposal(self, thread_id: String, proposal_id: String) {
+        spawn_local(async move {
+            if let Err(error) = api::dismiss_proposal(&thread_id, &proposal_id).await {
+                self.fail(error);
             }
         });
     }

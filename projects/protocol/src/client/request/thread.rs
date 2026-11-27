@@ -146,4 +146,17 @@ pub enum ThreadRequest {
     Seen {
         thread_id: String,
     },
+    /// Starts the session the agent proposed in the chat as `proposal_id`: a new
+    /// chat with the proposal's brief as its first message; answers `Opened`. The chat
+    /// hears `ThreadEvent::ProposalSettled`, its agent the outcome on its next turn. A
+    /// proposal answered already starts nothing again.
+    StartProposal {
+        thread_id: String,
+        proposal_id: String,
+    },
+    /// Drops that proposal; the agent hears so on its next turn.
+    DismissProposal {
+        thread_id: String,
+        proposal_id: String,
+    },
 }

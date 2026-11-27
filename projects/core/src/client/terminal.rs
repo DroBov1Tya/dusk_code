@@ -30,6 +30,12 @@ impl Terminal<'_> {
         self.0.done(Request::Terminal(request)).await
     }
 
+    /// Says this client shows terminals in a panel, so the agent may reach them and open
+    /// new ones there; only the app that owns the core may.
+    pub async fn host(&self) -> Result<()> {
+        self.0.done(Request::Terminal(TerminalRequest::Host)).await
+    }
+
     pub async fn close(&self, id: &str) -> Result<()> {
         let id = id.to_owned();
         self.0

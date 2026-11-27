@@ -32,10 +32,11 @@ pub use computer::{
 pub use console::{Jobs, RunCommand, Shaped};
 pub use git::Branch;
 pub(crate) use git::{scope_for as worktree_scope, start as start_branch};
+pub(crate) use harness::propose_session;
 pub use harness::{
     AddWorkshopSource, AskUser, DisplayAudio, DisplayImage, DrawDiagram, GatesYes, PlanEdit,
-    Question, ReadHistory, Remember, SearchWorkshop, Show, Started, SuggestFromWorkshop,
-    SuggestNext, Tasks, TeamRunner, is_sound, save_sound,
+    ProposeSession, Question, ReadHistory, Remember, SearchWorkshop, Show, Started,
+    SuggestFromWorkshop, SuggestNext, Tasks, TeamRunner, is_sound, save_sound,
 };
 pub(crate) use harness::{
     clear_plan, current_plan_name, list_plans, project_folder, read_plan, remove_old_plans,

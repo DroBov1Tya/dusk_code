@@ -2471,6 +2471,31 @@
         },
         {
           "additionalProperties": false,
+          "description": "A terminal the agent opened for this client, the app on this machine: the client\nshows it as a tab of its own. Its output follows as `Terminal`.",
+          "properties": {
+            "TerminalOpened": {
+              "properties": {
+                "cwd": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "cwd"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "TerminalOpened"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "The view of a plugin's part this client opened, replacing the one before.",
           "properties": {
             "PluginView": {
@@ -5830,6 +5855,39 @@
         }
       ]
     },
+    "ProposalState": {
+      "description": "Where a proposal stands.",
+      "oneOf": [
+        {
+          "enum": [
+            "Pending",
+            "Dismissed"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The user started it: the new chat.",
+          "properties": {
+            "Started": {
+              "properties": {
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Started"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ProviderErrorKind": {
       "description": "What went wrong with a provider call, coarse enough for a client to draw and for the\nretry loop to decide on.",
       "oneOf": [
@@ -6967,6 +7025,31 @@
           },
           "required": [
             "Git"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Typing into one of the user's terminals, which can do anything a shell can:\nasked with exactly what is typed, in sandbox mode too, since nothing confines a\nshell the user opened.",
+          "properties": {
+            "Terminal": {
+              "properties": {
+                "input": {
+                  "type": "string"
+                },
+                "terminal": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "terminal",
+                "input"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Terminal"
           ],
           "type": "object"
         }
@@ -10652,6 +10735,11 @@
             "Close"
           ],
           "type": "object"
+        },
+        {
+          "const": "Host",
+          "description": "The client shows terminals in a panel, so the agent may reach its terminals and\nopen new ones there (`Event::TerminalOpened`). Only the app that owns the core\nmay say it; a client without a panel never does, and the agent hears that no\nterminal is open here.",
+          "type": "string"
         }
       ]
     },
@@ -11868,6 +11956,31 @@
           "type": "object"
         },
         {
+          "additionalProperties": false,
+          "description": "The user answered the session the agent proposed as `proposal_id`\n(`propose_session`): the chat's card shows it started or dismissed.",
+          "properties": {
+            "ProposalSettled": {
+              "properties": {
+                "proposal_id": {
+                  "type": "string"
+                },
+                "state": {
+                  "$ref": "#/$defs/ProposalState"
+                }
+              },
+              "required": [
+                "proposal_id",
+                "state"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "ProposalSettled"
+          ],
+          "type": "object"
+        },
+        {
           "const": "Idle",
           "description": "Nothing is running and nothing will start until the next message.",
           "type": "string"
@@ -12584,6 +12697,56 @@
           },
           "required": [
             "Seen"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Starts the session the agent proposed in the chat as `proposal_id`: a new\nchat with the proposal's brief as its first message; answers `Opened`. The chat\nhears `ThreadEvent::ProposalSettled`, its agent the outcome on its next turn. A\nproposal answered already starts nothing again.",
+          "properties": {
+            "StartProposal": {
+              "properties": {
+                "proposal_id": {
+                  "type": "string"
+                },
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id",
+                "proposal_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "StartProposal"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Drops that proposal; the agent hears so on its next turn.",
+          "properties": {
+            "DismissProposal": {
+              "properties": {
+                "proposal_id": {
+                  "type": "string"
+                },
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id",
+                "proposal_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "DismissProposal"
           ],
           "type": "object"
         }

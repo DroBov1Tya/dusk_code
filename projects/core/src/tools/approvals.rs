@@ -398,7 +398,7 @@ impl Grants {
             }
             Request::Screen { .. } => self.screen,
             Request::SystemPointer { .. } => self.system_pointer,
-            Request::Keyboard { .. } | Request::Settings { .. } => false,
+            Request::Keyboard { .. } | Request::Settings { .. } | Request::Terminal { .. } => false,
             Request::Window { grant, .. } => grant
                 .as_ref()
                 .is_some_and(|access| self.windows.contains(access)),
@@ -414,7 +414,7 @@ impl Grants {
             }
             Request::Screen { .. } => self.screen = true,
             Request::SystemPointer { .. } => self.system_pointer = true,
-            Request::Keyboard { .. } | Request::Settings { .. } => {}
+            Request::Keyboard { .. } | Request::Settings { .. } | Request::Terminal { .. } => {}
             Request::Window { grant, .. } => self.windows.extend(grant.clone()),
             Request::Git { .. } => self.git = true,
         }
@@ -432,7 +432,8 @@ fn strictness(request: &Request) -> Option<u8> {
         Request::Path { .. }
         | Request::Command { .. }
         | Request::Settings { .. }
-        | Request::Git { .. } => None,
+        | Request::Git { .. }
+        | Request::Terminal { .. } => None,
     }
 }
 
@@ -457,7 +458,8 @@ fn with_action(kind: &Request, action: String) -> Request {
         Request::Path { .. }
         | Request::Command { .. }
         | Request::Settings { .. }
-        | Request::Git { .. } => kind.clone(),
+        | Request::Git { .. }
+        | Request::Terminal { .. } => kind.clone(),
     }
 }
 
@@ -469,7 +471,7 @@ pub fn session_grant(request: &Request) -> Option<String> {
         Request::Command { command } => program(command).map(str::to_owned),
         Request::Screen { .. } => Some("the screen".into()),
         Request::SystemPointer { .. } => Some("the system pointer".into()),
-        Request::Keyboard { .. } | Request::Settings { .. } => None,
+        Request::Keyboard { .. } | Request::Settings { .. } | Request::Terminal { .. } => None,
         Request::Window { grant, .. } => match grant {
             Some(WindowAccess::List) => Some("listing window names and IDs".into()),
             Some(WindowAccess::Capture(_)) => Some("capture of this selected window".into()),

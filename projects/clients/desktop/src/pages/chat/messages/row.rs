@@ -284,6 +284,9 @@ impl Workspace {
                         )
                     }
                     Item::Run(_) => super::run_card::render(chat, &shown, &key, at, cx),
+                    Item::Proposal { proposal, state } => {
+                        crate::pages::chat::proposal::card(self, &shown, proposal, state, cx)
+                    }
                     Item::Tool(_) => div().into_any_element(),
                 }
             }

@@ -124,3 +124,90 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     ws.center = Center::Chat;
     cx.notify();
 }
+
+/// `fake=proposal`: a chat whose agent proposed three sessions: one waiting with a long
+/// brief, one started and one dismissed.
+pub fn proposals(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    use crate::pages::chat::transcript::{Item, Transcript};
+    use dusk_protocol::thread::{Proposal, ProposalState};
+    let proposal = |title: &str, brief: &str, mode: Option<&str>, branch: Option<&str>| Proposal {
+        id: String::new(),
+        title: title.into(),
+        brief: brief.into(),
+        project: None,
+        branch: branch.map(Into::into),
+        mode: mode.map(Into::into),
+    };
+    let mut chat = Transcript::default();
+    chat.push(
+        Item::User {
+            text: "The gate keeps failing on the queued tasks".into(),
+            sequence: Some(1),
+            answered: Vec::new(),
+        },
+        0,
+    );
+    chat.push(
+        Item::Assistant {
+            text: "The gate field still runs `uv run pytest`; editing a task only changes its \
+                   text. Fixing the gates is a task of its own, so I proposed it as a session."
+                .into(),
+            reasoning: String::new(),
+        },
+        0,
+    );
+    let items = [
+        (
+            "w",
+            proposal(
+                "Fix the gate command of the queued tasks",
+                "The plan's gate field still says `uv run pytest`, which fails on this machine.\n\
+                 Change the gate of every queued task to `pytest -q`.\n\
+                 The gate is a field of the task, not its text: edit the field.\n\
+                 Then reopen the failed tasks so the team runs them again.\n\
+                 Done when the gates pass on a clean checkout.",
+                Some("TEAM"),
+                Some("fix/gates"),
+            ),
+            ProposalState::Pending,
+        ),
+        (
+            "s",
+            proposal(
+                "Write the release notes",
+                "Draft the notes for 0.78 from the changes folder.",
+                None,
+                None,
+            ),
+            ProposalState::Started {
+                thread_id: "notes".into(),
+            },
+        ),
+        (
+            "d",
+            proposal(
+                "Rename the config keys",
+                "Rename `limits.*` to `caps.*`.",
+                None,
+                None,
+            ),
+            ProposalState::Dismissed,
+        ),
+    ];
+    for (call_id, proposal, state) in items {
+        chat.push(
+            Item::Proposal {
+                proposal: Proposal {
+                    id: call_id.into(),
+                    ..proposal
+                },
+                state,
+            },
+            0,
+        );
+    }
+    ws.chats.insert("proposal".into(), chat);
+    ws.shown = Some("proposal".into());
+    ws.center = crate::workspace::Center::Chat;
+    cx.notify();
+}

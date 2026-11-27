@@ -119,6 +119,7 @@ mod tests {
                 rows: 24,
             },
             TerminalRequest::Close { id: id() },
+            TerminalRequest::Host,
         ] {
             assert!(refused(&Request::Terminal(request)));
         }

@@ -128,7 +128,10 @@ fn rows(chat: &Log) -> Vec<Row> {
             continue;
         }
         // Only a chat shows Workshop cards and has a goal; an agent has no user.
-        if !matches!(chat.items[index], Item::Suggestion(_) | Item::Goal(_)) {
+        if !matches!(
+            chat.items[index],
+            Item::Suggestion(_) | Item::Proposal { .. } | Item::Goal(_)
+        ) {
             rows.push(Row::Item(index));
         }
         index += 1;
@@ -253,7 +256,9 @@ fn agent_item(
             }
             said.into_any_element()
         }
-        Item::Tool(_) | Item::Suggestion(_) | Item::Goal(_) => div().into_any_element(),
+        Item::Tool(_) | Item::Suggestion(_) | Item::Proposal { .. } | Item::Goal(_) => {
+            div().into_any_element()
+        }
         // Agents an agent started read as one quiet line; their details are the chat's.
         Item::Run(_) => div()
             .meta()

@@ -798,6 +798,7 @@ fn act(
         }
         "fake" if value == "store" => super::store::fake(ws, cx),
         "fake" if value == "suggest" => super::store::suggest(ws, cx),
+        "fake" if value == "proposal" => super::blocks::proposals(ws, cx),
         "workshop" => super::store::step(ws, value, window, cx),
         "fake" if value == "limits" => {
             use dusk_protocol::model::{RateLimit, RateLimits};

@@ -257,11 +257,18 @@ impl Workspace {
             list_chat: None,
             texts: Default::default(),
             measure_again: false,
+            briefs_open: Default::default(),
             welcome: crate::pages::welcome::Welcome::new(window, cx),
         };
         workspace.pump_events(events, cx);
         workspace.pump_status(status, cx);
         workspace.watch_idle(cx);
+        // The terminal panel is here: the agent may reach its shells and open new ones.
+        workspace.core.run(|client| async move {
+            if let Err(error) = client.terminal().host().await {
+                tracing::warn!("terminal: {error:#}");
+            }
+        });
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
         workspace.ask_welcome(cx);

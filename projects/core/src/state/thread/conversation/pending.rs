@@ -99,6 +99,20 @@ impl State {
         Ok(stored.rows_affected() == 1)
     }
 
+    /// What was stored under `request_uid`, waiting or taken into its thread; none when
+    /// nothing was.
+    pub async fn stored_under(&self, request_uid: &str) -> Result<Option<String>> {
+        sqlx::query_scalar(
+            "SELECT content FROM messages WHERE request_uid = ?1
+             UNION ALL SELECT content FROM pending_messages WHERE request_uid = ?1
+             LIMIT 1",
+        )
+        .bind(request_uid)
+        .fetch_optional(&self.pool)
+        .await
+        .context("look up a stored message")
+    }
+
     /// Where the message stored under `request_uid` stands.
     pub async fn delivery(&self, request_uid: &str) -> Result<Delivery> {
         let read: Option<bool> = sqlx::query_scalar(

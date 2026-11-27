@@ -59,6 +59,8 @@ impl<L> ChatLog<L> {
         };
         match message.role {
             MessageRole::System => {}
+            MessageRole::User
+                if message.from_thread_id.is_some() && self.settled_by(&message.content) => {}
             MessageRole::User if message.from_thread_id.is_some() => {
                 let from = message.from_thread_id.as_deref().unwrap_or_default();
                 let item = Item::Agent {
@@ -98,6 +100,7 @@ impl<L> ChatLog<L> {
             MessageRole::Tool => {
                 let call_id = message.tool_call_id.as_deref().unwrap_or_default();
                 if !self.suggestion(call_id, &message.content)
+                    && !self.proposal(call_id, &message.content)
                     && !self.finish_run_call(call_id, |tool| tool.finish_stored(&message.content))
                     && !self.show_block(call_id, &message.content)
                     && let Some(index) = self.tool_index(call_id)

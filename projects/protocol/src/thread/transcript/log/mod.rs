@@ -30,8 +30,9 @@ use crate::{
     model::{Effort, ModelEvent, ToolCall},
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
-        Block, GoalEvaluation, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team,
-        ThreadEvent, ThreadTokens, TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
+        Block, GoalEvaluation, JobResult, LiveTurn, PROPOSE_SESSION_TOOL, Pin, Proposal,
+        ProposalCalls, ProposalState, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens,
+        TurnStatus, TurnWait, Work, WorkKind, activity, agent_name, read_outcome,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind},
 };
@@ -73,6 +74,13 @@ pub enum Item<L = Infallible> {
     /// The Workshop listings a `suggest_from_workshop` call put in the chat, in place of
     /// that call's step.
     Suggestion(Suggestion),
+    /// A session the agent proposed with `propose_session`, in place of that call's step,
+    /// and where it stands: the user starts or dismisses it from the card, which names
+    /// it by `proposal.id`.
+    Proposal {
+        proposal: Proposal,
+        state: ProposalState,
+    },
     /// A team or subagents the chat started, in place of the steps that started them;
     /// `ChatLog::run_card` says what its card shows.
     Run(Run),
@@ -268,6 +276,8 @@ pub struct ChatLog<L = Infallible> {
     /// The blocks `show` calls ask for, by call, until their results say whether they
     /// were shown.
     showing: BTreeMap<String, Block>,
+    /// The `propose_session` calls whose result may put a card in place of their step.
+    proposing: ProposalCalls,
     /// The subagents' run of the step under way, which its next `ask_agent` joins.
     batch: Option<usize>,
 }
@@ -311,6 +321,7 @@ impl<L> Default for ChatLog<L> {
             rollback_at: None,
             asked: Asked::default(),
             showing: BTreeMap::new(),
+            proposing: ProposalCalls::default(),
             batch: None,
         }
     }
@@ -678,6 +689,7 @@ impl<L> ChatLog<L> {
             return;
         }
         match event {
+            ThreadEvent::FromAgent(message) if self.settled_by(&message.content) => {}
             ThreadEvent::FromAgent(message) => {
                 let from = message
                     .from_thread_id
@@ -750,7 +762,9 @@ impl<L> ChatLog<L> {
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => self.start_tool(&call, ToolState::Running, now),
             ThreadEvent::ToolFinished { call_id, result } => {
-                let shown = !result.is_error && self.suggestion(&call_id, &result.content);
+                let shown = !result.is_error
+                    && (self.suggestion(&call_id, &result.content)
+                        || self.proposal(&call_id, &result.content));
                 if !shown
                     && !self.finish_run(&call_id, &result)
                     && !self.show_block(&call_id, &result.content)
@@ -837,6 +851,7 @@ impl<L> ChatLog<L> {
             ThreadEvent::Approval(_) | ThreadEvent::ApprovalClosed { .. } => {}
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Pins(pins) => self.pins = pins,
+            ThreadEvent::ProposalSettled { proposal_id, state } => self.settle(&proposal_id, state),
             ThreadEvent::SkillChanged(change) => self.skill_changed(change),
             ThreadEvent::Undone { text } => {
                 // The core forgot the message and all after it; so does the chat.
@@ -902,6 +917,7 @@ impl<L> ChatLog<L> {
         self.meta.truncate(at);
         self.asked = Asked::default();
         self.showing.clear();
+        self.proposing.clear();
         self.batch = None;
         let kept = self
             .activity_boundaries
@@ -1024,6 +1040,7 @@ impl<L> ChatLog<L> {
     /// A step that starts, live or read from history; a `show` call also keeps the block it
     /// asks for, which its result may put in the step's place.
     fn start_tool(&mut self, call: &ToolCall, state: ToolState, at: i64) {
+        self.proposing.call(call);
         // A suggested next message is no step: the composer shows it, from
         // `NextSuggested`, and its result finds no row to land on.
         if call.name == SUGGEST_NEXT_TOOL {
@@ -1074,6 +1091,58 @@ impl<L> ChatLog<L> {
         self.touch(index);
         self.reshape();
         true
+    }
+
+    /// Puts the card of a finished `propose_session` call in place of its step, when
+    /// `result` holds one; whether it did.
+    fn proposal(&mut self, call_id: &str, result: &str) -> bool {
+        // Only the call's own result: text another tool returned is never a card.
+        let Some(proposal) = self.proposing.card(call_id, result) else {
+            return false;
+        };
+        let Some(index) = self.tool_index(call_id) else {
+            return false;
+        };
+        if !matches!(&self.items[index], Item::Tool(tool) if tool.name == PROPOSE_SESSION_TOOL) {
+            return false;
+        }
+        self.items[index] = Item::Proposal {
+            proposal,
+            state: ProposalState::Pending,
+        };
+        self.touch(index);
+        self.reshape();
+        true
+    }
+
+    /// Marks the card of the proposal `id` started or dismissed.
+    fn settle(&mut self, id: &str, settled: ProposalState) {
+        let index = self
+            .items
+            .iter()
+            .rposition(|item| matches!(item, Item::Proposal { proposal, .. } if proposal.id == id));
+        if let Some(index) = index
+            && let Item::Proposal { state, .. } = &mut self.items[index]
+        {
+            *state = settled;
+            self.touch(index);
+        }
+    }
+
+    /// Whether `text`, a message from a thread, is the core's note of how a proposal of
+    /// this chat was answered: it settles the card and is not drawn itself.
+    fn settled_by(&mut self, text: &str) -> bool {
+        let Some((id, state)) = read_outcome(text) else {
+            return false;
+        };
+        let carded = self
+            .items
+            .iter()
+            .any(|item| matches!(item, Item::Proposal { proposal, .. } if proposal.id == id));
+        if carded {
+            self.settle(&id, state);
+        }
+        carded
     }
 
     /// The pictures and sounds a tool or a message carries. Pictures of a tool other than

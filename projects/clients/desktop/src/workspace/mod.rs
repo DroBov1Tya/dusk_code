@@ -388,6 +388,8 @@ pub struct Workspace {
     pub texts: crate::pages::chat::messages::Texts,
     /// A row changed height, as when folded: measure every row again.
     pub measure_again: bool,
+    /// Proposed sessions whose whole brief is shown, by chat and call.
+    pub briefs_open: HashSet<(String, String)>,
     /// How wide the transcript's rows are drawn, for blocks that set their columns by it.
     pub reading_width: f32,
     /// The chat whose reply buttons were just pressed and how many items it had then,
