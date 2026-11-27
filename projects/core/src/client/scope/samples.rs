@@ -152,6 +152,8 @@ fn work() -> Vec<W> {
             thread_id: id(),
             text: word(),
         },
+        W::Plans { thread_id: id() },
+        W::RemoveOldPlans { thread_id: id() },
         W::Diff {
             thread_id: id(),
             path: None,

@@ -179,10 +179,27 @@ impl Runtime {
         if text.trim().is_empty() {
             return crate::tools::clear_plan(state, &workspace, thread_id).await;
         }
-        let name = crate::tools::PLAN_NAME;
-        crate::tools::save_plan(state, &workspace, thread_id, name, text)
+        // The user edits the plan the Plan screen shows: the one written last.
+        let name = crate::tools::current_plan_name(state, thread_id).await?;
+        crate::tools::save_plan(state, &workspace, thread_id, &name, text)
             .await
             .map(drop)
+    }
+
+    /// Every plan of the thread, newest written first.
+    pub async fn plans(&self, thread_id: &str) -> Result<Vec<dusk_protocol::thread::PlanFile>> {
+        let launcher = self.of(thread_id).await;
+        let state = &launcher.state;
+        let workspace = start::workspace(state, &launcher.paths, thread_id).await?;
+        crate::tools::list_plans(state, &workspace, thread_id).await
+    }
+
+    /// Deletes the thread's replaced and finished plans; says how many.
+    pub async fn remove_old_plans(&self, thread_id: &str) -> Result<u64> {
+        let launcher = self.of(thread_id).await;
+        let state = &launcher.state;
+        let workspace = start::workspace(state, &launcher.paths, thread_id).await?;
+        crate::tools::remove_old_plans(state, &workspace, thread_id).await
     }
 
     /// The git changes in the folder the thread started in.

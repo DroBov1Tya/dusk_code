@@ -63,6 +63,16 @@ pub enum WorkRequest {
         thread_id: String,
         text: String,
     },
+    /// Every plan of the chat, newest written first. Answers with `Response::Plans`; one
+    /// is deleted by `RemoveSource` with its `source_id`.
+    Plans {
+        thread_id: String,
+    },
+    /// Deletes the chat's old plans: those a newer one replaced, and finished ones.
+    /// Answers with `Response::Number`, how many it deleted.
+    RemoveOldPlans {
+        thread_id: String,
+    },
     /// The changes in the chat's own folder against the last commit, as `Diff` of a
     /// project answers; the folder is the one the chat started in.
     Diff {

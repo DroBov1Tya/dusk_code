@@ -55,6 +55,8 @@ pub enum Response {
     Names(Vec<String>),
     /// The pinned plan, or none before one was written.
     Plan(Option<String>),
+    /// A chat's plans, newest written first.
+    Plans(Vec<crate::thread::PlanFile>),
     Profile(Profile),
     Secrets(SecretsInfo),
     Voice(VoiceSettings),

@@ -30,6 +30,10 @@ impl Server {
                 runtime.save_plan(&thread_id, &text).await?;
                 Response::Done
             }
+            WorkRequest::Plans { thread_id } => Response::Plans(runtime.plans(&thread_id).await?),
+            WorkRequest::RemoveOldPlans { thread_id } => {
+                Response::Number(runtime.remove_old_plans(&thread_id).await?)
+            }
             WorkRequest::PinSource {
                 thread_id,
                 id,

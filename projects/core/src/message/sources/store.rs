@@ -82,6 +82,7 @@ impl ThreadSources<'_> {
             bytes: bytes.len() as u64,
             pinned: false,
             delivered: false,
+            plan: false,
         };
         self.state.add_source(self.thread_id, &source).await?;
         Ok(source)

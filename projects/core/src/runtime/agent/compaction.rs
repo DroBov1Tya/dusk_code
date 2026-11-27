@@ -421,6 +421,7 @@ mod tests {
             bytes: 1,
             pinned: false,
             delivered: true,
+            plan: false,
         };
         let note = sources_note(&[hostile]);
         let list = note

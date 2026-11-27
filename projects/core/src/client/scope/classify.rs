@@ -143,6 +143,7 @@ fn work(request: &Work) -> Access<'_> {
         | Work::SourcePicture { thread_id, .. }
         | Work::Card { thread_id, .. }
         | Work::Plan { thread_id }
+        | Work::Plans { thread_id }
         | Work::ChangedFiles { thread_id }
         | Work::FileChanges { thread_id }
         | Work::PlanTasks { thread_id, .. }
@@ -157,6 +158,7 @@ fn work(request: &Work) -> Access<'_> {
         | Work::RemoveSource { thread_id, .. }
         | Work::UploadPicture { thread_id, .. }
         | Work::SavePlan { thread_id, .. }
+        | Work::RemoveOldPlans { thread_id }
         | Work::ConfirmTask { thread_id, .. }
         | Work::StopTeam { thread_id } => of(Area::ThreadWrite, thread_id),
         // How many members work at once, a setting of the team, so it sits with the approval
