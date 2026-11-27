@@ -171,7 +171,9 @@ impl Runtime {
     }
 
     /// Forgets a provider and its key. The provider of the chosen model stays: the chat
-    /// would lose its model under the user.
+    /// would lose its model under the user. Only the last chosen model is guarded, not
+    /// each chat's own: a running chat on this provider keeps the model it holds until it
+    /// closes, and on reopening answers on the last chosen instead, with a warning logged.
     pub fn remove_provider(&self, name: &str) -> Result<()> {
         self.ensure_not_chosen(name)?;
         self.launcher.config.update(|config| {
@@ -181,7 +183,8 @@ impl Runtime {
     }
 
     /// Switches a provider of the config file on or off; its key stays. Off is refused
-    /// like a removal while it holds the chosen model.
+    /// like a removal while it holds the chosen model; a chat's own model on it falls back
+    /// as on a removal.
     pub fn set_provider_enabled(&self, name: &str, enabled: bool) -> Result<()> {
         if !enabled {
             self.ensure_not_chosen(name)?;
