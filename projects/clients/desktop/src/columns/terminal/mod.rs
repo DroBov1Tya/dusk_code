@@ -1,7 +1,8 @@
 //! The terminal panel at the foot of the work area: the user's own shells in tabs, for
 //! working in the project without leaving the window. Each shell runs in the core, in a
-//! pseudo-terminal; this draws what it writes and sends it the keys. The agent has no
-//! part in it: it neither reads these screens nor writes to them.
+//! pseudo-terminal; this draws what it writes and sends it the keys. The agent reaches
+//! these shells through the core with its `terminal` tool, asking before it types; a
+//! shell it opens comes here as a tab of its own.
 //!
 //! - `screen`: the bytes a shell wrote, as a grid of cells;
 //! - `keys`: a key as the bytes a terminal sends;
@@ -347,6 +348,40 @@ impl Workspace {
         }
         if !replies.is_empty() {
             self.send_terminal(Sent::Input(id.to_owned(), replies), cx);
+        }
+        cx.notify();
+    }
+
+    /// A shell the agent opened: shown as a new tab, without taking the keyboard from
+    /// where the user types.
+    pub fn terminal_opened(&mut self, id: String, cx: &mut Context<Self>) {
+        if self
+            .terminal
+            .tabs
+            .iter()
+            .any(|tab| tab.id.as_deref() == Some(&id))
+        {
+            return;
+        }
+        let size = self
+            .terminal
+            .tabs
+            .last()
+            .map_or(FIRST, |tab| tab.screen.size);
+        let key = self.terminal.next_key;
+        self.terminal.next_key += 1;
+        self.terminal.tabs.push(Tab {
+            key,
+            id: Some(id.clone()),
+            title: String::new(),
+            screen: Screen::new(size),
+            ended: None,
+        });
+        self.terminal.active = self.terminal.tabs.len() - 1;
+        self.terminal.open = true;
+        // The core started it at its own size; the panel's comes with the next draw.
+        if size != (Cells { cols: 80, rows: 24 }) {
+            self.send_terminal(Sent::Resize(id, size), cx);
         }
         cx.notify();
     }

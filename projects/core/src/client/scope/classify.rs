@@ -70,7 +70,8 @@ pub fn classify(request: &Request) -> Access<'_> {
             Terminal::Open { .. }
             | Terminal::Input { .. }
             | Terminal::Resize { .. }
-            | Terminal::Close { .. },
+            | Terminal::Close { .. }
+            | Terminal::Host,
         ) => apart(Area::Terminal),
         Request::Plugin(
             Plugin::Open { .. }

@@ -186,6 +186,7 @@ named! {
     R::Terminal(Te::Input { .. }) => "terminal.input",
     R::Terminal(Te::Resize { .. }) => "terminal.resize",
     R::Terminal(Te::Close { .. }) => "terminal.close",
+    R::Terminal(Te::Host) => "terminal.host",
     R::Plugin(Pl::Open { .. }) => "plugin.open",
     R::Plugin(Pl::Redetect { .. }) => "plugin.redetect",
     R::Plugin(Pl::Close { .. }) => "plugin.close",

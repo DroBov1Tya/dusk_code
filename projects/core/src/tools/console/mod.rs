@@ -7,8 +7,10 @@ pub mod process;
 mod rerun;
 mod run_command;
 mod shape;
+mod terminal;
 
 pub use file_changes::skipped_folders;
 pub use jobs::Jobs;
 pub use run_command::{RunCommand, run_check, run_for_user};
 pub use shape::Shaped;
+pub use terminal::Terminal;

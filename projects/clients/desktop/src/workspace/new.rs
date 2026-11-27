@@ -246,6 +246,12 @@ impl Workspace {
         workspace.pump_events(events, cx);
         workspace.pump_status(status, cx);
         workspace.watch_idle(cx);
+        // The terminal panel is here: the agent may reach its shells and open new ones.
+        workspace.core.run(|client| async move {
+            if let Err(error) = client.terminal().host().await {
+                tracing::warn!("terminal: {error:#}");
+            }
+        });
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
         workspace.ask_welcome(cx);

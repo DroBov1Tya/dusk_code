@@ -62,6 +62,8 @@ pub struct Launcher {
     /// Its chats leave nothing behind: the database is in memory, their files are in the
     /// system's temporary folder, and they write no memory.
     pub temporary: bool,
+    /// The user's terminals; a chat reaches those of the app with the `terminal` tool.
+    pub terminals: Arc<crate::terminal::Terminals>,
 }
 
 impl Launcher {
@@ -196,6 +198,8 @@ impl Launcher {
             tools.add(Box::new(SearchWorkshop::new(self.paths.clone())));
             tools.add(Box::new(SuggestFromWorkshop::new(self.paths.clone())));
             tools.add(Box::new(SuggestNext));
+            let terminals = Arc::clone(&self.terminals);
+            tools.add(Box::new(crate::tools::console::Terminal(terminals)));
             tools.add(Box::new(PlanEdit::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
@@ -363,6 +367,7 @@ mod tests {
         ("show", true, false),
         ("suggest_from_workshop", true, false),
         ("suggest_next", true, false),
+        ("terminal", false, false), // true for list and read only, both ways
         ("tasks", false, false),
         ("type_text", false, false),
         ("window_session", false, false),
@@ -420,7 +425,7 @@ mod tests {
     #[tokio::test]
     async fn argument_dependent_tools_repeat_only_for_reads() {
         let (chat, _) = registries("arguments").await;
-        let cases: [(&str, Value, bool); 11] = [
+        let cases: [(&str, Value, bool); 14] = [
             ("branch", json!({"action": "status"}), true),
             ("branch", json!({"action": "list"}), true),
             ("branch", json!({"action": "merge"}), false),
@@ -432,6 +437,13 @@ mod tests {
             ("project_graph", json!({"action": "about"}), true),
             ("project_graph", json!({"action": "record"}), false),
             ("project_graph", json!({"action": "fix"}), false),
+            ("terminal", json!({"action": "list"}), true),
+            ("terminal", json!({"action": "read", "terminal": "t"}), true),
+            (
+                "terminal",
+                json!({"action": "write", "terminal": "t"}),
+                false,
+            ),
         ];
         for (name, arguments, expected) in cases {
             assert_eq!(

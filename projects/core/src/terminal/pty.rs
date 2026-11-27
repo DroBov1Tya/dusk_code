@@ -19,7 +19,7 @@ use portable_pty::{ChildKiller, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::info;
 
-use super::shell;
+use super::{shell, tail::Tail};
 
 /// The most bytes one `Event::Terminal` carries.
 const CHUNK: usize = 64 * 1024;
@@ -44,13 +44,15 @@ pub struct Pty {
 }
 
 /// Starts `shell` in `cwd` on a new pseudo-terminal. What it prints goes to `events` as
-/// `Event::Terminal`; when it ends, `ended` runs and `Event::TerminalClosed` follows.
+/// `Event::Terminal`, and its newest part to `tail`; when it ends, `ended` runs and
+/// `Event::TerminalClosed` follows.
 pub fn start(
     shell: &Path,
     cwd: &Path,
     size: PtySize,
     id: String,
     events: UnboundedSender<Event>,
+    tail: Arc<parking_lot::Mutex<Tail>>,
     ended: impl FnOnce() + Send + 'static,
 ) -> Result<Pty> {
     let pair = native_pty_system()
@@ -81,7 +83,7 @@ pub fn start(
     let threads = thread("terminal-output", {
         let (id, events, closed) = (id.clone(), events.clone(), Arc::clone(&closed));
         move || {
-            read(reader, &id, &events, &closed);
+            read(reader, &id, &events, &tail, &closed);
             drop(drained);
         }
     })
@@ -143,6 +145,15 @@ impl Pty {
         self.pid
     }
 
+    /// A program other than the shell holds the terminal now, such as a dev server.
+    pub fn busy(&self) -> bool {
+        #[cfg(unix)]
+        if let (Some(leader), Some(pid)) = (self.master.process_group_leader(), self.pid) {
+            return leader as u32 != pid;
+        }
+        false
+    }
+
     /// Ends the shell as a closed window does: it is told to leave, and killed if it
     /// has not left in `KILL_GRACE`. Needs the tokio runtime the core runs on.
     pub fn hang_up(mut self) {
@@ -178,6 +189,7 @@ fn read(
     mut reader: Box<dyn Read + Send>,
     id: &str,
     events: &UnboundedSender<Event>,
+    tail: &parking_lot::Mutex<Tail>,
     closed: &AtomicBool,
 ) {
     let mut buffer = vec![0; CHUNK];
@@ -189,6 +201,7 @@ fn read(
             // How Linux says that the shell is gone.
             Err(_) => return,
         };
+        tail.lock().push(&buffer[..read]);
         let event = Event::Terminal {
             id: id.to_owned(),
             data: buffer[..read].to_vec(),

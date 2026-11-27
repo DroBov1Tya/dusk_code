@@ -1,5 +1,6 @@
 //! The open terminals. Each has the client that opened it for an owner; to any other
-//! client its id is unknown.
+//! client its id is unknown. The agent reaches only the terminals of the app on this
+//! machine (see `set_app`), through the `terminal` tool, which asks before it types.
 
 use std::{
     collections::HashMap,
@@ -17,17 +18,36 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::info;
 
 use super::pty::{self, Pty};
+use super::tail::Tail;
 use crate::client::ClientId;
 
 struct Open {
     owner: ClientId,
     pty: Pty,
+    /// The folder the shell started in.
+    cwd: PathBuf,
+    tail: Arc<Mutex<Tail>>,
 }
+
+/// A terminal of the app as the agent sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shown {
+    pub id: String,
+    /// What a program set as the title, or the folder's name.
+    pub title: String,
+    pub cwd: PathBuf,
+    /// A program other than the shell holds it, such as a dev server.
+    pub busy: bool,
+}
+
+/// The client that is the app on this machine, with its queue of events.
+type App = (ClientId, UnboundedSender<Event>);
 
 pub struct Terminals {
     shell: PathBuf,
     /// Shared with each terminal's wait thread, which takes its own entry out.
     open: Arc<Mutex<HashMap<String, Open>>>,
+    app: Mutex<Option<App>>,
 }
 
 impl Terminals {
@@ -36,7 +56,14 @@ impl Terminals {
         Self {
             shell,
             open: Arc::default(),
+            app: Mutex::new(None),
         }
+    }
+
+    /// The client that is the app on this machine, whose terminals the agent may reach;
+    /// `None` when it went away.
+    pub fn set_app(&self, app: Option<App>) {
+        *self.app.lock() = app;
     }
 
     /// Starts the shell in `cwd`, which the caller has checked, for `owner`; `events` is
@@ -48,6 +75,19 @@ impl Terminals {
         cols: u16,
         rows: u16,
         events: UnboundedSender<Event>,
+    ) -> Result<String> {
+        self.start(owner, cwd, (cols, rows), events, false)
+    }
+
+    /// `open`; with `announce` the owner is told `TerminalOpened` before the shell's first
+    /// output, and `TerminalClosed` when it fails to start.
+    fn start(
+        &self,
+        owner: ClientId,
+        cwd: &Path,
+        (cols, rows): (u16, u16),
+        events: UnboundedSender<Event>,
+        announce: bool,
     ) -> Result<String> {
         // Held until the terminal is in the table, so a shell that ends at once finds
         // its entry there to take out.
@@ -65,8 +105,43 @@ impl Terminals {
             }
         };
         let size = size(cols, rows);
-        let pty = pty::start(&self.shell, cwd, size, id.clone(), events, ended)?;
-        open.insert(id.clone(), Open { owner, pty });
+        let tail = Arc::default();
+        if announce {
+            let _ = events.send(Event::TerminalOpened {
+                id: id.clone(),
+                cwd: cwd.to_owned(),
+            });
+        }
+        let told = events.clone();
+        let started = pty::start(
+            &self.shell,
+            cwd,
+            size,
+            id.clone(),
+            events,
+            Arc::clone(&tail),
+            ended,
+        );
+        let pty = match started {
+            Ok(pty) => pty,
+            Err(error) => {
+                if announce {
+                    let closed = Event::TerminalClosed {
+                        id: id.clone(),
+                        code: None,
+                    };
+                    let _ = told.send(closed);
+                }
+                return Err(error);
+            }
+        };
+        let entry = Open {
+            owner,
+            pty,
+            cwd: cwd.to_owned(),
+            tail,
+        };
+        open.insert(id.clone(), entry);
         info!("terminal {id} opened");
         Ok(id)
     }
@@ -74,7 +149,9 @@ impl Terminals {
     /// Answers what `caller` asks of a terminal it opened.
     pub fn handle(&self, caller: ClientId, request: TerminalRequest) -> Result<()> {
         match request {
-            TerminalRequest::Open { .. } => anyhow::bail!("a terminal is opened with its queue"),
+            TerminalRequest::Open { .. } | TerminalRequest::Host => {
+                anyhow::bail!("answered by the server, which knows the client's queue")
+            }
             TerminalRequest::Input { id, data } => {
                 ensure!(
                     data.len() <= MAX_TERMINAL_INPUT,
@@ -114,6 +191,80 @@ impl Terminals {
         for open in all {
             open.pty.hang_up();
         }
+    }
+}
+
+/// What the agent asks of the app's terminals. An id of another client's terminal is
+/// as unknown here as one that was never there.
+impl Terminals {
+    fn app(&self) -> Result<App> {
+        self.app
+            .lock()
+            .clone()
+            .context("no terminal open here: no app window with a terminal panel is attached")
+    }
+
+    /// The app's terminals, oldest first.
+    pub fn shown(&self) -> Result<Vec<Shown>> {
+        let (app, _) = self.app()?;
+        let open = self.open.lock();
+        let mut shown: Vec<Shown> = open
+            .iter()
+            .filter(|(_, open)| open.owner == app)
+            .map(|(id, open)| shown(id, open))
+            .collect();
+        // Ids are UUIDv7: in the order they were made.
+        shown.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(shown)
+    }
+
+    /// One of the app's terminals, with its last `lines` lines of output.
+    pub fn read(&self, id: &str, lines: usize) -> Result<(Shown, Vec<String>)> {
+        let (app, _) = self.app()?;
+        let open = self.open.lock();
+        let found = owned(&open, app, id)?;
+        let lines = found.tail.lock().lines(lines);
+        Ok((shown(id, found), lines))
+    }
+
+    /// One of the app's terminals, as `read` without the output.
+    pub fn find(&self, id: &str) -> Result<Shown> {
+        let (app, _) = self.app()?;
+        let open = self.open.lock();
+        Ok(shown(id, owned(&open, app, id)?))
+    }
+
+    /// Types `data` into one of the app's terminals; the caller asked the user first.
+    pub fn type_in(&self, id: &str, data: Vec<u8>) -> Result<()> {
+        let (app, _) = self.app()?;
+        ensure!(
+            data.len() <= MAX_TERMINAL_INPUT,
+            "one input is at most {MAX_TERMINAL_INPUT} bytes"
+        );
+        owned(&self.open.lock(), app, id)?.pty.input(data)
+    }
+
+    /// Opens a terminal in the app, in `cwd`, which the caller has checked; the app is
+    /// told first, so it has the tab before the shell's first output comes.
+    pub fn open_in_app(&self, cwd: &Path) -> Result<String> {
+        let (app, events) = self.app()?;
+        self.start(app, cwd, (80, 24), events, true)
+    }
+}
+
+fn shown(id: &str, open: &Open) -> Shown {
+    let title = open.tail.lock().title().map(str::to_owned);
+    let folder = || {
+        open.cwd.file_name().map_or_else(
+            || open.cwd.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        )
+    };
+    Shown {
+        id: id.to_owned(),
+        title: title.unwrap_or_else(folder),
+        cwd: open.cwd.clone(),
+        busy: open.pty.busy(),
     }
 }
 

@@ -132,6 +132,7 @@ impl Workspace {
             }
             Event::Terminal { id, data } => self.terminal_output(&id, &data, cx),
             Event::TerminalClosed { id, code } => self.terminal_closed(&id, code, cx),
+            Event::TerminalOpened { id, .. } => self.terminal_opened(id, cx),
             Event::PluginView { plugin, part, root } => self.plugin_view(plugin, part, root, cx),
             Event::PluginFrame {
                 plugin,

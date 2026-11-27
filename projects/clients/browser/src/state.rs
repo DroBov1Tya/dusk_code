@@ -233,6 +233,7 @@ impl AppState {
             // Terminals and plugin parts are drawn by the desktop app only.
             Event::Terminal { .. }
             | Event::TerminalClosed { .. }
+            | Event::TerminalOpened { .. }
             | Event::PluginView { .. }
             | Event::PluginFrame { .. }
             | Event::PluginNotice { .. }

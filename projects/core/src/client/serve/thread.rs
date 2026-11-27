@@ -450,6 +450,7 @@ impl Server {
         self.clients.remove(&client);
         if self.owner == Some(client) {
             self.owner = None;
+            self.terminals.set_app(None);
         }
         self.pulls.forget(client);
         self.user_runs.stop_client(client);

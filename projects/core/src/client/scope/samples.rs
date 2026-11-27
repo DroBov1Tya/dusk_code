@@ -441,6 +441,7 @@ fn rest() -> Vec<R> {
             rows: 24,
         }),
         R::Terminal(Te::Close { id: word() }),
+        R::Terminal(Te::Host),
         part(|plugin, part| Pl::Open { plugin, part }),
         part(|plugin, part| Pl::Redetect { plugin, part }),
         part(|plugin, part| Pl::Close { plugin, part }),

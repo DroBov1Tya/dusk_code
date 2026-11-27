@@ -23,6 +23,11 @@ impl Runtime {
         self.plugins.ui().parts()
     }
 
+    /// The user's terminals, which the server opens for clients and the agent reaches.
+    pub fn terminals(&self) -> Arc<crate::terminal::Terminals> {
+        Arc::clone(&self.launcher.terminals)
+    }
+
     /// The interfaces of plugins, for the server to open parts in.
     pub fn plugin_ui(&self) -> std::sync::Arc<crate::plugins::UiHost> {
         std::sync::Arc::clone(self.plugins.ui())

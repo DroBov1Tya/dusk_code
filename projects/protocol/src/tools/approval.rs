@@ -33,6 +33,10 @@ pub enum Request {
     /// A merge into a branch no agent made, and leaving work behind, are asked every
     /// time, in every mode.
     Git { action: String },
+    /// Typing into one of the user's terminals, which can do anything a shell can:
+    /// asked with exactly what is typed, in sandbox mode too, since nothing confines a
+    /// shell the user opened.
+    Terminal { terminal: String, input: String },
 }
 
 impl Request {
@@ -52,6 +56,9 @@ impl Request {
             }
             Self::Settings { change } => format!("{who} wants to change your settings: {change}"),
             Self::Git { action } => format!("{who} wants to {action}"),
+            Self::Terminal { terminal, input } => {
+                format!("{who} wants to type into terminal {terminal}: {input}")
+            }
         }
     }
 
@@ -66,6 +73,9 @@ impl Request {
             Self::Window { action, .. } => format!("using window tools: {action}"),
             Self::Settings { change } => format!("changing your settings: {change}"),
             Self::Git { action } => format!("git: {action}"),
+            Self::Terminal { terminal, input } => {
+                format!("typing into terminal {terminal}: {input}")
+            }
         }
     }
 }

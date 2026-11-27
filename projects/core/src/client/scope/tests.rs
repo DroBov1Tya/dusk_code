@@ -291,6 +291,7 @@ fn a_browser_is_refused_this_list_and_no_more() {
         "store.review",
         "store.update_all",
         "terminal.close",
+        "terminal.host",
         "terminal.input",
         "terminal.open",
         "terminal.resize",

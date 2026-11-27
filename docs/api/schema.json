@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 39,
+  "x-protocol": 40,
   "x-oldest": 39,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -2445,6 +2445,31 @@
           },
           "required": [
             "TerminalClosed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A terminal the agent opened for this client, the app on this machine: the client\nshows it as a tab of its own. Its output follows as `Terminal`.",
+          "properties": {
+            "TerminalOpened": {
+              "properties": {
+                "cwd": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "cwd"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "TerminalOpened"
           ],
           "type": "object"
         },
@@ -6902,6 +6927,31 @@
             "Git"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Typing into one of the user's terminals, which can do anything a shell can:\nasked with exactly what is typed, in sandbox mode too, since nothing confines a\nshell the user opened.",
+          "properties": {
+            "Terminal": {
+              "properties": {
+                "input": {
+                  "type": "string"
+                },
+                "terminal": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "terminal",
+                "input"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "Terminal"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -10433,6 +10483,11 @@
             "Close"
           ],
           "type": "object"
+        },
+        {
+          "const": "Host",
+          "description": "The client shows terminals in a panel, so the agent may reach its terminals and\nopen new ones there (`Event::TerminalOpened`). Only the app that owns the core\nmay say it; a client without a panel never does, and the agent hears that no\nterminal is open here.",
+          "type": "string"
         }
       ]
     },

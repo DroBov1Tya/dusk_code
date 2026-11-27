@@ -18,6 +18,9 @@ pub enum Event {
     /// The terminal's shell ended, by itself or because the terminal was closed. `code`
     /// is its exit code, or none when a signal ended it.
     TerminalClosed { id: String, code: Option<i32> },
+    /// A terminal the agent opened for this client, the app on this machine: the client
+    /// shows it as a tab of its own. Its output follows as `Terminal`.
+    TerminalOpened { id: String, cwd: std::path::PathBuf },
     /// The view of a plugin's part this client opened, replacing the one before.
     PluginView {
         plugin: String,
