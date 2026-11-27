@@ -62,6 +62,7 @@ pub async fn answer(
             app.flash = Some(format!("model {name}"));
             if let Some(own) = &mut app.own_model {
                 own.name.clone_from(&name);
+                own.limit = app.limit;
             }
             app.model = name;
             app.provider_available = true;
