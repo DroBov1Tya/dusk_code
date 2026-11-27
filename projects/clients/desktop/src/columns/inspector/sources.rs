@@ -1,12 +1,14 @@
 //! The shown chat's sources: the files and long pastes attached to it. Each goes to the
 //! model in full once, with one request (one model call); a pinned one goes with every
 //! request until it is unpinned. The pin and the removal are the core's; this only shows them.
+//! A click on one opens it to read.
 
 use dusk_protocol::client::{Answer, Command};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
+        tooltip::Tooltip,
     },
     prelude::FluentBuilder,
     *,
@@ -27,6 +29,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     for source in &ws.sources {
         let (id, pinned) = (source.source_id.clone(), source.pinned);
         let remove = id.clone();
+        let opened = source.clone();
         let state = if pinned {
             "sent with every request"
         } else if source.delivered {
@@ -45,10 +48,17 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .bg(surface)
                 .child(
                     div()
+                        .id(SharedString::from(format!("open-{id}")))
                         .flex_1()
                         .min_w_0()
                         .flex()
                         .flex_col()
+                        .cursor_pointer()
+                        .hover(|name| name.opacity(0.8))
+                        .tooltip(|window, cx| Tooltip::new("Read it").build(window, cx))
+                        .on_click(
+                            cx.listener(move |ws, _, _, cx| ws.view_source(opened.clone(), cx)),
+                        )
                         .child(div().small().truncate().child(source.name.clone()))
                         .child(
                             div()

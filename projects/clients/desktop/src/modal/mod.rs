@@ -1,4 +1,5 @@
-//! What opens over the window: the chat search, the project form and the file viewer.
+//! What opens over the window: the chat search, the project form, the file viewer and
+//! the source reader.
 //! One at a time; a click on the dimmed backdrop or the close button shuts it.
 
 mod agent_chat;
@@ -9,6 +10,7 @@ pub mod detail;
 mod picture;
 mod project;
 mod search;
+pub mod source;
 mod sphere;
 mod task_card;
 mod team;
@@ -46,6 +48,8 @@ pub enum Modal {
         content: ViewerContent,
     },
     Detail(detail::Detail),
+    /// A source of the shown chat, opened from the side panel to read.
+    Source(source::SourceView),
     DeleteFile {
         path: PathBuf,
     },
@@ -168,6 +172,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             880.,
             viewer::render(path, content, window, cx),
         ),
+        Modal::Source(view) => (view.source.name.clone(), 880., source::render(view, cx)),
         Modal::Rename { title, .. } => {
             ("Rename chat".to_owned(), 480., chat_menu::rename(title, cx))
         }

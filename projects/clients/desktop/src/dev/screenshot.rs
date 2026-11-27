@@ -19,6 +19,8 @@
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight
 //!   (`DUSK_METEOR_SMALL`: a small one, `DUSK_METEOR_LEFT`: a great one from the left);
+//! - `fake=sources`: five made-up sources in the side panel (after `right=all`);
+//!   `modal=source-md|code|long|picture|binary`: one of them opened to read;
 //! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
 //! - `fake=tiers`: two providers with models and the subagent tiers set, unset and on a
@@ -365,6 +367,9 @@ fn act(
             ws.load_outputs(cx);
         }
         "modal" => match value {
+            kind if kind.starts_with("source-") => {
+                super::sources::open(ws, &kind["source-".len()..], cx)
+            }
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
@@ -1094,6 +1099,10 @@ fn act(
                 thread::ThreadEvent,
                 tools::{ApprovalRequest, Question, Request},
             };
+            if value == "sources" {
+                super::sources::fake_sources(ws, cx);
+                return;
+            }
             let event = match value {
                 "question" => ThreadEvent::Question(Question {
                     question: "Which cache should get() use for expired entries?".into(),
