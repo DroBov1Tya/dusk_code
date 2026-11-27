@@ -46,6 +46,13 @@ impl Workspace {
             cx.notify()
         })
         .detach();
+        let providers_page = crate::pages::settings::providers::State::new(window, cx);
+        cx.subscribe_in(
+            &providers_page.models_filter,
+            window,
+            |_, _, _: &InputEvent, _, cx| cx.notify(),
+        )
+        .detach();
         let models_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search models"));
         cx.subscribe_in(&models_search, window, |_, _, _: &InputEvent, _, cx| {
             cx.notify()
@@ -174,7 +181,7 @@ impl Workspace {
             dock: crate::pages::chat::dock::Dock::new(cx),
             alerts: Default::default(),
             plan: crate::columns::inspector::plan::Plan::new(window, cx),
-            providers_page: crate::pages::settings::providers::State::new(window, cx),
+            providers_page,
             secrets: None,
             voice: None,
             voice_models: None,

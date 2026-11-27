@@ -462,6 +462,11 @@ fn act(
                 "more" => Picker::MoreModels,
                 _ => Picker::Model,
             });
+            // As a click opens it: the search has the keys, so `key=` steps type into it.
+            if ws.picker == Some(Picker::MoreModels) {
+                ws.models_search
+                    .update(cx, |search, cx| search.focus(window, cx));
+            }
             cx.notify();
         }
         "attach" => {
@@ -763,15 +768,44 @@ fn act(
                 "gpt-6-sol",
                 "gpt-6.3-atlas",
             ];
-            ws.providers = vec![ProviderStatus {
-                name: "chatgpt".into(),
-                models: Ok(names.into_iter().map(model).collect()),
-                balance: None,
-                limits: None,
-                enabled: true,
-                failure: None,
-                hidden: Vec::new(),
-            }];
+            // A second provider with a long list, and a hidden model in each, for the
+            // search and the switches of the settings.
+            let routed = [
+                "anthropic/claude-opus-4.7",
+                "anthropic/claude-sonnet-4.6",
+                "anthropic/claude-haiku-4.5",
+                "deepseek/deepseek-v4",
+                "deepseek/deepseek-r2",
+                "google/gemini-3-pro",
+                "google/gemini-3-flash",
+                "meta/llama-5-70b",
+                "mistral/mistral-large-3",
+                "moonshot/kimi-k3",
+                "qwen/qwen3.5-coder",
+                "qwen/qwen3.5-max",
+                "x-ai/grok-5",
+                "z-ai/glm-5",
+            ];
+            ws.providers = vec![
+                ProviderStatus {
+                    name: "chatgpt".into(),
+                    models: Ok(names.into_iter().map(model).collect()),
+                    balance: None,
+                    limits: None,
+                    enabled: true,
+                    failure: None,
+                    hidden: vec!["gpt-5.6-luna".into()],
+                },
+                ProviderStatus {
+                    name: "openrouter".into(),
+                    models: Ok(routed.into_iter().map(model).collect()),
+                    balance: None,
+                    limits: None,
+                    enabled: true,
+                    failure: None,
+                    hidden: vec!["meta/llama-5-70b".into(), "x-ai/grok-5".into()],
+                },
+            ];
             ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
             cx.notify();
         }

@@ -24,6 +24,10 @@ pub struct State {
     pub(super) reconnect_key: Entity<InputState>,
     /// The ChatGPT sign-in page of the attempt under way, to copy into another browser.
     pub(super) sign_in_url: Option<String>,
+    /// The provider whose models are unfolded, one at a time.
+    pub(super) models_open: Option<String>,
+    /// The search over the unfolded provider's models, when the list is long.
+    pub models_filter: Entity<InputState>,
 }
 
 impl State {
@@ -51,6 +55,8 @@ impl State {
                 cx,
             ),
             sign_in_url: None,
+            models_open: None,
+            models_filter: field("Find a model", false, window, cx),
         }
     }
 }

@@ -172,6 +172,9 @@ fn provider_card(
     if let Some(limits) = provider.limits.as_ref().filter(|_| enabled) {
         card = card.child(widgets::muted(format!("Limits: {}", limits.text()), cx).p_0());
     }
+    if let Some(models) = super::models::section(ws, provider, cx) {
+        card = card.child(models);
+    }
     if reconnecting {
         card = card
             .child(Input::new(&ws.providers_page.reconnect_key).large())
