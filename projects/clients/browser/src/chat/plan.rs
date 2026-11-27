@@ -180,10 +180,10 @@ fn card_view(card: TaskCard, thread_id: String, chosen: RwSignal<Option<String>>
         })
         .collect_view();
     // A failed task is tried again from its card, as it is now, its later tasks with it.
-    let retry = (card.status == TaskStatus::Failed).then(|| {
+    let retry = card.retryable.then(|| {
         let (thread_id, task_id) = (thread_id.clone(), card.task_id.clone());
         view! {
-            <button title="Run it again as it is now, its later tasks with it" on:click=move |_| {
+            <button title="Run it again as it is now, its later tasks with it; a team that ended starts again" on:click=move |_| {
                 let (thread_id, task_id) = (thread_id.clone(), task_id.clone());
                 run(async move { api::retry_task(&thread_id, &task_id).await }, |()| ());
             }>"Retry"</button>

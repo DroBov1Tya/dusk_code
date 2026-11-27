@@ -28,6 +28,10 @@ use crate::{
     workspace::Workspace,
 };
 
+/// What Retry does, on hover wherever it is offered.
+pub const RETRY_TIP: &str =
+    "Run it again as it is now, its later tasks with it; a team that ended starts again";
+
 /// A task's square.
 const SQUARE: f32 = 9.;
 /// How long a square of a task that just came takes to fade in.
@@ -572,14 +576,14 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
             .on_click(cx.listener(move |ws, _, _, cx| ws.confirm_task(&id, cx))),
         );
     }
-    if failed {
+    if failed && task.duty == TaskDuty::Work {
         let id = task.task_id.clone();
         actions = actions.child(
             Button::new(SharedString::from(format!("{key}-retry-{}", task.task_id)))
                 .small()
                 .primary()
                 .label("Retry")
-                .tooltip("Run it again as it is now, its later tasks with it")
+                .tooltip(RETRY_TIP)
                 .on_click(cx.listener(move |ws, _, _, cx| ws.retry_task(&id, cx))),
         );
     }
