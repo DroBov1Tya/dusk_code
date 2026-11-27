@@ -145,6 +145,14 @@ impl Work<'_> {
             .await
     }
 
+    /// Retries a failed task of the chat's plan in place.
+    pub async fn retry_task(&self, thread_id: &str, task_id: &str) -> Result<()> {
+        let (thread_id, task_id) = (thread_id.to_owned(), task_id.to_owned());
+        self.0
+            .done(Request::Work(WorkRequest::RetryTask { thread_id, task_id }))
+            .await
+    }
+
     /// Ends the chat's running team as stopped: its members at work are cancelled and
     /// their tasks go back to open.
     pub async fn stop_team(&self, thread_id: &str) -> Result<()> {

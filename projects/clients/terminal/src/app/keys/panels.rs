@@ -499,7 +499,9 @@ impl App {
                 // `s` asks "Stop team? y/n": only `y` stops, and any other key, `s` held
                 // down included, answers no.
                 let stopping = std::mem::take(&mut view.stopping);
+                let retrying = std::mem::take(&mut view.retrying);
                 let members = self.team.as_ref().map_or(0, |team| team.members.len());
+                let failed = failed_ids(&self.tasks);
                 match (key.code, team) {
                     (KeyCode::Tab, _) if members > 0 => {
                         view.member = Some(view.member.map_or(0, |at| (at + 1) % members));
@@ -521,8 +523,12 @@ impl App {
                         }
                     }
                     (KeyCode::Char('y'), Some(_)) if stopping => return Action::StopTeam,
+                    (KeyCode::Char('y'), _) if retrying && !failed.is_empty() => {
+                        return Action::RetryTasks(failed);
+                    }
                     // Any other key answers no, and does nothing else.
-                    _ if stopping => {}
+                    _ if stopping || retrying => {}
+                    (KeyCode::Char('r'), _) if !failed.is_empty() => view.retrying = true,
                     (KeyCode::Char('s'), Some(_)) => view.stopping = true,
                     (KeyCode::Char('a'), Some(team)) => {
                         view.at_once = Some(AtOnceEdit {
@@ -582,6 +588,22 @@ fn scroll(row: &mut usize, code: KeyCode, up: bool, down: bool) -> bool {
         _ => return false,
     };
     true
+}
+
+impl App {
+    /// The plan's failed tasks of the lead's own work, which `r` in the Overview retries.
+    pub fn failed_tasks(&self) -> Vec<String> {
+        failed_ids(&self.tasks)
+    }
+}
+
+fn failed_ids(tasks: &[dusk_protocol::thread::Task]) -> Vec<String> {
+    use dusk_protocol::thread::{TaskDuty, TaskStatus};
+    tasks
+        .iter()
+        .filter(|task| task.status == TaskStatus::Failed && task.duty == TaskDuty::Work)
+        .map(|task| task.task_id.clone())
+        .collect()
 }
 
 #[cfg(test)]
@@ -740,6 +762,36 @@ mod tests {
             panic!("the Overview closed");
         };
         assert!(view.at_once.is_none());
+    }
+
+    /// `r` asks before the failed tasks are retried, ended team or not: only `y` retries
+    /// them, and with none failed `r` closes the panel as any key does.
+    #[test]
+    fn failed_tasks_retry_only_on_yes() {
+        use dusk_protocol::thread::{Task, TaskDuty};
+        let task = |id: &str, status: TaskStatus, duty: TaskDuty| Task {
+            task_id: id.into(),
+            status,
+            duty,
+            ..Task::default()
+        };
+        let mut app = overview(TeamStatus::Ended(TeamEnd::Steps));
+        app.tasks = vec![
+            task("t1", TaskStatus::Failed, TaskDuty::Work),
+            task("t2", TaskStatus::Done, TaskDuty::Work),
+            task("r1", TaskStatus::Failed, TaskDuty::Review),
+        ];
+        press(&mut app, KeyCode::Char('r'));
+        assert!(matches!(press(&mut app, KeyCode::Char('n')), Action::None));
+        assert!(app.panel.is_some(), "an answer closes nothing");
+        press(&mut app, KeyCode::Char('r'));
+        let Action::RetryTasks(ids) = press(&mut app, KeyCode::Char('y')) else {
+            panic!("nothing retried");
+        };
+        assert_eq!(ids, ["t1"]);
+        app.tasks.clear();
+        press(&mut app, KeyCode::Char('r'));
+        assert!(app.panel.is_none());
     }
 
     /// Tab chooses a member and enter opens its chat.

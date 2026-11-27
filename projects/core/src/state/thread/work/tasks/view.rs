@@ -187,6 +187,7 @@ fn task_from(task: PlanTask, items: Vec<TaskItem>, owner: Option<TaskOwner>, use
         owner,
         attempts: task.attempts,
         reworks: task.reworks,
+        retries: task.retries,
         waits_on: task.waits_on.map(waits_on),
         note: task.note,
         model: task.model,

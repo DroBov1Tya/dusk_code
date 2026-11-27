@@ -128,8 +128,9 @@ impl State {
         Ok(added)
     }
 
-    /// Changes a task nobody has started: one that is open, or blocked only because a
-    /// task it depends on failed. A member that lost it is not given it back: it worked
+    /// Changes a task no member works on: one that is open, failed, or blocked only
+    /// because a task it depends on failed. Every field may change; a failed task stays
+    /// failed until it is reopened. A member that lost it is not given it back: it worked
     /// from the old card.
     pub async fn edit_plan_task(
         &self,
@@ -137,6 +138,18 @@ impl State {
         task: &str,
         edit: &TaskEdit,
     ) -> Result<PlanTask, PlanError> {
+        let mut edited = self.edit_plan_tasks(thread, &[task], edit).await?;
+        edited.pop().ok_or(PlanError::NoSuchTask(task.to_owned()))
+    }
+
+    /// The same change to several tasks at once, as `edit_plan_task` makes it to one: all
+    /// of them or, on the first refusal, none. Answers them in the order given.
+    pub async fn edit_plan_tasks(
+        &self,
+        thread: &str,
+        tasks: &[&str],
+        edit: &TaskEdit,
+    ) -> Result<Vec<PlanTask>, PlanError> {
         check_texts(
             edit.description.as_deref(),
             edit.role.as_ref().and_then(|role| role.as_deref()),
@@ -147,62 +160,28 @@ impl State {
         if let Some(after) = &edit.after {
             check_dependency_count(after)?;
         }
+        if tasks.len() > MAX_OPEN_TASKS {
+            return Err(PlanError::TooMany {
+                what: "tasks in one edit",
+                max: MAX_OPEN_TASKS,
+            });
+        }
         let now = timestamp_ms()?;
         let mut transaction = self.pool.begin().await?;
         let root = root_of(&mut transaction, thread).await?;
-        let task_id = locate(&mut transaction, &root, task).await?;
-        let found = load(&mut transaction, &root, &task_id).await?;
-        let untouched = found.status == PlanStatus::Open
-            || (found.status == PlanStatus::Blocked && found.owner_thread_id.is_none());
-        if !untouched {
-            return Err(PlanError::Illegal {
-                task: task_id,
-                from: found.status,
-                to: PlanStatus::Open,
-            });
-        }
-        let mut depends_on = found.depends_on;
-        if let Some(after) = &edit.after {
-            depends_on.clear();
-            for after in after {
-                let dependency = dependency(&mut transaction, &root, after).await?;
-                if !depends_on.contains(&dependency) {
-                    depends_on.push(dependency);
-                }
+        let mut ids: Vec<String> = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            let task_id = locate(&mut transaction, &root, task).await?;
+            if !ids.contains(&task_id) {
+                edit_one(&mut transaction, &root, &task_id, edit, now).await?;
+                ids.push(task_id);
             }
         }
-        let gate = edit.gate.as_ref().unwrap_or(&found.gate);
-        sqlx::query(
-            "UPDATE tasks SET description = ?, depends_on = ?, role = ?, phase = ?,
-                 acceptance = ?, brief = ?, gate = ?, files = ?, tier = ?, effort = ?,
-                 updated_at = ?, last_owner_thread_id = NULL,
-                 skipped = CASE status WHEN 'open' THEN 0 ELSE skipped END
-             WHERE task_id = ? AND thread_id = ?",
-        )
-        .bind(
-            edit.description
-                .as_deref()
-                .map_or(found.description.as_str(), str::trim),
-        )
-        .bind(serde_json::to_string(&depends_on)?)
-        .bind(edit.role.as_ref().unwrap_or(&found.role))
-        .bind(edit.phase.as_ref().unwrap_or(&found.phase))
-        .bind(edit.acceptance.as_ref().unwrap_or(&found.acceptance))
-        .bind(edit.brief.as_ref().unwrap_or(&found.brief))
-        .bind(gate.as_ref().map(serde_json::to_string).transpose()?)
-        .bind(serde_json::to_string(
-            edit.files.as_ref().unwrap_or(&found.files).entries(),
-        )?)
-        .bind(edit.tier.or(found.tier).map(ModelTier::name))
-        .bind(edit.effort.or(found.effort).map(Effort::name))
-        .bind(now)
-        .bind(&task_id)
-        .bind(&root)
-        .execute(&mut *transaction)
-        .await?;
-        refuse_cycle(&mut transaction, &root, &task_id).await?;
         settle_blocks(&mut transaction, &root, now).await?;
-        let edited = load(&mut transaction, &root, &task_id).await?;
+        let mut edited = Vec::with_capacity(ids.len());
+        for task_id in &ids {
+            edited.push(load(&mut transaction, &root, task_id).await?);
+        }
         transaction.commit().await?;
         Ok(edited)
     }
@@ -360,6 +339,70 @@ async fn dependency(transaction: &mut Tx<'_>, root: &str, id: &str) -> Result<St
         Err(PlanError::NoSuchTask(id)) => Err(PlanError::UnknownDependency(id)),
         found => found,
     }
+}
+
+/// One task of an edit, inside its transaction. A task at work, in review or held by a
+/// member that waits is refused: its member works from the card as it was.
+async fn edit_one(
+    transaction: &mut Tx<'_>,
+    root: &str,
+    task_id: &str,
+    edit: &TaskEdit,
+    now: i64,
+) -> Result<(), PlanError> {
+    let found = load(transaction, root, task_id).await?;
+    let untouched = match found.status {
+        PlanStatus::Open | PlanStatus::Failed => true,
+        PlanStatus::Blocked => found.owner_thread_id.is_none(),
+        _ => false,
+    };
+    if !untouched {
+        return Err(PlanError::Illegal {
+            task: task_id.to_owned(),
+            from: found.status,
+            to: PlanStatus::Open,
+        });
+    }
+    let mut depends_on = found.depends_on;
+    if let Some(after) = &edit.after {
+        depends_on.clear();
+        for after in after {
+            let dependency = dependency(transaction, root, after).await?;
+            if !depends_on.contains(&dependency) {
+                depends_on.push(dependency);
+            }
+        }
+    }
+    let gate = edit.gate.as_ref().unwrap_or(&found.gate);
+    sqlx::query(
+        "UPDATE tasks SET description = ?, depends_on = ?, role = ?, phase = ?,
+             acceptance = ?, brief = ?, gate = ?, files = ?, tier = ?, effort = ?,
+             updated_at = ?, last_owner_thread_id = NULL,
+             skipped = CASE status WHEN 'open' THEN 0 ELSE skipped END
+         WHERE task_id = ? AND thread_id = ?",
+    )
+    .bind(
+        edit.description
+            .as_deref()
+            .map_or(found.description.as_str(), str::trim),
+    )
+    .bind(serde_json::to_string(&depends_on)?)
+    .bind(edit.role.as_ref().unwrap_or(&found.role))
+    .bind(edit.phase.as_ref().unwrap_or(&found.phase))
+    .bind(edit.acceptance.as_ref().unwrap_or(&found.acceptance))
+    .bind(edit.brief.as_ref().unwrap_or(&found.brief))
+    .bind(gate.as_ref().map(serde_json::to_string).transpose()?)
+    .bind(serde_json::to_string(
+        edit.files.as_ref().unwrap_or(&found.files).entries(),
+    )?)
+    .bind(edit.tier.or(found.tier).map(ModelTier::name))
+    .bind(edit.effort.or(found.effort).map(Effort::name))
+    .bind(now)
+    .bind(task_id)
+    .bind(root)
+    .execute(&mut **transaction)
+    .await?;
+    refuse_cycle(transaction, root, task_id).await
 }
 
 pub(super) async fn load(

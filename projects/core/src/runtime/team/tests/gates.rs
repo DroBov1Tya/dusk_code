@@ -101,6 +101,96 @@ async fn a_gate_that_fails_sends_the_task_back_a_bounded_number_of_times() {
     .await;
 }
 
+/// The lead's lesson: a gate that cannot pass is fixed on the task itself, and the
+/// task is retried in place, its dependent with it, rather than rebuilt as a new chain.
+#[tokio::test]
+async fn a_failed_task_with_its_gate_edited_is_retried_in_place_and_passes() {
+    let rig = unasked("team_gate_retry").await;
+    let ids = rig
+        .plan(&[
+            NewTask {
+                key: Some("a".into()),
+                ..gated("one", command("exit 4"))
+            },
+            NewTask {
+                after: vec!["a".into()],
+                ..gated("two", command("true"))
+            },
+        ])
+        .await;
+    rig.run().await;
+    until("the task failed", || async {
+        rig.status(&ids[0]).await == PlanStatus::Failed
+    })
+    .await;
+    assert_eq!(rig.status(&ids[1]).await, PlanStatus::Blocked);
+
+    let edit = TaskEdit {
+        gate: Some(Some(command("true"))),
+        ..TaskEdit::default()
+    };
+    let edited = rig.state().edit_plan_task(&rig.lead, &ids[0], &edit).await;
+    assert_eq!(edited.unwrap().status, PlanStatus::Failed);
+    // Only a failed task is retried from a client.
+    let refused = rig
+        .runtime
+        .retry_task(&rig.lead, &ids[1])
+        .await
+        .unwrap_err();
+    assert!(
+        refused.to_string().contains("only a failed task"),
+        "{refused}"
+    );
+    let (_, retried) = rig.runtime.retry_task(&rig.lead, &ids[0]).await.unwrap();
+    assert_eq!(retried.task_id, ids[0]);
+    assert_eq!(retried.retries, 1);
+
+    // Running or ended by now, the team goes on with it: nobody runs it by hand.
+    until("the team ended done", || async {
+        rig.ended().await == Some(TeamEnd::Done)
+    })
+    .await;
+    for id in &ids {
+        assert_eq!(rig.status(id).await, PlanStatus::Done);
+    }
+    let done = rig.task(&ids[0]).await;
+    assert_eq!((done.retries, done.reworks), (1, 0));
+}
+
+/// The user's Retry on a team that ended is a restart: the team runs again toward its
+/// last goal and gives the task out, without the lead's `run`.
+#[tokio::test]
+async fn a_retry_after_the_team_ended_runs_the_team_again() {
+    let rig = unasked("team_gate_retry_ended").await;
+    let ids = rig.plan(&[gated("one", command("exit 4"))]).await;
+    rig.run().await;
+    until("the task failed", || async {
+        rig.status(&ids[0]).await == PlanStatus::Failed
+    })
+    .await;
+    if rig.ended().await.is_none() {
+        rig.runtime.stop_team(&rig.lead).await.unwrap();
+    }
+    until("the team ended", || async { rig.ended().await.is_some() }).await;
+    assert_ne!(rig.ended().await, Some(TeamEnd::Done));
+
+    let edit = TaskEdit {
+        gate: Some(Some(command("true"))),
+        ..TaskEdit::default()
+    };
+    rig.state()
+        .edit_plan_task(&rig.lead, &ids[0], &edit)
+        .await
+        .unwrap();
+    rig.runtime.retry_task(&rig.lead, &ids[0]).await.unwrap();
+
+    until("the team ran again and ended done", || async {
+        rig.ended().await == Some(TeamEnd::Done)
+    })
+    .await;
+    assert_eq!(rig.status(&ids[0]).await, PlanStatus::Done);
+}
+
 #[tokio::test]
 async fn a_gate_that_may_not_run_unasked_waits_for_the_lead() {
     // The default mode asks, and nobody can be asked from a gate.

@@ -63,6 +63,8 @@ pub enum Action {
     Overview,
     /// Stop the chat's running team, after the second `s`.
     StopTeam,
+    /// Retry these failed tasks of the chat's plan in place, after `r` and `y`.
+    RetryTasks(Vec<String>),
     /// Let this many members of the chat's running team work at once.
     SetTeamAtOnce(u32),
     /// `/files`: what this chat's commands changed in the project.

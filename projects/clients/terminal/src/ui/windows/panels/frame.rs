@@ -216,11 +216,21 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         ),
         Panel::Overview(view) => {
             let running = app.team.as_ref().is_some_and(|team| team.ended().is_none());
+            let failed = !app.failed_tasks().is_empty();
             let hints = match (&view.at_once, view.stopping) {
                 (Some(_), _) => "left/right or -/+ change  enter save  esc cancel",
                 (None, true) => "stop team? y stops it  any other key keeps it running",
+                (None, false) if view.retrying => {
+                    "retry the failed tasks? y retries them  any other key keeps them"
+                }
+                (None, false) if running && failed => {
+                    "up/down scroll  tab member  enter open  s stop  a at once  r retry  esc close"
+                }
                 (None, false) if running => {
                     "up/down scroll  tab member  enter open  s stop  a at once  esc close"
+                }
+                (None, false) if failed => {
+                    "up/down scroll  tab member  enter open its chat  r retry failed  esc close"
                 }
                 (None, false) if app.team.is_some() => {
                     "up/down scroll  tab member  enter open its chat  esc close"

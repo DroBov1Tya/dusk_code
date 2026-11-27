@@ -220,6 +220,32 @@ impl Launcher {
         events::team(self, lead, now, false).await;
     }
 
+    /// The user retried a task of the chat `lead`. A running team gives it out on this
+    /// pass. One that ended, most often stalled on that very task, starts again toward
+    /// its last goal, as the lead's `run` would: a retry is a restart, not only a task
+    /// back to open. The run goes on its own, since it may first ask the user to allow
+    /// the gates; one that cannot start leaves the task open for the lead's next `run`.
+    pub async fn team_retried(&self, lead: &str) {
+        let goal = match self.state.team_run(lead).await {
+            Ok(Some(run)) if run.status != TeamStatus::Running && !run.goal.trim().is_empty() => {
+                run.goal
+            }
+            Ok(_) => return self.team_changed(lead).await,
+            Err(error) => {
+                warn!("team of thread {lead}: {error:#}");
+                return self.team_changed(lead).await;
+            }
+        };
+        let runner = Runner::new(self.clone());
+        let lead = lead.to_owned();
+        tokio::spawn(async move {
+            if let Err(error) = runner.run(&lead, &goal, None).await {
+                warn!("team of thread {lead}: cannot start it again for a retry: {error:#}");
+                runner.launcher.team_changed(&lead).await;
+            }
+        });
+    }
+
     /// The chat `lead` was opened: what a stopped core left of its team is settled, then
     /// a pass goes on with it. Called before the chat's agents are woken, so a member
     /// whose turn can go on finds its lease started again.

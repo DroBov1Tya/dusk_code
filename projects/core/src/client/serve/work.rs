@@ -81,6 +81,11 @@ impl Server {
                 self.announce(&chat, ThreadEvent::TaskChanged(task));
                 Response::Done
             }
+            WorkRequest::RetryTask { thread_id, task_id } => {
+                let (chat, task) = runtime.retry_task(&thread_id, &task_id).await?;
+                self.announce(&chat, ThreadEvent::TaskChanged(task));
+                Response::Done
+            }
             WorkRequest::StopTeam { thread_id } => {
                 let (team, returned) = runtime.stop_team(&thread_id).await?;
                 let chat = team.thread_id.clone();

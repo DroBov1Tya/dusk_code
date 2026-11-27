@@ -107,6 +107,12 @@ pub enum WorkRequest {
         thread_id: String,
         task_id: String,
     },
+    /// Retries a failed task of work of the plan in place: the same id, its dependents with it.
+    /// A running team gives it out again; one that ended starts again toward its goal.
+    RetryTask {
+        thread_id: String,
+        task_id: String,
+    },
     /// Ends the running team as stopped.
     StopTeam {
         thread_id: String,

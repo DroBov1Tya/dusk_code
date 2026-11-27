@@ -42,6 +42,9 @@ pub struct Task {
     pub attempts: u32,
     /// Times it came back from review.
     pub reworks: u32,
+    /// Times it failed and was retried in place; `attempts` and `reworks` count the
+    /// current try.
+    pub retries: u32,
     /// What a blocked task waits for.
     pub waits_on: Option<WaitsOn>,
     /// Why it is blocked or failed, or what the review said. Model or program text: data.
@@ -128,6 +131,8 @@ struct TaskFields {
     #[serde(default)]
     reworks: u32,
     #[serde(default)]
+    retries: u32,
+    #[serde(default)]
     waits_on: Option<WaitsOn>,
     #[serde(default)]
     note: String,
@@ -179,6 +184,7 @@ impl TryFrom<TaskFields> for Task {
             owner: fields.owner,
             attempts: fields.attempts,
             reworks: fields.reworks,
+            retries: fields.retries,
             waits_on: fields.waits_on,
             note: fields.note,
             model: fields.model,

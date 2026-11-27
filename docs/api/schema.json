@@ -9997,6 +9997,12 @@
           "default": "",
           "type": "string"
         },
+        "retries": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "review_of": {
           "default": null,
           "type": [
@@ -14346,6 +14352,31 @@
           },
           "required": [
             "ConfirmTask"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Retries a failed task of work of the plan in place: the same id, its dependents with it.\nA running team gives it out again; one that ended starts again toward its goal.",
+          "properties": {
+            "RetryTask": {
+              "properties": {
+                "task_id": {
+                  "type": "string"
+                },
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id",
+                "task_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "RetryTask"
           ],
           "type": "object"
         },

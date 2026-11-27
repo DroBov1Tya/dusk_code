@@ -82,6 +82,8 @@ pub struct OverviewView {
     pub row: usize,
     /// `s` asked "Stop team? y/n": `y` stops it, any other key answers no.
     pub stopping: bool,
+    /// `r` asked "Retry the failed tasks? y/n": `y` retries them, any other key answers no.
+    pub retrying: bool,
     /// How many members of the running team work at once, being changed.
     pub at_once: Option<AtOnceEdit>,
     /// The member row chosen with tab, which enter opens.
@@ -95,6 +97,7 @@ impl OverviewView {
             context,
             row: 0,
             stopping: false,
+            retrying: false,
             at_once: None,
             member: None,
         }

@@ -94,7 +94,10 @@ fn plan() -> Vec<Made> {
             "appsec-reviewer",
             true,
             json!({ "files": ["src/key.rs"], "attempts": 3, "reworks": 2, "skipped": true,
-                    "note": "gave up after two reworks: the key is hashed with the default hasher",
+                    "retries": 1,
+                    "gate": { "kind": "command", "command": "uv run pytest tests/test_key.py" },
+                    "note": "gate failed, exit 127: uv: command not found | \
+                             make sure uv is installed and on PATH",
                     "steps": 40, "tokens": 310_000 }),
         ),
         made(

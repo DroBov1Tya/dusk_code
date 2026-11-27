@@ -203,8 +203,9 @@ async fn the_plan_form_is_offered_only_to_a_chat_in_team_mode() {
 async fn the_plan_form_costs_what_the_design_says() {
     let f = fixture("plan_bytes").await;
     let plan = spec_bytes(&f.tasks, &f.context);
-    // `tier` and `effort` per task: 263 bytes more than before them.
-    assert_eq!(plan, (5, 1476, 925));
+    // `tier` and `effort` per task: 263 bytes more than before them; editing any field,
+    // several ids at once and retrying in place: 167 more.
+    assert_eq!(plan, (5, 1663, 905));
     let main = ToolContext {
         config: tool_context_with(&f.context.scope, "limits:\n  plan_graph: true\n").config,
         ..f.context.clone()
@@ -213,7 +214,7 @@ async fn the_plan_form_costs_what_the_design_says() {
     let growth = (plan.0 + plan.1 + plan.2) - (board.0 + board.1 + board.2);
     println!("board {board:?}, plan {plan:?}, growth {growth}");
     assert_eq!(board.0 + board.1 + board.2, 1274);
-    assert_eq!(growth, 1132);
+    assert_eq!(growth, 1299);
 }
 
 fn seven() -> Value {
@@ -395,6 +396,7 @@ async fn text_over_its_cap_a_bad_gate_and_unknown_fields_are_refused() {
         json!({ "action": "add", "tasks": [{ "text": "one", "owner": "m0" }] }),
         json!({ "action": "add", "tasks": [{ "text": "one" }], "id": "x" }),
         json!({ "action": "add", "tasks": [] }),
+        json!({ "action": "add", "tasks": [{ "accept": "no text" }] }),
         // A team has no budget to name.
         json!({ "action": "run", "budget": { "steps": 50 } }),
         json!({ "action": "review", "ids": [null] }),
@@ -591,7 +593,7 @@ async fn fail_and_reopen_repeated_change_nothing_more() {
 
     let reopen = json!({ "action": "reopen", "id": id });
     let answer = f.call(reopen.clone()).await.unwrap();
-    assert_eq!(answer, format!("reopened #{id}"));
+    assert_eq!(answer, format!("reopened #{id} (try 2)"));
     assert_eq!(f.call(reopen).await.unwrap(), answer);
     let behind = f.state.plan_task(LEAD, &ids[1]).await.unwrap();
     assert_eq!(behind.status, PlanStatus::Open);
@@ -603,8 +605,164 @@ async fn fail_and_reopen_repeated_change_nothing_more() {
         .refused(json!({ "action": "edit", "id": id, "text": "late" }))
         .await;
     assert!(
-        refused.contains("edit changes only a task not yet started"),
+        refused.contains("its member works from the card as it is; fail it first"),
         "{refused}"
+    );
+}
+
+/// The lead's failure, fixed: a failed task takes an edit of any field, the gate
+/// included, and `reopen` retries it in place with its try counted.
+#[tokio::test]
+async fn a_failed_task_takes_any_edit_and_reopens_in_place() {
+    let f = fixture("plan_retry").await;
+    f.call(json!({ "action": "add", "tasks": [
+        { "key": "a", "text": "one", "gate": "uv run pytest" },
+        { "text": "two", "after": ["a"] }] }))
+        .await
+        .unwrap();
+    let ids = f.ids().await;
+    let id = short_task_id(&ids[0]).to_owned();
+    f.call(json!({ "action": "fail", "id": id, "text": "gate failed, exit 127" }))
+        .await
+        .unwrap();
+
+    let edit = json!({ "action": "edit", "id": id, "tasks": [{
+        "gate": "python -m pytest", "files": ["src/main.rs"], "role": "reviewer",
+        "tier": "strong", "accept": "tests pass" }] });
+    assert_eq!(
+        f.call(edit).await.unwrap(),
+        format!("edited #{id}; reopen a failed one to retry it")
+    );
+    let edited = f.state.plan_task(LEAD, &ids[0]).await.unwrap();
+    assert_eq!(edited.status, PlanStatus::Failed);
+    assert_eq!(edited.description, "one");
+    assert_eq!(
+        edited.gate,
+        Some(GoalCheck::Command {
+            command: "python -m pytest".into()
+        })
+    );
+    assert_eq!(edited.files.entries(), ["src/main.rs"]);
+    assert_eq!(edited.role.as_deref(), Some("reviewer"));
+
+    let reopen = json!({ "action": "reopen", "id": id });
+    let answer = f.call(reopen.clone()).await.unwrap();
+    assert_eq!(answer, format!("reopened #{id} (try 2)"));
+    assert_eq!(f.call(reopen).await.unwrap(), answer);
+    let task = f.state.plan_task(LEAD, &ids[0]).await.unwrap();
+    assert_eq!(
+        (task.status, task.task_id.as_str()),
+        (PlanStatus::Open, ids[0].as_str())
+    );
+    assert_eq!(task.retries, 1);
+    let shown = f.call(json!({ "action": "show", "id": id })).await.unwrap();
+    assert!(shown.contains("Try 2 (retried in place)"), "{shown}");
+    assert_eq!(
+        f.state.plan_task(LEAD, &ids[1]).await.unwrap().status,
+        PlanStatus::Open
+    );
+}
+
+/// A skip gives up the tasks behind a failed one; its retry brings them back.
+#[tokio::test]
+async fn a_retry_brings_back_what_its_skip_gave_up() {
+    let f = fixture("plan_unskip").await;
+    f.call(json!({ "action": "add", "tasks": [
+        { "key": "a", "text": "one" },
+        { "key": "b", "text": "two", "after": ["a"] },
+        { "text": "three", "after": ["b"] }] }))
+        .await
+        .unwrap();
+    let ids = f.ids().await;
+    let id = short_task_id(&ids[0]).to_owned();
+    f.call(json!({ "action": "fail", "id": id })).await.unwrap();
+    f.call(json!({ "action": "skip", "id": id, "text": "later" }))
+        .await
+        .unwrap();
+    for behind in &ids[1..] {
+        assert!(f.state.plan_task(LEAD, behind).await.unwrap().skipped);
+    }
+    f.call(json!({ "action": "reopen", "ids": [id] }))
+        .await
+        .unwrap();
+    for id in &ids {
+        let task = f.state.plan_task(LEAD, id).await.unwrap();
+        assert!(!task.skipped, "{id}");
+        assert_eq!(task.status, PlanStatus::Open);
+    }
+}
+
+/// One call fixes a field of every task in the queue, or of none: a task at work among
+/// them refuses the whole edit.
+#[tokio::test]
+async fn an_edit_of_several_ids_sets_the_same_fields_on_each_or_on_none() {
+    let f = fixture("plan_bulk").await;
+    f.call(json!({ "action": "add", "tasks": [
+        { "text": "one", "gate": "uv run pytest" },
+        { "text": "two", "gate": "uv run pytest" },
+        { "text": "three", "gate": "uv run pytest" }] }))
+        .await
+        .unwrap();
+    let ids = f.ids().await;
+    let short: Vec<String> = ids.iter().map(|id| short_task_id(id).to_owned()).collect();
+    f.call(json!({ "action": "fail", "id": short[0] }))
+        .await
+        .unwrap();
+    let fixed = json!({ "action": "edit", "ids": [short[0], short[1]],
+        "tasks": [{ "gate": "python -m pytest" }] });
+    let answer = f.call(fixed).await.unwrap();
+    assert!(answer.starts_with(&format!("edited #{} #{}", short[0], short[1])));
+    for id in &ids[..2] {
+        let gate = f.state.plan_task(LEAD, id).await.unwrap().gate;
+        assert_eq!(
+            gate,
+            Some(GoalCheck::Command {
+                command: "python -m pytest".into()
+            })
+        );
+    }
+    f.drive(&ids[2], "m0", PlanStatus::Running).await;
+    let refused = f
+        .refused(json!({ "action": "edit", "ids": [short[1], short[2]],
+            "tasks": [{ "gate": "make test" }] }))
+        .await;
+    assert!(
+        refused.contains(&format!("task #{} is running", short[2])),
+        "{refused}"
+    );
+    let untouched = f.state.plan_task(LEAD, &ids[1]).await.unwrap().gate;
+    assert_eq!(
+        untouched,
+        Some(GoalCheck::Command {
+            command: "python -m pytest".into()
+        }),
+        "a refused edit changes none of its ids"
+    );
+    // The lead's arguments are untrusted: each wrong shape is an error, nothing changes.
+    let many: Vec<String> = (0..65).map(|n| format!("{n:08}")).collect();
+    for wrong in [
+        json!({ "action": "edit", "ids": [short[0]], "id": short[1], "tasks": [{ "gate": "true" }] }),
+        json!({ "action": "edit", "ids": [], "tasks": [{ "gate": "true" }] }),
+        json!({ "action": "edit", "ids": many, "tasks": [{ "gate": "true" }] }),
+        json!({ "action": "edit", "ids": [short[0], short[1]], "text": "same words" }),
+        json!({ "action": "edit", "ids": [short[0], short[1]], "tasks": [{ "text": "same" }] }),
+        json!({ "action": "edit", "ids": [short[0], short[1]], "tasks": [{ "files": ["src/"] }] }),
+        json!({ "action": "edit", "ids": [short[0], short[1]], "tasks": [{ "gate": "  " }] }),
+        json!({ "action": "edit", "id": short[0], "tasks": [{}] }),
+        json!({ "action": "edit", "id": short[0], "tasks": [{ "files": ["../out.rs"] }] }),
+        json!({ "action": "edit", "id": short[0], "tasks": [{ "after": [short[0]] }] }),
+        json!({ "action": "edit", "ids": ["nothing1"], "tasks": [{ "gate": "true" }] }),
+        json!({ "action": "edit", "ids": [7], "tasks": [{ "gate": "true" }] }),
+        json!({ "action": "reopen", "ids": [] }),
+        json!({ "action": "reopen", "id": short[0], "ids": [short[1]] }),
+    ] {
+        let shown = wrong.to_string();
+        assert!(f.call(wrong).await.is_err(), "{shown}");
+    }
+    let plan = f.state.plan(LEAD).await.unwrap();
+    assert!(
+        plan.iter()
+            .all(|task| task.depends_on.is_empty() && task.retries == 0)
     );
 }
 

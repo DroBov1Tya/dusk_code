@@ -151,6 +151,10 @@ pub struct PlanTask {
     pub lease_until: Option<i64>,
     pub attempts: u32,
     pub reworks: u32,
+    /// Times a failed try was retried in place: `attempts` and `reworks` start again then.
+    pub retries: u32,
+    /// When it was last retried; the review rounds of the new try count from then.
+    pub retried_at: Option<i64>,
     pub waits_on: Option<WaitsOn>,
     pub note: String,
     pub gate_job: Option<String>,
@@ -220,7 +224,8 @@ macro_rules! select_tasks {
             "SELECT t.task_id, t.thread_id, t.description, t.status, t.depends_on, t.role, \
              t.phase, t.acceptance, t.brief, t.gate, t.files, t.owner_thread_id, \
              t.last_owner_thread_id, t.resumes, t.lease_until, t.attempts, t.reworks, \
-             t.waits_on, t.note, t.gate_job, t.checkpoint, t.model, t.tier, t.effort, t.result, \
+             t.retries, t.retried_at, t.waits_on, t.note, t.gate_job, t.checkpoint, t.model, \
+             t.tier, t.effort, t.result, \
              t.duty, t.review_of, t.skipped, t.created_at, t.updated_at FROM tasks t ",
             $rest
         )
@@ -271,6 +276,8 @@ pub(super) fn decode(row: &SqliteRow) -> Result<PlanTask, PlanError> {
         lease_until: row.try_get("lease_until")?,
         attempts: count("attempts")?,
         reworks: count("reworks")?,
+        retries: count("retries")?,
+        retried_at: row.try_get("retried_at")?,
         waits_on: waits_on.as_deref().and_then(WaitsOn::parse),
         note: row.try_get("note")?,
         gate_job: row.try_get("gate_job")?,

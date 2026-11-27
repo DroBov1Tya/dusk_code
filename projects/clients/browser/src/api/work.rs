@@ -96,6 +96,12 @@ pub async fn set_team_at_once(thread_id: &str, at_once: u32) -> Res<()> {
     done(work(WorkRequest::SetTeamAtOnce { thread_id, at_once })).await
 }
 
+/// Retries a failed task in place; its own event moves the row.
+pub async fn retry_task(thread_id: &str, task_id: &str) -> Res<()> {
+    let (thread_id, task_id) = (thread_id.to_owned(), task_id.to_owned());
+    done(work(WorkRequest::RetryTask { thread_id, task_id })).await
+}
+
 /// Passes a task that waits for the user's confirmation; its own event moves the row.
 pub async fn confirm_task(thread_id: &str, task_id: &str) -> Res<()> {
     let (thread_id, task_id) = (thread_id.to_owned(), task_id.to_owned());
