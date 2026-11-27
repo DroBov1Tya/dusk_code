@@ -624,6 +624,22 @@ fn activity(ws: &mut Workspace, shown: &str, kind: &str, turn: dusk_protocol::th
     }
 }
 
+/// `fake=queued`: two messages written while the shown chat works, and one the core holds
+/// while it compacts the context.
+pub fn queued(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    use crate::pages::chat::composer::Draft;
+    let Some(shown) = ws.shown.clone() else {
+        return;
+    };
+    for text in [
+        "Also cover the empty list in the test",
+        "Then rename the helper to load_all",
+    ] {
+        ws.queue(shown.clone(), text.into(), Draft::default(), window, cx);
+    }
+    ws.held_by_core(shown, "Keep the cached config here".into(), window, cx);
+}
+
 fn agent_tree(ws: &mut Workspace) {
     use dusk_protocol::catalog::{AgentNode, AgentTree, Problem};
     let node = |name: &str, about: &str, links: &[&str], children: Vec<AgentNode>| AgentNode {

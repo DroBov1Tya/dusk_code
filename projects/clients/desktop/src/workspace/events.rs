@@ -74,6 +74,7 @@ impl Workspace {
                     *event,
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }
                 );
+                self.held_heard(&thread_id, &event);
                 self.suggestions
                     .entry(thread_id.clone())
                     .or_default()

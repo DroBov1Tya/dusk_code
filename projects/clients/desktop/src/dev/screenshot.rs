@@ -659,6 +659,7 @@ fn act(
         "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
         "fake" if value.starts_with("diagram") => super::diagrams::fake(ws, value, cx),
         "fake" if value == "mcp" => super::polish::mcp(ws, cx),
+        "fake" if value == "queued" => super::polish::queued(ws, window, cx),
         "fake"
             if matches!(
                 value,

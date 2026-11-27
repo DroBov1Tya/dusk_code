@@ -308,6 +308,17 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
             {
                 cx.stop_propagation();
                 ws.next_mode(cx);
+            } else if keys.key == "up"
+                && !keys.modifiers.modified()
+                && ws.composer.read(cx).value().is_empty()
+                && ws.attachments.is_empty()
+                && ws.pastes.is_empty()
+            {
+                // Over the empty box, Up takes the newest waiting message back to edit;
+                // a box with text keeps its own Up.
+                if ws.edit_last_pending(cx) {
+                    cx.stop_propagation();
+                }
             } else if keys.key == "tab" && !keys.modifiers.shift && !keys.modifiers.control {
                 cx.stop_propagation();
                 // Over a mention or a command, Tab completes it, as in the TUI; over the
