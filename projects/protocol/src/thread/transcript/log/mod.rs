@@ -428,6 +428,11 @@ impl<L> ChatLog<L> {
             let asker = later.asked_by.get(&request.id).cloned();
             self.open_approval(request, asker.as_deref());
         }
+        self.live.merge_approvals(&later.live);
+        // Agents put away while the history was read stay away.
+        for id in later.cleared {
+            self.clear_away(id);
+        }
     }
 
     /// The item at `index` to change in place; it is marked changed.

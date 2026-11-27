@@ -34,6 +34,7 @@ impl<L> ChatLog<L> {
     pub fn close_approval(&mut self, id: u64) {
         self.approvals.retain(|request| request.id != id);
         self.asked_by.remove(&id);
+        self.live.close_approval(id);
     }
 
     /// The thread of the agent below the chat that asks request `id`; none when the chat's
@@ -217,5 +218,40 @@ mod tests {
         assert!(chat.approvals.is_empty());
         let work = activity(&chat.live, 0).expect("its agents still work");
         assert_ne!(work.kind, WorkKind::WaitingForUser);
+    }
+
+    #[test]
+    fn a_request_answered_here_stops_waiting_before_the_core_closes_it() {
+        let mut chat = ChatLog::<std::convert::Infallible>::default();
+        chat.apply(ThreadEvent::AgentsWorking(true), 0);
+        chat.apply(started("member-b", "code-writer"), 0);
+        chat.apply(wrapped(&["member-b"], ThreadEvent::Approval(asked(9))), 0);
+        assert!(chat.approval_waits_on("member-b"));
+        chat.close_approval(9);
+        assert!(chat.approvals.is_empty());
+        assert!(!chat.approval_waits_on("member-b"));
+        let work = activity(&chat.live, 0).expect("its agents still work");
+        assert_ne!(work.kind, WorkKind::WaitingForUser);
+    }
+
+    #[test]
+    fn a_live_copy_keeps_its_waits_and_clears_over_the_history() {
+        let mut history = ChatLog::<std::convert::Infallible>::default();
+        history.apply(ThreadEvent::AgentsWorking(true), 0);
+        history.apply(started("done-a", "planner"), 0);
+        history.apply(wrapped(&["done-a"], ThreadEvent::Idle), 0);
+        assert!(!history.agent("done-a").expect("listed").working());
+        let mut live = ChatLog::<std::convert::Infallible>::default();
+        live.apply(ThreadEvent::AgentsWorking(true), 0);
+        live.apply(wrapped(&["member-b"], ThreadEvent::Approval(asked(9))), 0);
+        live.cleared.insert("done-a".into());
+        live.cleared.insert("gone-c".into());
+
+        history.append_live(live);
+        let work = activity(&history.live, 0).expect("the chat waits");
+        assert_eq!(work.kind, WorkKind::WaitingForUser);
+        assert!(history.agent("done-a").is_none());
+        assert!(history.cleared("done-a"));
+        assert!(history.cleared("gone-c"));
     }
 }

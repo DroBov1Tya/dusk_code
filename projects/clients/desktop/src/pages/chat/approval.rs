@@ -418,7 +418,7 @@ impl Workspace {
                 }
                 // The core closes it with an event as well; this hides it at once.
                 for chat in ws.chats.values_mut() {
-                    chat.approvals.retain(|request| request.id != id);
+                    chat.close_approval(id);
                 }
                 cx.notify();
             },

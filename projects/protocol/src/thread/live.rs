@@ -78,6 +78,20 @@ pub struct LiveTurn {
 }
 
 impl LiveTurn {
+    /// Request `id` was answered here; the core's close may come later or not at all.
+    pub fn close_approval(&mut self, id: u64) {
+        self.approvals.retain(|open| *open != id);
+    }
+
+    /// Takes the open requests `later`, followed live, knows of.
+    pub fn merge_approvals(&mut self, later: &LiveTurn) {
+        for id in &later.approvals {
+            if !self.approvals.contains(id) {
+                self.approvals.push(*id);
+            }
+        }
+    }
+
     /// Takes in `event`, which came at `now` (Unix milliseconds, the client's clock).
     pub fn apply(&mut self, event: &ThreadEvent, now: i64) {
         self.heard = now;

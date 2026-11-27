@@ -26,6 +26,16 @@ impl<L> ChatLog<L> {
         gone
     }
 
+    /// Keeps agent `thread_id` put away, as a live copy of the chat had it: one the history
+    /// does not list is remembered, so a later roster does not bring it back.
+    pub(super) fn clear_away(&mut self, thread_id: String) {
+        if self.agents.contains_key(&thread_id) {
+            self.clear_agents(Some(&thread_id));
+        } else {
+            self.cleared.insert(thread_id);
+        }
+    }
+
     /// The agent was put away and has not worked since.
     pub fn cleared(&self, thread_id: &str) -> bool {
         self.cleared.contains(thread_id)
