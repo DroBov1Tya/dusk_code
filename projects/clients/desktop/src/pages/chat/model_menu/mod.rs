@@ -89,7 +89,7 @@ pub fn render(
                 side_by_side,
                 cx,
             )
-            .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::Effort, cx))),
+            .on_click(cx.listener(|ws, _, window, cx| ws.open_submenu(Picker::Effort, window, cx))),
         )
         .child(
             submenu_row(
@@ -100,7 +100,9 @@ pub fn render(
                 side_by_side,
                 cx,
             )
-            .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::MoreModels, cx))),
+            .on_click(
+                cx.listener(|ws, _, window, cx| ws.open_submenu(Picker::MoreModels, window, cx)),
+            ),
         )
         .child(
             div()
@@ -348,7 +350,7 @@ pub fn back_row(label: &str, side_by_side: bool, cx: &mut Context<Workspace>) ->
 
 impl Workspace {
     /// Opens a submenu, or goes back to the menu alone when it is open.
-    fn open_submenu(&mut self, submenu: Picker, cx: &mut Context<Self>) {
+    fn open_submenu(&mut self, submenu: Picker, window: &mut Window, cx: &mut Context<Self>) {
         self.picker = Some(if self.picker == Some(submenu) {
             Picker::Model
         } else {
@@ -360,6 +362,13 @@ impl Workspace {
             && let Some((provider, _)) = provider.split_once('/')
         {
             self.models_open.insert(provider.to_owned());
+        }
+        // The search starts empty and takes the keys, so typing filters at once.
+        if self.picker == Some(Picker::MoreModels) {
+            self.models_search.update(cx, |search, cx| {
+                search.set_value("", window, cx);
+                search.focus(window, cx);
+            });
         }
         cx.notify();
     }
