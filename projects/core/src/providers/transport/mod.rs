@@ -2,4 +2,5 @@
 //! decoder of the event streams they answer with.
 
 pub mod http;
+pub mod shape;
 pub mod sse;

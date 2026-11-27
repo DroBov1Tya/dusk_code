@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::providers::{
-    errors::ended_early,
+    errors::{ended_early, unreadable_event},
     output::{FinishReason, ModelEvent, Usage},
     transport::sse::{EventParser, SseDecoder, SseStream},
 };
@@ -97,8 +97,7 @@ impl EventParser for MessageParser {
 impl MessageParser {
     fn parse_event(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
         // Upstream payloads can echo input; never copy them into errors.
-        let event: Event = serde_json::from_str(data)
-            .map_err(|_| anyhow!("invalid provider stream event JSON"))?;
+        let event: Event = serde_json::from_str(data).map_err(|_| unreadable_event("event"))?;
         let mut events = Vec::new();
         match event {
             Event::MessageStart { message } => self.count(message.usage.unwrap_or_default()),

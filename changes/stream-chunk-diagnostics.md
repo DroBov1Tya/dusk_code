@@ -1,0 +1,2 @@
+Fixed
+A stream event a provider sends that cannot be read no longer fails the turn at once: the step is sent again, as after a cut stream, when nothing of the answer was shown yet. The event is described in `core.log` by host, model, kind of error and the types of its known fields, never their values. An OpenAI-compatible server that sends an empty `tool_calls` or `choices` as `null`, as some GLM proxies do, is now read.

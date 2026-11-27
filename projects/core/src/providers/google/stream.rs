@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use reqwest::Response;
 use serde::Deserialize;
 use serde_json::Value;
@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::signatures::Signatures;
 use crate::providers::{
-    errors::{ProviderError, ProviderErrorKind, ended_early},
+    errors::{ProviderError, ProviderErrorKind, ended_early, unreadable_event},
     output::{FinishReason, ModelEvent, Usage},
     transport::sse::{EventParser, SseDecoder, SseStream},
 };
@@ -132,8 +132,7 @@ impl GenerateParser {
 
     fn parse_chunk(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
         // Upstream payloads can echo input; never copy them into errors.
-        let chunk: Chunk = serde_json::from_str(data)
-            .map_err(|_| anyhow!("invalid provider stream event JSON"))?;
+        let chunk: Chunk = serde_json::from_str(data).map_err(|_| unreadable_event("event"))?;
         if let Some(error) = chunk.error {
             let status = error["status"].as_str().unwrap_or_default();
             let code = error["code"].as_u64().unwrap_or_default();

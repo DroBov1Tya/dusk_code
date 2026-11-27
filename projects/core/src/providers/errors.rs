@@ -117,6 +117,15 @@ pub fn ended_early() -> ProviderError {
     )
 }
 
+/// A stream event that does not parse. Proxies send one now and then, so it is taken as
+/// a cut stream that may pass on a resend. The event is never quoted: it can echo input.
+pub fn unreadable_event(what: &str) -> ProviderError {
+    ProviderError::new(
+        ProviderErrorKind::Interrupted,
+        format!("invalid provider stream {what} JSON"),
+    )
+}
+
 /// An error a provider puts in its stream, from its type or code alone. Without a clear
 /// sign that the request itself is wrong (bad input, key, model or size), it is taken as
 /// one that may pass.

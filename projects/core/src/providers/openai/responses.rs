@@ -21,7 +21,9 @@ use serde_json::{Value, json};
 use crate::{
     config::{Effort, ProviderConfig},
     providers::{
-        errors::{ProviderError, ProviderErrorKind, UnsupportedPictures, ended_early},
+        errors::{
+            ProviderError, ProviderErrorKind, UnsupportedPictures, ended_early, unreadable_event,
+        },
         limits::{Account, Headers, PlanUse},
         output::{FinishReason, ModelEvent, Usage},
         registry::Model,
@@ -479,8 +481,7 @@ impl EventParser for Parser {
 
     fn parse(&mut self, data: &str) -> Result<Vec<ModelEvent>> {
         // Upstream payloads can echo input; never copy them into errors.
-        let event: Event = serde_json::from_str(data)
-            .map_err(|_| anyhow!("invalid provider stream event JSON"))?;
+        let event: Event = serde_json::from_str(data).map_err(|_| unreadable_event("event"))?;
         let mut events = Vec::new();
         self.take(event, &mut events)?;
         Ok(events)
