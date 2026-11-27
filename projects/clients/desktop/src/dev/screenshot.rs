@@ -740,6 +740,7 @@ fn act(
                     limits: None,
                     enabled: true,
                     failure: None,
+                    hidden: Vec::new(),
                 })
                 .collect();
             cx.notify();
@@ -769,6 +770,7 @@ fn act(
                 limits: None,
                 enabled: true,
                 failure: None,
+                hidden: Vec::new(),
             }];
             ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
             cx.notify();
@@ -792,6 +794,7 @@ fn act(
                 limits: None,
                 enabled: true,
                 failure: None,
+                hidden: Vec::new(),
             };
             ws.providers = vec![
                 provider("chatgpt", &["gpt-5.5", "gpt-6.1-sol", "gpt-6.2-rigel"]),

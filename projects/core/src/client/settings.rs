@@ -123,6 +123,22 @@ impl Settings<'_> {
             .await
     }
 
+    /// Hides models of a saved provider from the model menus, or shows them again.
+    pub async fn models_hidden(
+        &self,
+        provider: &str,
+        models: Vec<String>,
+        hidden: bool,
+    ) -> Result<()> {
+        let provider = provider.to_owned();
+        self.done(SettingsRequest::ModelsHidden {
+            provider,
+            models,
+            hidden,
+        })
+        .await
+    }
+
     /// Asks a provider whether it answers; nothing is saved.
     pub async fn check_provider(
         &self,

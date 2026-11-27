@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 39,
+  "x-protocol": 40,
   "x-oldest": 39,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -5917,6 +5917,13 @@
           "default": null,
           "description": "Why `models` failed, when the core can tell; the text there says it in full."
         },
+        "hidden": {
+          "description": "Model IDs the user hid from the model menus; the settings still list them.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "limits": {
           "anyOf": [
             {
@@ -8644,6 +8651,38 @@
           },
           "required": [
             "ProviderEnabled"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Hides models of a saved provider from the model menus, or shows them again. A\nhidden model stays usable where it is already chosen.",
+          "properties": {
+            "ModelsHidden": {
+              "properties": {
+                "hidden": {
+                  "type": "boolean"
+                },
+                "models": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "provider": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "models",
+                "hidden"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "ModelsHidden"
           ],
           "type": "object"
         },
