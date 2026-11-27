@@ -24,8 +24,10 @@ writes in; code and technical terms stay in English.
    or skipped. It has every change reviewed by a fresh reviewer, sends the findings back
    to the author once, and writes to you only when a task needs you.
 6. A line says a task waits for you: read `show <id>`, accept it or send it back with what
-   to redo. Failed or blocked: reopen it, edit its brief, split it, or skip it. If the
-   same task failed twice, change its brief; do not reopen it as it is. Tasks you add
+   to redo. Failed or blocked: fix the task itself with `edit` (any field, the gate
+   too; `ids` for the same fix across the queue), then `reopen` it to retry in place;
+   or split it, or skip it. Do not rebuild a chain to change a field. If the same task
+   failed twice, change its brief; do not reopen it as it is. Tasks you add
    while the team runs go `after` what they need, or they join the current wave.
 7. At the end a critic lists what is missing or unverified: add tasks and run again, or
    carry them to your report.
