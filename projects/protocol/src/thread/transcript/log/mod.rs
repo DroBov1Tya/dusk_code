@@ -9,9 +9,12 @@
 //! that moves rows: an item came, went or became another kind, an answer's text or
 //! thinking stopped being blank, or a turn boundary was drawn.
 
+mod approvals;
 mod history;
 mod run;
 mod team;
+
+pub use approvals::CHAT_ASKS;
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -238,7 +241,11 @@ pub struct ChatLog<L = Infallible> {
     pub agents: BTreeMap<String, Subagent>,
     /// What each subagent said and did, by its thread ID.
     pub agent_chats: BTreeMap<String, ChatLog<L>>,
+    /// The open requests for approval, the chat's own and its agents' at any depth,
+    /// oldest first.
     pub approvals: Vec<ApprovalRequest>,
+    /// The thread of the agent below the chat that asked each lifted request.
+    asked_by: BTreeMap<u64, String>,
     pub title: Option<String>,
     /// Text the core gave back after /undo, for the composer to offer again.
     pub offered: Option<String>,
@@ -281,6 +288,7 @@ impl<L> Default for ChatLog<L> {
             agents: BTreeMap::new(),
             agent_chats: BTreeMap::new(),
             approvals: Vec::new(),
+            asked_by: BTreeMap::new(),
             title: None,
             offered: None,
             rollback_at: None,
@@ -557,6 +565,7 @@ impl<L> ChatLog<L> {
         // The piece that answers a call tried again changes what the indicator says.
         let retried = self.live.retrying();
         self.live.apply(&event, now);
+        self.follow_approval(&event);
         // A model call opens a new step: its `ask_agent` calls are a run of their own.
         if matches!(event, ThreadEvent::Model(_) | ThreadEvent::TurnStarted(_)) {
             self.batch = None;
@@ -785,8 +794,8 @@ impl<L> ChatLog<L> {
                     .or_default()
                     .apply(*event, now);
             }
-            ThreadEvent::Approval(request) => self.approvals.push(request),
-            ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
+            // Taken in `apply` from any depth (`follow_approval`).
+            ThreadEvent::Approval(_) | ThreadEvent::ApprovalClosed { .. } => {}
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Pins(pins) => self.pins = pins,
             ThreadEvent::SkillChanged(change) => self.skill_changed(change),

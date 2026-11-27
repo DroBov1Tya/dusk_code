@@ -297,6 +297,89 @@ async fn approve_with_an_unknown_id_answers_false() {
     ));
 }
 
+/// A request an agent asked while no client watched its chat waits for the client that
+/// opens the chat later, wrapped as it came live; another chat's request is not its.
+#[tokio::test]
+async fn a_client_that_opens_a_chat_later_gets_its_agents_requests() {
+    let (mut server, approvals) = rig_with_chats("serve_late_approvals").await;
+    let state = server.runtime.state();
+    state
+        .create_agent_thread("a2", "a1", "code-writer", "write")
+        .await
+        .unwrap();
+    let (own, own_wait) = ask_in(&approvals, "a").await;
+    let (deep, deep_wait) = ask_in(&approvals, "a2").await;
+    let (other, other_wait) = ask_in(&approvals, "b").await;
+    let approval = |id| {
+        ThreadEvent::Approval(
+            approvals
+                .waiting()
+                .into_iter()
+                .find(|(_, asked)| asked.id == id)
+                .unwrap()
+                .1,
+        )
+    };
+    let wrap = |thread: &str, event| ThreadEvent::Subagent {
+        thread_id: thread.into(),
+        event: Box::new(event),
+    };
+    let expected = vec![approval(own), wrap("a1", wrap("a2", approval(deep)))];
+    assert_eq!(server.runtime.waiting_approvals("a").await, expected);
+    assert_eq!(
+        server.runtime.waiting_approvals("a2").await,
+        expected,
+        "any thread of the chat names it"
+    );
+    assert_eq!(
+        server.runtime.waiting_approvals("b").await,
+        vec![approval(other)]
+    );
+
+    let (queue, mut heard) = mpsc::unbounded_channel();
+    server.subscribers.lock().push(Subscriber {
+        client: 1,
+        scope: Scope::full(),
+        queue,
+    });
+    server
+        .clients
+        .insert(1, Attached::new("test".into(), Scope::full()));
+    server.caller = 1;
+    let cwd = temp_dir("serve_late_approvals_cwd");
+    std::fs::create_dir_all(&cwd).unwrap();
+    server
+        .thread(ThreadRequest::Resume {
+            thread_id: "a".into(),
+            cwd,
+        })
+        .await
+        .unwrap();
+    let mut told = Vec::new();
+    while told.len() < expected.len() {
+        let event = tokio::time::timeout(Duration::from_secs(10), next_thread_event(&mut heard))
+            .await
+            .expect("the requests are told");
+        if matches!(event.deepest().1, ThreadEvent::Approval(_)) {
+            told.push(event);
+        }
+    }
+    assert_eq!(told, expected);
+
+    // Answered from the chat, the deep one goes on; the others still wait.
+    assert!(matches!(
+        approve(&mut server, "a", deep).await,
+        Response::Waiting(true)
+    ));
+    deep_wait.await.unwrap().unwrap();
+    assert_eq!(
+        server.runtime.waiting_approvals("a").await,
+        vec![approval(own)]
+    );
+    own_wait.abort();
+    other_wait.abort();
+}
+
 /// A core running with the chats `a` (its folder a path that is not there) and `c` (none);
 /// client 1 is bound to both, client 2 is the web and client 3 sees all. Returns the way
 /// in and client 1's events.

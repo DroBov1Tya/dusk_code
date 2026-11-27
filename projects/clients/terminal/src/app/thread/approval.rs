@@ -74,7 +74,15 @@ pub struct ApprovalHit {
 }
 
 impl App {
+    /// A request told again, as to a client that joins a running chat, is asked once.
     pub fn ask_approval(&mut self, request: ApprovalRequest, agent: Option<String>) {
+        if self
+            .approvals
+            .iter()
+            .any(|asked| asked.request.id == request.id)
+        {
+            return;
+        }
         self.approvals.push(Asked {
             request,
             agent,

@@ -283,6 +283,16 @@ impl State {
             .context("the thread has no chat")
     }
 
+    /// The thread that started agent thread `id`; none for a chat.
+    pub async fn parent_thread(&self, id: &str) -> Result<Option<String>> {
+        sqlx::query_scalar("SELECT parent_thread_id FROM threads WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("find the parent of a thread")
+            .map(Option::flatten)
+    }
+
     /// Every agent thread below this one, at any depth.
     pub async fn descendant_threads(&self, id: &str) -> Result<Vec<String>> {
         sqlx::query_scalar(below!("SELECT id FROM below"))

@@ -5,6 +5,7 @@ use crate::runtime::jobs::JobInfo;
 use crate::{
     catalog::mentions::Mentions,
     message::sources::{HostFiles, ThreadSources},
+    runtime::ThreadEvent,
     runtime::thread::start::{self},
     state::{Source, UndoPoint},
     tools::Decision,
@@ -14,6 +15,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+/// Agents nest no deeper than this; a longer chain is cut, never followed forever.
+const MAX_DEPTH: usize = 16;
 
 impl Runtime {
     /// Sends a running foreground command of the thread to the background.
@@ -296,5 +300,45 @@ impl Runtime {
             return asked_chat == named_chat && launcher.approvals.answer(id, decision);
         }
         false
+    }
+
+    /// The requests still waiting in the chat of `thread_id` and in every agent below it,
+    /// as the events that opened them: an agent's wrapped as its own, so a client that
+    /// comes after they were asked can still answer them.
+    pub async fn waiting_approvals(&self, thread_id: &str) -> Vec<ThreadEvent> {
+        let mut events = Vec::new();
+        for launcher in [&self.launcher, &self.temporary] {
+            let state = &launcher.state;
+            let Ok(chat) = state.root_thread(thread_id).await else {
+                continue;
+            };
+            for (asked, request) in launcher.approvals.waiting() {
+                match state.root_thread(&asked).await {
+                    Ok(root) if root == chat => {}
+                    Ok(_) => continue,
+                    Err(error) => {
+                        tracing::warn!("approval {} not told again: {error:#}", request.id);
+                        continue;
+                    }
+                }
+                // Wrapped once for each agent between, as it came live.
+                let mut event = ThreadEvent::Approval(request);
+                let mut thread = asked;
+                for _ in 0..MAX_DEPTH {
+                    if thread == chat {
+                        break;
+                    }
+                    let parent = state.parent_thread(&thread).await.ok().flatten();
+                    event = ThreadEvent::Subagent {
+                        thread_id: thread,
+                        event: Box::new(event),
+                    };
+                    let Some(parent) = parent else { break };
+                    thread = parent;
+                }
+                events.push(event);
+            }
+        }
+        events
     }
 }

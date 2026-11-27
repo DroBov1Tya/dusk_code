@@ -45,6 +45,8 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
     let thread_id = ws.shown.clone().unwrap_or_default();
     for request in &chat.approvals {
         let id = request.id;
+        // A subagent's or a team member's request is answered here too, named.
+        let who = chat.approval_asker(id);
         let (once, session, deny) = (thread_id.clone(), thread_id.clone(), thread_id.clone());
         let mut buttons = div().flex().flex_row().gap_2().child(
             Button::new(SharedString::from(format!("once-{id}")))
@@ -105,16 +107,16 @@ pub fn render(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> S
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .child(request.title("The agent"))
+                    .child(request.title(&who))
                     .child(steps)
             }
             Request::Command { command } => div()
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child("The agent wants to run")
+                .child(format!("{who} wants to run"))
                 .child(code(ws, (id, 0), command, budget - px(24.), cx)),
-            other => div().child(other.describe("The agent")),
+            other => div().child(other.describe(&who)),
         };
         cards = cards.child(
             card(cx)

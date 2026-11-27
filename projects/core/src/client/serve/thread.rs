@@ -56,6 +56,7 @@ impl Server {
                     let failure = runtime.last_failure(&thread_id).await?;
                     let agents = runtime.agents_at_work(&thread_id).await?;
                     let goal = runtime.goal(&thread_id).await?;
+                    let approvals = runtime.waiting_approvals(&thread_id).await;
                     let Some(open) = self.threads.get_mut(&thread_id) else {
                         anyhow::bail!("thread has ended");
                     };
@@ -89,10 +90,13 @@ impl Server {
                     let suggestion = suggested
                         .clone()
                         .map(|text| ThreadEvent::NextSuggested { text });
+                    // The requests asked before it came, the agents' among them, wait
+                    // for an answer it can give.
                     for event in events
                         .into_iter()
                         .chain([goal, agents, suggestion])
                         .flatten()
+                        .chain(approvals)
                     {
                         send_to(
                             &self.subscribers,
@@ -117,6 +121,18 @@ impl Server {
                 let opened = self.open(handle);
                 if let Some(open) = self.threads.get_mut(&thread_id) {
                     open.clients.extend(members);
+                }
+                // Agents below the chat, such as a team's members, may still wait on a
+                // request asked while it was closed.
+                for event in runtime.waiting_approvals(&thread_id).await {
+                    send_to(
+                        &self.subscribers,
+                        self.caller,
+                        Event::Thread {
+                            thread_id: thread_id.clone(),
+                            event: Box::new(event),
+                        },
+                    );
                 }
                 opened
             }

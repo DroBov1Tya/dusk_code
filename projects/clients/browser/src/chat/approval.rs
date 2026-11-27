@@ -13,15 +13,25 @@ use leptos::prelude::*;
 pub fn Approvals(chat: Chat, id: Option<String>) -> impl IntoView {
     view! {
         <div class="approvals">
-            <For each=move || chat.with(|c| c.approvals.clone()) key=|a| a.id let:request>
-                <ApprovalCard request thread=id.clone().unwrap_or_default() />
+            // A subagent's or a team member's request is answered here too, named.
+            <For
+                each=move || chat.with(|c| {
+                    c.approvals.iter().map(|a| (a.clone(), c.approval_asker(a.id))).collect::<Vec<_>>()
+                })
+                key=|(a, _)| a.id
+                let:pair
+            >
+                {
+                    let (request, who) = pair;
+                    view! { <ApprovalCard request who thread=id.clone().unwrap_or_default() /> }
+                }
             </For>
         </div>
     }
 }
 
 #[component]
-fn ApprovalCard(request: ApprovalRequest, thread: String) -> impl IntoView {
+fn ApprovalCard(request: ApprovalRequest, who: String, thread: String) -> impl IntoView {
     let app = state();
     let id = request.id;
     let thread = StoredValue::new(thread);
@@ -35,7 +45,7 @@ fn ApprovalCard(request: ApprovalRequest, thread: String) -> impl IntoView {
     };
     view! {
         <div class="approval">
-            <div class="approval-text">{request.title("The agent")}</div>
+            <div class="approval-text">{request.title(&who)}</div>
             // A batch lists every step, numbered: the yes covers all of them.
             {(!lines.is_empty()).then(|| view! {
                 <div class="approval-steps">

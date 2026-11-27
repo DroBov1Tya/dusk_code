@@ -229,12 +229,14 @@ impl App {
                 event,
             } => self.apply_subagent(&child, *event),
             ThreadEvent::Approval(request) => {
+                // Named as the other clients name it: `Ember-0c (code-writer)`.
+                let name = dusk_protocol::thread::agent_name(thread_id);
                 let agent = self
                     .subagents
                     .iter()
                     .find(|view| view.thread_id == thread_id)
-                    .map(|view| view.agent.clone());
-                self.ask_approval(request, agent.or_else(|| Some("an agent".into())));
+                    .map_or(name.clone(), |view| format!("{name} ({})", view.agent));
+                self.ask_approval(request, Some(agent));
             }
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
             ThreadEvent::ArbiterDecided {
