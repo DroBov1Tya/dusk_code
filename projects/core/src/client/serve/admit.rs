@@ -2,7 +2,7 @@
 //! before any handler runs, and where an answer that lists threads is cut to that scope.
 
 use super::{ClientId, Server};
-use crate::client::scope::{Subject, classify};
+use crate::client::scope::{Access, Area, Subject, classify};
 use dusk_protocol::{
     client::{Answer, Request, Response, ThreadRequest},
     plugin::StoreRequest,
@@ -26,6 +26,14 @@ fn owner_request() -> Request {
     })
 }
 
+/// Choosing a chat's approval mode, apart from any one chat.
+fn approvals_access() -> Access<'static> {
+    Access {
+        area: Area::ThreadApprovals,
+        subject: Subject::None,
+    }
+}
+
 impl Server {
     /// Whether `client` may send `request`. A yes may carry the chats its answer is cut
     /// to; a no is the text for the client, and is logged here with who asked and the
@@ -43,6 +51,24 @@ impl Server {
         let source = attached.source.as_str();
         if !attached.scope.takes(&access) {
             warn!(client = source, area = ?access.area, "refused a request: outside the client's scope");
+            return Err(REFUSED);
+        }
+        // A new chat with its own approval mode changes what an agent may do without
+        // asking: only a client that may change that mode may choose it.
+        if let Request::Thread(
+            ThreadRequest::New {
+                approvals: Some(_), ..
+            }
+            | ThreadRequest::NewTemporary {
+                approvals: Some(_), ..
+            },
+        ) = request
+            && !attached.scope.takes(&approvals_access())
+        {
+            warn!(
+                client = source,
+                "refused a new chat: it may not set its approval mode"
+            );
             return Err(REFUSED);
         }
         // A change of the settings a tool proposed is answered only by a client that

@@ -461,8 +461,8 @@ impl AppState {
         navigation: u64,
     ) -> Result<String, String> {
         let thread_id = match temporary {
-            true => api::new_temporary_thread(cwd).await?,
-            false => api::new_thread(cwd).await?,
+            true => api::new_temporary_thread(cwd, None).await?,
+            false => api::new_thread(cwd, None).await?,
         };
         self.chats.update(|chats| {
             chats.insert(thread_id.clone(), RwSignal::new(ChatData::default()));

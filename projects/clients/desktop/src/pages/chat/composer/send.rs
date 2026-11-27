@@ -90,7 +90,7 @@ impl Workspace {
             move |client| async move {
                 let threads = client.threads();
                 match dir {
-                    Some(dir) if temporary => threads.start_temporary(dir).await,
+                    Some(dir) if temporary => threads.start_temporary(dir, None).await,
                     Some(dir) => threads.start(dir).await,
                     None => anyhow::bail!("no project"),
                 }

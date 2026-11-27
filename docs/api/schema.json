@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 39,
+  "x-protocol": 40,
   "x-oldest": 39,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -11697,9 +11697,21 @@
         },
         {
           "additionalProperties": false,
+          "description": "`approvals` is the chat's own approval mode from its start, as `SetApprovals`\nsets it later; none keeps the default in settings.",
           "properties": {
             "New": {
               "properties": {
+                "approvals": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ApprovalPolicy"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
                 "cwd": {
                   "type": "string"
                 }
@@ -11721,6 +11733,17 @@
           "properties": {
             "NewTemporary": {
               "properties": {
+                "approvals": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ApprovalPolicy"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
                 "cwd": {
                   "type": "string"
                 }

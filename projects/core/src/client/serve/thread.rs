@@ -7,6 +7,7 @@ use super::{thread_pulls, unread};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
+use dusk_protocol::config::ApprovalPolicy;
 use dusk_protocol::thread::{ThreadEvent, TurnWait};
 use parking_lot::Mutex;
 use std::{
@@ -37,13 +38,13 @@ impl Server {
     pub(super) async fn thread(&mut self, request: ThreadRequest) -> Result<Response> {
         let runtime = Arc::clone(&self.runtime);
         Ok(match request {
-            ThreadRequest::New { cwd } => {
+            ThreadRequest::New { cwd, approvals } => {
                 let handle = runtime.new_thread(self.source(), &cwd).await?;
-                self.open(handle)
+                self.open_with(handle, approvals).await?
             }
-            ThreadRequest::NewTemporary { cwd } => {
+            ThreadRequest::NewTemporary { cwd, approvals } => {
                 let handle = runtime.new_temporary_thread(self.source(), &cwd).await?;
-                self.open(handle)
+                self.open_with(handle, approvals).await?
             }
             ThreadRequest::Resume { thread_id, cwd } => {
                 // A thread another client keeps open runs on; this one just joins it.
@@ -262,6 +263,22 @@ impl Server {
     }
 
     /// Keeps the thread's input and forwards its events until its task ends.
+    /// Opens a new chat with its own approval mode, stored before the client can send
+    /// to it, so its first turn already runs under that mode.
+    async fn open_with(
+        &mut self,
+        handle: ThreadHandle,
+        approvals: Option<ApprovalPolicy>,
+    ) -> Result<Response> {
+        if approvals.is_some() {
+            let state = self.runtime.state_of(&handle.thread_id).await;
+            state
+                .set_thread_approvals(&handle.thread_id, approvals)
+                .await?;
+        }
+        Ok(self.open(handle))
+    }
+
     pub(super) fn open(&mut self, handle: ThreadHandle) -> Response {
         let ThreadHandle {
             thread_id,

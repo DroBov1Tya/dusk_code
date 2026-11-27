@@ -258,7 +258,10 @@ async fn two_browsers_on_one_core_see_the_same_thread_events() {
     let Response::Opened { thread_id } = call(
         &mut first,
         1,
-        Request::Thread(ThreadRequest::New { cwd: cwd.clone() }),
+        Request::Thread(ThreadRequest::New {
+            cwd: cwd.clone(),
+            approvals: None,
+        }),
     )
     .await
     else {

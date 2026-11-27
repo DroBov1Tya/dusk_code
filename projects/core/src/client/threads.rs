@@ -17,12 +17,26 @@ pub struct Threads<'a>(pub(super) &'a Client);
 impl Threads<'_> {
     /// A new thread in `cwd`; it is created now and opened for messages.
     pub async fn start(&self, cwd: PathBuf) -> Result<String> {
-        self.opened(ThreadRequest::New { cwd }).await
+        self.start_with(cwd, None).await
+    }
+
+    /// A new thread with its own approval mode from the start; `None` keeps the default.
+    pub async fn start_with(
+        &self,
+        cwd: PathBuf,
+        approvals: Option<ApprovalPolicy>,
+    ) -> Result<String> {
+        self.opened(ThreadRequest::New { cwd, approvals }).await
     }
 
     /// A new chat that leaves nothing behind once the core stops.
-    pub async fn start_temporary(&self, cwd: PathBuf) -> Result<String> {
-        self.opened(ThreadRequest::NewTemporary { cwd }).await
+    pub async fn start_temporary(
+        &self,
+        cwd: PathBuf,
+        approvals: Option<ApprovalPolicy>,
+    ) -> Result<String> {
+        self.opened(ThreadRequest::NewTemporary { cwd, approvals })
+            .await
     }
 
     pub async fn resume(&self, thread_id: &str, cwd: PathBuf) -> Result<String> {

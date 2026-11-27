@@ -42,8 +42,14 @@ pub fn samples() -> Vec<R> {
 
 fn threads() -> Vec<T> {
     vec![
-        T::New { cwd: "/".into() },
-        T::NewTemporary { cwd: "/".into() },
+        T::New {
+            cwd: "/".into(),
+            approvals: None,
+        },
+        T::NewTemporary {
+            cwd: "/".into(),
+            approvals: None,
+        },
         T::Resume {
             thread_id: id(),
             cwd: "/".into(),
