@@ -33,6 +33,15 @@ impl Workspace {
             .collect()
     }
 
+    /// Gives the keys back to the composer when the More models search had them, so
+    /// typing after a pick or an Escape lands in the message again.
+    pub fn leave_models_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.models_search.focus_handle(cx).is_focused(window) {
+            self.composer
+                .update(cx, |composer, cx| composer.focus(window, cx));
+        }
+    }
+
     /// While a menu over the model bar is open, Escape closes it; in More models the
     /// digits 1-6 pick the first models of the provider in use, before the text box
     /// takes them.
@@ -59,6 +68,7 @@ impl Workspace {
                 return;
             }
             self.picker = None;
+            self.leave_models_search(window, cx);
             cx.notify();
             return;
         }
@@ -67,15 +77,17 @@ impl Workspace {
             .parse::<usize>()
             .ok()
             .filter(|d| (1..=FIRST).contains(d));
-        // Digits typed into a box are text, not picks.
+        // Digits typed into a box are text, not picks; the search takes them only once
+        // something is typed there, which is also when the hints go away.
         if picker != Picker::MoreModels
             || self.model_input.focus_handle(cx).is_focused(window)
-            || self.models_search.focus_handle(cx).is_focused(window)
+            || !super::more::models_query(self, cx).is_empty()
         {
             return;
         }
         if let Some(name) = digit.and_then(|digit| self.first_models(cx).get(digit - 1).cloned()) {
             cx.stop_propagation();
+            self.leave_models_search(window, cx);
             self.choose_model(name, cx);
         }
     }

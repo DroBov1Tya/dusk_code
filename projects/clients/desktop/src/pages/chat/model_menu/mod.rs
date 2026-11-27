@@ -292,7 +292,10 @@ pub fn model_row(
                     .child(key.unwrap_or_default().to_string()),
             )
         })
-        .on_click(cx.listener(move |ws, _, _, cx| ws.choose_model(target.clone(), cx)))
+        .on_click(cx.listener(move |ws, _, window, cx| {
+            ws.leave_models_search(window, cx);
+            ws.choose_model(target.clone(), cx);
+        }))
 }
 
 fn submenu_row(
@@ -342,8 +345,9 @@ pub fn back_row(label: &str, side_by_side: bool, cx: &mut Context<Workspace>) ->
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(label.to_owned()),
         )
-        .on_click(cx.listener(|ws, _, _, cx| {
+        .on_click(cx.listener(|ws, _, window, cx| {
             ws.picker = Some(Picker::Model);
+            ws.leave_models_search(window, cx);
             cx.notify();
         }))
 }
@@ -369,6 +373,8 @@ impl Workspace {
                 search.set_value("", window, cx);
                 search.focus(window, cx);
             });
+        } else {
+            self.leave_models_search(window, cx);
         }
         cx.notify();
     }
