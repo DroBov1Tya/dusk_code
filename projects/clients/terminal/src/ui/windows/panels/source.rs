@@ -52,8 +52,13 @@ pub fn lines(reader: &SourceReader, width: usize) -> Vec<Line<'static>> {
             }
             if let Some(next) = reader.next {
                 let left = compact_number(source.bytes.saturating_sub(next));
+                let more = if reader.reads_on() {
+                    format!(" {left} more: m reads on")
+                } else {
+                    format!(" {left} more is not shown here; open the file to read it all.")
+                };
                 lines.push(Line::raw(""));
-                lines.push(Line::styled(format!(" {left} more: m reads on"), dim()));
+                lines.push(Line::styled(more, dim()));
             }
         }
         Some(_) => lines.push(Line::styled(
@@ -95,5 +100,34 @@ mod tests {
             .collect();
         assert!(!drawn.chars().any(char::is_control), "{drawn:?}");
         assert!(drawn.contains("next"));
+    }
+
+    /// A full reader stops reading on and says so, as the other clients do.
+    #[test]
+    fn a_full_reader_stops_at_its_bound() {
+        let mut reader = SourceReader {
+            sources: Vec::new(),
+            selected: 0,
+            source: Source {
+                source_id: "s".into(),
+                name: "big.txt".into(),
+                file: "s-big.txt".into(),
+                bytes: 4 * SourceReader::MAX_SHOWN as u64,
+                pinned: false,
+                delivered: false,
+            },
+            kind: Some(SourceKind::Text),
+            text: "a".repeat(64),
+            next: Some(64),
+            row: 0,
+        };
+        assert!(reader.reads_on());
+        reader.text = "a".repeat(SourceReader::MAX_SHOWN);
+        assert!(!reader.reads_on());
+        let drawn: String = lines(&reader, 60)
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|span| span.content.to_string()))
+            .collect();
+        assert!(drawn.contains("not shown here"), "{drawn:?}");
     }
 }

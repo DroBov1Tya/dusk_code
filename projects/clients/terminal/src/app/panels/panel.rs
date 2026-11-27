@@ -89,6 +89,17 @@ pub struct SourceReader {
     pub row: usize,
 }
 
+impl SourceReader {
+    /// The most text one reader holds, as the other clients; the rest is left to the
+    /// file's own app, so a large file does not slow each draw.
+    pub const MAX_SHOWN: usize = 1024 * 1024;
+
+    /// Whether `m` reads on: a part is left and the reader is not full.
+    pub fn reads_on(&self) -> bool {
+        self.next.is_some() && self.text.len() < Self::MAX_SHOWN
+    }
+}
+
 /// The core's Overview and context report for the /overview panel; the plan and team
 /// are the app's, which the rail shows too.
 pub struct OverviewView {

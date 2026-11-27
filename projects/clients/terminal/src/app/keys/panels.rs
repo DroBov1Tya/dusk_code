@@ -436,7 +436,7 @@ impl App {
                     return Action::None;
                 }
                 match key.code {
-                    KeyCode::Char('m') => {
+                    KeyCode::Char('m') if reader.reads_on() => {
                         if let Some(offset) = reader.next {
                             return Action::ReadSource {
                                 id: reader.source.source_id.clone(),

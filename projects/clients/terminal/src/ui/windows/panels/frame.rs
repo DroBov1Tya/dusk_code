@@ -204,7 +204,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             let width = screen.width.saturating_sub(8).min(116) as usize;
             (
                 "source",
-                if reader.next.is_some() {
+                if reader.reads_on() {
                     "up/down pgup/pgdn scroll  m more  c copy  esc back to the sources"
                 } else {
                     "up/down pgup/pgdn scroll  c copy  esc back to the sources"
