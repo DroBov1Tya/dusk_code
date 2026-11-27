@@ -11,6 +11,7 @@ use crate::{
     tools::Decision,
 };
 use anyhow::{Context, Result};
+use dusk_protocol::thread::SourceChunk;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -113,8 +114,14 @@ impl Runtime {
         Ok(dusk_protocol::thread::source_tag(&source.name))
     }
 
-    /// The bytes of the thread's picture source `name`, for a client to draw.
-    pub async fn source_picture(&self, thread_id: &str, name: &str) -> Result<Vec<u8>> {
+    /// The bytes of the thread's picture source `source_id`, or else the newest named
+    /// `name`, for a client to draw.
+    pub async fn source_picture(
+        &self,
+        thread_id: &str,
+        name: &str,
+        source_id: Option<&str>,
+    ) -> Result<Vec<u8>> {
         let launcher = self.of(thread_id).await;
         let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         ThreadSources {
@@ -122,7 +129,25 @@ impl Runtime {
             workspace: &workspace,
             thread_id,
         }
-        .picture(name)
+        .picture(name, source_id)
+        .await
+    }
+
+    /// A part of the thread's source `source_id` from byte `offset`, for a reader.
+    pub async fn source_text(
+        &self,
+        thread_id: &str,
+        source_id: &str,
+        offset: u64,
+    ) -> Result<SourceChunk> {
+        let launcher = self.of(thread_id).await;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        ThreadSources {
+            state: &launcher.state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .chunk(source_id, offset)
         .await
     }
 

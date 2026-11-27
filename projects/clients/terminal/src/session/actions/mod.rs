@@ -135,6 +135,7 @@ pub async fn apply(
         }
         Action::PinSource { id, pinned } => work::pin_source(client, app, open, id, pinned).await,
         Action::RemoveSource(id) => work::remove_source(client, app, open, id).await,
+        Action::ReadSource { id, offset } => work::read_source(client, app, id, offset).await,
         Action::Command(Command::Jobs { .. }) => work::jobs(client, app, open).await,
         Action::Background(call_id) => work::background(client, app, call_id).await,
         // The loop hands tab moves to `tabs::take` before this.

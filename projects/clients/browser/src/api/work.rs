@@ -5,7 +5,7 @@ use crate::link::request;
 use dusk_protocol::{
     client::{Response, WorkRequest},
     project::{Change, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanCounts, PlanFile, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanCounts, PlanFile, Source, SourceChunk, Team},
 };
 
 use super::*;
@@ -69,6 +69,40 @@ pub async fn upload_picture(thread_id: &str, name: String, bytes: Vec<u8>) -> Re
     ask!(
         work(WorkRequest::UploadPicture { thread_id, name, bytes }),
         Response::Text(tag) => tag
+    )
+}
+
+/// The thread's sources, oldest first.
+pub async fn sources(thread_id: &str) -> Res<Vec<Source>> {
+    let thread_id = Some(thread_id.to_owned());
+    match command(dusk_protocol::client::Command::Sources {
+        thread_id,
+        add: None,
+    })
+    .await?
+    {
+        dusk_protocol::client::Answer::Sources(sources) => Ok(sources),
+        other => Err(format!("The core answered {other:?}, not the sources.")),
+    }
+}
+
+/// A part of the source `source_id` from byte `offset`, for the reader.
+pub async fn source_text(thread_id: &str, source_id: &str, offset: u64) -> Res<SourceChunk> {
+    let (thread_id, source_id) = (thread_id.to_owned(), source_id.to_owned());
+    ask!(
+        work(WorkRequest::SourceText { thread_id, source_id, offset }),
+        Response::SourceText(chunk) => chunk
+    )
+}
+
+/// The bytes of the picture source `source_id`, or else the newest named `name`, a PNG
+/// or JPEG the core checked.
+pub async fn source_picture(thread_id: &str, name: &str, source_id: Option<&str>) -> Res<Vec<u8>> {
+    let (thread_id, name) = (thread_id.to_owned(), name.to_owned());
+    let source_id = source_id.map(str::to_owned);
+    ask!(
+        work(WorkRequest::SourcePicture { thread_id, name, source_id }),
+        Response::Picture(bytes) => bytes
     )
 }
 

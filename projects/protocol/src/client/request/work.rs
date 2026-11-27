@@ -41,10 +41,20 @@ pub enum WorkRequest {
     },
     /// The bytes of the thread's picture source `name`, as its tag names it, for a
     /// client to draw. Answers with `Response::Picture`; a source that is no PNG or
-    /// JPEG is refused.
+    /// JPEG is refused. With `source_id` the source is that one, as names repeat; `name`
+    /// is then not looked at.
     SourcePicture {
         thread_id: String,
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_id: Option<String>,
+    },
+    /// A part of the thread's source `source_id` for a client to read, from byte
+    /// `offset`. Answers with `Response::SourceText`.
+    SourceText {
+        thread_id: String,
+        source_id: String,
+        offset: u64,
     },
     /// A part of a card a message of the thread, or of an agent thread below it, carries:
     /// `image`, `audio` or `thumb`. Answers with `Response::Picture`, or an error when the

@@ -148,6 +148,12 @@ fn work() -> Vec<W> {
         W::SourcePicture {
             thread_id: id(),
             name: word(),
+            source_id: Some(word()),
+        },
+        W::SourceText {
+            thread_id: id(),
+            source_id: word(),
+            offset: 0,
         },
         W::Card {
             thread_id: id(),

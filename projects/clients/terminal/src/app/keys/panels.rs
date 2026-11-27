@@ -185,7 +185,15 @@ impl App {
                         }
                     }
                     _ if up || down => step(selected, sources.len(), down),
-                    KeyCode::Char(' ') | KeyCode::Enter => {
+                    KeyCode::Enter => {
+                        if let Some(source) = source {
+                            return Action::ReadSource {
+                                id: source.source_id.clone(),
+                                offset: 0,
+                            };
+                        }
+                    }
+                    KeyCode::Char(' ') => {
                         if let Some(source) = source {
                             return Action::PinSource {
                                 id: source.source_id.clone(),
@@ -507,6 +515,34 @@ impl App {
             Panel::Context { row, .. } => {
                 if !scroll(row, key.code, up, down) {
                     self.panel = None;
+                }
+            }
+            Panel::Source(reader) => {
+                if scroll(&mut reader.row, key.code, up, down) {
+                    return Action::None;
+                }
+                match key.code {
+                    KeyCode::Char('m') if reader.reads_on() => {
+                        if let Some(offset) = reader.next {
+                            return Action::ReadSource {
+                                id: reader.source.source_id.clone(),
+                                offset,
+                            };
+                        }
+                    }
+                    KeyCode::Char('c') if !reader.text.is_empty() => {
+                        return Action::Copy(reader.text.clone());
+                    }
+                    KeyCode::Esc => {
+                        let (sources, selected) =
+                            (std::mem::take(&mut reader.sources), reader.selected);
+                        self.panel = Some(Panel::Sources {
+                            sources,
+                            selected,
+                            removing: false,
+                        });
+                    }
+                    _ => {}
                 }
             }
             Panel::Overview(view) => {

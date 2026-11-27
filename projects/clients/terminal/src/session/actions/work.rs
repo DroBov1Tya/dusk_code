@@ -3,7 +3,7 @@
 use dusk_core::client::Client;
 use dusk_protocol::client::Command;
 
-use crate::app::{App, DiffView, OverviewView, Panel, PasteEditor};
+use crate::app::{App, DiffView, OverviewView, Panel, PasteEditor, SourceReader};
 use crate::session::{
     answers::answer,
     thread::{OpenThread, ensure_open},
@@ -253,6 +253,51 @@ pub async fn remove_source(
             add: None,
         };
         answer(client, app, open, command).await;
+    }
+}
+
+/// Opens a source of the list to read, or adds its next part to the one being read.
+pub async fn read_source(client: &Client, app: &mut App, id: String, offset: u64) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    let chunk = match client.work().source_text(&thread_id, &id, offset).await {
+        Ok(chunk) => chunk,
+        Err(error) => return app.error(format!("cannot read the source: {error:#}")),
+    };
+    match app.panel.take() {
+        Some(Panel::Sources {
+            sources, selected, ..
+        }) => {
+            let Some(source) = sources
+                .iter()
+                .find(|source| source.source_id == id)
+                .cloned()
+            else {
+                app.panel = Some(Panel::Sources {
+                    sources,
+                    selected,
+                    removing: false,
+                });
+                return;
+            };
+            app.panel = Some(Panel::Source(Box::new(SourceReader {
+                sources,
+                selected,
+                source,
+                kind: Some(chunk.kind),
+                text: chunk.text,
+                next: chunk.next,
+                row: 0,
+            })));
+        }
+        Some(Panel::Source(mut reader)) if reader.source.source_id == id => {
+            reader.text.push_str(&chunk.text);
+            reader.next = chunk.next;
+            app.panel = Some(Panel::Source(reader));
+        }
+        // The panel changed while the part was read; leave it as it is.
+        other => app.panel = other,
     }
 }
 

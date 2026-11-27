@@ -37,8 +37,9 @@ pub use job::{JobInfo, JobResult, job_message};
 pub use link::{THREAD_LINK_PREFIX, links_in, thread_link, thread_of_link};
 pub use live::{LiveTurn, STALLED_AFTER_MS, Work, WorkKind, activity};
 pub use message::{
-    Compaction, LocalUnsent, Message, MessageRole, Part, PlanFile, Source, UndoPoint, has_pasted,
-    labelled, plain, sound_tag, source_tag, split, wrap,
+    Compaction, LocalUnsent, Message, MessageRole, Part, PlanFile, SOURCE_CHUNK, Source,
+    SourceChunk, SourceKind, UndoPoint, has_pasted, labelled, plain, sound_tag, source_tag, split,
+    wrap,
 };
 pub use name::{ARBITER_THREAD, agent_name, fnv1a, name_seed};
 pub use overview::{

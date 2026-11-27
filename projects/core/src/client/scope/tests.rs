@@ -234,6 +234,7 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "work.retry_task",
         "work.save_plan",
         "work.source_picture",
+        "work.source_text",
         "work.stop_job",
         "work.stop_team",
         "work.team",

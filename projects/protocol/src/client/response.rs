@@ -67,6 +67,8 @@ pub enum Response {
     Provider(crate::model::ProviderStatus),
     /// A PNG or JPEG of a thread's sources.
     Picture(Vec<u8>),
+    /// A part of a thread's source, for a client to read.
+    SourceText(crate::thread::SourceChunk),
     /// A sound or picture card the core made.
     Card(crate::tools::Card),
     /// A thread's own approval mode, or none when it uses the default in settings.

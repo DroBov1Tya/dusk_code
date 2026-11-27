@@ -5,7 +5,7 @@ use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, WorkRequest},
     project::{Change, FileChange, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanFile, PlanPage, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanFile, PlanPage, SourceChunk, Team},
 };
 
 /// A thread's background jobs and sources.
@@ -229,12 +229,40 @@ impl Work<'_> {
         self.0.done(Request::Work(request)).await
     }
 
-    /// The bytes of the thread's picture source `name`.
-    pub async fn source_picture(&self, thread_id: &str, name: &str) -> Result<Vec<u8>> {
-        let (thread_id, name) = (thread_id.to_owned(), name.to_owned());
-        let request = WorkRequest::SourcePicture { thread_id, name };
+    /// The bytes of the thread's picture source `source_id`, or else the newest named
+    /// `name`.
+    pub async fn source_picture(
+        &self,
+        thread_id: &str,
+        name: &str,
+        source_id: Option<&str>,
+    ) -> Result<Vec<u8>> {
+        let request = WorkRequest::SourcePicture {
+            thread_id: thread_id.to_owned(),
+            name: name.to_owned(),
+            source_id: source_id.map(str::to_owned),
+        };
         match self.0.call(Request::Work(request)).await? {
             Response::Picture(bytes) => Ok(bytes),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// A part of the source `source_id` from byte `offset`, for a reader.
+    pub async fn source_text(
+        &self,
+        thread_id: &str,
+        source_id: &str,
+        offset: u64,
+    ) -> Result<SourceChunk> {
+        let (thread_id, source_id) = (thread_id.to_owned(), source_id.to_owned());
+        let request = WorkRequest::SourceText {
+            thread_id,
+            source_id,
+            offset,
+        };
+        match self.0.call(Request::Work(request)).await? {
+            Response::SourceText(chunk) => Ok(chunk),
             other => Err(unexpected(other)),
         }
     }

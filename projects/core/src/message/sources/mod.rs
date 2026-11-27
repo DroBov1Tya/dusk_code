@@ -4,11 +4,13 @@
 //! always, and the rest by name and path, to read when needed.
 //!
 //! `store` keeps them (`ThreadSources`), `paths` finds picture paths in pasted text,
-//! `picture` decodes and shrinks pictures, and `block` builds what a request carries.
+//! `picture` decodes and shrinks pictures, `reader` gives one out in parts
+//! for a client to read, and `block` builds what a request carries.
 
 mod block;
 mod paths;
 mod picture;
+mod reader;
 mod store;
 #[cfg(test)]
 mod tests;

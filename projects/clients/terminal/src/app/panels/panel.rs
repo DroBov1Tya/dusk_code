@@ -6,7 +6,9 @@ use dusk_protocol::{
     config::ProviderKind,
     model::{Model, ProviderStatus},
     release::{InstallProgress, UpdateInfo},
-    thread::{ContextReport, JobInfo, Message, MessageRole, PlanFile, Source, Thread, UndoPoint},
+    thread::{
+        ContextReport, JobInfo, Message, MessageRole, PlanFile, Source, SourceKind, Thread, UndoPoint,
+    },
 };
 
 use super::{AgentWindow, SettingsView};
@@ -77,6 +79,8 @@ pub enum Panel {
         selected: usize,
         asking: Option<PlansAsk>,
     },
+    /// One source open to read, opened from the list of sources.
+    Source(Box<SourceReader>),
 }
 
 /// What the plans panel asks `y` for.
@@ -86,6 +90,31 @@ pub enum PlansAsk {
     Delete,
     /// `o`: delete every old plan.
     Old,
+}
+
+/// A source being read, a part at a time; esc returns to the list it was opened from.
+pub struct SourceReader {
+    pub sources: Vec<Source>,
+    pub selected: usize,
+    pub source: Source,
+    /// None until the first part came.
+    pub kind: Option<SourceKind>,
+    pub text: String,
+    /// Where the next part starts; none at the end.
+    pub next: Option<u64>,
+    /// The line kept in view while scrolling.
+    pub row: usize,
+}
+
+impl SourceReader {
+    /// The most text one reader holds, as the other clients; the rest is left to the
+    /// file's own app, so a large file does not slow each draw.
+    pub const MAX_SHOWN: usize = 1024 * 1024;
+
+    /// Whether `m` reads on: a part is left and the reader is not full.
+    pub fn reads_on(&self) -> bool {
+        self.next.is_some() && self.text.len() < Self::MAX_SHOWN
+    }
 }
 
 /// The core's Overview and context report for the /overview panel; the plan and team

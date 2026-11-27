@@ -20,6 +20,7 @@ use super::overview::overview;
 use super::paste::draw_paste;
 use super::plugins::plugins;
 use super::schedules::schedules;
+use super::source;
 use super::threads::draw_threads;
 use super::unsent::unsent;
 use super::update::draw_update;
@@ -240,10 +241,23 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 if *removing {
                     "d again deletes the file  any other key keeps it"
                 } else {
-                    "space every message or once  d delete  esc close"
+                    "enter read  space every message or once  d delete  esc close"
                 },
                 lines,
                 Some(*selected),
+            )
+        }
+        Panel::Source(reader) => {
+            let width = screen.width.saturating_sub(8).min(116) as usize;
+            (
+                "source",
+                if reader.reads_on() {
+                    "up/down pgup/pgdn scroll  m more  c copy  esc back to the sources"
+                } else {
+                    "up/down pgup/pgdn scroll  c copy  esc back to the sources"
+                },
+                source::lines(reader, width),
+                None,
             )
         }
         Panel::Jobs(view) => {
@@ -316,7 +330,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         }
         Panel::Paste(_) | Panel::Agent(_) | Panel::Update { .. } => return,
     };
-    let cap = if matches!(app.panel, Some(Panel::Diff(_))) {
+    let cap = if matches!(app.panel, Some(Panel::Diff(_) | Panel::Source(_))) {
         120
     } else {
         76
@@ -337,12 +351,14 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         Some(Panel::Context { row, .. }) => (*row).min(lines.len().saturating_sub(inner)),
         Some(Panel::Overview(view)) => view.row.min(lines.len().saturating_sub(inner)),
         Some(Panel::Diff(view)) if view.open => view.scroll.min(lines.len().saturating_sub(inner)),
+        Some(Panel::Source(reader)) => reader.row.min(lines.len().saturating_sub(inner)),
         _ => selected.map_or(0, |row| (row + 1).saturating_sub(inner)),
     };
     match &mut app.panel {
         Some(Panel::Context { row, .. }) => *row = skip,
         Some(Panel::Overview(view)) => view.row = skip,
         Some(Panel::Diff(view)) if view.open => view.scroll = skip,
+        Some(Panel::Source(reader)) => reader.row = skip,
         _ => {}
     }
     if let Some(Panel::Connect(form)) = &mut app.panel {

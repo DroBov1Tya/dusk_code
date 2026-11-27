@@ -51,8 +51,27 @@ impl Server {
                 name,
                 bytes,
             } => Response::Text(runtime.add_picture(&thread_id, &name, &bytes).await?),
-            WorkRequest::SourcePicture { thread_id, name } => {
-                Response::Picture(runtime.source_picture(&thread_id, &name).await?)
+            WorkRequest::SourcePicture {
+                thread_id,
+                name,
+                source_id,
+            } => Response::Picture(
+                runtime
+                    .source_picture(&thread_id, &name, source_id.as_deref())
+                    .await?,
+            ),
+            WorkRequest::SourceText {
+                thread_id,
+                source_id,
+                offset,
+            } => {
+                let mut chunk = runtime.source_text(&thread_id, &source_id, offset).await?;
+                // The core's own path names its user's home; only a client on this
+                // machine can open it, so no other is told it.
+                if !self.in_process() {
+                    chunk.path.clear();
+                }
+                Response::SourceText(chunk)
             }
             WorkRequest::Card {
                 thread_id,
