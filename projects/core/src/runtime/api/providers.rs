@@ -5,7 +5,7 @@ use crate::{
     config::{ApiKey, ProviderConfig, ProviderKind},
     providers::Provider,
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::{client::ProviderTarget, model::ProviderStatus};
 
 use super::super::{model_choice::check_provider, start::pick_if_empty};
@@ -216,6 +216,16 @@ impl Runtime {
         self.launcher
             .config
             .update(|config| found = config.set_models_hidden(name, models, hidden))?;
+        if !found
+            && self
+                .launcher
+                .config
+                .current()
+                .all_providers()
+                .contains_key(name)
+        {
+            bail!("{name} comes from a plugin, so its models can't be hidden or shown here");
+        }
         ensure!(found, "no provider of the config file is named {name}");
         Ok(())
     }
