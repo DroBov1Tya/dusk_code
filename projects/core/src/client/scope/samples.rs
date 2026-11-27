@@ -142,6 +142,11 @@ fn work() -> Vec<W> {
             thread_id: id(),
             name: word(),
         },
+        W::SourceText {
+            thread_id: id(),
+            source_id: word(),
+            offset: 0,
+        },
         W::Card {
             thread_id: id(),
             card_id: word(),

@@ -10,6 +10,7 @@ use crate::{
     tools::Decision,
 };
 use anyhow::{Context, Result};
+use dusk_protocol::thread::SourceChunk;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -119,6 +120,24 @@ impl Runtime {
             thread_id,
         }
         .picture(name)
+        .await
+    }
+
+    /// A part of the thread's source `source_id` from byte `offset`, for a reader.
+    pub async fn source_text(
+        &self,
+        thread_id: &str,
+        source_id: &str,
+        offset: u64,
+    ) -> Result<SourceChunk> {
+        let launcher = self.of(thread_id).await;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        ThreadSources {
+            state: &launcher.state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .chunk(source_id, offset)
         .await
     }
 

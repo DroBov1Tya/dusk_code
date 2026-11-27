@@ -50,6 +50,11 @@ impl Server {
             WorkRequest::SourcePicture { thread_id, name } => {
                 Response::Picture(runtime.source_picture(&thread_id, &name).await?)
             }
+            WorkRequest::SourceText {
+                thread_id,
+                source_id,
+                offset,
+            } => Response::SourceText(runtime.source_text(&thread_id, &source_id, offset).await?),
             WorkRequest::Card {
                 thread_id,
                 card_id,

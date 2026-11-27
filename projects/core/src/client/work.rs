@@ -5,7 +5,7 @@ use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, WorkRequest},
     project::{Change, FileChange, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanPage, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanPage, SourceChunk, Team},
 };
 
 /// A thread's background jobs and sources.
@@ -201,6 +201,25 @@ impl Work<'_> {
         let request = WorkRequest::SourcePicture { thread_id, name };
         match self.0.call(Request::Work(request)).await? {
             Response::Picture(bytes) => Ok(bytes),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// A part of the source `source_id` from byte `offset`, for a reader.
+    pub async fn source_text(
+        &self,
+        thread_id: &str,
+        source_id: &str,
+        offset: u64,
+    ) -> Result<SourceChunk> {
+        let (thread_id, source_id) = (thread_id.to_owned(), source_id.to_owned());
+        let request = WorkRequest::SourceText {
+            thread_id,
+            source_id,
+            offset,
+        };
+        match self.0.call(Request::Work(request)).await? {
+            Response::SourceText(chunk) => Ok(chunk),
             other => Err(unexpected(other)),
         }
     }

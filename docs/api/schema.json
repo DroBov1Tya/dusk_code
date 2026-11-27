@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "duskcode protocol",
-  "x-protocol": 39,
+  "x-protocol": 40,
   "x-oldest": 39,
   "x-roots": ["Hello","Proof","Greeting","RequestFrame","ServerFrame"],
   "$defs": {
@@ -7381,6 +7381,19 @@
         },
         {
           "additionalProperties": false,
+          "description": "A part of a thread's source, for a client to read.",
+          "properties": {
+            "SourceText": {
+              "$ref": "#/$defs/SourceChunk"
+            }
+          },
+          "required": [
+            "SourceText"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "A sound or picture card the core made.",
           "properties": {
             "Card": {
@@ -9047,6 +9060,50 @@
       ],
       "type": "object"
     },
+    "SourceChunk": {
+      "description": "A part of a source for a client to read: at most `SOURCE_CHUNK` bytes from `offset`,\ncut at a character's edge.",
+      "properties": {
+        "bytes": {
+          "description": "The file's whole length.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/SourceKind"
+        },
+        "next": {
+          "description": "Where the next part starts; none at the end.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "The file on the core's machine, for a client there to open in its own app.",
+          "type": "string"
+        },
+        "text": {
+          "description": "Empty for a picture or a binary file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text",
+        "offset",
+        "bytes",
+        "path"
+      ],
+      "type": "object"
+    },
     "SourceFailure": {
       "properties": {
         "error": {
@@ -9062,6 +9119,26 @@
         "error"
       ],
       "type": "object"
+    },
+    "SourceKind": {
+      "description": "What a source holds, as the core told it by its bytes.",
+      "oneOf": [
+        {
+          "const": "Text",
+          "description": "UTF-8 text; `SourceChunk::text` holds a part of it.",
+          "type": "string"
+        },
+        {
+          "const": "Picture",
+          "description": "A PNG or JPEG; its bytes come with `SourcePicture`.",
+          "type": "string"
+        },
+        {
+          "const": "Binary",
+          "description": "Anything else, such as a PDF; no text is given out.",
+          "type": "string"
+        }
+      ]
     },
     "SourceRow": {
       "description": "A repository the user added, as `StoreRequest::Sources` read it.",
@@ -13936,6 +14013,37 @@
           },
           "required": [
             "SourcePicture"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A part of the thread's source `source_id` for a client to read, from byte\n`offset`. Answers with `Response::SourceText`.",
+          "properties": {
+            "SourceText": {
+              "properties": {
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "source_id": {
+                  "type": "string"
+                },
+                "thread_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "thread_id",
+                "source_id",
+                "offset"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "SourceText"
           ],
           "type": "object"
         },

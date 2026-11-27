@@ -413,3 +413,27 @@ async fn a_client_reads_only_a_picture_source_of_its_chat_by_name() {
     assert!(sources.picture("../state.db").await.is_err());
     assert!(sources.picture("nothing.png").await.is_err());
 }
+
+#[tokio::test]
+async fn a_reader_gets_only_this_chats_sources_by_id() {
+    let state = temp_state("sources-reader").await;
+    state.create_thread("thread", "test").await.unwrap();
+    state.create_thread("other", "test").await.unwrap();
+    let workspace = temp_dir("sources-reader-workspace");
+    let mine = ThreadSources {
+        state: &state,
+        workspace: &workspace,
+        thread_id: "thread",
+    };
+    let theirs = ThreadSources {
+        state: &state,
+        workspace: &workspace,
+        thread_id: "other",
+    };
+    let source = mine.store("notes.md", b"# notes").await.unwrap();
+    let chunk = mine.chunk(&source.source_id, 0).await.unwrap();
+    assert_eq!(chunk.text, "# notes");
+    assert_eq!(chunk.next, None);
+    assert!(theirs.chunk(&source.source_id, 0).await.is_err());
+    assert!(mine.chunk("../notes.md", 0).await.is_err());
+}

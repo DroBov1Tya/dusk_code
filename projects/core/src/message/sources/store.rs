@@ -14,12 +14,13 @@ use crate::{
     },
 };
 use dusk_protocol::config::find as find_mentions;
-use dusk_protocol::thread::{Part, sound_tag, source_tag, split, wrap};
+use dusk_protocol::thread::{Part, SourceChunk, sound_tag, source_tag, split, wrap};
 
 use super::{
     block::{SourceBlock, attach},
     paths::file_paths,
     picture::is_picture,
+    reader::read_chunk,
 };
 
 /// Whether the text of a sent message may name files of this machine: a path in it, or
@@ -270,6 +271,23 @@ impl ThreadSources<'_> {
             "the source is not a PNG or JPEG picture"
         );
         Ok(bytes)
+    }
+
+    /// A part of the source `id` from byte `offset`, for a reader. The id is looked up
+    /// among this chat's sources, never joined as a path.
+    pub async fn chunk(&self, id: &str, offset: u64) -> Result<SourceChunk> {
+        let sources = self.state.sources(self.thread_id).await?;
+        let source = sources
+            .iter()
+            .find(|source| source.source_id == id)
+            .context("this chat has no such source")?;
+        ensure!(
+            Path::new(&source.file).file_name() == Some(source.file.as_ref()),
+            "the source's file is not in the sources folder"
+        );
+        let path = self.folder().join(&source.file);
+        // A file read blocks; keep it off the loop's thread.
+        tokio::task::spawn_blocking(move || read_chunk(&path, offset)).await?
     }
 
     pub async fn remove(&self, id: &str) -> Result<()> {

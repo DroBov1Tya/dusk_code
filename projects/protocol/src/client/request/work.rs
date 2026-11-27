@@ -46,6 +46,13 @@ pub enum WorkRequest {
         thread_id: String,
         name: String,
     },
+    /// A part of the thread's source `source_id` for a client to read, from byte
+    /// `offset`. Answers with `Response::SourceText`.
+    SourceText {
+        thread_id: String,
+        source_id: String,
+        offset: u64,
+    },
     /// A part of a card a message of the thread, or of an agent thread below it, carries:
     /// `image`, `audio` or `thumb`. Answers with `Response::Picture`, or an error when the
     /// thread has no such card.
