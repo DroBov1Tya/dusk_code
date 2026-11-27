@@ -301,6 +301,22 @@ impl RepeatRung {
     }
 }
 
+impl ThreadEvent {
+    /// The event itself, unwrapped from any depth of subagents, with the thread of the
+    /// agent that sent it; no thread when the event is the chat's own.
+    pub fn deepest(&self) -> (Option<&str>, &ThreadEvent) {
+        let (mut thread, mut event) = (None, self);
+        while let ThreadEvent::Subagent {
+            thread_id,
+            event: inner,
+        } = event
+        {
+            (thread, event) = (Some(thread_id.as_str()), inner);
+        }
+        (thread, event)
+    }
+}
+
 /// What an episode the core wrote down is about.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

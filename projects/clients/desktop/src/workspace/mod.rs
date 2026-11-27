@@ -307,6 +307,8 @@ pub struct Workspace {
     pub picked: Vec<usize>,
     /// Approval command boxes shown in full, by request and step.
     pub approval_open: std::collections::HashSet<(u64, usize)>,
+    /// The request shown of several open; the oldest when none or it was answered.
+    pub approval_shown: Option<u64>,
     pub attach_open: bool,
     pub left_hidden: bool,
     /// The strip of places at the left edge, hidden on the user's word.

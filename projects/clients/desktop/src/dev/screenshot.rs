@@ -673,6 +673,7 @@ fn act(
         "fake" if value == "subagents" || value == "subagents-ended" => {
             super::team::subagents(ws, value, cx)
         }
+        "fake" if value == "agent-approvals" => super::team::agent_approvals(ws, cx),
         "fake" if value.starts_with("team-") => super::team_sizes::fake(ws, value, cx),
         // The Team page's layers, and a long plan's done waves shown.
         "layer" => {

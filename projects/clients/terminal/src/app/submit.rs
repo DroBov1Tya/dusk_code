@@ -112,6 +112,17 @@ impl App {
                 }
             };
         }
+        if trimmed == "/agents clear" {
+            let count = self.clear_agents();
+            self.flash = Some(match count {
+                0 => "No finished subagents to clear".into(),
+                count => format!(
+                    "Cleared {}",
+                    dusk_protocol::thread::plural(count as u64, "finished subagent")
+                ),
+            });
+            return Action::None;
+        }
         if trimmed == "/access" || trimmed.starts_with("/access ") {
             let name = trimmed["/access".len()..].trim();
             return Action::Access((!name.is_empty()).then(|| name.to_lowercase()));

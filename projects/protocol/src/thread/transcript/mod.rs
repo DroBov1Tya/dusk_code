@@ -14,7 +14,7 @@ mod run;
 mod tool;
 
 pub use agent::AgentState;
-pub use log::{Applied, ChatLog, INTERRUPTED, Item, Subagent, UNFINISHED};
+pub use log::{Applied, CHAT_ASKS, ChatLog, INTERRUPTED, Item, Subagent, UNFINISHED, context_line};
 pub use mark::{MAX_MARK_CHARS, Span, Tone, marks, unmarked};
 pub use note::{Note, note};
 pub use progress::{TurnSpend, turn_spend};

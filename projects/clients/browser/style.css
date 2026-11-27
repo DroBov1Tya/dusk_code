@@ -181,6 +181,8 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .card { margin: 10px auto; } .card img { max-width: 100%; border-radius: 10px; display: block; }
 .approvals, .question { max-width: 820px; margin: 0 auto; width: calc(100% - 40px); }
 .approval, .question { border: 1px solid var(--accent); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; background: var(--surface); }
+.approval-place { display: flex; align-items: center; gap: 4px; font-size: 12px; margin-bottom: 4px; }
+.approval-place .muted { flex: 1; }
 .approval-steps { margin: 6px 0 0 12px; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .approval-actions, .row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .option {
@@ -217,6 +219,7 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .tab { background: none; border: 0; padding: 4px 10px; border-radius: 8px; color: var(--fg2); }
 .tab.active { background: var(--raised); color: var(--fg); }
 .tab-body { flex: 1; overflow: auto; padding: 4px 12px 16px; }
+.agents-head { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 .agent { display: flex; gap: 10px; width: 100%; text-align: left; background: var(--surface); border: 0; border-radius: 12px; padding: 10px; margin-bottom: 8px; }
 /* Sundown, the subagents' mascot, as Desktop draws it (columns/inspector/mascot.rs). An em is
    the box and 0.01em one unit of the prototype's 100-unit box, so its numbers carry over. The
@@ -271,6 +274,7 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 @keyframes sun-set { 0% { transform: none; } 7% { transform: translateX(.02em); } 14% { transform: translateX(-.016em); } 21% { transform: translateX(.012em); }
   28% { transform: translateX(-.006em); } 30% { transform: none; } 100% { transform: translateY(.12em); } }
 @keyframes sun-grey { 0%, 15% { color: var(--bad); } }
+.agent-context { font-size: 12px; }
 .agent-state { font-size: 12px; color: var(--muted); } .agent-state.live { color: var(--accent); } .agent-state.bad { color: var(--bad); }
 .task { margin-bottom: 10px; } .task.done .task-name, li.done { text-decoration: line-through; color: var(--muted); }
 .pulls { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

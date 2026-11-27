@@ -1005,3 +1005,57 @@ fn goal_verdicts_read_the_same_from_history_and_live() {
     assert_eq!(reopened.items[2], Item::Goal(first));
     assert_eq!(reopened.items.last(), Some(&Item::Goal(last)));
 }
+
+/// Finished agents the user cleared stay off the list though the roster names them on
+/// every team event; work brings one back, and one an approval waits on is never cleared.
+#[test]
+fn cleared_agents_stay_away_until_they_work_and_never_while_asked() {
+    let mut chat = Chat::default();
+    chat.apply(
+        ThreadEvent::Tasks(vec![
+            plan_task("t1", TaskStatus::Done),
+            plan_task("t2", TaskStatus::Done),
+            plan_task("t3", TaskStatus::Running),
+        ]),
+        0,
+    );
+    for (thread, task) in [("m1", "t1"), ("m2", "t2"), ("m3", "t3")] {
+        chat.apply(member_started(thread, task), 1);
+    }
+    let roster = team(&[
+        ("m1", "t1", TaskStatus::Done),
+        ("m2", "t2", TaskStatus::Done),
+        ("m3", "t3", TaskStatus::Running),
+    ]);
+    chat.apply(ThreadEvent::Team(roster.clone()), 2);
+    // m2 ended, but a request it asked of the user still waits.
+    chat.apply(
+        ThreadEvent::Subagent {
+            thread_id: "m2".into(),
+            event: Box::new(ThreadEvent::Approval(crate::tools::ApprovalRequest {
+                id: 5,
+                request: crate::tools::Request::Command {
+                    command: "uv run pytest".into(),
+                },
+                session: None,
+                steps: Vec::new(),
+            })),
+        },
+        3,
+    );
+    assert!(!chat.agent("m2").unwrap().working());
+
+    assert_eq!(chat.clear_agents(None), ["m1"]);
+    let listed: Vec<&str> = chat.agents.keys().map(String::as_str).collect();
+    assert_eq!(listed, ["m2", "m3"], "the asked and the working stay");
+
+    // The ticker sends the roster again: the cleared member is not back.
+    chat.apply(ThreadEvent::Team(roster), 4);
+    assert!(chat.agent("m1").is_none());
+    assert!(chat.cleared("m1"));
+
+    // Given work again, it is shown again.
+    chat.apply(member_started("m1", "t4"), 5);
+    assert!(chat.agent("m1").unwrap().working());
+    assert!(!chat.cleared("m1"));
+}

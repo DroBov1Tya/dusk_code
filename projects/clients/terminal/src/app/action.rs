@@ -200,6 +200,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "/access",
             "this chat's access: ask, sandbox, auto, full or default",
         ),
+        ("/agents clear", "take the finished subagents off the list"),
         (
             "/tier",
             "subagent models: /tier strong provider/model, /tier weak unset",

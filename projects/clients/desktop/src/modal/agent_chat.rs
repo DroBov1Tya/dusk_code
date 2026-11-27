@@ -188,22 +188,31 @@ fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div>
         AgentState::Done => "Done".to_owned(),
         AgentState::Failed => "Failed".to_owned(),
     };
+    let context = ws
+        .shown_chat()
+        .and_then(|chat| chat.agent_chats.get(agent))
+        .and_then(|log| log.context_line());
     let id = agent.to_owned();
-    let action = if seen.working() {
-        Button::new("agent-chat-stop")
-            .danger()
-            .small()
-            .label("Stop")
-            .tooltip("Stop this agent; the others go on")
-            .on_click(cx.listener(move |ws, _, _, cx| ws.stop_agent(&id, cx)))
-    } else {
-        Button::new("agent-chat-clear")
-            .ghost()
-            .small()
-            .label("Clear")
-            .tooltip("Take it off the list of subagents")
-            .on_click(cx.listener(move |ws, _, _, cx| ws.clear_agents(Some(&id), cx)))
-    };
+    let asked = ws
+        .shown_chat()
+        .is_some_and(|chat| chat.approval_waits_on(agent));
+    let action = (!asked || seen.working()).then(|| {
+        if seen.working() {
+            Button::new("agent-chat-stop")
+                .danger()
+                .small()
+                .label("Stop")
+                .tooltip("Stop this agent; the others go on")
+                .on_click(cx.listener(move |ws, _, _, cx| ws.stop_agent(&id, cx)))
+        } else {
+            Button::new("agent-chat-clear")
+                .ghost()
+                .small()
+                .label("Clear")
+                .tooltip("Take it off the list of subagents")
+                .on_click(cx.listener(move |ws, _, _, cx| ws.clear_agents(Some(&id), cx)))
+        }
+    });
     Some(
         div()
             .flex()
@@ -237,9 +246,14 @@ fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div>
                         dusk_protocol::thread::duration_words(
                             seen.run_ms(dusk_protocol::system::now_ms())
                         )
-                    ))),
+                    )))
+                    .children(
+                        context.map(|context| {
+                            div().small().text_color(muted).truncate().child(context)
+                        }),
+                    ),
             )
-            .child(action),
+            .children(action),
     )
 }
 
@@ -256,6 +270,7 @@ impl Workspace {
         });
         self.modal_scroll.scroll_to_bottom();
         cx.notify();
+        self.read_agent_contexts(Some(agent), cx);
         let known = self
             .shown_chat()
             .and_then(|chat| chat.agent_chats.get(agent))
@@ -316,22 +331,13 @@ impl Workspace {
         );
     }
 
-    /// Takes one finished subagent off the list, or every finished one. Its thread stays
-    /// in the core; only this window stops showing it.
+    /// Takes one finished subagent off the list, or every finished one, for as long as the
+    /// chat is open here; one an approval waits on stays. Its thread stays in the core.
     pub fn clear_agents(&mut self, only: Option<&str>, cx: &mut Context<Self>) {
         let Some(chat) = self.shown.clone().and_then(|id| self.chats.get_mut(&id)) else {
             return;
         };
-        let gone: Vec<String> = chat
-            .agents
-            .iter()
-            .filter(|(id, agent)| !agent.working() && only.is_none_or(|only| only == id.as_str()))
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in &gone {
-            chat.agents.remove(id);
-            chat.agent_chats.remove(id);
-        }
+        let gone = chat.clear_agents(only);
         // The chat of an agent just put away has nothing left to show.
         if let Some(Modal::AgentChat { agent, .. }) = &self.modal
             && gone.contains(agent)

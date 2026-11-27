@@ -9,11 +9,17 @@
 //! that moves rows: an item came, went or became another kind, an answer's text or
 //! thinking stopped being blank, or a turn boundary was drawn.
 
+mod approvals;
+mod cleared;
+mod context;
 mod history;
 mod run;
 mod team;
 
-use std::collections::BTreeMap;
+pub use approvals::CHAT_ASKS;
+pub use context::context_line;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -223,6 +229,9 @@ pub struct ChatLog<L = Infallible> {
     pub spend: Option<TurnSpend>,
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
+    /// How many times the context was compacted, as far as this client knows: those it
+    /// saw finish, or the core's count when it was asked (`context_report`).
+    pub compactions: u32,
     /// The token report as the core last sent it.
     pub usage: Option<ThreadTokens>,
     /// What the chat cost so far, when any call's cost is known.
@@ -243,7 +252,13 @@ pub struct ChatLog<L = Infallible> {
     pub agents: BTreeMap<String, Subagent>,
     /// What each subagent said and did, by its thread ID.
     pub agent_chats: BTreeMap<String, ChatLog<L>>,
+    /// The finished agents the user put away, which the team's roster must not bring back.
+    cleared: BTreeSet<String>,
+    /// The open requests for approval, the chat's own and its agents' at any depth,
+    /// oldest first.
     pub approvals: Vec<ApprovalRequest>,
+    /// The thread of the agent below the chat that asked each lifted request.
+    asked_by: BTreeMap<u64, String>,
     pub title: Option<String>,
     /// Text the core gave back after /undo, for the composer to offer again.
     pub offered: Option<String>,
@@ -277,6 +292,7 @@ impl<L> Default for ChatLog<L> {
             waiting: None,
             spend: None,
             tokens: None,
+            compactions: 0,
             usage: None,
             cost: None,
             model: None,
@@ -287,7 +303,9 @@ impl<L> Default for ChatLog<L> {
             skill_changes: Vec::new(),
             agents: BTreeMap::new(),
             agent_chats: BTreeMap::new(),
+            cleared: BTreeSet::new(),
             approvals: Vec::new(),
+            asked_by: BTreeMap::new(),
             title: None,
             offered: None,
             rollback_at: None,
@@ -409,6 +427,19 @@ impl<L> ChatLog<L> {
             self.meta[index].message_id = meta.message_id;
         }
         self.working = later.working;
+        // What the live events told of the context and the requests outlasts the history.
+        self.tokens = later.tokens.or(self.tokens);
+        self.usage = later.usage.or(self.usage.take());
+        self.compactions = self.compactions.max(later.compactions);
+        for request in later.approvals {
+            let asker = later.asked_by.get(&request.id).cloned();
+            self.open_approval(request, asker.as_deref());
+        }
+        self.live.merge_approvals(&later.live);
+        // Agents put away while the history was read stay away.
+        for id in later.cleared {
+            self.clear_away(id);
+        }
     }
 
     /// The item at `index` to change in place; it is marked changed.
@@ -564,6 +595,7 @@ impl<L> ChatLog<L> {
         // The piece that answers a call tried again changes what the indicator says.
         let retried = self.live.retrying();
         self.live.apply(&event, now);
+        self.follow_approval(&event);
         // A model call opens a new step: its `ask_agent` calls are a run of their own.
         if matches!(event, ThreadEvent::Model(_) | ThreadEvent::TurnStarted(_)) {
             self.batch = None;
@@ -620,9 +652,11 @@ impl<L> ChatLog<L> {
                 self.waiting = turn.waiting;
             }
             ThreadEvent::CompactionStarted => self.compacting = true,
-            ThreadEvent::CompactionFinished(_) | ThreadEvent::CompactionFailed { .. } => {
-                self.compacting = false
+            ThreadEvent::CompactionFinished(_) => {
+                self.compacting = false;
+                self.compactions += 1;
             }
+            ThreadEvent::CompactionFailed { .. } => self.compacting = false,
             ThreadEvent::TurnFailed(_) => self.end_turn(),
             _ => {}
         }
@@ -769,7 +803,8 @@ impl<L> ChatLog<L> {
                 task_id,
             } => {
                 self.touch_agent_run(&call_id);
-                // Asking the same thread again brings it back to work.
+                // Asking the same thread again brings it back to work, and to the list.
+                self.unclear(&thread_id);
                 let agent = Subagent {
                     name: agent_name(&thread_id),
                     thread_id: thread_id.clone(),
@@ -798,8 +833,8 @@ impl<L> ChatLog<L> {
                     .or_default()
                     .apply(*event, now);
             }
-            ThreadEvent::Approval(request) => self.approvals.push(request),
-            ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
+            // Taken in `apply` from any depth (`follow_approval`).
+            ThreadEvent::Approval(_) | ThreadEvent::ApprovalClosed { .. } => {}
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Pins(pins) => self.pins = pins,
             ThreadEvent::SkillChanged(change) => self.skill_changed(change),

@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 46] = [
+pub const KEYS: [(&str, &str); 47] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -83,6 +83,7 @@ pub const KEYS: [(&str, &str); 46] = [
         "/access",
         "this chat's access: ask, sandbox, auto, full, default",
     ),
+    ("/agents clear", "take the finished subagents off the list"),
     ("Ctrl+N", "new thread"),
     (
         "Alt+T / Alt+W",

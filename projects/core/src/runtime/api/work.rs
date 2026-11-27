@@ -5,6 +5,7 @@ use crate::runtime::jobs::JobInfo;
 use crate::{
     catalog::mentions::Mentions,
     message::sources::{HostFiles, ThreadSources},
+    runtime::ThreadEvent,
     runtime::thread::start::{self},
     state::{Source, UndoPoint},
     tools::Decision,
@@ -14,6 +15,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+/// Agents nest no deeper than this; a longer chain is cut, never followed forever.
+const MAX_DEPTH: usize = 16;
 
 impl Runtime {
     /// Sends a running foreground command of the thread to the background.
@@ -296,5 +300,48 @@ impl Runtime {
             return asked_chat == named_chat && launcher.approvals.answer(id, decision);
         }
         false
+    }
+
+    /// The requests still waiting in `thread_id` and in every agent below it, as the events
+    /// that opened them in that thread: an agent's wrapped once for each agent between, as it
+    /// came live, so a client that comes after they were asked can still answer them.
+    pub async fn waiting_approvals(&self, thread_id: &str) -> Vec<ThreadEvent> {
+        let mut events = Vec::new();
+        for launcher in [&self.launcher, &self.temporary] {
+            let state = &launcher.state;
+            if state.root_thread(thread_id).await.is_err() {
+                continue;
+            }
+            for (asked, request) in launcher.approvals.waiting() {
+                let id = request.id;
+                let mut event = ThreadEvent::Approval(request);
+                let mut thread = asked;
+                let mut below = false;
+                for _ in 0..MAX_DEPTH {
+                    if thread == thread_id {
+                        below = true;
+                        break;
+                    }
+                    let parent = match state.parent_thread(&thread).await {
+                        Ok(parent) => parent,
+                        Err(error) => {
+                            tracing::warn!("approval {id} not told again: {error:#}");
+                            None
+                        }
+                    };
+                    let Some(parent) = parent else { break };
+                    event = ThreadEvent::Subagent {
+                        thread_id: thread,
+                        event: Box::new(event),
+                    };
+                    thread = parent;
+                }
+                // Asked by a thread beside this one, or above it: not this thread's.
+                if below {
+                    events.push(event);
+                }
+            }
+        }
+        events
     }
 }

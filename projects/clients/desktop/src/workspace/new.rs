@@ -204,6 +204,7 @@ impl Workspace {
             picker_closed: None,
             picked: Vec::new(),
             approval_open: Default::default(),
+            approval_shown: None,
             attach_open: false,
             left_hidden: false,
             rail_hidden: false,
