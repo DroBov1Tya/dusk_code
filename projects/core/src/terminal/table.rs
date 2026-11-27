@@ -24,7 +24,7 @@ use crate::client::ClientId;
 struct Open {
     owner: ClientId,
     pty: Pty,
-    /// The folder the shell started in.
+    /// The folder the shell started in, for when the system cannot tell where it is now.
     cwd: PathBuf,
     tail: Arc<Mutex<Tail>>,
 }
@@ -252,18 +252,21 @@ impl Terminals {
     }
 }
 
+/// A terminal as it is now: its folder is where the shell went with `cd`, so one moved
+/// out of the project counts as outside it.
 fn shown(id: &str, open: &Open) -> Shown {
     let title = open.tail.lock().title().map(str::to_owned);
+    let cwd = open.pty.cwd().unwrap_or_else(|| open.cwd.clone());
     let folder = || {
-        open.cwd.file_name().map_or_else(
-            || open.cwd.display().to_string(),
+        cwd.file_name().map_or_else(
+            || cwd.display().to_string(),
             |name| name.to_string_lossy().into_owned(),
         )
     };
     Shown {
         id: id.to_owned(),
         title: title.unwrap_or_else(folder),
-        cwd: open.cwd.clone(),
+        cwd: cwd.clone(),
         busy: open.pty.busy(),
     }
 }
@@ -364,6 +367,38 @@ mod tests {
         // The id is gone with the shell.
         assert!(terminals.handle(1, input(&id, "x")).is_err());
         assert!(terminals.open.lock().is_empty());
+    }
+
+    /// A terminal's folder is where its shell is now, so a `cd` out of the project moves
+    /// it outside for the `terminal` tool's approval.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[tokio::test]
+    async fn a_terminal_is_where_its_shell_went() {
+        let terminals = Terminals::new("/bin/sh".into());
+        let (queue, _events) = unbounded_channel();
+        terminals.set_app(Some((1, queue)));
+        let Some((id, _own)) = open(&terminals, "terminal-cd") else {
+            return;
+        };
+        let started = terminals.find(&id).unwrap().cwd;
+        let away = temp_dir("terminal-cd-away");
+        std::fs::create_dir_all(&away).unwrap();
+        let away = away.canonicalize().unwrap();
+        let typed = input(&id, &format!("cd '{}'\n", away.display()));
+        terminals.handle(1, typed).unwrap();
+        let deadline = std::time::Instant::now() + WAIT;
+        loop {
+            let now = terminals.find(&id).unwrap().cwd;
+            if now.canonicalize().ok() == Some(away.clone()) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "still in {now:?}, from {started:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        terminals.close_all();
     }
 
     #[tokio::test]

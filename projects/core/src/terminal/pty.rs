@@ -145,6 +145,12 @@ impl Pty {
         self.pid
     }
 
+    /// The folder the shell is in now, which `cd` moves; none where the system does not
+    /// tell it.
+    pub fn cwd(&self) -> Option<std::path::PathBuf> {
+        self.pid.and_then(cwd_of)
+    }
+
     /// A program other than the shell holds the terminal now, such as a dev server.
     pub fn busy(&self) -> bool {
         #[cfg(unix)]
@@ -219,4 +225,47 @@ fn write(mut writer: Box<dyn Write + Send>, typed: Receiver<Vec<u8>>) {
             return;
         }
     }
+}
+
+/// The working folder of the process `pid`.
+#[cfg(target_os = "macos")]
+fn cwd_of(pid: u32) -> Option<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut info = std::mem::MaybeUninit::<libc::proc_vnodepathinfo>::zeroed();
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
+    // SAFETY: the buffer is a zeroed `proc_vnodepathinfo` of `size` bytes, which the call
+    // fills at most; any byte pattern is a valid value of it.
+    let filled = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    if filled != size {
+        return None;
+    }
+    // SAFETY: zeroed, then filled in full by the call above.
+    let info = unsafe { info.assume_init() };
+    let path: Vec<u8> = info
+        .pvi_cdir
+        .vip_path
+        .iter()
+        .flatten()
+        .map(|byte| *byte as u8)
+        .take_while(|byte| *byte != 0)
+        .collect();
+    (!path.is_empty()).then(|| std::ffi::OsStr::from_bytes(&path).into())
+}
+
+#[cfg(target_os = "linux")]
+fn cwd_of(pid: u32) -> Option<std::path::PathBuf> {
+    std::fs::read_link(format!("/proc/{pid}/cwd")).ok()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn cwd_of(_pid: u32) -> Option<std::path::PathBuf> {
+    None
 }
