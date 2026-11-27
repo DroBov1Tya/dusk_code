@@ -144,17 +144,51 @@ async fn a_failed_task_with_its_gate_edited_is_retried_in_place_and_passes() {
     let (_, retried) = rig.runtime.retry_task(&rig.lead, &ids[0]).await.unwrap();
     assert_eq!(retried.task_id, ids[0]);
     assert_eq!(retried.retries, 1);
-    if rig.ended().await.is_some() {
-        rig.run().await;
-    }
 
-    until("the team ended", || async { rig.ended().await.is_some() }).await;
-    assert_eq!(rig.ended().await, Some(TeamEnd::Done));
+    // Running or ended by now, the team goes on with it: nobody runs it by hand.
+    until("the team ended done", || async {
+        rig.ended().await == Some(TeamEnd::Done)
+    })
+    .await;
     for id in &ids {
         assert_eq!(rig.status(id).await, PlanStatus::Done);
     }
     let done = rig.task(&ids[0]).await;
     assert_eq!((done.retries, done.reworks), (1, 0));
+}
+
+/// The user's Retry on a team that ended is a restart: the team runs again toward its
+/// last goal and gives the task out, without the lead's `run`.
+#[tokio::test]
+async fn a_retry_after_the_team_ended_runs_the_team_again() {
+    let rig = unasked("team_gate_retry_ended").await;
+    let ids = rig.plan(&[gated("one", command("exit 4"))]).await;
+    rig.run().await;
+    until("the task failed", || async {
+        rig.status(&ids[0]).await == PlanStatus::Failed
+    })
+    .await;
+    if rig.ended().await.is_none() {
+        rig.runtime.stop_team(&rig.lead).await.unwrap();
+    }
+    until("the team ended", || async { rig.ended().await.is_some() }).await;
+    assert_ne!(rig.ended().await, Some(TeamEnd::Done));
+
+    let edit = TaskEdit {
+        gate: Some(Some(command("true"))),
+        ..TaskEdit::default()
+    };
+    rig.state()
+        .edit_plan_task(&rig.lead, &ids[0], &edit)
+        .await
+        .unwrap();
+    rig.runtime.retry_task(&rig.lead, &ids[0]).await.unwrap();
+
+    until("the team ran again and ended done", || async {
+        rig.ended().await == Some(TeamEnd::Done)
+    })
+    .await;
+    assert_eq!(rig.status(&ids[0]).await, PlanStatus::Done);
 }
 
 #[tokio::test]

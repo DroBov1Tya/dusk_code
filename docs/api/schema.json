@@ -14225,7 +14225,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Retries a failed task of the plan in place: the same id, its dependents with it.\nA running team gives it out again; otherwise it waits for the next run.",
+          "description": "Retries a failed task of work of the plan in place: the same id, its dependents with it.\nA running team gives it out again; one that ended starts again toward its goal.",
           "properties": {
             "RetryTask": {
               "properties": {

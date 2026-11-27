@@ -107,8 +107,8 @@ pub enum WorkRequest {
         thread_id: String,
         task_id: String,
     },
-    /// Retries a failed task of the plan in place: the same id, its dependents with it.
-    /// A running team gives it out again; otherwise it waits for the next run.
+    /// Retries a failed task of work of the plan in place: the same id, its dependents with it.
+    /// A running team gives it out again; one that ended starts again toward its goal.
     RetryTask {
         thread_id: String,
         task_id: String,
