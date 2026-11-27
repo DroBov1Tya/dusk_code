@@ -61,8 +61,9 @@ impl Tool for PlanEdit {
         "Create or rewrite this chat's pinned plan: one Markdown file, pinned so the whole \
          of it comes back with every message. Give the whole plan as Markdown, not a patch; \
          the plan keeps one name, so call the tool again to update it. With delete: true \
-         it deletes the plan instead: remove a plan that is finished or was replaced and no \
-         longer describes the work, rather than leave it pinned."
+         it deletes a plan instead: remove a plan that is finished or was replaced and no \
+         longer describes the work, rather than leave it pinned. The current plan goes only \
+         once finished; until then rewrite it."
             .into()
     }
 
@@ -81,18 +82,27 @@ impl Tool for PlanEdit {
             let title = arguments.title.as_deref().map(sources::clean_name);
             if arguments.delete {
                 ensure!(arguments.content.is_none(), "delete takes no content");
-                let name = match title {
-                    Some(name) => name,
-                    None => match current(&self.state, &self.thread_id).await? {
-                        Some(plan) => plan.name,
-                        None => bail!("this chat has no plan"),
-                    },
+                // Only plans of this chat; an attached file of the name is no plan.
+                let plans = list(&self.state, workspace, &self.thread_id).await?;
+                let plan = match &title {
+                    Some(name) => plans.into_iter().find(|plan| &plan.name == name),
+                    None => plans.into_iter().next(),
                 };
+                let Some(plan) = plan else {
+                    match title {
+                        Some(name) => bail!("this chat has no plan named {name}"),
+                        None => bail!("this chat has no plan"),
+                    }
+                };
+                // The plan the work goes by stays until it is done: the user may have
+                // written in it, and deleting it would make an older one current.
                 ensure!(
-                    remove(&self.state, workspace, &self.thread_id, &name).await?,
-                    "this chat has no plan named {name}"
+                    plan.old(),
+                    "the current plan {} is not finished; rewrite it instead",
+                    plan.name
                 );
-                return Ok(format!("the plan {name} is deleted"));
+                remove_source(&self.state, workspace, &self.thread_id, &plan.source_id).await?;
+                return Ok(format!("the plan {} is deleted", plan.name));
             }
             let content = arguments.content.unwrap_or_default();
             ensure!(!content.trim().is_empty(), "content is empty");
@@ -128,10 +138,12 @@ pub async fn save(
     ensure!(content.len() <= MAX_PLAN_BYTES, "the plan is over 256 KiB");
     let bytes = content.as_bytes();
     let folder = workspace.join(sources::FOLDER);
+    // Only a plan is written over: an attached file of the name stays as it is.
     let existing = state
-        .sources(thread_id)
+        .plans(thread_id)
         .await?
         .into_iter()
+        .map(|(source, _)| source)
         .find(|source| source.name == name);
     if let Some(source) = existing {
         write(&folder.join(&source.file), bytes).await?;
@@ -227,21 +239,6 @@ pub async fn remove_old(state: &State, workspace: &Path, thread_id: &str) -> Res
         }
     }
     Ok(removed)
-}
-
-/// Deletes the plan named `name`; false when the chat has no plan of that name. An
-/// attached file of the name is no plan and stays.
-async fn remove(state: &State, workspace: &Path, thread_id: &str, name: &str) -> Result<bool> {
-    let plan = state
-        .plans(thread_id)
-        .await?
-        .into_iter()
-        .find(|(source, _)| source.name == name);
-    let Some((source, _)) = plan else {
-        return Ok(false);
-    };
-    remove_source(state, workspace, thread_id, &source.source_id).await?;
-    Ok(true)
 }
 
 /// A plan with checkboxes, every one of them ticked.
@@ -460,6 +457,26 @@ mod tests {
             .await
             .is_err()
         );
+        // The current plan, unfinished, is still the work: it stays.
+        let refused = delete(None).await.unwrap_err().to_string();
+        assert!(refused.contains("not finished"), "{refused}");
+        assert!(delete(Some(PLAN_NAME)).await.is_err());
+
+        // Replaced by a newer plan, it goes; the newer one goes once finished.
+        tool.call(
+            json!({"content": "- [ ] next", "title": "next.md"}),
+            tool_context(&scope),
+        )
+        .await
+        .unwrap();
+        delete(Some(PLAN_NAME)).await.unwrap();
+        assert!(delete(None).await.is_err());
+        tool.call(
+            json!({"content": "- [x] next", "title": "next.md"}),
+            tool_context(&scope),
+        )
+        .await
+        .unwrap();
         delete(None).await.unwrap();
         let names = |thread: &'static str| {
             let state = Arc::clone(&state);
@@ -470,5 +487,36 @@ mod tests {
         };
         assert_eq!(names("thread").await, ["notes.md"]);
         assert_eq!(names("other").await, [PLAN_NAME]);
+    }
+
+    #[tokio::test]
+    async fn a_plan_named_like_an_attached_file_leaves_the_file_be() {
+        let state = Arc::new(temp_state("plan_attached").await);
+        state.create_thread("thread", "test").await.unwrap();
+        let root = temp_dir("plan_attached_scope");
+        let folder = root.join(sources::FOLDER);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("notes.md"), "mine").unwrap();
+        let attached = Source {
+            source_id: "attached".into(),
+            name: "notes.md".into(),
+            file: "notes.md".into(),
+            bytes: 4,
+            pinned: false,
+            delivered: false,
+            plan: false,
+        };
+        state.add_source("thread", &attached).await.unwrap();
+        save(&state, &root, "thread", "notes.md", "- [x] plan")
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(folder.join("notes.md")).unwrap(),
+            "mine"
+        );
+        assert_eq!(remove_old(&state, &root, "thread").await.unwrap(), 1);
+        let left = state.sources("thread").await.unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].source_id, "attached");
     }
 }
