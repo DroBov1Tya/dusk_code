@@ -66,6 +66,9 @@ pub fn task_card(tasks: &[Task], task_id: &str) -> Option<TaskCard> {
         plural(task.attempts, "attempt"),
         plural(task.reworks, "rework"),
     ];
+    if task.retries > 0 {
+        work.insert(0, format!("try {}", task.retries + 1));
+    }
     work.extend(task.spend());
     if task.changes > 0 {
         work.push(format!("{} changed", plural(task.changes, "file")));
@@ -106,6 +109,7 @@ mod tests {
         blocked.note = " which clock to mock? ".into();
         blocked.files = vec!["tests/expiry.rs".into()];
         blocked.attempts = 1;
+        blocked.retries = 1;
         blocked.steps = 12;
         blocked.tokens = 84_000;
         blocked.owner = Some(TaskOwner {
@@ -137,7 +141,9 @@ mod tests {
         );
         assert_eq!(
             field("Work"),
-            Some("1 attempt \u{00B7} 0 reworks \u{00B7} 12 steps \u{00B7} 84k tokens")
+            Some(
+                "try 2 \u{00B7} 1 attempt \u{00B7} 0 reworks \u{00B7} 12 steps \u{00B7} 84k tokens"
+            )
         );
         // Nothing is said of what the task does not have.
         assert_eq!(

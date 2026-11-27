@@ -2,7 +2,7 @@
 //! waits or failed, what it depends on and what it spent, and its member's chat a click
 //! away. The fields are the protocol's (`task_card`); the window only lays them out.
 
-use dusk_protocol::thread::task_card;
+use dusk_protocol::thread::{TaskStatus, task_card};
 use gpui_kit::{
     component::{
         ActiveTheme,
@@ -61,6 +61,23 @@ pub fn render(ws: &Workspace, task_id: &str, cx: &mut Context<Workspace>) -> Div
             .label(label)
             .on_click(cx.listener(move |ws, _, _, cx| ws.open_agent_chat(&owner.thread_id, cx)))
     });
+    // A failed task is tried again from here, as it is now, its later tasks with it.
+    let retry = (card.status == TaskStatus::Failed).then(|| {
+        let id = card.task_id.clone();
+        Button::new("task-card-retry")
+            .primary()
+            .label("Retry")
+            .on_click(cx.listener(move |ws, _, _, cx| ws.retry_task(&id, cx)))
+    });
+    let foot = (owner.is_some() || retry.is_some()).then(|| {
+        div()
+            .flex()
+            .flex_row()
+            .justify_end()
+            .gap_2()
+            .children(owner)
+            .children(retry)
+    });
     div()
         .flex()
         .flex_col()
@@ -68,7 +85,7 @@ pub fn render(ws: &Workspace, task_id: &str, cx: &mut Context<Workspace>) -> Div
         .p_5()
         .child(div().small().text_color(color).child(card.head))
         .child(fields)
-        .children(owner.map(|owner| div().flex().flex_row().justify_end().child(owner)))
+        .children(foot)
 }
 
 impl Workspace {

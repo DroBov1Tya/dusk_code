@@ -370,8 +370,9 @@ fn act(
             "schedule" => ws.open_schedule_editor(None, window, cx),
             // After `fake=team`: the yes Stop team asks for, members at once and a task's card.
             "team-stop" => ws.ask_stop_team(cx),
-            // The card of task #4, blocked on the lead with a note.
+            // The card of task #4, blocked on the lead with a note; #5 failed, with Retry.
             "task-card" => ws.open_task_card("t4", cx),
+            "task-card-failed" => ws.open_task_card("t5", cx),
             "team-at-once" => {
                 if let Some(team) = ws.overview.team.clone() {
                     ws.ask_team_at_once(&team, cx);
