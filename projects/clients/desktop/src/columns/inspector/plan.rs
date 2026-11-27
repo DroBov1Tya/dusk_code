@@ -298,7 +298,10 @@ impl Workspace {
             cx,
             move |client| async move {
                 let work = client.work();
-                Ok((work.plan(&thread_id).await?, work.plans(&thread_id).await?))
+                let text = work.plan(&thread_id).await?;
+                // A core before the plans list still shows its plan, just no older ones.
+                let plans = work.plans(&thread_id).await.unwrap_or_default();
+                Ok((text, plans))
             },
             move |ws, result, cx| match result {
                 // The answer of a chat left since is not this chat's.

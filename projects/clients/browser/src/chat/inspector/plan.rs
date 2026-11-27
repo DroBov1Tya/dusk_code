@@ -20,7 +20,11 @@ pub fn PlanTab(id: String) -> impl IntoView {
     let reload = move || {
         let thread = id.get_value();
         run(
-            async move { Ok((api::plan(&thread).await?, api::plans(&thread).await?)) },
+            async move {
+                let text = api::plan(&thread).await?;
+                // A core before the plans list still shows its plan, just no older ones.
+                Ok((text, api::plans(&thread).await.unwrap_or_default()))
+            },
             move |(text, list)| {
                 plan.set(text.unwrap_or_default());
                 plans.set(list);
