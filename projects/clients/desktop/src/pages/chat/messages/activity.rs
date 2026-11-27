@@ -10,7 +10,7 @@ use gpui_kit::{
 };
 
 use super::{
-    ACTIVITY,
+    ACTIVITY, Texts,
     step::{background_button, step},
 };
 use crate::{
@@ -151,9 +151,14 @@ pub fn turn_activity(
                         cx,
                     ))
                 }
-                Item::Agent { from, text, .. } => {
-                    detail.child(agent_report(ws, shown, index, (from, text), true, cx))
-                }
+                Item::Agent { from, text, .. } => detail.child(agent_report(
+                    ws,
+                    shown,
+                    index,
+                    (from, text),
+                    Some(&ws.texts),
+                    cx,
+                )),
                 Item::User {
                     text,
                     sequence: None,
@@ -208,14 +213,14 @@ pub fn notice(key: &str, body: Div, text: &str, cx: &App) -> Div {
         ))
 }
 
-/// An agent's report, folded to its first line. `kept`: it is a row of the chat's list,
-/// whose text is kept with the chat's (`Texts`) so the list measures it at its height.
+/// An agent's report, folded to its first line. `kept`: the texts of the list it is a row
+/// of, which keep its text so the list measures it at its height.
 pub fn agent_report(
     ws: &Workspace,
     shown: &str,
     index: usize,
     (from, text): (&str, &str),
-    kept: bool,
+    kept: Option<&Texts>,
     cx: &mut Context<Workspace>,
 ) -> Div {
     let open = ws.unfolded.contains(&(shown.to_owned(), index));
@@ -226,14 +231,11 @@ pub fn agent_report(
         format!("{from} reported: {first}")
     };
     let key = SharedString::from(format!("report-{shown}-{index}"));
-    let body = match (open, kept) {
-        (true, true) => Some(
-            ws.texts
-                .message(key.clone(), index, text, cx)
-                .into_any_element(),
-        ),
-        _ => None,
-    };
+    let body = kept.filter(|_| open).map(|texts| {
+        texts
+            .message(key.clone(), index, text, cx)
+            .into_any_element()
+    });
     // A report is often taken whole into another chat: its copy button is in sight on
     // the folded row, not only under the pointer.
     text_row(
@@ -417,6 +419,7 @@ impl Workspace {
             self.unfolded.insert(key);
         }
         self.measure_again = true;
+        self.agent_list.measure_again = true;
         cx.notify();
     }
 }
