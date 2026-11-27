@@ -1,5 +1,5 @@
 //! The right column of a chat: its plan and tasks, subagents, changed files, background
-//! jobs and the Overview of how the work stands.
+//! jobs, sources and the Overview of how the work stands.
 
 use crate::{
     state::{View, state},
@@ -14,15 +14,17 @@ pub enum Tab {
     Agents,
     Changes,
     Jobs,
+    Sources,
     Overview,
 }
 
-const TABS: [(Tab, &str, IconName); 6] = [
+const TABS: [(Tab, &str, IconName); 7] = [
     (Tab::Plan, "Plan", IconName::Map),
     (Tab::Tasks, "Tasks", IconName::CircleCheck),
     (Tab::Agents, "Agents", IconName::Bot),
     (Tab::Changes, "Changes", IconName::FileText),
     (Tab::Jobs, "Jobs", IconName::SquareTerminal),
+    (Tab::Sources, "Sources", IconName::Inbox),
     (Tab::Overview, "Overview", IconName::LayoutDashboard),
 ];
 
@@ -57,6 +59,7 @@ pub fn Inspector() -> impl IntoView {
                         Tab::Agents => view! { <AgentsTab id=id.clone() /> }.into_any(),
                         Tab::Changes => view! { <ChangesTab id=id.clone() /> }.into_any(),
                         Tab::Jobs => view! { <JobsTab id=id.clone() /> }.into_any(),
+                        Tab::Sources => view! { <SourcesTab id=id.clone() /> }.into_any(),
                         Tab::Overview => view! { <OverviewTab id=id.clone() wide=wide /> }.into_any(),
                     }}
                 </div>
@@ -71,6 +74,7 @@ mod context;
 mod jobs;
 mod overview;
 mod plan;
+mod sources;
 mod tasks;
 
 use agents::AgentsTab;
@@ -78,4 +82,5 @@ use changes::ChangesTab;
 use jobs::JobsTab;
 use overview::OverviewTab;
 use plan::PlanTab;
+use sources::SourcesTab;
 use tasks::TasksTab;

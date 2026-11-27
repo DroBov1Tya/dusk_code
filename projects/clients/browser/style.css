@@ -1138,3 +1138,12 @@ a.pr-chip:hover .pr-card, a.pr-chip:focus-visible .pr-card { display: flex; anim
 .skill-diff > div { padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .skill-diff .added { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .skill-diff .removed { background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--muted); text-decoration: line-through; }
+
+/* Sources */
+.sources { display: flex; flex-direction: column; gap: 6px; }
+.source-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; border-radius: 8px; background: var(--raised); border: 0; color: var(--fg); cursor: pointer; }
+.source-row:hover { background: color-mix(in srgb, var(--fg) 8%, var(--raised)); }
+.source-row .muted { font-size: 12px; }
+.source-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.source-text { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; margin: 0 0 12px; }
+.source-picture { display: block; max-width: 100%; max-height: 64vh; margin: 0 auto; object-fit: contain; }
