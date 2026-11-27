@@ -164,12 +164,8 @@ impl Runtime {
         self.launcher.model.replace_provider(&name, adapter);
         // Asked off the request: picking waits on the network.
         if self.launcher.model.current().is_none() {
-            let (config, model, mailboxes) = (
-                Arc::clone(&self.launcher.config),
-                Arc::clone(&self.launcher.model),
-                Arc::clone(&self.launcher.mailboxes),
-            );
-            tokio::spawn(async move { pick_if_empty(&config, &model, &mailboxes).await });
+            let launcher = self.launcher.clone();
+            tokio::spawn(async move { pick_if_empty(&launcher).await });
         }
         Ok(name)
     }

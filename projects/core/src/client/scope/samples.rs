@@ -392,7 +392,10 @@ fn commands() -> Vec<Cmd> {
         Cmd::Resume { cwd: None },
         Cmd::New,
         Cmd::Temporary,
-        Cmd::Model { name: None },
+        Cmd::Model {
+            name: None,
+            thread_id: None,
+        },
         Cmd::Provider { name: None },
         Cmd::Settings,
         Cmd::Context {
@@ -401,7 +404,10 @@ fn commands() -> Vec<Cmd> {
         Cmd::Context { thread_id: None },
         Cmd::Fork { instructions: None },
         Cmd::Update { channel: None },
-        Cmd::Effort { level: None },
+        Cmd::Effort {
+            level: None,
+            thread_id: None,
+        },
         Cmd::Goal { argument: None },
         undo(Some(id()), None),
         undo(Some(id()), Some(1)),

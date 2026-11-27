@@ -31,8 +31,15 @@ pub async fn command(
         });
         terminal.draw(|frame| ui::draw(frame, app))?;
     }
-    if command == (Command::Model { name: None }) {
-        let model = client.status.borrow().model.clone();
+    // The model and the effort are the open chat's own; with none, new chats take them.
+    let thread_id = app.thread_id.clone();
+    let command = match command {
+        Command::Model { name, .. } => Command::Model { name, thread_id },
+        Command::Effort { level, .. } => Command::Effort { level, thread_id },
+        command => command,
+    };
+    if matches!(command, Command::Model { name: None, .. }) {
+        let model = (!app.model.is_empty()).then(|| app.model.clone());
         app.panel = Some(Panel::Models(ModelList::checking(model)));
         terminal.draw(|frame| ui::draw(frame, app))?;
     }

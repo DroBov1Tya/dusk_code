@@ -171,7 +171,10 @@ impl AskAgent {
         if let Some(effort) = arguments.effort {
             state.set_agent_effort(&thread_id, effort).await?;
         }
-        let chat = self.launcher.model.current().map(|choice| choice.name());
+        // The asking chat's own model and effort, never ones chosen in another chat.
+        let chat = self.launcher.chat_model(&self.thread_id).await?;
+        let chat_effort = chat.effort;
+        let chat = chat.name();
         if arguments.tier.is_some() {
             let config = self.launcher.config.current();
             let model = tiers::model_for(arguments.tier, &config, chat.as_deref());
@@ -192,7 +195,7 @@ impl AskAgent {
             .filter(|picked| running.as_ref() != Some(*picked))
             .cloned();
         let model = running.or(model);
-        let effort = Effort::for_subagent(config.effort(), state.agent_effort(&thread_id).await?);
+        let effort = Effort::for_subagent(chat_effort, state.agent_effort(&thread_id).await?);
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::SubagentStarted {
                 call_id: progress.call_id.to_owned(),

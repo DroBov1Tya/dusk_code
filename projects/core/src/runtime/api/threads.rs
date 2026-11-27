@@ -163,8 +163,7 @@ impl Runtime {
     ) -> Result<ThreadHandle> {
         let config = self.config().current();
         let choice = crate::runtime::model_choice::Choice::pick(&config, Some(model)).await?;
-        let model = std::sync::Arc::new(crate::runtime::model_choice::ModelChoice::new(choice));
-        self.launcher.new_thread_on(source, cwd, Some(model)).await
+        self.launcher.new_thread_on(source, cwd, Some(choice)).await
     }
 
     /// A new chat thread that starts from a /fork summary of another, after its prompt.

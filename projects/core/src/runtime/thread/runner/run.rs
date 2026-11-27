@@ -157,6 +157,17 @@ impl ThreadRunner {
 
     async fn serve(&mut self) -> Result<()> {
         let recovered = self.agent.recover().await?;
+        // The client shows the chat's own model, not the one new chats start with.
+        if self.agent.depth == 0
+            && let Some(choice) = self.agent.model.current()
+        {
+            let config = self.agent.config.current();
+            self.agent.emit(ThreadEvent::ModelSelected {
+                name: choice.name(),
+                input_limit: choice.input_limit(&config),
+                effort: self.agent.model.effort_in(&config),
+            });
+        }
         // The client sees the context size and the goal before the first turn, too.
         self.agent.report_tokens().await;
         if self.agent.depth == 0

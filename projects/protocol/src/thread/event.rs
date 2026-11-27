@@ -12,11 +12,16 @@ use crate::tools::{ApprovalRequest, Question, ToolResult};
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadEvent {
-    /// The active model changed or was discovered after the thread opened.
+    /// The model this chat answers on, its own: told when the chat opens, and when it
+    /// changes or is discovered. A choice made in another chat never sends it here.
     ModelSelected {
         name: String,
         /// The largest request to it: its window or the size set under models.
         input_limit: u64,
+        /// The chat's reasoning effort; none is the provider's default, and what a core
+        /// from before chats kept their own says.
+        #[serde(default)]
+        effort: Option<Effort>,
     },
     /// Saved locally, outside the model queue, until the client explicitly resends it.
     LocalUnsent(LocalUnsent),

@@ -78,7 +78,10 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         "temp" | "temporary" => Ok(Command::Temporary),
         "settings" => Ok(Command::Settings),
         "context" => Ok(Command::Context { thread_id: None }),
-        "effort" => Ok(Command::Effort { level: argument }),
+        "effort" => Ok(Command::Effort {
+            level: argument,
+            thread_id: None,
+        }),
         "update" => Ok(Command::Update { channel: argument }),
         "goal" => Ok(Command::Goal { argument }),
         "undo" => match argument.map(|number| number.parse::<u64>()) {
@@ -92,7 +95,10 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
             }),
             Some(Err(_)) => Err(anyhow::anyhow!("/undo takes a message number")),
         },
-        "model" => Ok(Command::Model { name: argument }),
+        "model" => Ok(Command::Model {
+            name: argument,
+            thread_id: None,
+        }),
         "jobs" => Ok(Command::Jobs { thread_id: None }),
         "sources" => Ok(Command::Sources {
             thread_id: None,

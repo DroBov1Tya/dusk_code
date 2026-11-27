@@ -10,6 +10,7 @@ mod conversation;
 mod files;
 mod goal;
 mod mode;
+mod model;
 mod pulls;
 mod threads;
 mod unread;

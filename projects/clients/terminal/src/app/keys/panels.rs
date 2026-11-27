@@ -248,7 +248,10 @@ impl App {
                     KeyCode::Enter => {
                         let level = EFFORTS[*selected].to_owned();
                         self.panel = None;
-                        return Action::Command(Command::Effort { level: Some(level) });
+                        return Action::Command(Command::Effort {
+                            level: Some(level),
+                            thread_id: None,
+                        });
                     }
                     KeyCode::Esc => self.panel = None,
                     _ => {}
@@ -345,10 +348,16 @@ impl App {
                 }
                 KeyCode::Enter => match list.rows().get(list.selected).cloned() {
                     Some(ModelRow::Model { name, .. }) => {
-                        return Action::Command(Command::Model { name: Some(name) });
+                        return Action::Command(Command::Model {
+                            name: Some(name),
+                            thread_id: None,
+                        });
                     }
                     Some(ModelRow::Provider(_)) => {
-                        return Action::Command(Command::Model { name: None });
+                        return Action::Command(Command::Model {
+                            name: None,
+                            thread_id: None,
+                        });
                     }
                     None => {}
                 },
@@ -380,7 +389,12 @@ impl App {
                     return Action::ProviderEnabled(provider.to_owned(), !on);
                 }
                 KeyCode::Char('c') => self.panel = Some(Panel::Connect(Connection::default())),
-                KeyCode::Char('r') => return Action::Command(Command::Model { name: None }),
+                KeyCode::Char('r') => {
+                    return Action::Command(Command::Model {
+                        name: None,
+                        thread_id: None,
+                    });
+                }
                 KeyCode::Esc => self.panel = None,
                 _ => {}
             },

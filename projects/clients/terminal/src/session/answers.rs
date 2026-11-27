@@ -60,6 +60,9 @@ pub async fn answer(
             app.panel = None;
             app.limit = client.status.borrow().input_limit;
             app.flash = Some(format!("model {name}"));
+            if let Some(own) = &mut app.own_model {
+                own.name.clone_from(&name);
+            }
             app.model = name;
             app.provider_available = true;
         }
@@ -69,6 +72,9 @@ pub async fn answer(
         },
         Ok(Answer::Effort { current, changed }) => {
             app.effort = current;
+            if let Some(own) = &mut app.own_model {
+                own.effort = current;
+            }
             let name = current.map_or("default", Effort::name);
             if changed {
                 app.flash = Some(format!("effort {name}"));

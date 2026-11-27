@@ -3,6 +3,7 @@
 //! off it; what the model reads of it, its `context`, `project` and `title`; the tests of
 //! the request's start (`prefix`) and of its stubbed results (`stub_view`).
 
+mod chat_model;
 mod context;
 mod launcher;
 mod lock;
@@ -15,6 +16,7 @@ pub mod start;
 mod stub_view;
 mod title;
 
+pub use chat_model::ChatModel;
 pub use context::{ContextSource, Conversation, spec_tokens};
 pub use launcher::Launcher;
 pub use lock::ThreadLock;

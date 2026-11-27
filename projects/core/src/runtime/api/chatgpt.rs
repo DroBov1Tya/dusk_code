@@ -119,12 +119,8 @@ impl Runtime {
                 return Err(error);
             }
         };
-        let (config, model, mailboxes, note) = (
-            Arc::clone(&self.launcher.config),
-            Arc::clone(&self.launcher.model),
-            Arc::clone(&self.launcher.mailboxes),
-            Arc::clone(&self.chatgpt),
-        );
+        let (launcher, note) = (self.launcher.clone(), Arc::clone(&self.chatgpt));
+        let (config, model) = (Arc::clone(&launcher.config), Arc::clone(&launcher.model));
         tokio::spawn(async move {
             let saved = async {
                 let settings = provider(&finish.await?);
@@ -149,7 +145,7 @@ impl Runtime {
             };
             // The first provider becomes the model; one chosen before stays.
             if connected {
-                pick_if_empty(&config, &model, &mailboxes).await;
+                pick_if_empty(&launcher).await;
             }
         });
         Ok(page)

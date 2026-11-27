@@ -65,15 +65,19 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
             };
             Ok(Answer::Update(runtime.check_update(channel).await?))
         }
-        Command::Effort { level: None } => Ok(Answer::Effort {
-            current: runtime.config().current().effort(),
+        Command::Effort {
+            level: None,
+            thread_id,
+        } => Ok(Answer::Effort {
+            current: runtime.effort(thread_id.as_deref()).await?,
             changed: false,
         }),
-        Command::Effort { level: Some(level) } => {
+        Command::Effort {
+            level: Some(level),
+            thread_id,
+        } => {
             let effort = Effort::parse(&level)?;
-            runtime
-                .config()
-                .update(|config| config.set_effort(effort))?;
+            runtime.set_effort(thread_id.as_deref(), effort).await?;
             Ok(Answer::Effort {
                 current: effort,
                 changed: true,
@@ -82,8 +86,11 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
         Command::Context { thread_id } => Ok(Answer::Context(
             runtime.context(thread_id.as_deref()).await?,
         )),
-        Command::Model { name: None } => Ok(Answer::Providers {
-            current: runtime.model().map(|choice| choice.name()),
+        Command::Model {
+            name: None,
+            thread_id,
+        } => Ok(Answer::Providers {
+            current: runtime.model_of(thread_id.as_deref()).await?,
             providers: model::check(runtime).await?,
         }),
         Command::Provider { name: None } => Ok(Answer::Providers {
@@ -94,8 +101,13 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
             current: runtime.model().map(|choice| choice.name()),
             providers: vec![model::check_one(runtime, &name).await?],
         }),
-        Command::Model { name: Some(name) } => Ok(Answer::ModelSwitched {
-            name: model::switch(runtime, &name).await?.name(),
+        Command::Model {
+            name: Some(name),
+            thread_id,
+        } => Ok(Answer::ModelSwitched {
+            name: model::switch(runtime, thread_id.as_deref(), &name)
+                .await?
+                .name(),
         }),
         Command::Compact { .. } => bail!("/compact runs in a thread"),
         Command::Fork { .. } => bail!("/fork runs in a thread"),

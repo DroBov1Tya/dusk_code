@@ -7,7 +7,6 @@ use super::{
     model_choice::{Choice, ModelChoice},
 };
 use crate::platform::Platform;
-use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Input, Mailboxes};
 use crate::runtime::jobs::JobManager;
 use crate::{
@@ -107,6 +106,11 @@ impl Runtime {
         };
         if let Some(choice) = &choice {
             info!("model {}", choice.name());
+            // Chats from before each kept its own ran on the saved model: they keep it.
+            let effort = config.current().effort();
+            if let Err(error) = state.keep_chat_models(&choice.name(), effort).await {
+                warn!("cannot keep the chats' models: {error:#}");
+            }
         } else {
             info!("no model selected; local history is available");
         }
@@ -204,15 +208,13 @@ impl Runtime {
         plugins.scan();
         let plugins_check = tokio::spawn(Arc::clone(&plugins).watch(CONFIG_CHECK_PERIOD));
         let model_discovery = if !config.current().all_providers().is_empty() {
-            let config = Arc::clone(&config);
-            let model = Arc::clone(&launcher.model);
-            let mailboxes = Arc::clone(&launcher.mailboxes);
+            let launcher = launcher.clone();
             Some(tokio::spawn(async move {
-                if model.current().is_none() {
-                    return pick_if_empty(&config, &model, &mailboxes).await;
+                if launcher.model.current().is_none() {
+                    return pick_if_empty(&launcher).await;
                 }
-                match refresh_saved(&model).await {
-                    Ok(Some(selected)) => announce(&selected, &config, &mailboxes).await,
+                match refresh_saved(&launcher.model).await {
+                    Ok(Some(_)) => launcher.announce_models().await,
                     Ok(None) => {}
                     Err(error) => warn!("model discovery is unavailable: {error:#}"),
                 }
@@ -285,33 +287,23 @@ impl Runtime {
     }
 }
 
-/// Chooses the first model that answers when none is chosen, and tells every chat. A
-/// model the user chooses meanwhile is kept: the revision guard drops this pick.
-pub(super) async fn pick_if_empty(config: &LiveConfig, model: &ModelChoice, mailboxes: &Mailboxes) {
+/// Chooses the first model that answers when none is chosen, and tells every chat that
+/// had none. A model the user chooses meanwhile is kept: the revision guard drops this
+/// pick.
+pub(super) async fn pick_if_empty(launcher: &Launcher) {
+    let model = &launcher.model;
     let revision = model.revision();
     if model.current().is_some() {
         return;
     }
-    match Choice::pick(&config.current(), None).await {
+    match Choice::pick(&launcher.config.current(), None).await {
         Ok(choice) => {
-            if model.set_if_empty_at_revision(choice, &revision)
-                && let Some(selected) = model.current()
-            {
-                announce(&selected, config, mailboxes).await;
+            if model.set_if_empty_at_revision(choice.clone(), &revision) {
+                model.fill_empty(&choice);
+                launcher.announce_models().await;
             }
         }
         Err(error) => warn!("model discovery is unavailable: {error:#}"),
-    }
-}
-
-/// Tells every chat the model chosen in the background, and wakes it to show it.
-async fn announce(selected: &Choice, config: &LiveConfig, mailboxes: &Mailboxes) {
-    for mailbox in mailboxes.lock().await.values() {
-        mailbox.emit(ThreadEvent::ModelSelected {
-            name: selected.name(),
-            input_limit: selected.input_limit(&config.current()),
-        });
-        mailbox.send(Input::Sent);
     }
 }
 

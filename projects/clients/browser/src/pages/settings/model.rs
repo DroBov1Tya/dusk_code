@@ -18,32 +18,54 @@ use super::model_tiers::ModelTiers;
 #[component]
 pub fn ModelPage() -> impl IntoView {
     let app = state();
+    // Opened from a chat's model button, the page chooses for that chat; each chat keeps
+    // its own, and new chats start with the last chosen.
+    let chat_id = StoredValue::new(app.model_chat.get_untracked());
+    app.model_chat.set(None);
+    let chat = chat_id.get_value().and_then(|id| app.chat(&id));
     let providers = RwSignal::new(Vec::new());
     let current = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
     let load = move || {
         busy.set(true);
-        run(api::command(Command::Model { name: None }), move |answer| {
-            busy.set(false);
-            if let Answer::Providers {
-                current: now,
-                providers: list,
-            } = answer
-            {
-                current.set(now);
-                providers.set(list);
-            }
-        });
+        let thread_id = chat_id.get_value();
+        run(
+            api::command(Command::Model {
+                name: None,
+                thread_id,
+            }),
+            move |answer| {
+                busy.set(false);
+                if let Answer::Providers {
+                    current: now,
+                    providers: list,
+                } = answer
+                {
+                    current.set(now);
+                    providers.set(list);
+                }
+            },
+        );
     };
     load();
-    let effort = move || app.status.with(|s| s.as_ref().and_then(|s| s.effort));
+    let effort = move || match chat.filter(|chat| chat.with(|c| c.model.is_some())) {
+        Some(chat) => chat.with(|c| c.effort),
+        None => app.status.with(|s| s.as_ref().and_then(|s| s.effort)),
+    };
+    let scope = if chat.is_some() {
+        "For this chat and the chats started from now on; other chats keep their own."
+    } else {
+        "For the chats started from now on; each chat keeps its own."
+    };
     view! {
         <h2>"Model"</h2>
         <p class="muted">"The models the chat can use, and the servers that give them."</p>
+        <p class="muted">{scope}</p>
         <Section title="Reasoning effort">
             <select prop:value=move || effort().map(|e| e.name()).unwrap_or("default") on:change=move |ev| {
-                let level = event_target_value(&ev);
-                run(api::command(Command::Effort { level: Some(level) }), |_| ());
+                let level = Some(event_target_value(&ev));
+                let thread_id = chat_id.get_value();
+                run(api::command(Command::Effort { level, thread_id }), |_| ());
             }>
                 {Effort::ALL.map(|e| view! { <option value=e.name()>{e.name()}</option> })}
             </select>
@@ -89,7 +111,8 @@ pub fn ModelPage() -> impl IntoView {
                                 view! {
                                     <button class="model" class:active=active on:click=move |_| {
                                         let pick = pick.clone();
-                                        run(api::command(Command::Model { name: Some(pick) }), move |_| load());
+                                        let thread_id = chat_id.get_value();
+                                        run(api::command(Command::Model { name: Some(pick), thread_id }), move |_| load());
                                     }>
                                         <span>{model.id.clone()}</span>
                                         <span class="muted">{model.context_window.map(crate::ui::compact).unwrap_or_default()}</span>

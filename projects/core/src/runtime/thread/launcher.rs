@@ -15,7 +15,10 @@ use crate::runtime::agent::Mailboxes;
 use crate::runtime::team;
 use crate::runtime::thread::project;
 use crate::runtime::thread::start::{self, project_dir, start_thread};
-use crate::runtime::{ThreadLock, ThreadRunner, ThreadSetup, model_choice::ModelChoice};
+use crate::runtime::{
+    ThreadLock, ThreadRunner, ThreadSetup,
+    model_choice::{Choice, ModelChoice},
+};
 use crate::{
     catalog::agents::{Agents, MAX_AGENT_DEPTH},
     config::live::LiveConfig,
@@ -95,7 +98,9 @@ impl Launcher {
         }
         Ok(ThreadSetup {
             state: Arc::clone(&self.state),
-            model: Arc::clone(&self.model),
+            // Never the runtime's own selection: a choice made for new chats must not
+            // reach a thread at work. Its caller gives it the chat's.
+            model: self.model.own(self.model.current()),
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
@@ -226,12 +231,12 @@ impl Launcher {
         self.new_thread_on(source, cwd, None).await
     }
 
-    /// A new thread that asks `model` instead of the chosen one, as a scheduled task may.
+    /// A new thread that asks `model` instead of the last chosen, as a scheduled task may.
     pub async fn new_thread_on(
         &self,
         source: &str,
         cwd: &Path,
-        model: Option<Arc<ModelChoice>>,
+        model: Option<Choice>,
     ) -> Result<ThreadHandle> {
         let mode = self.config.current().mode().to_owned();
         let thread = start_thread(&self.state, &self.paths, source, &mode, cwd).await?;
@@ -291,10 +296,21 @@ impl Launcher {
         thread_id: String,
         workspace: &Path,
         cwd: &Path,
-        model: Option<Arc<ModelChoice>>,
+        model: Option<Choice>,
     ) -> Result<ThreadHandle> {
         // A chat opened right after the start still gets the tools of MCP servers.
         self.mcp.wait(MCP_START_WAIT).await;
+        // The chat answers on its own model, which another chat's choice never changes.
+        if let Some(choice) = &model {
+            self.state
+                .set_chat_model(&thread_id, &choice.name())
+                .await?;
+        }
+        let selection = self.chat_selection(&thread_id).await?;
+        // The model as it was picked, with the sizes its provider listed.
+        if let Some(choice) = model {
+            selection.set(choice);
+        }
         let mailboxes = Arc::clone(&self.mailboxes);
         let mut live = mailboxes.lock().await;
         ensure!(
@@ -302,9 +318,7 @@ impl Launcher {
             "thread {thread_id} is already open"
         );
         let mut setup = self.setup(&thread_id, cwd, workspace, None, 0)?;
-        if let Some(model) = model {
-            setup.model = model;
-        }
+        setup.model = selection;
         let (runner, input, output) = ThreadRunner::new(setup);
         live.insert(thread_id.clone(), runner.mailbox(&input));
         drop(live);

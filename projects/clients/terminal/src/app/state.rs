@@ -20,8 +20,19 @@ use super::{
     ShownPreview, SubagentView, Tab, TabHit, Tone, Transcript, TranscriptHit, panels::agents,
 };
 
+/// What a chat said it answers on: its own model, not the one new chats start with.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnModel {
+    pub name: String,
+    pub limit: u64,
+    pub effort: Option<Effort>,
+}
+
 pub struct App {
     pub model: String,
+    /// The open chat's own model, once it told it; with none the status's is shown,
+    /// which a new chat starts with.
+    pub own_model: Option<OwnModel>,
     /// The chat's mode: its prompt and tools.
     pub mode: String,
     /// The reasoning effort; `None` leaves it to the provider.
@@ -268,6 +279,7 @@ impl App {
             goal: None,
             update_available: None,
             undone: None,
+            own_model: None,
             paths: None,
             goal_hits: Vec::new(),
             poll: None,
@@ -344,6 +356,9 @@ impl App {
         self.jobs.clear();
         self.jobs_stale = true;
         self.forget_overview();
+        if self.thread_id != thread_id {
+            self.own_model = None;
+        }
         self.thread_id = thread_id;
         self.title = title;
         self.branch = None;
