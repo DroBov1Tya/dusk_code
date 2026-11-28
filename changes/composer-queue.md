@@ -1,2 +1,0 @@
-Fixed
-A message sent while the context is compacted before a turn no longer disappears until that turn ends: it shows at once above the composer (desktop), as queued (browser) or as sent (terminal), and the core takes it into the turn right after the summary, in the order sent. Up over the empty composer, or Edit on a queued message, takes the newest queued message back into the composer and it is not sent; the new `thread.unqueue` request (protocol 40) takes back one the core has not taken in yet.

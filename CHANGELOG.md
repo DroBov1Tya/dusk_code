@@ -6,6 +6,70 @@ branches after end-to-end testing. Entries of unreleased changes live in `change
 
 ## Unreleased
 
+## 0.78.0 - 2026-11-28
+
+### Added
+
+- The access mode (default, ask, sandbox, auto, full access) can be chosen on a new chat before its first message, in the desktop app, the web page and the terminal (`/access`). The first message starts the chat with that mode, and each new chat begins at the default again. `ThreadRequest::New` and `NewTemporary` take an optional `approvals`; protocol 40, still accepting 39.
+
+- Each subagent and team member shows how full its context is and how often it was compacted, such as `42% context · 1 compaction`: in the desktop's list of subagents and its agent chat, in the web page's Agents tab and agent window, and in the terminal's Subagents sidebar and agent window. For an agent that worked before the chat was opened, the desktop and the web page ask the core, whose context report now counts the thread's compactions; the terminal asks when its agent window opens.
+
+- The agent can work in your terminals: its `terminal` tool lists the app's terminals, reads their newest output, types into one and opens one in the project, for a command you want to see and go on with, such as a dev server. Typing is asked with exactly what is typed, in sandbox mode too; into a terminal outside the project it is asked every time; a terminal's output reaches the agent as untrusted program output. The terminal client and the browser have no terminal panel, so there the agent hears that none is open.
+
+- Settings has an auto-compaction switch and a slider for when it starts, from 60% to 80% of
+  the model's context window (80% by default). It applies to every chat, subagent and team
+  member at once, without a restart. With auto-compaction off, a chat whose context fills up
+  stops with an error that says to run /compact or turn auto-compaction back on.
+
+- More models has a search box at the top: it filters by model and provider name, unfolds the providers that match, and Escape clears it before it closes the menu. Each provider in the settings lists its models with a switch, to leave models out of More models in every app; a model stays usable where it is already chosen, and a model the provider lists later is shown. The browser's model settings filter their list the same way, and the terminal's models panel filters with `/` and leaves hidden models out.
+
+- Old plans can be deleted. A chat's plans are now told apart from attached files, and the one written last is the current plan the Plan screen shows. The user deletes a plan from the Plan screen of the desktop app and the browser, or from `/plans` in the terminal, and "Delete old plans" removes in one go every plan a newer one replaced and every finished one (all its checkboxes ticked). The model's `plan_edit` tool takes `delete: true` to remove a plan of its own chat that a newer one replaced or that is finished; the current unfinished plan stays. Writing a plan never overwrites an attached file of the same name. Protocol 40 adds `work.plans` and `work.remove_old_plans`; clients of protocol 39 still connect.
+
+- The agent can propose a new session for work that is a task of its own, such as an unrelated follow-up or a parallel piece. The chat shows a card with the title, the brief's first lines (the rest on a click) and Start session or Dismiss; nothing starts without your click, in Auto and Full access too. Start opens a new chat in the same project with the brief as its first message, linked back to the chat it came from; the agent hears what you chose on its next turn. At most three proposals of a chat wait at once. The terminal client answers with Alt+1 and Alt+2 on the reply row.
+
+- A chat's sources open to read. In the desktop app a click on one in the Sources module
+  opens a window: markdown rendered, code highlighted, other text in the mono font, a
+  picture fitted, a binary file by its size with a way to open it in its own app, and a Copy
+  button. The web page gains a Sources tab that does the same, with code as plain text
+  (highlighting is desktop only), and the terminal's `/sources`
+  panel opens one with Enter (space now pins). Text comes from the core in 64 KiB parts with
+  Show more, so a large paste does not freeze the window. The new `work.source_text` request
+  raises the protocol to 40; 39 is still accepted. `work.source_picture` takes an optional
+  `source_id`, so a picture opens as itself when two sources share a name.
+
+- Teams: the lead's `edit` changes any field of an open, blocked or failed task, the gate
+  and files included, and sets the same fields on several tasks at once with `ids`; a
+  running task is refused with what to do instead. A failed task is retried in place by
+  the lead's `reopen` or the user's Retry: it keeps its id and dependents, the tasks skipped
+  behind it come back, its try is counted and shown, and its review gets a fresh fix round. The user's
+  Retry on a team that ended, as one stalled on that task, starts the team again toward its
+  last goal; it is offered for tasks of work only, not for review or critic rows.
+
+- The first-run welcome, in the desktop app and the web page, has a page after the model: "How much may the agent do on its own?". It lists Ask, Sandbox, Auto and Full access, each with what the agent does without asking and what it still asks for; Full access is marked as the pick for those who do not want to be asked. A choice sets the default access for new chats (Settings, Safety); Next alone keeps the default.
+
+### Changed
+
+- Several open requests for approval no longer stack up over the composer: the desktop and the web page show one at a time with "Approval 2 of 3" and arrows to the one before and after; answering one shows the next. The terminal already showed one with its count.
+
+- The Dusk mark is no longer drawn inside the app: not in the top bar, the welcome pages, the web page's header or its sign-in. The app icon, the favicon, the README and the site keep it.
+
+### Fixed
+
+- A subagent's chat window no longer lags when it holds hundreds of steps: it is drawn as a list, as the chat is, so only the rows in sight are laid out, and its head stays in place while the chat scrolls. It opens at the latest message and follows new ones while read at the end. The list of subagents no longer counts every agent's steps on each frame of its mascots.
+
+- Each chat keeps its own model and reasoning effort. Choosing a model in one chat no longer
+  switches the others, their running turns, their subagents or their teams; the last choice
+  only seeds chats started afterwards. Reopening a chat shows and uses its own model, and
+  chats from before this change keep the model they last ran on.
+
+- "Clear finished" in a chat's list of subagents keeps them away: a team's members no longer come back with the team's next update. An agent at work, or one whose request for approval waits, is never cleared, and one given work again shows again. The web page has the same button in its Agents tab, and the terminal `/agents clear`.
+
+- A message sent while the context is compacted before a turn no longer disappears until that turn ends: it shows at once above the composer (desktop), as queued (browser) or as sent (terminal), and the core takes it into the turn right after the summary, in the order sent. Up over the empty composer, or Edit on a queued message, takes the newest queued message back into the composer and it is not sent; the new `thread.unqueue` request (protocol 40) takes back one the core has not taken in yet.
+
+- A stream event a provider sends that cannot be read no longer fails the turn at once: the step is sent again, as after a cut stream, when nothing of the answer was shown yet. The event is described in `core.log` by host, model, kind of error and the types of its known fields, never their values. An OpenAI-compatible server that sends an empty `tool_calls` or `choices` as `null`, as some GLM proxies do, is now read.
+
+- A subagent or team member that asks for approval no longer waits forever: its request shows in the chat beside the chat's own, in all three clients, saying who asks (such as `Ember-0c (code-writer) wants to run ...`), and is answered from there. A client that opens the chat later, or joins one another client keeps open, is told every request still waiting, its agents' included. The chat's working row says it waits for your approval while an agent's request is open, even when its own turn has ended.
+
 ## 0.77.1 - 2026-11-24
 
 ### Added

@@ -1,2 +1,0 @@
-Added
-The first-run welcome, in the desktop app and the web page, has a page after the model: "How much may the agent do on its own?". It lists Ask, Sandbox, Auto and Full access, each with what the agent does without asking and what it still asks for; Full access is marked as the pick for those who do not want to be asked. A choice sets the default access for new chats (Settings, Safety); Next alone keeps the default.

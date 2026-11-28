@@ -1,2 +1,0 @@
-Added
-The agent can work in your terminals: its `terminal` tool lists the app's terminals, reads their newest output, types into one and opens one in the project, for a command you want to see and go on with, such as a dev server. Typing is asked with exactly what is typed, in sandbox mode too; into a terminal outside the project it is asked every time; a terminal's output reaches the agent as untrusted program output. The terminal client and the browser have no terminal panel, so there the agent hears that none is open.
