@@ -12,11 +12,16 @@ use crate::tools::{ApprovalRequest, Question, ToolResult};
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadEvent {
-    /// The active model changed or was discovered after the thread opened.
+    /// The model this chat answers on, its own: told when the chat opens, and when it
+    /// changes or is discovered. A choice made in another chat never sends it here.
     ModelSelected {
         name: String,
         /// The largest request to it: its window or the size set under models.
         input_limit: u64,
+        /// The chat's reasoning effort; none is the provider's default, and what a core
+        /// from before chats kept their own says.
+        #[serde(default)]
+        effort: Option<Effort>,
     },
     /// Saved locally, outside the model queue, until the client explicitly resends it.
     LocalUnsent(LocalUnsent),
@@ -146,6 +151,9 @@ pub enum ThreadEvent {
     ContextTooLarge {
         tokens: u64,
         limit: u64,
+        /// Auto-compaction is off, so only a compaction by hand makes room.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        auto_compact_off: bool,
     },
     /// The tool call `call_id` gave `task` to `agent`, or the team gave a member the
     /// plan's task `task_id`; the agent works in thread `thread_id`
@@ -244,6 +252,12 @@ pub enum ThreadEvent {
     NextSuggested {
         text: String,
     },
+    /// The user answered the session the agent proposed as `proposal_id`
+    /// (`propose_session`): the chat's card shows it started or dismissed.
+    ProposalSettled {
+        proposal_id: String,
+        state: super::ProposalState,
+    },
     /// Nothing is running and nothing will start until the next message.
     Idle,
     /// The thread stopped on an error it could not handle, such as a database failure.
@@ -293,6 +307,22 @@ impl RepeatRung {
     /// Whether the turn ends at this rung.
     pub fn stops(self) -> bool {
         matches!(self, Self::Stop | Self::JudgeStop)
+    }
+}
+
+impl ThreadEvent {
+    /// The event itself, unwrapped from any depth of subagents, with the thread of the
+    /// agent that sent it; no thread when the event is the chat's own.
+    pub fn deepest(&self) -> (Option<&str>, &ThreadEvent) {
+        let (mut thread, mut event) = (None, self);
+        while let ThreadEvent::Subagent {
+            thread_id,
+            event: inner,
+        } = event
+        {
+            (thread, event) = (Some(thread_id.as_str()), inner);
+        }
+        (thread, event)
     }
 }
 

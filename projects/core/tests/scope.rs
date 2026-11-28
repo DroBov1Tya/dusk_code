@@ -13,6 +13,7 @@ use dusk_protocol::{
         Response, Secret, SettingsRequest, TerminalRequest, ThreadRequest, VoiceRequest,
         WorkRequest,
     },
+    config::ApprovalPolicy,
     plugin::StoreRequest,
     tools::Decision,
 };
@@ -376,12 +377,17 @@ fn apart(folder: &Path) -> Vec<Request> {
         }),
         Request::Command(Command::Settings),
         Request::Command(Command::Migrate { path: None }),
-        Request::Command(Command::Model { name: None }),
+        Request::Command(Command::Model {
+            name: None,
+            thread_id: None,
+        }),
         Request::Thread(ThreadRequest::New {
             cwd: folder.to_path_buf(),
+            approvals: None,
         }),
         Request::Thread(ThreadRequest::NewTemporary {
             cwd: folder.to_path_buf(),
+            approvals: None,
         }),
         Request::Thread(ThreadRequest::Fork {
             summary: word(),
@@ -478,4 +484,43 @@ async fn a_browser_is_refused_in_the_core_and_the_core_runs_on() {
     // The full scope may stop the core.
     owner.shutdown().await;
     assert!(web.threads().list().await.is_err());
+}
+
+#[tokio::test]
+async fn a_new_chat_starts_with_the_approval_mode_it_was_asked_for() {
+    let core = core("new-approvals").await;
+    let owner = attach(&core, "owner", Scope::full());
+    let threads = owner.threads();
+
+    let chosen = threads
+        .start_with(core.folder.clone(), Some(ApprovalPolicy::FullAccess))
+        .await
+        .unwrap();
+    assert_eq!(
+        threads.approvals(&chosen).await.unwrap(),
+        Some(ApprovalPolicy::FullAccess)
+    );
+    let temporary = threads
+        .start_temporary(core.folder.clone(), Some(ApprovalPolicy::Sandbox))
+        .await
+        .unwrap();
+    assert_eq!(
+        threads.approvals(&temporary).await.unwrap(),
+        Some(ApprovalPolicy::Sandbox)
+    );
+    // None keeps the default in settings, and the next chat does not inherit a choice.
+    let plain = threads.start(core.folder.clone()).await.unwrap();
+    assert_eq!(threads.approvals(&plain).await.unwrap(), None);
+
+    // A client bound to a chat may not open another, with or without a mode.
+    let answer = refused_alone(
+        &core,
+        &chosen,
+        Request::Thread(ThreadRequest::New {
+            cwd: core.folder.clone(),
+            approvals: Some(ApprovalPolicy::FullAccess),
+        }),
+    )
+    .await;
+    assert_eq!(answer, Response::Error(REFUSED.to_owned()));
 }

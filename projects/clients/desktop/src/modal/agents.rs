@@ -8,6 +8,7 @@ use dusk_protocol::{
     system::now_ms,
     thread::{AgentState, clock_words},
 };
+use std::{cell::RefCell, collections::HashMap};
 
 use gpui_kit::{
     component::{
@@ -97,8 +98,12 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
                     ),
             );
         for (id, agent) in members {
-            let progress = chat.agent_chats.get(id.as_str()).map(progress);
-            card = card.child(figure(id, agent, progress, cx));
+            let progress = chat
+                .agent_chats
+                .get(id.as_str())
+                .map(|log| progress(&ws.agent_steps, id, log));
+            let asked = chat.approval_waits_on(id);
+            card = card.child(figure(id, agent, progress, asked, cx));
         }
         stage = stage.child(card);
     }
@@ -143,15 +148,18 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
 struct Progress {
     steps: usize,
     said: Option<String>,
+    /// `42% context · 1 compaction`, once known.
+    context: Option<String>,
 }
 
-fn progress(transcript: &crate::pages::chat::transcript::Log) -> Progress {
+fn progress(
+    counts: &StepCounts,
+    id: &str,
+    transcript: &crate::pages::chat::transcript::Log,
+) -> Progress {
     use crate::pages::chat::transcript::Item;
-    let steps = transcript
-        .items
-        .iter()
-        .filter(|item| matches!(item, Item::Tool(_)))
-        .count();
+    let steps = counts.of(id, transcript);
+    // The last answer is near the end; a step between them is passed, not counted.
     let said = transcript.items.iter().rev().find_map(|item| match item {
         Item::Assistant { text, .. } => text
             .lines()
@@ -160,13 +168,43 @@ fn progress(transcript: &crate::pages::chat::transcript::Log) -> Progress {
             .map(str::to_owned),
         _ => None,
     });
-    Progress { steps, said }
+    Progress {
+        steps,
+        said,
+        context: transcript.context_line(),
+    }
+}
+
+/// The steps each subagent took, counted once for each shape of its chat: the list is
+/// drawn again for every tick of a mascot, and a long chat holds thousands of items.
+#[derive(Default)]
+pub struct StepCounts(RefCell<HashMap<String, (u64, usize)>>);
+
+impl StepCounts {
+    fn of(&self, id: &str, transcript: &crate::pages::chat::transcript::Log) -> usize {
+        use crate::pages::chat::transcript::Item;
+        let shape = transcript.shape();
+        let mut counts = self.0.borrow_mut();
+        if let Some(&(seen, steps)) = counts.get(id)
+            && seen == shape
+        {
+            return steps;
+        }
+        let steps = transcript
+            .items
+            .iter()
+            .filter(|item| matches!(item, Item::Tool(_)))
+            .count();
+        counts.insert(id.to_owned(), (shape, steps));
+        steps
+    }
 }
 
 fn figure(
     id: &str,
     agent: &Agent,
     progress: Option<Progress>,
+    asked: bool,
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     let theme = cx.theme();
@@ -267,6 +305,9 @@ fn figure(
                                 .text_color(muted)
                                 .child(widgets::count(p.steps, "step"))
                         }))
+                        .children(progress.as_ref().and_then(|p| p.context.clone()).map(
+                            |context| div().meta().flex_none().text_color(muted).child(context),
+                        ))
                         .child(
                             div()
                                 .meta()
@@ -283,30 +324,33 @@ fn figure(
                         .child(format!("\u{201C}{said}\u{201D}"))
                 })),
         )
-        // One agent is stopped or put away from its own row; the row itself opens it.
-        .child(if agent.working() {
-            let id = id.to_owned();
-            Button::new(SharedString::from(format!("agent-stop-{id}")))
-                .ghost()
-                .small()
-                .icon(IconName::Square)
-                .tooltip("Stop this agent")
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    cx.stop_propagation();
-                    ws.stop_agent(&id, cx);
-                }))
-        } else {
-            let id = id.to_owned();
-            Button::new(SharedString::from(format!("agent-clear-{id}")))
-                .ghost()
-                .small()
-                .icon(IconName::Close)
-                .tooltip("Take it off the list")
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    cx.stop_propagation();
-                    ws.clear_agents(Some(&id), cx);
-                }))
-        })
+        // One agent is stopped or put away from its own row; the row itself opens it. One
+        // a request of the user's waits on is not put away before it is answered.
+        .children((!asked || agent.working()).then(|| {
+            if agent.working() {
+                let id = id.to_owned();
+                Button::new(SharedString::from(format!("agent-stop-{id}")))
+                    .ghost()
+                    .small()
+                    .icon(IconName::Square)
+                    .tooltip("Stop this agent")
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        cx.stop_propagation();
+                        ws.stop_agent(&id, cx);
+                    }))
+            } else {
+                let id = id.to_owned();
+                Button::new(SharedString::from(format!("agent-clear-{id}")))
+                    .ghost()
+                    .small()
+                    .icon(IconName::Close)
+                    .tooltip("Take it off the list")
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        cx.stop_propagation();
+                        ws.clear_agents(Some(&id), cx);
+                    }))
+            }
+        }))
         .child(widgets::icon(IconName::ChevronRight, muted))
         .on_click(cx.listener(move |ws, _, window, cx| {
             ws.open_agent_chat(&open, cx);
@@ -337,4 +381,52 @@ fn headline(task: &str) -> String {
         .find(|line| !line.is_empty())
         .unwrap_or_default()
         .to_owned()
+}
+
+impl Workspace {
+    /// Asks the core how full the context of each subagent of the shown chat is, or of
+    /// agent `only`, when this window heard nothing of it: an agent that worked before
+    /// the chat was open here sent its numbers to no one.
+    pub fn read_agent_contexts(&mut self, only: Option<&str>, cx: &mut Context<Self>) {
+        use dusk_protocol::client::{Answer, Command};
+        let Some(parent) = self.shown.clone() else {
+            return;
+        };
+        let Some(chat) = self.chats.get(&parent) else {
+            return;
+        };
+        let unknown: Vec<String> = chat
+            .agents
+            .keys()
+            .filter(|id| only.is_none_or(|only| only == id.as_str()))
+            .filter(|id| {
+                chat.agent_chats
+                    .get(id.as_str())
+                    .is_none_or(|log| log.context_unknown())
+            })
+            .cloned()
+            .collect();
+        for agent in unknown {
+            let (asked, parent) = (agent.clone(), parent.clone());
+            self.core.call(
+                cx,
+                move |client| async move {
+                    let thread_id = Some(asked);
+                    client.command(Command::Context { thread_id }).await
+                },
+                move |ws, result, cx| match result {
+                    Ok(Answer::Context(report)) => {
+                        if let Some(chat) = ws.chats.get_mut(&parent) {
+                            let log = chat.agent_chats.entry(agent).or_default();
+                            log.context_report(&report);
+                            cx.notify();
+                        }
+                    }
+                    Ok(_) => {}
+                    // The line is an extra: the list stands without it.
+                    Err(error) => tracing::warn!("no context for agent {agent}: {error:#}"),
+                },
+            );
+        }
+    }
 }

@@ -112,6 +112,25 @@ fn removing_a_provider_takes_its_models_policies_with_it() {
 }
 
 #[test]
+fn hidden_models_load_save_and_stay_out_of_a_file_without_them() {
+    // A file written before the field still loads, and an empty list is not written.
+    let mut config = parse(PROVIDERS).unwrap();
+    assert!(config.providers()["main"].hidden_models.is_empty());
+    assert!(!config.to_yaml().unwrap().contains("hidden_models"));
+    let models = ["b".to_owned(), "a".to_owned()];
+    assert!(config.set_models_hidden("main", &models, true));
+    assert!(!config.set_models_hidden("other", &models, true));
+    let again = parse(&config.to_yaml().unwrap()).unwrap();
+    let hidden: Vec<_> = again.providers()["main"].hidden_models.iter().collect();
+    assert_eq!(hidden, ["a", "b"]);
+    assert!(config.set_models_hidden("main", &models[..1], false));
+    let hidden: Vec<_> = config.providers()["main"].hidden_models.iter().collect();
+    assert_eq!(hidden, ["a"]);
+    let listed = parse(&format!("{PROVIDERS}    hidden_models: [x]\n")).unwrap();
+    assert!(listed.providers()["main"].hidden_models.contains("x"));
+}
+
+#[test]
 fn mcp_servers_are_one_kind_and_reached_safely() {
     let server = |body: &str| parse(&format!("mcp:\n  docs:\n{body}"));
     assert!(server("    command: docs-server\n").is_ok());
@@ -570,4 +589,37 @@ fn a_config_file_is_read_bounded_and_never_through_a_link() {
 fn an_old_goal_round_cap_still_loads_and_is_not_written_back() {
     let old = parse("limits:\n  max_goal_rounds: 10\n").unwrap();
     assert!(!old.to_yaml().unwrap().contains("max_goal_rounds"));
+}
+
+#[test]
+fn auto_compaction_is_on_at_eighty_and_kept_within_sixty_to_eighty() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(plain.auto_compact);
+    assert_eq!(plain.auto_compact_percent, 80);
+    for (written, read) in [
+        (0, 60),
+        (59, 60),
+        (60, 60),
+        (72, 72),
+        (80, 80),
+        (81, 80),
+        (100, 80),
+    ] {
+        let text = format!("limits:\n  auto_compact: false\n  auto_compact_percent: {written}\n");
+        let set = parse(&text).unwrap().limits();
+        assert!(!set.auto_compact);
+        assert_eq!(set.auto_compact_percent, read, "{written}");
+    }
+    let mut config = parse(PROVIDERS).unwrap();
+    config.set_auto_compact_percent(95);
+    assert_eq!(config.limits().auto_compact_percent, 80);
+    config.set_auto_compact_percent(10);
+    assert_eq!(config.limits().auto_compact_percent, 60);
+    for bad in [
+        "limits:\n  auto_compact_percent: -70\n",
+        "limits:\n  auto_compact_percent: lots\n",
+        "limits:\n  auto_compact: maybe\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
 }

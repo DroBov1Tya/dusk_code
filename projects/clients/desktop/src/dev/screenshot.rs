@@ -11,6 +11,9 @@
 //! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all|lower`: open a window; unfold the right column, or only its lower modules;
 //! - `screen=team|overview|git|files|plan`: open that module as the right column's screen
 //!   (`screen=` goes back to the list);
+//! - `fake=plans`: the shown chat's plan with three earlier plans, one finished, under it
+//!   (after `screen=plan` and a wait, which read the real ones); `modal=plan-delete`,
+//!   `modal=plan-delete-old`: the yes deleting the current plan or the old ones asks for;
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - with `DUSK_MASCOT=MS` in the environment every subagent's mascot is held that many
 //!   milliseconds into its activity, so done and failed can be seen mid-motion;
@@ -19,6 +22,8 @@
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight
 //!   (`DUSK_METEOR_SMALL`: a small one, `DUSK_METEOR_LEFT`: a great one from the left);
+//! - `fake=sources`: five made-up sources in the side panel (after `right=all`);
+//!   `modal=source-md|code|long|picture|binary`: one of them opened to read;
 //! - `fake=agents`: eight subagents of different roles, one in each state of the mascot;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
 //! - `fake=tiers`: two providers with models and the subagent tiers set, unset and on a
@@ -222,6 +227,47 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                         window.dispatch_event(event, cx);
                     });
                 }
+                // Frames drawn back to back, as a mascot's ticks or a fast wheel ask for
+                // them, and how long each took to build, lay out and paint.
+                "frames" => {
+                    let parts: Vec<f32> = value.split(',').filter_map(|v| v.parse().ok()).collect();
+                    let (count, wheel) = match parts[..] {
+                        [count] => (count as usize, None),
+                        [count, x, y, dy] => (count as usize, Some((x, y, dy))),
+                        _ => {
+                            eprintln!("frames=N[,X,Y,DY]: {value}");
+                            continue;
+                        }
+                    };
+                    let mut took = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        let workspace = workspace.clone();
+                        let _ = cx.update_window(window, |_, window, cx| {
+                            if let Some((x, y, dy)) = wheel {
+                                window.dispatch_event(
+                                    PlatformInput::Scroll(ScrollEvent {
+                                        position: point(px(x), px(y)),
+                                        delta: ScrollDelta::Pixels(point(px(0.), px(dy))),
+                                        ..Default::default()
+                                    }),
+                                    cx,
+                                );
+                            }
+                            workspace.update(cx, |_, cx| cx.notify());
+                            let start = std::time::Instant::now();
+                            window.draw(cx).clear(cx);
+                            took.push(start.elapsed());
+                        });
+                    }
+                    took.sort();
+                    if let (Some(first), Some(last)) = (took.first(), took.last()) {
+                        let mean = took.iter().sum::<Duration>() / took.len() as u32;
+                        eprintln!(
+                            "frames {value}: mean {mean:.2?}, median {:.2?}, min {first:.2?}, max {last:.2?}",
+                            took[took.len() / 2]
+                        );
+                    }
+                }
                 "quit" => break,
                 other => {
                     let (other, value) = (other.to_owned(), value.to_owned());
@@ -365,13 +411,24 @@ fn act(
             ws.load_outputs(cx);
         }
         "modal" => match value {
+            kind if kind.starts_with("source-") => {
+                super::sources::open(ws, &kind["source-".len()..], cx)
+            }
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
             // After `fake=team`: the yes Stop team asks for, members at once and a task's card.
             "team-stop" => ws.ask_stop_team(cx),
-            // The card of task #4, blocked on the lead with a note.
+            // After `fake=plans`.
+            "plan-delete" => {
+                if let Some(plan) = ws.plan.plans.first().cloned() {
+                    ws.ask_delete_plan(plan, cx);
+                }
+            }
+            "plan-delete-old" => ws.ask_delete_old_plans(cx),
+            // The card of task #4, blocked on the lead with a note; #5 failed, with Retry.
             "task-card" => ws.open_task_card("t4", cx),
+            "task-card-failed" => ws.open_task_card("t5", cx),
             "team-at-once" => {
                 if let Some(team) = ws.overview.team.clone() {
                     ws.ask_team_at_once(&team, cx);
@@ -462,6 +519,12 @@ fn act(
                 "more" => Picker::MoreModels,
                 _ => Picker::Model,
             });
+            // As a click opens it: the provider in use unfolded and the search has the
+            // keys, so `key=` steps type into it.
+            if ws.picker == Some(Picker::MoreModels) {
+                ws.picker = Some(Picker::Model);
+                ws.open_submenu(Picker::MoreModels, window, cx);
+            }
             cx.notify();
         }
         "attach" => {
@@ -559,6 +622,32 @@ fn act(
             Some(module) => ws.open_right(module, cx),
             None => ws.close_right(cx),
         },
+        "fake" if value == "plans" => {
+            let plan = |name: &str, bytes: u64, current: bool, finished: bool| {
+                dusk_protocol::thread::PlanFile {
+                    source_id: format!("plan-{name}"),
+                    name: name.to_owned(),
+                    bytes,
+                    written_at: 0,
+                    current,
+                    finished,
+                }
+            };
+            ws.plan.text = Some(
+                "# Ship the settings profiles\n\n- [x] Read how config layers load\n\
+                 - [x] Profiles in their own folders\n- [ ] Switch a chat's profile from \
+                 the composer\n- [ ] Migrate the old project layers\n"
+                    .to_owned(),
+            );
+            ws.plan.plans = vec![
+                plan("plan.md", 212, true, false),
+                plan("settings-scoping.md", 1840, false, false),
+                plan("first-pass.md", 960, false, true),
+                plan("spike-notes.md", 3120, false, false),
+            ];
+            ws.plan.chat = ws.shown.clone();
+            cx.notify();
+        }
         // A board of 200 tasks in the Overview; the next real answer replaces it.
         "fake" if value == "overview" => {
             ws.overview.chat = ws.shown.clone();
@@ -659,6 +748,7 @@ fn act(
         "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
         "fake" if value.starts_with("diagram") => super::diagrams::fake(ws, value, cx),
         "fake" if value == "mcp" => super::polish::mcp(ws, cx),
+        "fake" if value == "queued" => super::polish::queued(ws, window, cx),
         "fake"
             if matches!(
                 value,
@@ -673,6 +763,7 @@ fn act(
         "fake" if value == "subagents" || value == "subagents-ended" => {
             super::team::subagents(ws, value, cx)
         }
+        "fake" if value == "agent-approvals" => super::team::agent_approvals(ws, cx),
         "fake" if value.starts_with("team-") => super::team_sizes::fake(ws, value, cx),
         // The Team page's layers, and a long plan's done waves shown.
         "layer" => {
@@ -707,6 +798,7 @@ fn act(
         }
         "fake" if value == "store" => super::store::fake(ws, cx),
         "fake" if value == "suggest" => super::store::suggest(ws, cx),
+        "fake" if value == "proposal" => super::blocks::proposals(ws, cx),
         "workshop" => super::store::step(ws, value, window, cx),
         "fake" if value == "limits" => {
             use dusk_protocol::model::{RateLimit, RateLimits};
@@ -740,6 +832,7 @@ fn act(
                     limits: None,
                     enabled: true,
                     failure: None,
+                    hidden: Vec::new(),
                 })
                 .collect();
             cx.notify();
@@ -762,14 +855,44 @@ fn act(
                 "gpt-6-sol",
                 "gpt-6.3-atlas",
             ];
-            ws.providers = vec![ProviderStatus {
-                name: "chatgpt".into(),
-                models: Ok(names.into_iter().map(model).collect()),
-                balance: None,
-                limits: None,
-                enabled: true,
-                failure: None,
-            }];
+            // A second provider with a long list, and a hidden model in each, for the
+            // search and the switches of the settings.
+            let routed = [
+                "anthropic/claude-opus-4.7",
+                "anthropic/claude-sonnet-4.6",
+                "anthropic/claude-haiku-4.5",
+                "deepseek/deepseek-v4",
+                "deepseek/deepseek-r2",
+                "google/gemini-3-pro",
+                "google/gemini-3-flash",
+                "meta/llama-5-70b",
+                "mistral/mistral-large-3",
+                "moonshot/kimi-k3",
+                "qwen/qwen3.5-coder",
+                "qwen/qwen3.5-max",
+                "x-ai/grok-5",
+                "z-ai/glm-5",
+            ];
+            ws.providers = vec![
+                ProviderStatus {
+                    name: "chatgpt".into(),
+                    models: Ok(names.into_iter().map(model).collect()),
+                    balance: None,
+                    limits: None,
+                    enabled: true,
+                    failure: None,
+                    hidden: vec!["gpt-5.6-luna".into()],
+                },
+                ProviderStatus {
+                    name: "openrouter".into(),
+                    models: Ok(routed.into_iter().map(model).collect()),
+                    balance: None,
+                    limits: None,
+                    enabled: true,
+                    failure: None,
+                    hidden: vec!["meta/llama-5-70b".into(), "x-ai/grok-5".into()],
+                },
+            ];
             ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
             cx.notify();
         }
@@ -792,6 +915,7 @@ fn act(
                 limits: None,
                 enabled: true,
                 failure: None,
+                hidden: Vec::new(),
             };
             ws.providers = vec![
                 provider("chatgpt", &["gpt-5.5", "gpt-6.1-sol", "gpt-6.2-rigel"]),
@@ -950,6 +1074,9 @@ fn act(
             }
             cx.notify();
         }
+        "fake" if value.starts_with("agentchat-") => {
+            long_agent_chat(ws, value.trim_start_matches("agentchat-"), cx);
+        }
         "fake" if value == "agentchat" => {
             // A subagent's chat with a run of steps and an answer, in the window.
             use crate::pages::chat::transcript::Item;
@@ -1094,6 +1221,10 @@ fn act(
                 thread::ThreadEvent,
                 tools::{ApprovalRequest, Question, Request},
             };
+            if value == "sources" {
+                super::sources::fake_sources(ws, cx);
+                return;
+            }
             let event = match value {
                 "question" => ThreadEvent::Question(Question {
                     question: "Which cache should get() use for expired entries?".into(),
@@ -1104,6 +1235,12 @@ fn act(
                     ],
                     multiple: false,
                 }),
+                // The chat tells its own model, not the one new chats start with.
+                "model-own" => ThreadEvent::ModelSelected {
+                    name: "deepseek/deepseek-chat".into(),
+                    input_limit: 128_000,
+                    effort: Some(dusk_protocol::model::Effort::High),
+                },
                 "approval-long" => ThreadEvent::Approval(ApprovalRequest {
                     id: 2,
                     request: Request::Command {
@@ -1468,5 +1605,80 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     ws.chats.insert(thread_id.clone(), chat);
     ws.shown = Some(thread_id);
     ws.center = crate::workspace::Center::Chat;
+    cx.notify();
+}
+
+/// `fake=agentchat-N`: a subagent of the shown chat at work, whose chat holds N steps,
+/// each after a thought and a short answer, with code, paths and a long thought unfolded:
+/// the window to scroll fast and to time with `frames=`.
+fn long_agent_chat(ws: &mut Workspace, count: &str, cx: &mut Context<Workspace>) {
+    use crate::pages::chat::transcript::{Item, Log};
+    use dusk_protocol::thread::{ThreadEvent, Tool, ToolState};
+    let count: usize = count.parse().unwrap_or(300);
+    let agent = "fake-long".to_owned();
+    let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) else {
+        eprintln!("fake=agentchat-N needs a shown chat: chat or fake=chat first");
+        return;
+    };
+    chat.apply(ThreadEvent::SubagentStarted {
+        call_id: "call-long".into(),
+        thread_id: agent.clone(),
+        agent: "backend-engineer".into(),
+        task: "Add expiry to the cache".into(),
+        effort: Some(dusk_protocol::model::Effort::Medium),
+        model: Some("chatgpt/gpt-5.5".into()),
+        task_id: None,
+    });
+    let mut inner = Log::default();
+    inner.push(
+        Item::User {
+            text: "Add expiry to the cache, test it, and say what changed.".into(),
+            sequence: Some(1),
+            answered: Vec::new(),
+        },
+        0,
+    );
+    for step in 0..count {
+        let text = match step % 4 {
+            0 => format!(
+                "Step {step}: `src/cache.rs` keeps the deadline beside the value.\n\n\
+                 ```rust\nfn expired(&self, now: Instant) -> bool {{\n    self.deadline <= now\n}}\n```"
+            ),
+            1 => format!("Reading the tests of step {step}, then running them."),
+            _ => String::new(),
+        };
+        inner.push(
+            Item::Assistant {
+                text,
+                reasoning: format!(
+                    "Thought {step}: a read drops an entry past its deadline.\n\
+                     The writer sets it from `ttl`; nothing else touches it."
+                ),
+            },
+            0,
+        );
+        let (name, detail) = match step % 3 {
+            0 => ("read_file", format!("src/cache/part_{step}.rs")),
+            1 => ("search_files", format!("ttl_{step}")),
+            _ => ("run_command", format!("cargo test -p cache step_{step}")),
+        };
+        inner.push(
+            Item::Tool(Tool {
+                call_id: format!("long-{step}"),
+                name: name.into(),
+                detail: detail.clone(),
+                arguments: format!("{{\"path\": \"{detail}\"}}"),
+                output: "ok".into(),
+                state: ToolState::Done,
+            }),
+            0,
+        );
+    }
+    inner.working = true;
+    chat.agent_chats.insert(agent.clone(), inner);
+    ws.modal = Some(Modal::AgentChat {
+        agent,
+        name: "backend-engineer".into(),
+    });
     cx.notify();
 }

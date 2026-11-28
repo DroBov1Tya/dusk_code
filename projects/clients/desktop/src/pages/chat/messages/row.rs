@@ -177,7 +177,8 @@ impl Workspace {
                     }
                     Item::Local(run) => command_card(&key, run, cx),
                     Item::Agent { from, text, .. } => {
-                        agent_report(self, &shown, at, (from, text), true, cx).into_any_element()
+                        agent_report(self, &shown, at, (from, text), Some(&self.texts), cx)
+                            .into_any_element()
                     }
                     Item::Assistant { text, .. } => {
                         let group = SharedString::from(format!("answer-row-{key}"));
@@ -283,6 +284,9 @@ impl Workspace {
                         )
                     }
                     Item::Run(_) => super::run_card::render(chat, &shown, &key, at, cx),
+                    Item::Proposal { proposal, state } => {
+                        crate::pages::chat::proposal::card(self, &shown, proposal, state, cx)
+                    }
                     Item::Tool(_) => div().into_any_element(),
                 }
             }

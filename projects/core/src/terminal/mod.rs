@@ -2,23 +2,27 @@
 //! draws it. A terminal belongs to the client that opened it: its bytes go to that client
 //! alone, no other client can name it, and it ends when that client goes away.
 //!
-//! The agents have no part in it: no tool reaches a terminal, and what is typed into one
-//! or printed by one is neither stored nor logged.
+//! The agent reaches the terminals of the app on this machine only, through the
+//! `terminal` tool, which asks the user before it types. What is typed into a terminal
+//! or printed by one is neither stored nor logged: its newest output is kept in memory,
+//! for the agent to read when asked, and goes with the terminal.
 //!
 //! - `shell`: which shell runs, and how it is started;
 //! - `pty`: one running terminal and the threads that carry its bytes;
+//! - `tail`: the newest output of a terminal, as plain lines;
 //! - `table`: the open terminals, each with its owner, and the limits.
 
 mod pty;
 mod shell;
 mod table;
+mod tail;
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, ensure};
 
 pub use shell::login_shell;
-pub use table::Terminals;
+pub use table::{Shown, Terminals};
 
 /// The folder a shell may start in: `cwd` resolved, when it is inside one of `roots`.
 pub async fn working_dir(cwd: &Path, roots: &[PathBuf]) -> Result<PathBuf> {

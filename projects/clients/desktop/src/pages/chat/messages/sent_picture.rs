@@ -63,7 +63,7 @@ impl Workspace {
             let thread_id = thread_id.to_owned();
             self.core.call(
                 cx,
-                move |client| async move { client.work().source_picture(&thread_id, &name).await },
+                move |client| async move { client.work().source_picture(&thread_id, &name, None).await },
                 move |ws, result, cx| {
                     let picture = match result.map(|bytes| (format(&bytes), bytes)) {
                         Ok((Some(format), bytes)) => {

@@ -71,6 +71,9 @@ pub async fn apply(
             id,
             decision,
         } => thread::approve(client, app, &thread_id, id, decision).await,
+        Action::Proposal { proposal_id, start } => {
+            thread::proposal(client, app, &proposal_id, start).await
+        }
         Action::SendNow(text) => send(client, app, open, text, true).await,
         Action::Connect {
             kind,
@@ -90,7 +93,11 @@ pub async fn apply(
         Action::OpenSnippet(name) => files::open_snippet(client, app, name).await,
         Action::SaveSnippet(name, text) => files::save_snippet(client, app, name, text).await,
         Action::OpenPlan => work::open_plan(client, app).await,
+        Action::OpenPlans => work::plans(client, app).await,
+        Action::RemovePlan(id) => work::remove_plan(client, app, Some(id)).await,
+        Action::RemoveOldPlans => work::remove_plan(client, app, None).await,
         Action::StopTeam => work::stop_team(client, app).await,
+        Action::RetryTasks(ids) => work::retry_tasks(client, app, ids).await,
         Action::SetTeamAtOnce(at_once) => work::set_team_at_once(client, app, at_once).await,
         Action::Overview => work::overview(client, app).await,
         Action::Diff => work::diff(client, app).await,
@@ -103,6 +110,9 @@ pub async fn apply(
         Action::SetIdleMinutes(minutes) => settings::set_idle_minutes(client, app, minutes).await,
         Action::SetModelTimeout(seconds) => settings::set_model_timeout(client, app, seconds).await,
         Action::SetMaxAttempts(attempts) => settings::set_max_attempts(client, app, attempts).await,
+        Action::SetAutoCompactPercent(percent) => {
+            settings::set_auto_compact_percent(client, app, percent).await
+        }
         Action::SetMemoryChars(chars) => settings::set_memory_chars(client, app, chars).await,
         Action::SetWorkHistoryChars(chars) => {
             settings::set_work_history_chars(client, app, chars).await
@@ -131,6 +141,7 @@ pub async fn apply(
         }
         Action::PinSource { id, pinned } => work::pin_source(client, app, open, id, pinned).await,
         Action::RemoveSource(id) => work::remove_source(client, app, open, id).await,
+        Action::ReadSource { id, offset } => work::read_source(client, app, id, offset).await,
         Action::Command(Command::Jobs { .. }) => work::jobs(client, app, open).await,
         Action::Background(call_id) => work::background(client, app, call_id).await,
         // The loop hands tab moves to `tabs::take` before this.

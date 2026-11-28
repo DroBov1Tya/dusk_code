@@ -72,6 +72,6 @@ mod unsent;
 
 pub use compaction::Compaction;
 pub use pasted::{Part, has_pasted, labelled, plain, sound_tag, source_tag, split, wrap};
-pub use source::Source;
+pub use source::{PlanFile, SOURCE_CHUNK, Source, SourceChunk, SourceKind};
 pub use undo::UndoPoint;
 pub use unsent::LocalUnsent;

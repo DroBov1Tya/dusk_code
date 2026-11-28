@@ -4,9 +4,12 @@ use ratatui::layout::Rect;
 
 use dusk_protocol::{
     config::ProviderKind,
-    model::ProviderStatus,
+    model::{Model, ProviderStatus},
     release::{InstallProgress, UpdateInfo},
-    thread::{ContextReport, JobInfo, Message, MessageRole, Source, Thread, UndoPoint},
+    thread::{
+        ContextReport, JobInfo, Message, MessageRole, PlanFile, Source, SourceKind, Thread,
+        UndoPoint,
+    },
 };
 
 use super::{AgentWindow, SettingsView};
@@ -71,6 +74,48 @@ pub enum Panel {
         selected: usize,
         removing: bool,
     },
+    /// `/plans`: the chat's plans, newest written first; `asking` waits for `y`.
+    Plans {
+        plans: Vec<PlanFile>,
+        selected: usize,
+        asking: Option<PlansAsk>,
+    },
+    /// One source open to read, opened from the list of sources.
+    Source(Box<SourceReader>),
+}
+
+/// What the plans panel asks `y` for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlansAsk {
+    /// `d`: delete the chosen plan.
+    Delete,
+    /// `o`: delete every old plan.
+    Old,
+}
+
+/// A source being read, a part at a time; esc returns to the list it was opened from.
+pub struct SourceReader {
+    pub sources: Vec<Source>,
+    pub selected: usize,
+    pub source: Source,
+    /// None until the first part came.
+    pub kind: Option<SourceKind>,
+    pub text: String,
+    /// Where the next part starts; none at the end.
+    pub next: Option<u64>,
+    /// The line kept in view while scrolling.
+    pub row: usize,
+}
+
+impl SourceReader {
+    /// The most text one reader holds, as the other clients; the rest is left to the
+    /// file's own app, so a large file does not slow each draw.
+    pub const MAX_SHOWN: usize = 1024 * 1024;
+
+    /// Whether `m` reads on: a part is left and the reader is not full.
+    pub fn reads_on(&self) -> bool {
+        self.next.is_some() && self.text.len() < Self::MAX_SHOWN
+    }
 }
 
 /// The core's Overview and context report for the /overview panel; the plan and team
@@ -82,6 +127,8 @@ pub struct OverviewView {
     pub row: usize,
     /// `s` asked "Stop team? y/n": `y` stops it, any other key answers no.
     pub stopping: bool,
+    /// `r` asked "Retry the failed tasks? y/n": `y` retries them, any other key answers no.
+    pub retrying: bool,
     /// How many members of the running team work at once, being changed.
     pub at_once: Option<AtOnceEdit>,
     /// The member row chosen with tab, which enter opens.
@@ -95,6 +142,7 @@ impl OverviewView {
             context,
             row: 0,
             stopping: false,
+            retrying: false,
             at_once: None,
             member: None,
         }
@@ -137,6 +185,8 @@ pub struct ModelList {
     pub selected: usize,
     /// The provider a first `d` asked to remove; a second `d` removes it.
     pub removing: Option<String>,
+    /// What `/` typed to filter the list by model or provider name; `None` when not filtering.
+    pub filter: Option<String>,
 }
 
 /// A row of the model list: a provider, which can be checked again or removed, or one of
@@ -162,6 +212,7 @@ impl ModelList {
             providers: None,
             selected: 0,
             removing: None,
+            filter: None,
         }
     }
 
@@ -171,6 +222,7 @@ impl ModelList {
             providers: Some(providers),
             selected: 0,
             removing: None,
+            filter: None,
         };
         list.selected = list
             .rows()
@@ -180,12 +232,44 @@ impl ModelList {
         list
     }
 
+    /// The providers as the list shows them, each with its models: those hidden in the
+    /// settings are left out but for the one in use, and a filter keeps the providers whose
+    /// name or models match it.
+    pub fn shown(&self) -> Vec<(&ProviderStatus, Vec<&Model>)> {
+        let wanted = self
+            .filter
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase();
+        let mut shown = Vec::new();
+        for provider in self.providers.iter().flatten() {
+            let name_matches = provider.name.to_lowercase().contains(&wanted);
+            let models: Vec<&Model> = provider
+                .models
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .filter(|model| {
+                    !provider.is_hidden(&model.id)
+                        || self.current.as_deref()
+                            == Some(format!("{}/{}", provider.name, model.id).as_str())
+                })
+                .filter(|model| name_matches || model.id.to_lowercase().contains(&wanted))
+                .collect();
+            if name_matches || !models.is_empty() {
+                shown.push((provider, models));
+            }
+        }
+        shown
+    }
+
     /// Each provider followed by its models, as `provider/model`, in order.
     pub fn rows(&self) -> Vec<ModelRow> {
         let mut rows = Vec::new();
-        for provider in self.providers.iter().flatten() {
+        for (provider, models) in self.shown() {
             rows.push(ModelRow::Provider(provider.name.clone()));
-            for model in provider.models.as_deref().unwrap_or_default() {
+            for model in models {
                 rows.push(ModelRow::Model {
                     provider: provider.name.clone(),
                     name: format!("{}/{}", provider.name, model.id),

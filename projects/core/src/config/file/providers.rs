@@ -143,6 +143,22 @@ impl Config {
         }
     }
 
+    /// Hides models of a provider of the file from the menus, or shows them again.
+    /// Whether the provider was found.
+    pub fn set_models_hidden(&mut self, name: &str, models: &[String], hidden: bool) -> bool {
+        let Some(provider) = self.providers.get_mut(name) else {
+            return false;
+        };
+        for model in models {
+            if hidden {
+                provider.hidden_models.insert(model.clone());
+            } else {
+                provider.hidden_models.remove(model);
+            }
+        }
+        true
+    }
+
     /// Forgets a provider and what was kept for its models. Whether it is in use is for
     /// the caller to check.
     pub fn remove_provider(&mut self, name: &str) -> bool {

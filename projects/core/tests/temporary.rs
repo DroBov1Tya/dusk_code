@@ -40,7 +40,7 @@ async fn a_temporary_chat_leaves_nothing_on_disk() {
     let threads = client.threads();
 
     let stored = threads.start(folder.clone()).await.unwrap();
-    let temporary = threads.start_temporary(folder.clone()).await.unwrap();
+    let temporary = threads.start_temporary(folder.clone(), None).await.unwrap();
     // A message, and a paste long enough to be kept as a file.
     let paste = format!("{MARK}\n").repeat(400);
     threads

@@ -1,5 +1,6 @@
 //! `/model [provider/model]`: without an argument, every configured provider checked
-//! live, with its models; with one, every thread switches to that model.
+//! live, with its models; with one, the open chat and the chats started from now on
+//! switch to that model. Other chats keep theirs.
 
 use anyhow::{Context, Result};
 
@@ -17,7 +18,9 @@ pub async fn check(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
 
 /// The providers that are switched on, found without asking any of them: no models yet.
 pub fn unasked(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
-    let registry = ProviderRegistry::from_config(&runtime.config().current())?;
+    let config = runtime.config().current();
+    let registry = ProviderRegistry::from_config(&config)?;
+    let all = config.all_providers();
     let mut names: Vec<&str> = registry.names().collect();
     names.sort();
     Ok(names
@@ -29,6 +32,10 @@ pub fn unasked(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
             limits: None,
             enabled: true,
             failure: None,
+            hidden: all
+                .get(name)
+                .map(|settings| settings.hidden_models.iter().cloned().collect())
+                .unwrap_or_default(),
         })
         .collect())
 }
@@ -50,8 +57,8 @@ pub async fn check_one(runtime: &Runtime, name: &str) -> Result<ProviderStatus> 
     Ok(status)
 }
 
-pub async fn switch(runtime: &Runtime, name: &str) -> Result<Choice> {
+pub async fn switch(runtime: &Runtime, thread_id: Option<&str>, name: &str) -> Result<Choice> {
     let choice = Choice::pick(&runtime.config().current(), Some(name)).await?;
-    runtime.set_model(choice.clone())?;
+    runtime.set_model(thread_id, choice.clone()).await?;
     Ok(choice)
 }

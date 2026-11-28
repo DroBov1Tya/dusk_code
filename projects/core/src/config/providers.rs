@@ -1,6 +1,9 @@
 //! Model providers as the config lists them; the API key is never shown.
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +39,9 @@ pub struct ProviderConfig {
     /// Off keeps the provider and its key but never asks it or offers its models.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub enabled: bool,
+    /// Model IDs left out of the model menus; a model the provider lists later is shown.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub hidden_models: BTreeSet<String>,
 }
 
 /// US dollars per million tokens, as the provider's price list gives them.

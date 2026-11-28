@@ -17,12 +17,26 @@ pub struct Threads<'a>(pub(super) &'a Client);
 impl Threads<'_> {
     /// A new thread in `cwd`; it is created now and opened for messages.
     pub async fn start(&self, cwd: PathBuf) -> Result<String> {
-        self.opened(ThreadRequest::New { cwd }).await
+        self.start_with(cwd, None).await
+    }
+
+    /// A new thread with its own approval mode from the start; `None` keeps the default.
+    pub async fn start_with(
+        &self,
+        cwd: PathBuf,
+        approvals: Option<ApprovalPolicy>,
+    ) -> Result<String> {
+        self.opened(ThreadRequest::New { cwd, approvals }).await
     }
 
     /// A new chat that leaves nothing behind once the core stops.
-    pub async fn start_temporary(&self, cwd: PathBuf) -> Result<String> {
-        self.opened(ThreadRequest::NewTemporary { cwd }).await
+    pub async fn start_temporary(
+        &self,
+        cwd: PathBuf,
+        approvals: Option<ApprovalPolicy>,
+    ) -> Result<String> {
+        self.opened(ThreadRequest::NewTemporary { cwd, approvals })
+            .await
     }
 
     pub async fn resume(&self, thread_id: &str, cwd: PathBuf) -> Result<String> {
@@ -44,6 +58,24 @@ impl Threads<'_> {
             cwd,
         })
         .await
+    }
+
+    /// Starts the session the agent proposed as `proposal_id` in `thread_id`; answers with
+    /// the new chat.
+    pub async fn start_proposal(&self, thread_id: &str, proposal_id: &str) -> Result<String> {
+        self.opened(ThreadRequest::StartProposal {
+            thread_id: thread_id.to_owned(),
+            proposal_id: proposal_id.to_owned(),
+        })
+        .await
+    }
+
+    pub async fn dismiss_proposal(&self, thread_id: &str, proposal_id: &str) -> Result<()> {
+        let request = ThreadRequest::DismissProposal {
+            thread_id: thread_id.to_owned(),
+            proposal_id: proposal_id.to_owned(),
+        };
+        self.done(request).await
     }
 
     pub async fn list(&self) -> Result<Vec<Thread>> {
@@ -109,6 +141,15 @@ impl Threads<'_> {
             now,
         })
         .await
+    }
+
+    /// Takes back the newest message sent that the thread has not taken in yet.
+    pub async fn unqueue(&self, thread_id: &str) -> Result<Option<String>> {
+        let thread_id = thread_id.to_owned();
+        match self.call(ThreadRequest::Unqueue { thread_id }).await? {
+            Response::Unqueued(text) => Ok(text),
+            other => Err(unexpected(other)),
+        }
     }
 
     /// Sends the agent's running command of `call_id` to the background.

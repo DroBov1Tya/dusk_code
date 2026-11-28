@@ -28,7 +28,8 @@ pub const SCOUT_ROLE: &str = "scout";
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskArguments {
-    pub text: String,
+    /// Needed in an `add`; an `edit` may leave it out.
+    pub text: Option<String>,
     pub key: Option<String>,
     pub after: Option<Vec<String>>,
     pub role: Option<String>,
@@ -70,6 +71,9 @@ pub async fn new_tasks(
     for (index, entry) in entries.into_iter().enumerate() {
         let label = entry.label(index);
         let parts = parts(&entry, context.scope.as_ref()).with_context(|| label.clone())?;
+        let Some(text) = entry.text.clone() else {
+            bail!("{label} needs text: the task in a sentence");
+        };
         ensure!(
             entry
                 .accept
@@ -89,7 +93,7 @@ pub async fn new_tasks(
         );
         tasks.push(NewTask {
             key: entry.key,
-            description: entry.text,
+            description: text,
             after: entry.after.unwrap_or_default(),
             role: parts.role,
             phase: entry.phase.unwrap_or_default(),
@@ -197,7 +201,7 @@ pub async fn task_edit(
         known_roles(&[role.as_str()], context, agents).await?;
     }
     Ok(TaskEdit {
-        description: Some(entry.text),
+        description: entry.text,
         after: entry.after,
         role: parts.role_given,
         phase: entry.phase,

@@ -216,6 +216,7 @@ impl Workspace {
             |ws, result, cx| match result {
                 Ok(Answer::Settings(settings)) => {
                     ws.settings = Some(*settings);
+                    ws.follow_compact_percent(cx);
                     cx.notify();
                 }
                 Ok(_) => ws.fail(anyhow::anyhow!("the core gave no settings"), cx),

@@ -10,6 +10,7 @@ use crate::{
 };
 use dusk_protocol::{
     client::{Event, Status},
+    config::ApprovalPolicy,
     project::{Project, RepositoryStatus},
     thread::{Thread, ThreadEvent},
 };
@@ -43,6 +44,9 @@ pub struct AppState {
     pub project: RwSignal<Option<String>>,
     /// The chat about to start is a temporary one: kept in memory, gone with the core.
     pub temporary_next: RwSignal<bool>,
+    /// The access mode picked for the chat about to start; none keeps the default. It
+    /// goes to the core with the first message and is dropped for each new chat.
+    pub access_next: RwSignal<Option<ApprovalPolicy>>,
     /// Unsent messages by chat, none for the draft chat; in memory only.
     drafts: StoredValue<HashMap<Option<String>, crate::chat::Draft>>,
     pub dictations: RwSignal<HashMap<Option<String>, Vec<String>>>,
@@ -59,6 +63,9 @@ pub struct AppState {
     pub inspector_tab: RwSignal<crate::chat::inspector::Tab>,
     /// Counts the asks to show the right column, so a narrow page opens its drawer.
     pub inspector_asked: RwSignal<u64>,
+    /// The chat whose model button opened the model page: the page chooses for it and
+    /// for new chats. None for the draft chat or the settings opened on their own.
+    pub model_chat: RwSignal<Option<String>>,
 }
 
 thread_local! {
@@ -89,6 +96,7 @@ impl AppState {
             draft_generation: RwSignal::new(0),
             project: RwSignal::new(None),
             temporary_next: RwSignal::new(false),
+            access_next: RwSignal::new(None),
             drafts: StoredValue::new(HashMap::new()),
             dictations: RwSignal::new(HashMap::new()),
             pending_pictures: RwSignal::new(HashMap::new()),
@@ -99,6 +107,7 @@ impl AppState {
             repository: RwSignal::new(None),
             inspector_tab: RwSignal::new(crate::chat::inspector::Tab::Tasks),
             inspector_asked: RwSignal::new(0),
+            model_chat: RwSignal::new(None),
         }
     }
 
@@ -233,6 +242,7 @@ impl AppState {
             // Terminals and plugin parts are drawn by the desktop app only.
             Event::Terminal { .. }
             | Event::TerminalClosed { .. }
+            | Event::TerminalOpened { .. }
             | Event::PluginView { .. }
             | Event::PluginFrame { .. }
             | Event::PluginNotice { .. }
@@ -306,6 +316,7 @@ impl AppState {
         self.project.set(project);
         self.advance_draft();
         self.temporary_next.set(false);
+        self.access_next.set(None);
         self.show(View::Chat(None));
     }
 
@@ -415,14 +426,16 @@ impl AppState {
             None => self.workspace_dir(),
         };
         let temporary = self.temporary_next.get_untracked();
+        let access = self.access_next.get_untracked();
         if thread_id.is_none() {
             self.advance_draft();
             self.temporary_next.set(false);
+            self.access_next.set(None);
         }
         spawn_local(async move {
             let thread_id = match thread_id {
                 Some(id) => id,
-                None => match self.start_thread(cwd, temporary, navigation).await {
+                None => match self.start_thread(cwd, temporary, access, navigation).await {
                     Ok(id) => id,
                     Err(error) => return self.fail(error),
                 },
@@ -458,14 +471,19 @@ impl AppState {
         self,
         cwd: String,
         temporary: bool,
+        access: Option<ApprovalPolicy>,
         navigation: u64,
     ) -> Result<String, String> {
         let thread_id = match temporary {
-            true => api::new_temporary_thread(cwd).await?,
-            false => api::new_thread(cwd).await?,
+            true => api::new_temporary_thread(cwd, access).await?,
+            false => api::new_thread(cwd, access).await?,
+        };
+        let data = ChatData {
+            access,
+            ..ChatData::default()
         };
         self.chats.update(|chats| {
-            chats.insert(thread_id.clone(), RwSignal::new(ChatData::default()));
+            chats.insert(thread_id.clone(), RwSignal::new(data));
         });
         if self.navigation.get_untracked() == navigation {
             self.show(View::Chat(Some(thread_id.clone())));
@@ -515,6 +533,40 @@ impl AppState {
                     self.refresh();
                 }
                 Err(error) => self.fail(error),
+            }
+        });
+    }
+
+    /// Starts the session the agent of `from` proposed as `proposal_id`, shown once made.
+    pub fn start_proposal(self, from: String, proposal_id: String) {
+        let navigation = self.navigation.get_untracked();
+        spawn_local(async move {
+            let made = async {
+                let thread_id = api::start_proposal(&from, &proposal_id).await?;
+                let history = api::messages(&thread_id).await?;
+                api::Res::Ok((thread_id, history))
+            };
+            match made.await {
+                Ok((thread_id, history)) => {
+                    let data = ChatData::from_history(&history);
+                    self.chats.update(|chats| {
+                        chats.insert(thread_id.clone(), RwSignal::new(data));
+                    });
+                    if self.navigation.get_untracked() == navigation {
+                        self.show(View::Chat(Some(thread_id)));
+                    }
+                    self.refresh();
+                }
+                Err(error) => self.fail(error),
+            }
+        });
+    }
+
+    /// Drops the session the agent of `thread_id` proposed as `proposal_id`.
+    pub fn dismiss_proposal(self, thread_id: String, proposal_id: String) {
+        spawn_local(async move {
+            if let Err(error) = api::dismiss_proposal(&thread_id, &proposal_id).await {
+                self.fail(error);
             }
         });
     }

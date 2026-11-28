@@ -44,10 +44,12 @@ impl Agent {
         });
     }
 
-    /// The chat keeps the user's level; a subagent thinks at what its asker chose.
+    /// The chat keeps its own level; a subagent thinks at what its asker chose, from its
+    /// chat's level.
     pub(super) async fn effort(&self, config: &Config) -> Option<Effort> {
+        let chat = self.model.effort_in(config);
         if self.depth == 0 {
-            return config.effort();
+            return chat;
         }
         let asked = match self.state.agent_effort(&self.thread_id).await {
             Ok(asked) => asked,
@@ -56,7 +58,7 @@ impl Agent {
                 None
             }
         };
-        Effort::for_subagent(config.effort(), asked)
+        Effort::for_subagent(chat, asked)
     }
 
     /// Counting is for the client to see; a failure here does not touch the thread.

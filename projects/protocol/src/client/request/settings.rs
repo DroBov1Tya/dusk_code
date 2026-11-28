@@ -19,6 +19,9 @@ pub enum SettingsRequest {
     ModelTimeout(u32),
     /// Answers with the tries saved, after the config's bounds.
     MaxAttempts(u32),
+    /// The share of the input limit, in percent, at which a chat's context is compacted.
+    /// Answers with the percent saved, after the bounds of 60 to 80.
+    AutoCompactPercent(u64),
     MemoryChars(usize),
     /// Answers with the characters saved, after the config's bounds.
     WorkHistoryChars(usize),
@@ -68,6 +71,13 @@ pub enum SettingsRequest {
     ProviderEnabled {
         name: String,
         enabled: bool,
+    },
+    /// Hides models of a saved provider from the model menus, or shows them again. A
+    /// hidden model stays usable where it is already chosen.
+    ModelsHidden {
+        provider: String,
+        models: Vec<String>,
+        hidden: bool,
     },
     /// Forgets every provider and the chosen model.
     RemoveAllProviders,
@@ -119,6 +129,8 @@ pub enum Switch {
     Notifications,
     /// Whether notifications ring the terminal bell.
     SoundNotifications,
+    /// Whether the core compacts a chat's context on its own as it fills up.
+    AutoCompact,
 }
 
 /// Which provider a check asks: one typed in a form and not saved yet, or a saved one.

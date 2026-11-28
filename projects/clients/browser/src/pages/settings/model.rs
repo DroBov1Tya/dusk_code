@@ -4,7 +4,7 @@ use crate::{
     api,
     chat::data::now_ms,
     state::state,
-    ui::{Section, confirm, run},
+    ui::{Section, Switch, confirm, run},
 };
 use dusk_protocol::{
     client::{Answer, Command, SettingsRequest},
@@ -18,39 +18,78 @@ use super::model_tiers::ModelTiers;
 #[component]
 pub fn ModelPage() -> impl IntoView {
     let app = state();
+    // Opened from a chat's model button, the page chooses for that chat; each chat keeps
+    // its own, and new chats start with the last chosen.
+    let chat_id = StoredValue::new(app.model_chat.get_untracked());
+    app.model_chat.set(None);
+    let chat = chat_id.get_value().and_then(|id| app.chat(&id));
     let providers = RwSignal::new(Vec::new());
     let current = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
+    // Filters the models below by model or provider name.
+    let query = RwSignal::new(String::new());
     let load = move || {
         busy.set(true);
-        run(api::command(Command::Model { name: None }), move |answer| {
-            busy.set(false);
-            if let Answer::Providers {
-                current: now,
-                providers: list,
-            } = answer
-            {
-                current.set(now);
-                providers.set(list);
-            }
-        });
+        let thread_id = chat_id.get_value();
+        run(
+            api::command(Command::Model {
+                name: None,
+                thread_id,
+            }),
+            move |answer| {
+                busy.set(false);
+                if let Answer::Providers {
+                    current: now,
+                    providers: list,
+                } = answer
+                {
+                    current.set(now);
+                    providers.set(list);
+                }
+            },
+        );
     };
     load();
-    let effort = move || app.status.with(|s| s.as_ref().and_then(|s| s.effort));
+    let effort = move || match chat.filter(|chat| chat.with(|c| c.model.is_some())) {
+        Some(chat) => chat.with(|c| c.effort),
+        None => app.status.with(|s| s.as_ref().and_then(|s| s.effort)),
+    };
+    let scope = if chat.is_some() {
+        "For this chat and the chats started from now on; other chats keep their own."
+    } else {
+        "For the chats started from now on; each chat keeps its own."
+    };
     view! {
         <h2>"Model"</h2>
         <p class="muted">"The models the chat can use, and the servers that give them."</p>
+        <p class="muted">{scope}</p>
         <Section title="Reasoning effort">
             <select prop:value=move || effort().map(|e| e.name()).unwrap_or("default") on:change=move |ev| {
-                let level = event_target_value(&ev);
-                run(api::command(Command::Effort { level: Some(level) }), |_| ());
+                let level = Some(event_target_value(&ev));
+                let thread_id = chat_id.get_value();
+                run(api::command(Command::Effort { level, thread_id }), |_| ());
             }>
                 {Effort::ALL.map(|e| view! { <option value=e.name()>{e.name()}</option> })}
             </select>
         </Section>
         <Section title="Providers">
             <Show when=move || busy.get()><p class="muted">"Checking the providers…"</p></Show>
-            {move || providers.get().into_iter().map(|provider| {
+            <input type="search" placeholder="Find a model" aria-label="Find a model"
+                prop:value=move || query.get() on:input=move |ev| query.set(event_target_value(&ev)) />
+            {move || {
+                let wanted = query.get().trim().to_lowercase();
+                providers.get().into_iter().filter_map(|mut provider| {
+                    // A provider's name matching keeps all its models; otherwise the matching ones.
+                    if !wanted.is_empty() && !provider.name.to_lowercase().contains(&wanted) {
+                        let models = provider.models.as_mut().ok()?;
+                        models.retain(|model| model.id.to_lowercase().contains(&wanted));
+                        if models.is_empty() {
+                            return None;
+                        }
+                    }
+                    Some(provider)
+                }).collect::<Vec<_>>()
+            }.into_iter().map(|provider| {
                 let name = provider.name.clone();
                 let removing = name.clone();
                 let switched = name.clone();
@@ -86,14 +125,37 @@ pub fn ModelPage() -> impl IntoView {
                                 let full = format!("{}/{}", provider.name, model.id);
                                 let active = current.get_untracked().as_deref() == Some(full.as_str());
                                 let pick = full.clone();
+                                let shown = !provider.is_hidden(&model.id);
+                                let (owner, id) = (provider.name.clone(), model.id.clone());
                                 view! {
-                                    <button class="model" class:active=active on:click=move |_| {
-                                        let pick = pick.clone();
-                                        run(api::command(Command::Model { name: Some(pick) }), move |_| load());
-                                    }>
-                                        <span>{model.id.clone()}</span>
-                                        <span class="muted">{model.context_window.map(crate::ui::compact).unwrap_or_default()}</span>
-                                    </button>
+                                    <div class="model-row" class:hidden=!shown>
+                                        <button class="model" class:active=active on:click=move |_| {
+                                            let pick = pick.clone();
+                                            let thread_id = chat_id.get_value();
+                                            run(api::command(Command::Model { name: Some(pick), thread_id }), move |_| load());
+                                        }>
+                                            <span>{model.id.clone()}</span>
+                                            <span class="muted">{model.context_window.map(crate::ui::compact).unwrap_or_default()}</span>
+                                        </button>
+                                        <span title=if shown { "Offered in the model menus" } else { "Hidden from the model menus" }>
+                                            <Switch on=shown change=move |on: bool| {
+                                                let (owner, id) = (owner.clone(), id.clone());
+                                                let request = SettingsRequest::ModelsHidden {
+                                                    provider: owner.clone(),
+                                                    models: vec![id.clone()],
+                                                    hidden: !on,
+                                                };
+                                                run(api::set(request), move |()| providers.update(|list| {
+                                                    if let Some(status) = list.iter_mut().find(|p| p.name == owner) {
+                                                        status.hidden.retain(|hidden| *hidden != id);
+                                                        if !on {
+                                                            status.hidden.push(id.clone());
+                                                        }
+                                                    }
+                                                }));
+                                            } />
+                                        </span>
+                                    </div>
                                 }
                             }).collect_view().into_any(),
                         }}

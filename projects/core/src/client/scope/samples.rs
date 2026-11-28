@@ -42,8 +42,14 @@ pub fn samples() -> Vec<R> {
 
 fn threads() -> Vec<T> {
     vec![
-        T::New { cwd: "/".into() },
-        T::NewTemporary { cwd: "/".into() },
+        T::New {
+            cwd: "/".into(),
+            approvals: None,
+        },
+        T::NewTemporary {
+            cwd: "/".into(),
+            approvals: None,
+        },
         T::Resume {
             thread_id: id(),
             cwd: "/".into(),
@@ -72,6 +78,7 @@ fn threads() -> Vec<T> {
             text: word(),
             now: false,
         },
+        T::Unqueue { thread_id: id() },
         T::Cancel { thread_id: id() },
         T::Background {
             thread_id: id(),
@@ -103,6 +110,14 @@ fn threads() -> Vec<T> {
             policy: None,
         },
         T::GetApprovals { thread_id: id() },
+        T::StartProposal {
+            thread_id: id(),
+            proposal_id: word(),
+        },
+        T::DismissProposal {
+            thread_id: id(),
+            proposal_id: word(),
+        },
         T::Pin {
             thread_id: id(),
             message_id: word(),
@@ -141,6 +156,12 @@ fn work() -> Vec<W> {
         W::SourcePicture {
             thread_id: id(),
             name: word(),
+            source_id: Some(word()),
+        },
+        W::SourceText {
+            thread_id: id(),
+            source_id: word(),
+            offset: 0,
         },
         W::Card {
             thread_id: id(),
@@ -152,6 +173,8 @@ fn work() -> Vec<W> {
             thread_id: id(),
             text: word(),
         },
+        W::Plans { thread_id: id() },
+        W::RemoveOldPlans { thread_id: id() },
         W::Diff {
             thread_id: id(),
             path: None,
@@ -174,6 +197,10 @@ fn work() -> Vec<W> {
             thread_id: id(),
             task_id: word(),
         },
+        W::RetryTask {
+            thread_id: id(),
+            task_id: word(),
+        },
         W::StopTeam { thread_id: id() },
         W::SetTeamAtOnce {
             thread_id: id(),
@@ -193,6 +220,7 @@ fn settings() -> Vec<S> {
         S::IdleScreenMinutes(1),
         S::ModelTimeout(1),
         S::MaxAttempts(1),
+        S::AutoCompactPercent(70),
         S::MemoryChars(1),
         S::WorkHistoryChars(1),
         S::Switch {
@@ -223,6 +251,11 @@ fn settings() -> Vec<S> {
         S::ProviderEnabled {
             name: word(),
             enabled: true,
+        },
+        S::ModelsHidden {
+            provider: word(),
+            models: vec![word()],
+            hidden: true,
         },
         S::RemoveAllProviders,
         S::SetSecret {
@@ -392,7 +425,10 @@ fn commands() -> Vec<Cmd> {
         Cmd::Resume { cwd: None },
         Cmd::New,
         Cmd::Temporary,
-        Cmd::Model { name: None },
+        Cmd::Model {
+            name: None,
+            thread_id: None,
+        },
         Cmd::Provider { name: None },
         Cmd::Settings,
         Cmd::Context {
@@ -401,7 +437,10 @@ fn commands() -> Vec<Cmd> {
         Cmd::Context { thread_id: None },
         Cmd::Fork { instructions: None },
         Cmd::Update { channel: None },
-        Cmd::Effort { level: None },
+        Cmd::Effort {
+            level: None,
+            thread_id: None,
+        },
         Cmd::Goal { argument: None },
         undo(Some(id()), None),
         undo(Some(id()), Some(1)),
@@ -441,6 +480,7 @@ fn rest() -> Vec<R> {
             rows: 24,
         }),
         R::Terminal(Te::Close { id: word() }),
+        R::Terminal(Te::Host),
         part(|plugin, part| Pl::Open { plugin, part }),
         part(|plugin, part| Pl::Redetect { plugin, part }),
         part(|plugin, part| Pl::Close { plugin, part }),

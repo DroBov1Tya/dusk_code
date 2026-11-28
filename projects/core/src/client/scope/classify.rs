@@ -70,7 +70,8 @@ pub fn classify(request: &Request) -> Access<'_> {
             Terminal::Open { .. }
             | Terminal::Input { .. }
             | Terminal::Resize { .. }
-            | Terminal::Close { .. },
+            | Terminal::Close { .. }
+            | Terminal::Host,
         ) => apart(Area::Terminal),
         Request::Plugin(
             Plugin::Open { .. }
@@ -108,7 +109,9 @@ fn thread(request: &Thread) -> Access<'_> {
             apart(Area::ThreadCreate)
         }
         // A new thread, but with what one thread said: only from a thread in reach.
-        Thread::ForkAt { thread_id, .. } => of(Area::ThreadCreate, thread_id),
+        Thread::ForkAt { thread_id, .. } | Thread::StartProposal { thread_id, .. } => {
+            of(Area::ThreadCreate, thread_id)
+        }
         Thread::List | Thread::Search { .. } => all(Area::ThreadRead),
         Thread::Messages { thread_id }
         | Thread::Tasks { thread_id }
@@ -121,12 +124,14 @@ fn thread(request: &Thread) -> Access<'_> {
         Thread::Resume { thread_id, .. }
         | Thread::ResendLocalUnsent { thread_id, .. }
         | Thread::Send { thread_id, .. }
+        | Thread::Unqueue { thread_id }
         | Thread::Cancel { thread_id }
         | Thread::Background { thread_id, .. }
         | Thread::Close { thread_id }
         | Thread::StopAgent { thread_id }
         | Thread::Rename { thread_id, .. }
-        | Thread::Pin { thread_id, .. } => of(Area::ThreadWrite, thread_id),
+        | Thread::Pin { thread_id, .. }
+        | Thread::DismissProposal { thread_id, .. } => of(Area::ThreadWrite, thread_id),
         Thread::Approve { thread_id, .. } => of(Area::ThreadApprove, thread_id),
         Thread::RunCommand { thread_id, .. } | Thread::StopRun { thread_id, .. } => {
             of(Area::ThreadCommand, thread_id)
@@ -141,8 +146,10 @@ fn work(request: &Work) -> Access<'_> {
         Work::Jobs { thread_id }
         | Work::JobOutput { thread_id, .. }
         | Work::SourcePicture { thread_id, .. }
+        | Work::SourceText { thread_id, .. }
         | Work::Card { thread_id, .. }
         | Work::Plan { thread_id }
+        | Work::Plans { thread_id }
         | Work::ChangedFiles { thread_id }
         | Work::FileChanges { thread_id }
         | Work::PlanTasks { thread_id, .. }
@@ -157,7 +164,9 @@ fn work(request: &Work) -> Access<'_> {
         | Work::RemoveSource { thread_id, .. }
         | Work::UploadPicture { thread_id, .. }
         | Work::SavePlan { thread_id, .. }
+        | Work::RemoveOldPlans { thread_id }
         | Work::ConfirmTask { thread_id, .. }
+        | Work::RetryTask { thread_id, .. }
         | Work::StopTeam { thread_id } => of(Area::ThreadWrite, thread_id),
         // How many members work at once, a setting of the team, so it sits with the approval
         // mode.
@@ -215,6 +224,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::IdleScreenMinutes(_)
         | Settings::ModelTimeout(_)
         | Settings::MaxAttempts(_)
+        | Settings::AutoCompactPercent(_)
         | Settings::MemoryChars(_)
         | Settings::WorkHistoryChars(_)
         | Settings::Switch { .. }
@@ -229,6 +239,7 @@ fn settings(request: &Settings) -> Area {
         | Settings::ReconnectProvider { .. }
         | Settings::RemoveProvider { .. }
         | Settings::ProviderEnabled { .. }
+        | Settings::ModelsHidden { .. }
         | Settings::RemoveAllProviders
         | Settings::SetSecret { .. }
         | Settings::DeleteSecret { .. }

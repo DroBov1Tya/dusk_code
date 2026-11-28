@@ -41,10 +41,20 @@ pub enum WorkRequest {
     },
     /// The bytes of the thread's picture source `name`, as its tag names it, for a
     /// client to draw. Answers with `Response::Picture`; a source that is no PNG or
-    /// JPEG is refused.
+    /// JPEG is refused. With `source_id` the source is that one, as names repeat; `name`
+    /// is then not looked at.
     SourcePicture {
         thread_id: String,
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_id: Option<String>,
+    },
+    /// A part of the thread's source `source_id` for a client to read, from byte
+    /// `offset`. Answers with `Response::SourceText`.
+    SourceText {
+        thread_id: String,
+        source_id: String,
+        offset: u64,
     },
     /// A part of a card a message of the thread, or of an agent thread below it, carries:
     /// `image`, `audio` or `thumb`. Answers with `Response::Picture`, or an error when the
@@ -62,6 +72,16 @@ pub enum WorkRequest {
     SavePlan {
         thread_id: String,
         text: String,
+    },
+    /// Every plan of the chat, newest written first. Answers with `Response::Plans`; one
+    /// is deleted by `RemoveSource` with its `source_id`.
+    Plans {
+        thread_id: String,
+    },
+    /// Deletes the chat's old plans: those a newer one replaced, and finished ones.
+    /// Answers with `Response::Number`, how many it deleted.
+    RemoveOldPlans {
+        thread_id: String,
     },
     /// The changes in the chat's own folder against the last commit, as `Diff` of a
     /// project answers; the folder is the one the chat started in.
@@ -104,6 +124,12 @@ pub enum WorkRequest {
     },
     /// Passes the `user_confirmation` gate of a task in review.
     ConfirmTask {
+        thread_id: String,
+        task_id: String,
+    },
+    /// Retries a failed task of work of the plan in place: the same id, its dependents with it.
+    /// A running team gives it out again; one that ended starts again toward its goal.
+    RetryTask {
         thread_id: String,
         task_id: String,
     },

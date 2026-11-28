@@ -36,6 +36,12 @@ impl Settings<'_> {
         self.done(SettingsRequest::MaxAttempts(attempts)).await
     }
 
+    /// Returns the percent saved, after the bounds of 60 to 80.
+    pub async fn auto_compact_percent(&self, percent: u64) -> Result<u64> {
+        self.number(SettingsRequest::AutoCompactPercent(percent))
+            .await
+    }
+
     pub async fn memory_chars(&self, chars: usize) -> Result<()> {
         self.done(SettingsRequest::MemoryChars(chars)).await
     }
@@ -121,6 +127,22 @@ impl Settings<'_> {
         let name = name.to_owned();
         self.done(SettingsRequest::ProviderEnabled { name, enabled })
             .await
+    }
+
+    /// Hides models of a saved provider from the model menus, or shows them again.
+    pub async fn models_hidden(
+        &self,
+        provider: &str,
+        models: Vec<String>,
+        hidden: bool,
+    ) -> Result<()> {
+        let provider = provider.to_owned();
+        self.done(SettingsRequest::ModelsHidden {
+            provider,
+            models,
+            hidden,
+        })
+        .await
     }
 
     /// Asks a provider whether it answers; nothing is saved.

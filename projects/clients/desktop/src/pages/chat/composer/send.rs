@@ -11,33 +11,16 @@ impl Workspace {
         if self.shown.is_none() && self.drafts.starting() {
             return;
         }
-        let mut text = self.composer.read(cx).value().trim().to_owned();
-        if self.run_command(&text, window, cx) {
+        let typed = self.composer.read(cx).value().trim().to_owned();
+        if self.run_command(&typed, window, cx) {
             return;
         }
         let draft = super::Draft {
             text: self.composer.read(cx).value().to_string(),
-            attachments: self.attachments.clone(),
-            pastes: self.pastes.clone(),
+            attachments: std::mem::take(&mut self.attachments),
+            pastes: std::mem::take(&mut self.pastes),
         };
-        for pasted in std::mem::take(&mut self.pastes) {
-            if !text.is_empty() {
-                text.push('\n');
-            }
-            text.push_str(&dusk_protocol::thread::wrap(&pasted));
-        }
-        // Attached files go as their paths; the core keeps them among the chat's sources.
-        for path in std::mem::take(&mut self.attachments) {
-            if !text.is_empty() {
-                text.push('\n');
-            }
-            // A path with spaces goes quoted, so the core reads it as one.
-            let path = path.display().to_string();
-            match path.contains(char::is_whitespace) && !path.contains('"') {
-                true => text.push_str(&format!("\"{path}\"")),
-                false => text.push_str(&path),
-            }
-        }
+        let mut text = draft.flat();
         if text.is_empty() {
             return;
         }
@@ -64,7 +47,7 @@ impl Workspace {
         {
             // The agent is busy: the text waits, editable, until the turn ends.
             self.write_composer("", window, cx);
-            self.queue(thread_id, text, window, cx);
+            self.queue(thread_id, text, draft, window, cx);
             return;
         }
         // Without a project, a new chat works in the workspace root.
@@ -74,6 +57,7 @@ impl Workspace {
         );
         self.write_composer("", window, cx);
         let temporary = std::mem::take(&mut self.temporary_next);
+        let access = std::mem::take(&mut self.access_next);
         let origin = shown.clone();
         let generation = self.drafts.generation();
         let navigation = self.history.navigation();
@@ -82,6 +66,15 @@ impl Workspace {
         }
         // A chat already on the page catches its turn's events as they come.
         if let Some(thread_id) = shown {
+            // Compacting before a turn: the core takes it in once the summary is
+            // written, and it shows above the composer until then.
+            if self
+                .chats
+                .get(&thread_id)
+                .is_some_and(|chat| chat.compacting)
+            {
+                self.held_by_core(thread_id.clone(), text.clone(), window, cx);
+            }
             self.deliver(thread_id, text, origin, generation, draft, cx);
             return;
         }
@@ -90,8 +83,8 @@ impl Workspace {
             move |client| async move {
                 let threads = client.threads();
                 match dir {
-                    Some(dir) if temporary => threads.start_temporary(dir).await,
-                    Some(dir) => threads.start(dir).await,
+                    Some(dir) if temporary => threads.start_temporary(dir, access).await,
+                    Some(dir) => threads.start_with(dir, access).await,
                     None => anyhow::bail!("no project"),
                 }
             },
@@ -102,7 +95,9 @@ impl Workspace {
                         // The chat is on the page before the message is queued, so the
                         // turn it starts is seen from its first event.
                         let current = ws.drafts.started(&thread_id, generation);
-                        ws.chats.insert(thread_id.clone(), Transcript::default());
+                        let mut chat = Transcript::default();
+                        chat.access = access;
+                        ws.chats.insert(thread_id.clone(), chat);
                         if current
                             && ws.history.navigation() == navigation
                             && ws.shown.is_none()
@@ -115,6 +110,9 @@ impl Workspace {
                     }
                     Err(error) => {
                         ws.edit_draft_at(None, generation, super::Change::Restore(draft), cx);
+                        if ws.shown.is_none() && ws.access_next.is_none() {
+                            ws.access_next = access;
+                        }
                         ws.fail(error, cx);
                     }
                 }

@@ -15,14 +15,15 @@ pub async fn threads() -> Res<Vec<Thread>> {
     ask!(thread(ThreadRequest::List), Response::Threads(t) => t)
 }
 
-pub async fn new_thread(cwd: String) -> Res<String> {
+/// A new chat; `approvals` is its own mode from the start, none keeps the default.
+pub async fn new_thread(cwd: String, approvals: Option<ApprovalPolicy>) -> Res<String> {
     let cwd = cwd.into();
-    ask!(thread(ThreadRequest::New { cwd }), Response::Opened { thread_id } => thread_id)
+    ask!(thread(ThreadRequest::New { cwd, approvals }), Response::Opened { thread_id } => thread_id)
 }
 
-pub async fn new_temporary_thread(cwd: String) -> Res<String> {
+pub async fn new_temporary_thread(cwd: String, approvals: Option<ApprovalPolicy>) -> Res<String> {
     let cwd = cwd.into();
-    ask!(thread(ThreadRequest::NewTemporary { cwd }), Response::Opened { thread_id } => thread_id)
+    ask!(thread(ThreadRequest::NewTemporary { cwd, approvals }), Response::Opened { thread_id } => thread_id)
 }
 
 pub async fn resume(thread_id: &str, cwd: String) -> Res<String> {
@@ -44,6 +45,27 @@ pub async fn fork_at(thread_id: &str, message_id: &str, cwd: String) -> Res<Stri
     )
 }
 
+/// Starts the session the agent proposed as `proposal_id`; answers with the new chat.
+pub async fn start_proposal(thread_id: &str, proposal_id: &str) -> Res<String> {
+    let (thread_id, proposal_id) = (thread_id.to_owned(), proposal_id.to_owned());
+    ask!(
+        thread(ThreadRequest::StartProposal {
+            thread_id,
+            proposal_id
+        }),
+        Response::Opened { thread_id } => thread_id
+    )
+}
+
+pub async fn dismiss_proposal(thread_id: &str, proposal_id: &str) -> Res<()> {
+    let (thread_id, proposal_id) = (thread_id.to_owned(), proposal_id.to_owned());
+    done(thread(ThreadRequest::DismissProposal {
+        thread_id,
+        proposal_id,
+    }))
+    .await
+}
+
 pub async fn messages(thread_id: &str) -> Res<Vec<Message>> {
     let thread_id = thread_id.to_owned();
     ask!(thread(ThreadRequest::Messages { thread_id }), Response::Messages(m) => m)
@@ -62,6 +84,12 @@ pub async fn send(thread_id: &str, text: String, now: bool) -> Res<()> {
         now,
     }))
     .await
+}
+
+/// Takes back the newest message the thread has not taken in yet; its text, or none.
+pub async fn unqueue(thread_id: &str) -> Res<Option<String>> {
+    let thread_id = thread_id.to_owned();
+    ask!(thread(ThreadRequest::Unqueue { thread_id }), Response::Unqueued(t) => t)
 }
 
 pub async fn cancel(thread_id: &str) -> Res<()> {

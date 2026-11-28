@@ -14,6 +14,7 @@ mod message;
 mod name;
 mod overview;
 mod pin;
+mod proposal;
 mod suggestion;
 mod summary;
 mod task;
@@ -37,8 +38,9 @@ pub use job::{JobInfo, JobResult, job_message};
 pub use link::{THREAD_LINK_PREFIX, links_in, thread_link, thread_of_link};
 pub use live::{LiveTurn, STALLED_AFTER_MS, Work, WorkKind, activity};
 pub use message::{
-    Compaction, LocalUnsent, Message, MessageRole, Part, Source, UndoPoint, has_pasted, labelled,
-    plain, sound_tag, source_tag, split, wrap,
+    Compaction, LocalUnsent, Message, MessageRole, Part, PlanFile, SOURCE_CHUNK, Source,
+    SourceChunk, SourceKind, UndoPoint, has_pasted, labelled, plain, sound_tag, source_tag, split,
+    wrap,
 };
 pub use name::{ARBITER_THREAD, agent_name, fnv1a, name_seed};
 pub use overview::{
@@ -46,6 +48,10 @@ pub use overview::{
     OVERVIEW_PATHS, OVERVIEW_TOOLS, Overview, ToolRuns,
 };
 pub use pin::{MAX_PINS, PIN_CHARS, Pin, excerpt};
+pub use proposal::{
+    MAX_PENDING_PROPOSALS, MAX_PROPOSAL_BRIEF, MAX_PROPOSAL_TITLE, PROPOSE_SESSION_TOOL, Proposal,
+    ProposalCalls, ProposalState, ProposeSession, outcome_note, proposals, read_outcome,
+};
 pub use suggestion::{SUGGEST_NEXT_TOOL, SUGGESTION_CHARS, SuggestNext, Suggestion};
 pub use summary::{Found, Thread};
 pub use task::{
@@ -58,12 +64,14 @@ pub use team::{
     plan_aside, role_name, short_model, task_card, task_in_work, team_call_id,
 };
 pub use tokens::{
-    AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, plural, short_count, short_size,
+    AUTO_COMPACT_OFF_HINT, AUTO_COMPACT_PERCENT, MAX_AUTO_COMPACT_PERCENT,
+    MIN_AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, plural, short_count, short_size,
 };
 pub use transcript::{
-    AgentState, Applied, ChatLog, DETAIL_KEYS, FAILED_PREFIXES, MAX_MARK_CHARS, Note, Retry,
-    RetryRow, Run, RunCard, RunKind, RunMark, SHOWN_CHARS, Span, Subagent, Tone, Tool, ToolState,
-    TurnSpend, clip, marks, note, retry_row, stored_failure, tool_detail, turn_spend, unmarked,
+    AgentState, Applied, CHAT_ASKS, ChatLog, DETAIL_KEYS, FAILED_PREFIXES, MAX_MARK_CHARS, Note,
+    Retry, RetryRow, Run, RunCard, RunKind, RunMark, SHOWN_CHARS, Span, Subagent, Tone, Tool,
+    ToolState, TurnSpend, clip, context_line, marks, note, retry_row, stored_failure, tool_detail,
+    turn_spend, unmarked,
 };
 pub use turn::{
     Turn, TurnFailure, TurnStatus, TurnWait, age_words, ago_words, clock_words, duration_words,

@@ -44,6 +44,8 @@ pub enum Response {
     /// A thread's pins, oldest message first.
     Pins(Vec<Pin>),
     LocalUnsent(Vec<LocalUnsent>),
+    /// The text of a message taken back before the thread took it in.
+    Unqueued(Option<String>),
     Jobs(Vec<JobInfo>),
     Node(NodeText),
     Mcp(Vec<McpInfo>),
@@ -55,6 +57,8 @@ pub enum Response {
     Names(Vec<String>),
     /// The pinned plan, or none before one was written.
     Plan(Option<String>),
+    /// A chat's plans, newest written first.
+    Plans(Vec<crate::thread::PlanFile>),
     Profile(Profile),
     Secrets(SecretsInfo),
     Voice(VoiceSettings),
@@ -63,6 +67,8 @@ pub enum Response {
     Provider(crate::model::ProviderStatus),
     /// A PNG or JPEG of a thread's sources.
     Picture(Vec<u8>),
+    /// A part of a thread's source, for a client to read.
+    SourceText(crate::thread::SourceChunk),
     /// A sound or picture card the core made.
     Card(crate::tools::Card),
     /// A thread's own approval mode, or none when it uses the default in settings.

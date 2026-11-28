@@ -5,7 +5,7 @@ use crate::{
     config::{ApiKey, ProviderConfig, ProviderKind},
     providers::Provider,
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use dusk_protocol::{client::ProviderTarget, model::ProviderStatus};
 
 use super::super::{model_choice::check_provider, start::pick_if_empty};
@@ -55,6 +55,7 @@ fn new_provider(
         balance: None,
         requests_per_minute: None,
         enabled: true,
+        hidden_models: Default::default(),
     };
     crate::providers::validate_provider(&provider)?;
     Ok(provider)
@@ -164,18 +165,16 @@ impl Runtime {
         self.launcher.model.replace_provider(&name, adapter);
         // Asked off the request: picking waits on the network.
         if self.launcher.model.current().is_none() {
-            let (config, model, mailboxes) = (
-                Arc::clone(&self.launcher.config),
-                Arc::clone(&self.launcher.model),
-                Arc::clone(&self.launcher.mailboxes),
-            );
-            tokio::spawn(async move { pick_if_empty(&config, &model, &mailboxes).await });
+            let launcher = self.launcher.clone();
+            tokio::spawn(async move { pick_if_empty(&launcher).await });
         }
         Ok(name)
     }
 
     /// Forgets a provider and its key. The provider of the chosen model stays: the chat
-    /// would lose its model under the user.
+    /// would lose its model under the user. Only the last chosen model is guarded, not
+    /// each chat's own: a running chat on this provider keeps the model it holds until it
+    /// closes, and on reopening answers on the last chosen instead, with a warning logged.
     pub fn remove_provider(&self, name: &str) -> Result<()> {
         self.ensure_not_chosen(name)?;
         self.launcher.config.update(|config| {
@@ -185,7 +184,8 @@ impl Runtime {
     }
 
     /// Switches a provider of the config file on or off; its key stays. Off is refused
-    /// like a removal while it holds the chosen model.
+    /// like a removal while it holds the chosen model; a chat's own model on it falls back
+    /// as on a removal.
     pub fn set_provider_enabled(&self, name: &str, enabled: bool) -> Result<()> {
         if !enabled {
             self.ensure_not_chosen(name)?;
@@ -201,6 +201,31 @@ impl Runtime {
             .config
             .update(|config| found = config.set_provider_enabled(name, enabled))?;
         ensure!(found, "no provider named {name}");
+        Ok(())
+    }
+
+    /// Hides models of a provider of the config file from the model menus, or shows them
+    /// again. A hidden model that is chosen stays chosen.
+    pub fn set_models_hidden(&self, name: &str, models: &[String], hidden: bool) -> Result<()> {
+        ensure!(
+            models.iter().all(|model| !model.trim().is_empty()),
+            "a model ID is not empty"
+        );
+        let mut found = false;
+        self.launcher
+            .config
+            .update(|config| found = config.set_models_hidden(name, models, hidden))?;
+        if !found
+            && self
+                .launcher
+                .config
+                .current()
+                .all_providers()
+                .contains_key(name)
+        {
+            bail!("{name} comes from a plugin, so its models can't be hidden or shown here");
+        }
+        ensure!(found, "no provider of the config file is named {name}");
         Ok(())
     }
 
@@ -360,6 +385,41 @@ mod tests {
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         assert_eq!(runtime.model().map(|choice| choice.name()), chosen);
+    }
+
+    #[tokio::test]
+    async fn hiding_models_keeps_the_chosen_one_and_the_check_reports_them() {
+        let root = crate::testing::temp_dir("models-hidden");
+        let paths = crate::init::paths::Paths::new(root.join("config"), root.join("work"));
+        let runtime = Runtime::start(paths, Some(root.join("state.db")))
+            .await
+            .unwrap();
+        let base = serve("200 OK", r#"{"data":[{"id":"a"},{"id":"b"},{"id":"c"}]}"#).await;
+        let name = runtime
+            .connect_provider(ProviderKind::OpenAiCompatible, None, base, Some("k".into()))
+            .unwrap();
+        let chosen = model_after_connect(&runtime).await;
+        assert_eq!(chosen.as_deref(), Some(format!("{name}/a").as_str()));
+
+        let both = ["a".to_owned(), "b".to_owned()];
+        runtime.set_models_hidden(&name, &both, true).unwrap();
+        // Hiding the chosen model does not unset it.
+        assert_eq!(runtime.model().map(|choice| choice.name()), chosen);
+        runtime.set_models_hidden(&name, &both[1..], false).unwrap();
+        let status = runtime
+            .check_provider(ProviderTarget::Saved { name: name.clone() })
+            .await
+            .unwrap();
+        // The settings still see every model; only the menus leave the hidden ones out.
+        assert_eq!(status.models.unwrap().len(), 3);
+        assert_eq!(status.hidden, ["a"]);
+
+        assert!(runtime.set_models_hidden("nobody", &both, true).is_err());
+        assert!(
+            runtime
+                .set_models_hidden(&name, &[" ".to_owned()], true)
+                .is_err()
+        );
     }
 
     #[tokio::test]

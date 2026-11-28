@@ -16,7 +16,6 @@ use crate::{
     runtime::thread::start::read_prompt,
     state::{CallPurpose, Compaction, ModelCall, Turn},
 };
-pub use dusk_protocol::thread::AUTO_COMPACT_PERCENT;
 
 /// With `limits.compact_early`, the share of the input limit at which the context is
 /// compacted between turns, in the pause, before the next turn has to.
@@ -120,7 +119,8 @@ fn is_too_long(error: &anyhow::Error) -> bool {
 }
 
 impl Agent {
-    /// Compacts when the context has passed the automatic limit and there is something
+    /// Compacts when the context has passed `limits.auto_compact_percent` of the input
+    /// limit, auto-compaction is on and there is something
     /// to work on: a queued message, or the running `turn`. Without a turn this is the
     /// point between turns, where `limits.compact_early` compacts sooner. A context left
     /// as it was is handed back, for the next step to read without a reload.
@@ -141,12 +141,14 @@ impl Agent {
                 }
             };
         let specs = self.tools.specs(&self.working_scope(), &config);
+        let limits = config.limits();
         let working = turn.is_some() || conversation.has_queued();
         let percent = match turn {
-            None if config.limits().compact_early => EARLY_COMPACT_PERCENT,
-            _ => AUTO_COMPACT_PERCENT,
+            None if limits.compact_early => EARLY_COMPACT_PERCENT.min(limits.auto_compact_percent),
+            _ => limits.auto_compact_percent,
         };
-        let full = conversation.tokens(&specs) >= limit / 100 * percent;
+        // Off, only `/compact` writes a summary; a full context ends the turn instead.
+        let full = limits.auto_compact && conversation.tokens(&specs) >= limit / 100 * percent;
         if !working || !full || conversation.compactable_through().is_none() {
             return Ok(Some(Loaded {
                 stub_results,
@@ -331,7 +333,7 @@ impl Agent {
                 messages: &messages,
                 tools,
                 max_output_tokens: choice.model.max_output,
-                effort: config.effort(),
+                effort: self.model.effort_in(&config),
                 cache_key: Some(&self.thread_id),
             };
             let (output, generated) = match self
@@ -421,6 +423,7 @@ mod tests {
             bytes: 1,
             pinned: false,
             delivered: true,
+            plan: false,
         };
         let note = sources_note(&[hostile]);
         let list = note

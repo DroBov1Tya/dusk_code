@@ -16,6 +16,7 @@ fn source_from_row(row: SqliteRow) -> sqlx::Result<Source> {
         bytes: row.try_get::<i64, _>("bytes")?.max(0) as u64,
         pinned: row.try_get("pinned")?,
         delivered: row.try_get("delivered")?,
+        plan: row.try_get::<Option<i64>, _>("plan_written_at")?.is_some(),
     })
 }
 
@@ -80,6 +81,41 @@ impl State {
         .fetch_optional(&self.pool)
         .await
         .context("remove the source")
+    }
+
+    /// Marks the source a plan written just now; the newest written is the current plan.
+    pub async fn mark_plan_written(&self, thread_id: &str, id: &str) -> Result<()> {
+        // Past every other plan of the chat even within one millisecond, so the order of
+        // writes is the order of the times.
+        sqlx::query(
+            "UPDATE sources SET plan_written_at = max(?, (
+                 SELECT coalesce(max(plan_written_at), 0) + 1 FROM sources WHERE thread_id = ?))
+             WHERE thread_id = ? AND source_id = ?",
+        )
+        .bind(timestamp_ms()?)
+        .bind(thread_id)
+        .bind(thread_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .context("mark the plan written")?;
+        Ok(())
+    }
+
+    /// The chat's plans with when each was written, newest first.
+    pub async fn plans(&self, thread_id: &str) -> Result<Vec<(Source, i64)>> {
+        sqlx::query(
+            "SELECT * FROM sources WHERE thread_id = ? AND plan_written_at IS NOT NULL
+             ORDER BY plan_written_at DESC, created_at DESC, source_id DESC",
+        )
+        .bind(thread_id)
+        .try_map(|row: SqliteRow| {
+            let written: i64 = row.try_get("plan_written_at")?;
+            Ok((source_from_row(row)?, written))
+        })
+        .fetch_all(&self.pool)
+        .await
+        .context("list the plans")
     }
 
     pub async fn mark_sources_delivered(&self, ids: &[String]) -> Result<()> {

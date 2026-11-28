@@ -130,8 +130,10 @@ impl State {
         .await
         .context("read the fork's time")?;
         sqlx::query(
-            "INSERT INTO sources (source_id, thread_id, name, file, bytes, pinned, delivered, created_at)
-             SELECT lower(hex(randomblob(16))), ?, name, file, bytes, pinned, delivered, created_at
+            "INSERT INTO sources (source_id, thread_id, name, file, bytes, pinned, delivered, created_at,
+                 plan_written_at)
+             SELECT lower(hex(randomblob(16))), ?, name, file, bytes, pinned, delivered, created_at,
+                 plan_written_at
              FROM sources WHERE thread_id = ? AND created_at <= ?",
         )
         .bind(target)

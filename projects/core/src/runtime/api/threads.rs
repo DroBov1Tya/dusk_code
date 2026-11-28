@@ -7,6 +7,7 @@ use crate::{
     state::{LocalUnsent, Message, State, Task, Thread},
 };
 use anyhow::{Result, ensure};
+use dusk_protocol::thread::{Proposal, ProposalState};
 use std::{collections::HashSet, path::Path};
 use tracing::info;
 
@@ -154,6 +155,92 @@ impl Runtime {
         self.launcher.new_thread(source, cwd).await
     }
 
+    /// Makes the session the agent of `thread_id` proposed as `proposal_id`: a new chat
+    /// in the proposal's project (the chat's own when none) and mode, for the caller to
+    /// open and send the brief to. The proposal stays waiting until the caller stores the
+    /// outcome with `proposal_started` once the brief is sent, holding the lock returned
+    /// until then, so two clicks cannot both start it and a brief that fails to send
+    /// leaves the card to start again. Refused, with nothing made, when the proposal was
+    /// answered already or its mode is gone.
+    pub async fn start_proposal(
+        &self,
+        source: &str,
+        thread_id: &str,
+        proposal_id: &str,
+    ) -> Result<(ThreadHandle, Proposal, tokio::sync::MutexGuard<'static, ()>)> {
+        use crate::tools::propose_session;
+        // One answer at a time, so two clicks cannot both find it waiting.
+        let answering = propose_session::ANSWERING.lock().await;
+        let launcher = self.of(thread_id).await;
+        let state = &launcher.state;
+        let (proposal, settled) = propose_session::find(state, thread_id, proposal_id).await?;
+        anyhow::ensure!(
+            settled == ProposalState::Pending,
+            "this proposal was answered already"
+        );
+        let cwd = match &proposal.project {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => {
+                let chat = state.load_thread(thread_id).await?;
+                chat.and_then(|chat| chat.project)
+                    .map_or_else(|| self.paths().workspace_root().to_path_buf(), Into::into)
+            }
+        };
+        let mode = match &proposal.mode {
+            Some(mode) => {
+                let known = crate::catalog::modes::Modes::new(&self.paths().modes_dir()).list();
+                anyhow::ensure!(
+                    known.contains(mode),
+                    "the mode {mode} of this proposal no longer exists"
+                );
+                mode.clone()
+            }
+            None => self.config().current().mode().to_owned(),
+        };
+        let handle = launcher.new_thread_in(source, &cwd, &mode, None).await?;
+        Ok((handle, proposal, answering))
+    }
+
+    /// Stores that the proposal `proposal` of `thread_id` started as the chat `started`,
+    /// once its brief was sent; the caller still holds `start_proposal`'s lock.
+    pub async fn proposal_started(
+        &self,
+        thread_id: &str,
+        proposal: &Proposal,
+        started: &str,
+    ) -> Result<bool> {
+        let state = ProposalState::Started {
+            thread_id: started.to_owned(),
+        };
+        let store = &self.of(thread_id).await.state;
+        crate::tools::propose_session::settle(
+            store,
+            thread_id,
+            &proposal.id,
+            &proposal.title,
+            &state,
+        )
+        .await
+    }
+
+    /// Stores how the user answered the proposal `proposal_id`, for the chat's next turn;
+    /// false when it was answered already.
+    pub async fn settle_proposal(
+        &self,
+        thread_id: &str,
+        proposal_id: &str,
+        state: &ProposalState,
+    ) -> Result<bool> {
+        use crate::tools::propose_session;
+        let _answering = propose_session::ANSWERING.lock().await;
+        let store = &self.of(thread_id).await.state;
+        let (proposal, settled) = propose_session::find(store, thread_id, proposal_id).await?;
+        if settled != ProposalState::Pending {
+            return Ok(false);
+        }
+        propose_session::settle(store, thread_id, proposal_id, &proposal.title, state).await
+    }
+
     /// A new thread that asks `model`, as `provider/model`, instead of the chosen one.
     pub async fn new_thread_with_model(
         &self,
@@ -163,8 +250,7 @@ impl Runtime {
     ) -> Result<ThreadHandle> {
         let config = self.config().current();
         let choice = crate::runtime::model_choice::Choice::pick(&config, Some(model)).await?;
-        let model = std::sync::Arc::new(crate::runtime::model_choice::ModelChoice::new(choice));
-        self.launcher.new_thread_on(source, cwd, Some(model)).await
+        self.launcher.new_thread_on(source, cwd, Some(choice)).await
     }
 
     /// A new chat thread that starts from a /fork summary of another, after its prompt.

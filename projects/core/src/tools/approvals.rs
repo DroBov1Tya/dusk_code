@@ -34,8 +34,9 @@ pub struct Verdict {
     pub reason: String,
 }
 
-/// The thread that asked, whether only the owner may answer, and where the answer goes.
-type Pending = (String, bool, oneshot::Sender<Decision>);
+/// The thread that asked, whether only the owner may answer, where the answer goes, and
+/// the request as the client was shown it, for a client that comes later.
+type Pending = (String, bool, oneshot::Sender<Decision>, ApprovalRequest);
 
 #[derive(Default)]
 pub struct Approvals {
@@ -118,7 +119,7 @@ impl Approvals {
         self.pending
             .lock()
             .get(&id)
-            .is_some_and(|(_, owner, _)| *owner)
+            .is_some_and(|(_, owner, _, _)| *owner)
     }
 
     /// Screen actions asked as one: never less than asking each alone. A request the
@@ -259,22 +260,24 @@ impl Approvals {
         };
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (sender, answer) = oneshot::channel();
-        self.pending
-            .lock()
-            .insert(id, (thread_id.to_owned(), owner_only, sender));
+        let asked = ApprovalRequest {
+            id,
+            request: request.clone(),
+            session,
+            steps,
+        };
+        let offered = asked.session.is_some();
+        self.pending.lock().insert(
+            id,
+            (thread_id.to_owned(), owner_only, sender, asked.clone()),
+        );
         // Closes the request on the client however the wait ends, a stopped turn included.
         let _open = Open {
             approvals: self,
             id,
             events: progress.events.clone(),
         };
-        let offered = session.is_some();
-        progress.emit(ThreadEvent::Approval(ApprovalRequest {
-            id,
-            request: request.clone(),
-            session,
-            steps,
-        }));
+        progress.emit(ThreadEvent::Approval(asked));
         match answer.await {
             Ok(Decision::Once) => Ok(()),
             Ok(Decision::Session) => {
@@ -331,7 +334,7 @@ impl Approvals {
         self.pending
             .lock()
             .remove(&id)
-            .is_some_and(|(_, _, sender)| sender.send(decision).is_ok())
+            .is_some_and(|(_, _, sender, _)| sender.send(decision).is_ok())
     }
 
     /// The thread that asked request `id`; `None` when nothing waits for it.
@@ -339,7 +342,19 @@ impl Approvals {
         self.pending
             .lock()
             .get(&id)
-            .map(|(thread, _, _)| thread.clone())
+            .map(|(thread, _, _, _)| thread.clone())
+    }
+
+    /// Every request still waiting, with the thread that asked it, oldest first.
+    pub fn waiting(&self) -> Vec<(String, ApprovalRequest)> {
+        let mut waiting: Vec<_> = self
+            .pending
+            .lock()
+            .values()
+            .map(|(thread, _, _, asked)| (thread.clone(), asked.clone()))
+            .collect();
+        waiting.sort_by_key(|(_, asked)| asked.id);
+        waiting
     }
 }
 
@@ -383,7 +398,7 @@ impl Grants {
             }
             Request::Screen { .. } => self.screen,
             Request::SystemPointer { .. } => self.system_pointer,
-            Request::Keyboard { .. } | Request::Settings { .. } => false,
+            Request::Keyboard { .. } | Request::Settings { .. } | Request::Terminal { .. } => false,
             Request::Window { grant, .. } => grant
                 .as_ref()
                 .is_some_and(|access| self.windows.contains(access)),
@@ -399,7 +414,7 @@ impl Grants {
             }
             Request::Screen { .. } => self.screen = true,
             Request::SystemPointer { .. } => self.system_pointer = true,
-            Request::Keyboard { .. } | Request::Settings { .. } => {}
+            Request::Keyboard { .. } | Request::Settings { .. } | Request::Terminal { .. } => {}
             Request::Window { grant, .. } => self.windows.extend(grant.clone()),
             Request::Git { .. } => self.git = true,
         }
@@ -417,7 +432,8 @@ fn strictness(request: &Request) -> Option<u8> {
         Request::Path { .. }
         | Request::Command { .. }
         | Request::Settings { .. }
-        | Request::Git { .. } => None,
+        | Request::Git { .. }
+        | Request::Terminal { .. } => None,
     }
 }
 
@@ -442,7 +458,8 @@ fn with_action(kind: &Request, action: String) -> Request {
         Request::Path { .. }
         | Request::Command { .. }
         | Request::Settings { .. }
-        | Request::Git { .. } => kind.clone(),
+        | Request::Git { .. }
+        | Request::Terminal { .. } => kind.clone(),
     }
 }
 
@@ -454,7 +471,7 @@ pub fn session_grant(request: &Request) -> Option<String> {
         Request::Command { command } => program(command).map(str::to_owned),
         Request::Screen { .. } => Some("the screen".into()),
         Request::SystemPointer { .. } => Some("the system pointer".into()),
-        Request::Keyboard { .. } | Request::Settings { .. } => None,
+        Request::Keyboard { .. } | Request::Settings { .. } | Request::Terminal { .. } => None,
         Request::Window { grant, .. } => match grant {
             Some(WindowAccess::List) => Some("listing window names and IDs".into()),
             Some(WindowAccess::Capture(_)) => Some("capture of this selected window".into()),

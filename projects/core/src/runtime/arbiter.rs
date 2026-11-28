@@ -5,6 +5,10 @@
 //! may change its model and rewrite its review prompt; safety stays here, not in the
 //! prompt: the answer format is fixed below, and it is only asked about what the approval
 //! mode leaves to it.
+//!
+//! It is one service for every chat, not a part of any: it runs on the model its settings
+//! name, or, with none named, on the model last chosen in any chat. So choosing a model in
+//! one chat also moves the arbiter's judgments for the others, until a model is set for it.
 
 use std::sync::Arc;
 

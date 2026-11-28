@@ -32,7 +32,7 @@ pub use row::label;
 pub use sent_picture::SentPicture;
 pub use skill_change::SkillRow;
 pub use step::{run, steps};
-pub use texts::Texts;
+pub use texts::{Texts, row_of};
 
 use gpui_kit::*;
 
@@ -226,7 +226,7 @@ fn sync(ws: &mut Workspace, shown: &str, rows: &[Row], changed_from: Option<usiz
     );
 }
 
-fn sync_list(
+pub(crate) fn sync_list(
     list: &ListState,
     previous: &[Row],
     rows: &[Row],

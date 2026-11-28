@@ -30,7 +30,16 @@ fn provider(credential: &Credential) -> ProviderConfig {
         balance: None,
         requests_per_minute: None,
         enabled: true,
+        hidden_models: Default::default(),
     }
+}
+
+/// Saves a renewed sign-in in place of the old one, keeping the models hidden under it.
+fn keep_choices(config: &mut crate::config::Config, name: String, mut renewed: ProviderConfig) {
+    if let Some(saved) = config.providers().get(&name) {
+        renewed.hidden_models = saved.hidden_models.clone();
+    }
+    config.set_provider(name, renewed);
 }
 
 /// The ChatGPT provider of the config file, and its record when it can be read: with a
@@ -62,7 +71,7 @@ pub(crate) fn keep_renewed(config: Arc<LiveConfig>) {
                 return Ok(());
             };
             let renewed = provider(credential);
-            config.update(|config| config.set_provider(name, renewed))?;
+            config.update(|config| keep_choices(config, name, renewed))?;
             Ok(())
         }),
     });
@@ -119,17 +128,13 @@ impl Runtime {
                 return Err(error);
             }
         };
-        let (config, model, mailboxes, note) = (
-            Arc::clone(&self.launcher.config),
-            Arc::clone(&self.launcher.model),
-            Arc::clone(&self.launcher.mailboxes),
-            Arc::clone(&self.chatgpt),
-        );
+        let (launcher, note) = (self.launcher.clone(), Arc::clone(&self.chatgpt));
+        let (config, model) = (Arc::clone(&launcher.config), Arc::clone(&launcher.model));
         tokio::spawn(async move {
             let saved = async {
                 let settings = provider(&finish.await?);
                 // Saved first: the session reads the stored record before it renews.
-                config.update(|config| config.set_provider(name.clone(), settings.clone()))?;
+                config.update(|config| keep_choices(config, name.clone(), settings.clone()))?;
                 model.replace_provider(&name, Arc::new(Provider::new(&settings)?));
                 anyhow::Ok(())
             };
@@ -149,7 +154,7 @@ impl Runtime {
             };
             // The first provider becomes the model; one chosen before stays.
             if connected {
-                pick_if_empty(&config, &model, &mailboxes).await;
+                pick_if_empty(&launcher).await;
             }
         });
         Ok(page)

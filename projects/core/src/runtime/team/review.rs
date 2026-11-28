@@ -415,10 +415,17 @@ pub(super) async fn due(launcher: &Launcher, member: &str, task: &PlanTask) -> R
     Ok(!changed.is_empty())
 }
 
-/// Reviews of `task_id` so far, its rows of every status.
-fn rounds(plan: &[PlanTask], task_id: &str) -> usize {
+/// Reviews of `task_id` so far, its rows of every status. A task retried after it failed
+/// starts a new try: only the reviews since then count, so it has its own fix round.
+pub(super) fn rounds(plan: &[PlanTask], task_id: &str) -> usize {
+    let since = plan
+        .iter()
+        .find(|task| task.task_id == task_id)
+        .and_then(|task| task.retried_at)
+        .unwrap_or(i64::MIN);
     plan.iter()
         .filter(|row| row.duty == TaskDuty::Review && row.review_of.as_deref() == Some(task_id))
+        .filter(|row| row.created_at >= since)
         .count()
 }
 

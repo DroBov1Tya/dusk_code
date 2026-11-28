@@ -19,6 +19,7 @@ pub fn SubagentWindow() -> impl IntoView {
         let name = info.as_ref().map(|a| a.name.clone()).unwrap_or_default();
         let task = info.as_ref().map(|a| a.task.clone()).unwrap_or_default();
         let id_for_state = thread_id.clone();
+        let context_id = thread_id.clone();
         let stop_id = thread_id.clone();
         Some(view! {
             <div class="overlay" on:click=move |_| app.subagent.set(None)>
@@ -27,6 +28,8 @@ pub fn SubagentWindow() -> impl IntoView {
                         <div>
                             <h3>{name}</h3>
                             <div class="muted">{task}</div>
+                            {move || parent_chat.with(|c| c.agent_chats.get(&context_id).and_then(|log| log.context_line()))
+                                .map(|context| view! { <div class="agent-context muted">{context}</div> })}
                         </div>
                         <div class="grow"></div>
                         <span class="chip">{move || {

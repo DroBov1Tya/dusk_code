@@ -241,6 +241,7 @@ impl Workspace {
                     }
                 }
                 ws.measure_again = true;
+                ws.agent_list.measure_again = true;
                 cx.notify();
             },
         );
@@ -272,10 +273,12 @@ impl Workspace {
                     }
                 }
                 ws.measure_again = true;
+                ws.agent_list.measure_again = true;
                 cx.notify();
             },
         );
         self.measure_again = true;
+        self.agent_list.measure_again = true;
         cx.notify();
     }
 }

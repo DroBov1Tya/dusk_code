@@ -157,6 +157,17 @@ impl ThreadRunner {
 
     async fn serve(&mut self) -> Result<()> {
         let recovered = self.agent.recover().await?;
+        // The client shows the chat's own model, not the one new chats start with.
+        if self.agent.depth == 0
+            && let Some(choice) = self.agent.model.current()
+        {
+            let config = self.agent.config.current();
+            self.agent.emit(ThreadEvent::ModelSelected {
+                name: choice.name(),
+                input_limit: choice.input_limit(&config),
+                effort: self.agent.model.effort_in(&config),
+            });
+        }
         // The client sees the context size and the goal before the first turn, too.
         self.agent.report_tokens().await;
         if self.agent.depth == 0
@@ -298,7 +309,14 @@ impl ThreadRunner {
                 Some(turn) => Ok(Some((turn, true))),
                 None => match self.agent.compact_if_needed(None, &mut self.inbox).await {
                     Err(stop) => Err(stop),
-                    Ok(_) => Ok(self.agent.start_turn().await?.map(|turn| (turn, false))),
+                    Ok(checked) => {
+                        // What was sent while the summary was written joins the turn it
+                        // was written for, rather than waiting until that turn ends.
+                        if checked.is_none() {
+                            self.take_in().await?;
+                        }
+                        Ok(self.agent.start_turn().await?.map(|turn| (turn, false)))
+                    }
                 },
             };
             let stop = match turn {

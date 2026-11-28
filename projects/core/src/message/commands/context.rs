@@ -115,11 +115,16 @@ pub async fn report(
     let estimated = sections.iter().map(|section| section.tokens).sum();
     let total = conversation.map_or(estimated, |conversation| conversation.tokens(specs));
     let sources = source_totals(&sections);
+    let compactions = match thread_id {
+        Some(thread_id) => state.compaction_count(thread_id).await?,
+        None => 0,
+    };
     Ok(ContextReport {
         total,
         limit,
         sections,
         sources,
+        compactions,
     })
 }
 

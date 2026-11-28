@@ -41,6 +41,7 @@ use crate::{
     runtime::{
         Launcher, ThreadEvent,
         model_choice::Choice,
+        thread::ChatModel,
         thread::start::{read_prompt, start_member_thread},
         tiers::{self, Tier},
     },
@@ -125,9 +126,13 @@ fn unusable_model(config: &Config, role: &str) -> Option<String> {
     (!known).then(|| format!("the model {name} set for {role} names no provider of the config"))
 }
 
-/// The model `member` answers on when that is not the chat's: the one its task was
-/// claimed with. `None` leaves it on the chat's model, which it follows as the chat does.
-pub(crate) async fn model(launcher: &Launcher, member: &Thread) -> Result<Option<Choice>> {
+/// The model `member` answers on when that is not `chat`'s, the model of its own chat: the
+/// one its task was claimed with. `None` leaves it on its chat's model.
+pub(crate) async fn model(
+    launcher: &Launcher,
+    member: &Thread,
+    chat: Option<&Choice>,
+) -> Result<Option<Choice>> {
     let Some(lead) = member.parent_thread_id.as_deref() else {
         return Ok(None);
     };
@@ -135,7 +140,6 @@ pub(crate) async fn model(launcher: &Launcher, member: &Thread) -> Result<Option
     let Some(name) = held.and_then(|held| held.model) else {
         return Ok(None);
     };
-    let chat = launcher.model.current();
     if chat.is_some_and(|chat| chat.name() == name) {
         return Ok(None);
     }
@@ -190,7 +194,9 @@ pub(super) async fn give(
     if let Some(why) = unusable_model(&config, role) {
         return Ok(Given::NoAgent(why));
     }
-    let model = model_name(&config, role, task.tier, launcher.model.current().as_ref());
+    // The lead's own model, never one chosen in another chat meanwhile.
+    let chat = launcher.chat_model(lead).await?;
+    let model = model_name(&config, role, task.tier, chat.choice.as_ref());
     let mut resumed = resumable(state, lead, task, role).await?;
     let claimed = loop {
         let member = match resumed.take() {
@@ -267,7 +273,7 @@ async fn announce(launcher: &Launcher, lead: &str, member: &str, role: &str, tas
             None
         }
     };
-    let effort = Effort::for_subagent(launcher.config.current().effort(), asked);
+    let effort = Effort::for_subagent(ChatModel::of(&mailbox, launcher).effort, asked);
     mailbox.emit(ThreadEvent::SubagentStarted {
         call_id: team_call_id(&task.task_id),
         thread_id: member.to_owned(),

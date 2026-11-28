@@ -11,6 +11,7 @@ fn thread_of(event: &Event) -> Option<&str> {
         Event::Thread { thread_id, .. } | Event::Ended { thread_id } => Some(thread_id),
         Event::Terminal { .. }
         | Event::TerminalClosed { .. }
+        | Event::TerminalOpened { .. }
         | Event::PluginView { .. }
         | Event::PluginFrame { .. }
         | Event::PluginNotice { .. }

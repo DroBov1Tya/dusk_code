@@ -1,5 +1,5 @@
 use super::{RetryRow, retry_row};
-use crate::thread::ThreadEvent;
+use crate::thread::{AUTO_COMPACT_OFF_HINT, ThreadEvent};
 
 /// A line an event leaves in the chat.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,8 +33,15 @@ pub fn note(event: &ThreadEvent) -> Option<Note> {
         )),
         ThreadEvent::CompactionStarted => Notice("Compacting the context...".into()),
         ThreadEvent::CompactionFinished(_) => Notice("The context was compacted.".into()),
-        ThreadEvent::ContextTooLarge { tokens, limit } => Error(format!(
+        ThreadEvent::ContextTooLarge {
+            tokens,
+            limit,
+            auto_compact_off: false,
+        } => Error(format!(
             "The context is too large: {tokens} of {limit} tokens."
+        )),
+        ThreadEvent::ContextTooLarge { tokens, limit, .. } => Error(format!(
+            "The context is full: {tokens} of {limit} tokens. {AUTO_COMPACT_OFF_HINT}"
         )),
         ThreadEvent::ArbiterDecided {
             what,

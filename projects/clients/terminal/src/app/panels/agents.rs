@@ -43,6 +43,8 @@ pub struct SubagentView {
     /// When its event stream was lost, without an observed completion.
     pub unavailable_at: Option<i64>,
     pub tokens: ThreadTokens,
+    /// How many times its context was compacted while this client watched.
+    pub compactions: u32,
     /// Where it is in its work, with what it said about it.
     pub phase: Option<(AgentPhase, String)>,
     /// What it does this moment, from its events, as every client follows it.
@@ -87,6 +89,22 @@ impl SubagentView {
             AgentState::Done => "done",
             AgentState::Failed => "failed",
         }
+    }
+
+    /// `42% context · 1 compaction`, as every client says it; none before its numbers.
+    pub fn context_line(&self) -> Option<String> {
+        let tokens = (self.limit > 0).then_some((self.tokens.context, self.limit));
+        dusk_protocol::thread::context_line(tokens, self.compactions)
+    }
+
+    /// The core's report on its thread, asked when this client heard none of its numbers:
+    /// live events heard since stand over it.
+    pub fn context_report(&mut self, report: &dusk_protocol::thread::ContextReport) {
+        if self.limit == 0 {
+            self.tokens.context = report.total;
+            self.limit = report.limit;
+        }
+        self.compactions = self.compactions.max(report.compactions);
     }
 
     pub fn is_working(&self) -> bool {
@@ -216,25 +234,31 @@ impl App {
                 model,
                 task_id,
                 ..
-            } => self.start_subagent(
-                child,
-                agent,
-                task,
-                (effort, model),
-                Some(thread_id.to_owned()),
-                task_id,
-            ),
+            } => {
+                // Asked again, a cleared agent is back on the list.
+                self.cleared_agents.remove(&child);
+                self.start_subagent(
+                    child,
+                    agent,
+                    task,
+                    (effort, model),
+                    Some(thread_id.to_owned()),
+                    task_id,
+                )
+            }
             ThreadEvent::Subagent {
                 thread_id: child,
                 event,
             } => self.apply_subagent(&child, *event),
             ThreadEvent::Approval(request) => {
+                // Named as the other clients name it: `Ember-0c (code-writer)`.
+                let name = dusk_protocol::thread::agent_name(thread_id);
                 let agent = self
                     .subagents
                     .iter()
                     .find(|view| view.thread_id == thread_id)
-                    .map(|view| view.agent.clone());
-                self.ask_approval(request, agent.or_else(|| Some("an agent".into())));
+                    .map_or(name.clone(), |view| format!("{name} ({})", view.agent));
+                self.ask_approval(request, Some((thread_id.to_owned(), agent)));
             }
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
             ThreadEvent::ArbiterDecided {
@@ -296,9 +320,10 @@ impl App {
             .iter()
             .position(|view| view.thread_id == thread_id)
             .map(|at| self.subagents.remove(at));
-        let (tokens, limit) = earlier.map_or((ThreadTokens::default(), 0), |view| {
-            (view.tokens, view.limit)
-        });
+        let (tokens, limit, compactions) = earlier
+            .map_or((ThreadTokens::default(), 0, 0), |view| {
+                (view.tokens, view.limit, view.compactions)
+            });
         self.subagents.push(SubagentView {
             thread_id,
             agent,
@@ -311,6 +336,7 @@ impl App {
             finished_at: None,
             unavailable_at: None,
             tokens,
+            compactions,
             limit,
             phase: None,
             state: AgentState::Thinking,
@@ -356,6 +382,11 @@ impl App {
                 }
                 TeamChange::Join(member) => {
                     let thread_id = member.thread_id.clone();
+                    // A member put away stays away until it works again.
+                    if !member.state.working() && self.cleared_agents.contains(&thread_id) {
+                        continue;
+                    }
+                    self.cleared_agents.remove(&thread_id);
                     let parent = Some(team.thread_id.clone());
                     let shown = (None, member.model);
                     let task_id = Some(member.task_id);
@@ -389,6 +420,27 @@ impl App {
                     .iter()
                     .any(|item| item.started_at.is_some() && !item.done)
         })
+    }
+
+    /// `/agents clear`: takes the finished subagents off the list, but not one a request
+    /// of the user's waits on; gives how many went.
+    pub fn clear_agents(&mut self) -> usize {
+        let asked: Vec<String> = self
+            .approvals
+            .iter()
+            .filter_map(|asked| asked.thread_id.clone())
+            .collect();
+        let gone: Vec<String> = self
+            .subagents
+            .iter()
+            .filter(|view| !view.is_working() && !asked.contains(&view.thread_id))
+            .map(|view| view.thread_id.clone())
+            .collect();
+        self.subagents
+            .retain(|view| !gone.contains(&view.thread_id));
+        let count = gone.len();
+        self.cleared_agents.extend(gone);
+        count
     }
 
     pub fn agents_at_work(&self) -> bool {
@@ -495,6 +547,7 @@ impl App {
                 card.tokens = *tokens;
                 card.limit = *limit;
             }
+            ThreadEvent::CompactionFinished(_) => card.compactions += 1,
             ThreadEvent::AgentPhase { phase, note } => card.phase = Some((*phase, note.clone())),
             ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) if card.finished_at.is_none() => {
                 card.finished_at = Some(now_ms());

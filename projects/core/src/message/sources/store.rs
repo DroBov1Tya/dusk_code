@@ -14,12 +14,13 @@ use crate::{
     },
 };
 use dusk_protocol::config::find as find_mentions;
-use dusk_protocol::thread::{Part, sound_tag, source_tag, split, wrap};
+use dusk_protocol::thread::{Part, SourceChunk, sound_tag, source_tag, split, wrap};
 
 use super::{
     block::{SourceBlock, attach},
     paths::file_paths,
     picture::is_picture,
+    reader::read_chunk,
 };
 
 /// Whether the text of a sent message may name files of this machine: a path in it, or
@@ -82,6 +83,7 @@ impl ThreadSources<'_> {
             bytes: bytes.len() as u64,
             pinned: false,
             delivered: false,
+            plan: false,
         };
         self.state.add_source(self.thread_id, &source).await?;
         Ok(source)
@@ -247,16 +249,16 @@ impl ThreadSources<'_> {
         self.store(name, bytes).await
     }
 
-    /// The bytes of the picture source `name`, the newest when names repeat. The name is
-    /// looked up among this chat's sources, never joined as a path, and only a PNG or a
-    /// JPEG is given out.
-    pub async fn picture(&self, name: &str) -> Result<Vec<u8>> {
+    /// The bytes of the picture source `id`, or without one the newest named `name`, as
+    /// names repeat. Either is looked up among this chat's sources, never joined as a
+    /// path, and only a PNG or a JPEG is given out.
+    pub async fn picture(&self, name: &str, id: Option<&str>) -> Result<Vec<u8>> {
         let sources = self.state.sources(self.thread_id).await?;
-        let source = sources
-            .iter()
-            .rev()
-            .find(|source| source.name == name)
-            .context("this chat has no such source")?;
+        let source = match id {
+            Some(id) => sources.iter().find(|source| source.source_id == id),
+            None => sources.iter().rev().find(|source| source.name == name),
+        }
+        .context("this chat has no such source")?;
         ensure!(
             Path::new(&source.file).file_name() == Some(source.file.as_ref()),
             "the source's file is not in the sources folder"
@@ -270,6 +272,23 @@ impl ThreadSources<'_> {
             "the source is not a PNG or JPEG picture"
         );
         Ok(bytes)
+    }
+
+    /// A part of the source `id` from byte `offset`, for a reader. The id is looked up
+    /// among this chat's sources, never joined as a path.
+    pub async fn chunk(&self, id: &str, offset: u64) -> Result<SourceChunk> {
+        let sources = self.state.sources(self.thread_id).await?;
+        let source = sources
+            .iter()
+            .find(|source| source.source_id == id)
+            .context("this chat has no such source")?;
+        ensure!(
+            Path::new(&source.file).file_name() == Some(source.file.as_ref()),
+            "the source's file is not in the sources folder"
+        );
+        let path = self.folder().join(&source.file);
+        // A file read blocks; keep it off the loop's thread.
+        tokio::task::spawn_blocking(move || read_chunk(&path, offset)).await?
     }
 
     pub async fn remove(&self, id: &str) -> Result<()> {

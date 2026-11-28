@@ -20,11 +20,12 @@ use super::overview::overview;
 use super::paste::draw_paste;
 use super::plugins::plugins;
 use super::schedules::schedules;
+use super::source;
 use super::threads::draw_threads;
 use super::unsent::unsent;
 use super::update::draw_update;
 use super::workshop::workshop;
-use crate::app::{App, EFFORTS, Panel, compact_number, paste};
+use crate::app::{App, EFFORTS, Panel, PlansAsk, compact_number, paste};
 use crate::ui::windows::{
     agent_window, settings,
     theme::{DOT, DUSK, HAIRLINE, ON, RAISED, TEXT_MUTED, bold, dim, fg},
@@ -160,6 +161,53 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 Some(*selected),
             )
         }
+        Panel::Plans {
+            plans,
+            selected,
+            asking,
+        } => {
+            let room = screen.width.saturating_sub(34).min(44) as usize;
+            let lines = plans
+                .iter()
+                .enumerate()
+                .map(|(index, plan)| {
+                    let (mark, what) = match (plan.current, plan.finished) {
+                        (true, false) => (ON, "current"),
+                        (true, true) => (ON, "current, finished"),
+                        (false, true) => (DOT, "finished"),
+                        (false, false) => (DOT, "replaced"),
+                    };
+                    selectable(
+                        vec![
+                            Span::styled(format!(" {mark} "), fg(TEXT_MUTED)),
+                            Span::raw(wrap::clip(&plan.name, room)),
+                        ],
+                        Span::styled(
+                            format!("{} {DOT} {what} ", compact_number(plan.bytes)),
+                            dim(),
+                        ),
+                        index == *selected,
+                    )
+                })
+                .collect();
+            let current = plans.get(*selected).is_some_and(|plan| plan.current);
+            (
+                "plans of this chat",
+                match asking {
+                    Some(PlansAsk::Delete) if current => {
+                        "delete the current plan? the model stops reading it  y yes  \
+                         any other key keeps it"
+                    }
+                    Some(PlansAsk::Delete) => "delete this plan?  y yes  any other key keeps it",
+                    Some(PlansAsk::Old) => {
+                        "delete every plan replaced or finished?  y yes  any other key keeps them"
+                    }
+                    None => "d delete  o delete old plans  esc close",
+                },
+                lines,
+                Some(*selected),
+            )
+        }
         Panel::Sources {
             sources,
             selected,
@@ -193,10 +241,23 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 if *removing {
                     "d again deletes the file  any other key keeps it"
                 } else {
-                    "space every message or once  d delete  esc close"
+                    "enter read  space every message or once  d delete  esc close"
                 },
                 lines,
                 Some(*selected),
+            )
+        }
+        Panel::Source(reader) => {
+            let width = screen.width.saturating_sub(8).min(116) as usize;
+            (
+                "source",
+                if reader.reads_on() {
+                    "up/down pgup/pgdn scroll  m more  c copy  esc back to the sources"
+                } else {
+                    "up/down pgup/pgdn scroll  c copy  esc back to the sources"
+                },
+                source::lines(reader, width),
+                None,
             )
         }
         Panel::Jobs(view) => {
@@ -216,11 +277,21 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         ),
         Panel::Overview(view) => {
             let running = app.team.as_ref().is_some_and(|team| team.ended().is_none());
+            let failed = !app.failed_tasks().is_empty();
             let hints = match (&view.at_once, view.stopping) {
                 (Some(_), _) => "left/right or -/+ change  enter save  esc cancel",
                 (None, true) => "stop team? y stops it  any other key keeps it running",
+                (None, false) if view.retrying => {
+                    "retry the failed tasks? y retries them  any other key keeps them"
+                }
+                (None, false) if running && failed => {
+                    "up/down scroll  tab member  enter open  s stop  a at once  r retry  esc close"
+                }
                 (None, false) if running => {
                     "up/down scroll  tab member  enter open  s stop  a at once  esc close"
+                }
+                (None, false) if failed => {
+                    "up/down scroll  tab member  enter open its chat  r retry failed  esc close"
                 }
                 (None, false) if app.team.is_some() => {
                     "up/down scroll  tab member  enter open its chat  esc close"
@@ -251,16 +322,15 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         Panel::Models(list) => {
             let width = screen.width.saturating_sub(8).min(72) as usize;
             let (lines, row) = models(list, &app.status.provider_health, width);
-            (
-                "model",
-                "enter choose  c connect  t on/off  d remove  r check  esc close",
-                lines,
-                Some(row),
-            )
+            let hints = match list.filter {
+                Some(_) => "type to filter  enter choose  esc clear",
+                None => "enter choose  / filter  c connect  t on/off  d remove  r check  esc close",
+            };
+            ("model", hints, lines, Some(row))
         }
         Panel::Paste(_) | Panel::Agent(_) | Panel::Update { .. } => return,
     };
-    let cap = if matches!(app.panel, Some(Panel::Diff(_))) {
+    let cap = if matches!(app.panel, Some(Panel::Diff(_) | Panel::Source(_))) {
         120
     } else {
         76
@@ -281,12 +351,14 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         Some(Panel::Context { row, .. }) => (*row).min(lines.len().saturating_sub(inner)),
         Some(Panel::Overview(view)) => view.row.min(lines.len().saturating_sub(inner)),
         Some(Panel::Diff(view)) if view.open => view.scroll.min(lines.len().saturating_sub(inner)),
+        Some(Panel::Source(reader)) => reader.row.min(lines.len().saturating_sub(inner)),
         _ => selected.map_or(0, |row| (row + 1).saturating_sub(inner)),
     };
     match &mut app.panel {
         Some(Panel::Context { row, .. }) => *row = skip,
         Some(Panel::Overview(view)) => view.row = skip,
         Some(Panel::Diff(view)) if view.open => view.scroll = skip,
+        Some(Panel::Source(reader)) => reader.row = skip,
         _ => {}
     }
     if let Some(Panel::Connect(form)) = &mut app.panel {

@@ -11,6 +11,7 @@ pub mod overview;
 mod paste;
 mod plugins;
 mod schedules;
+mod source;
 mod threads;
 mod unsent;
 mod update;

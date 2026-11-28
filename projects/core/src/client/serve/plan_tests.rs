@@ -505,6 +505,57 @@ async fn a_task_of_another_chat_is_never_found() {
     assert_eq!(page.counts.done, 0);
 }
 
+/// The user's Retry: only a failed task of this chat, back to open in place with its try
+/// counted, the clients told; anything else is refused and changes nothing.
+#[tokio::test]
+async fn the_user_retries_only_a_failed_task_of_the_chat() {
+    let mut rig = Rig::new("plan_serve_retry").await;
+    let ids = rig
+        .add("lead", &[written("one", None), written("two", None)])
+        .await;
+    let theirs = rig.add("other", &[written("theirs", None)]).await;
+    rig.state()
+        .fail_task("other", &theirs[0], "no")
+        .await
+        .unwrap();
+    let mut events = rig.attach(2, None);
+    let retry = |task: &str| WorkRequest::RetryTask {
+        thread_id: "lead".into(),
+        task_id: task.into(),
+    };
+
+    let open = rig.ask(retry(&ids[0])).await.unwrap_err();
+    assert!(open.contains("only a failed task"), "{open}");
+    let cross = rig.ask(retry(&theirs[0])).await.unwrap_err();
+    assert!(cross.contains("no task"), "{cross}");
+    for wrong in ["", "../../etc", &"f".repeat(4096)] {
+        assert!(rig.ask(retry(wrong)).await.is_err(), "{wrong}");
+    }
+    assert!(drained(&mut events).is_empty(), "a refusal changes nothing");
+
+    rig.state()
+        .fail_task("lead", &ids[0], "gate failed")
+        .await
+        .unwrap();
+    assert!(matches!(rig.ask(retry(&ids[0])).await, Ok(Response::Done)));
+    let retried = rig.state().plan_task_view("lead", &ids[0]).await.unwrap();
+    assert_eq!((retried.status, retried.retries), (TaskStatus::Open, 1));
+    let heard = drained(&mut events);
+    assert!(matches!(
+        heard.as_slice(),
+        [
+            ThreadEvent::TaskChanged(Task {
+                status: TaskStatus::Open,
+                retries: 1,
+                ..
+            }),
+            ..
+        ]
+    ));
+    let other = rig.state().plan_task("other", &theirs[0]).await.unwrap();
+    assert_eq!(other.retries, 0);
+}
+
 #[tokio::test]
 async fn the_user_sets_members_at_once_only_to_the_setting() {
     let mut rig = Rig::new("plan_serve_at_once").await;

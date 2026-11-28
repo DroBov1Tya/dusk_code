@@ -13,6 +13,8 @@ pub struct Asked {
     pub request: ApprovalRequest,
     /// The agent that asks; `None` for the chat itself.
     pub agent: Option<String>,
+    /// The thread of the agent that asks; `None` for the chat itself.
+    pub thread_id: Option<String>,
     pub cursor: usize,
     /// The first row of a batch's steps in view, when they do not all fit.
     pub step_scroll: usize,
@@ -38,7 +40,9 @@ impl Asked {
                 Request::Command { .. } => format!("allow `{grant}` commands"),
                 Request::Screen { .. } => "allow the screen".into(),
                 Request::SystemPointer { .. } => "allow control of the system pointer".into(),
-                Request::Keyboard { .. } | Request::Settings { .. } => String::new(),
+                Request::Keyboard { .. } | Request::Settings { .. } | Request::Terminal { .. } => {
+                    String::new()
+                }
                 Request::Window { .. } => format!("allow {grant}"),
                 Request::Git { .. } => format!("allow {grant}"),
             };
@@ -74,10 +78,21 @@ pub struct ApprovalHit {
 }
 
 impl App {
-    pub fn ask_approval(&mut self, request: ApprovalRequest, agent: Option<String>) {
+    /// A request told again, as to a client that joins a running chat, is asked once.
+    /// `agent` is the thread of the agent that asks and its name; none for the chat.
+    pub fn ask_approval(&mut self, request: ApprovalRequest, agent: Option<(String, String)>) {
+        if self
+            .approvals
+            .iter()
+            .any(|asked| asked.request.id == request.id)
+        {
+            return;
+        }
+        let (thread_id, agent) = agent.unzip();
         self.approvals.push(Asked {
             request,
             agent,
+            thread_id,
             cursor: 0,
             step_scroll: 0,
             step_page: 0,
@@ -158,6 +173,7 @@ pub(crate) mod tests {
                 steps,
             },
             agent: None,
+            thread_id: None,
             cursor: 0,
             step_scroll: 0,
             step_page: 0,

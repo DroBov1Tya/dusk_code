@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 46] = [
+pub const KEYS: [(&str, &str); 48] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -22,7 +22,10 @@ pub const KEYS: [(&str, &str); 46] = [
         "Ctrl+Z / Ctrl+Y",
         "undo or redo typing; Ctrl+Shift+Z redoes too",
     ),
-    ("Up / Down", "earlier messages you sent"),
+    (
+        "Up / Down",
+        "over the empty box: the newest queued message back to edit, else earlier ones sent",
+    ),
     ("Tab", "switch the mode: main, plan, orchestrator, team"),
     ("Shift+Tab", "walk thinking, tools and summaries"),
     ("Enter / Space", "fold or unfold the selected one"),
@@ -60,6 +63,7 @@ pub const KEYS: [(&str, &str); 46] = [
         "view saved local messages; Enter explicitly sends one",
     ),
     ("/plan", "read and edit this chat's pinned plan"),
+    ("/plans", "this chat's plans; delete old ones"),
     ("/files", "the files this chat's commands changed"),
     (
         "/link",
@@ -83,6 +87,7 @@ pub const KEYS: [(&str, &str); 46] = [
         "/access",
         "this chat's access: ask, sandbox, auto, full, default",
     ),
+    ("/agents clear", "take the finished subagents off the list"),
     ("Ctrl+N", "new thread"),
     (
         "Alt+T / Alt+W",

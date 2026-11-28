@@ -33,6 +33,16 @@ impl State {
         decode_compaction(row)
     }
 
+    /// How many times the thread's context was compacted.
+    pub async fn compaction_count(&self, thread_id: &str) -> Result<u32> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM compactions WHERE thread_id = ?")
+            .bind(thread_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("count compactions")?;
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
     /// The compaction the current context starts from.
     pub async fn latest_compaction(&self, thread_id: &str) -> Result<Option<Compaction>> {
         sqlx::query(

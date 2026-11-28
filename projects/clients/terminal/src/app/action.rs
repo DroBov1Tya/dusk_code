@@ -15,6 +15,11 @@ pub enum Action {
     Send(String),
     SendNow(String),
     Cancel,
+    /// Starts (`true`) or dismisses the session the agent proposed as `proposal_id`.
+    Proposal {
+        proposal_id: String,
+        start: bool,
+    },
     /// The answer to a tool's request for approval.
     Approve {
         thread_id: String,
@@ -55,14 +60,23 @@ pub enum Action {
     SetAgentLimit(usize),
     SetModelTimeout(u32),
     SetMaxAttempts(u32),
+    SetAutoCompactPercent(u64),
     SetIdleMinutes(u32),
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
     OpenPlan,
+    /// `/plans`: list the chat's plans to delete old ones.
+    OpenPlans,
+    /// Delete one plan of the chat by its source ID.
+    RemovePlan(String),
+    /// Delete the chat's plans a newer one replaced and finished ones.
+    RemoveOldPlans,
     /// Read the Overview and open its panel.
     Overview,
     /// Stop the chat's running team, after the second `s`.
     StopTeam,
+    /// Retry these failed tasks of the chat's plan in place, after `r` and `y`.
+    RetryTasks(Vec<String>),
     /// Let this many members of the chat's running team work at once.
     SetTeamAtOnce(u32),
     /// `/files`: what this chat's commands changed in the project.
@@ -94,6 +108,11 @@ pub enum Action {
         pinned: bool,
     },
     RemoveSource(String),
+    /// A part of a source from byte `offset`, for the reader.
+    ReadSource {
+        id: String,
+        offset: u64,
+    },
     /// `/schedule`, `/schedules` and the keys of their panel.
     Schedule(crate::app::schedule::ScheduleAction),
     /// Ask a running background job of the open thread to stop.
@@ -172,6 +191,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "a new tab; /tab 2 shows tab 2, /tab next, /tab prev, /tab close",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
+        ("/plans", "this chat's plans; delete old ones"),
         (
             "/overview",
             "how the chat's work stands: plan, tokens, changes, activity, log",
@@ -200,6 +220,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "/access",
             "this chat's access: ask, sandbox, auto, full or default",
         ),
+        ("/agents clear", "take the finished subagents off the list"),
         (
             "/tier",
             "subagent models: /tier strong provider/model, /tier weak unset",

@@ -3,11 +3,15 @@
 use super::EFFORTS;
 use crate::app::{
     Action, App, Panel,
-    panels::{AtOnceEdit, Connection, ModelRow, Preset, SecretEntry, step},
+    panels::{AtOnceEdit, Connection, ModelRow, PlansAsk, Preset, SecretEntry, step},
     schedule::ScheduleAction,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dusk_protocol::{client::Command, release::InstallStage, thread::MAX_TEAM_AT_ONCE};
+use dusk_protocol::{
+    client::Command,
+    release::InstallStage,
+    thread::{MAX_TEAM_AT_ONCE, PlanFile},
+};
 
 impl App {
     pub(super) fn panel_key(&mut self, key: KeyEvent) -> Action {
@@ -181,7 +185,15 @@ impl App {
                         }
                     }
                     _ if up || down => step(selected, sources.len(), down),
-                    KeyCode::Char(' ') | KeyCode::Enter => {
+                    KeyCode::Enter => {
+                        if let Some(source) = source {
+                            return Action::ReadSource {
+                                id: source.source_id.clone(),
+                                offset: 0,
+                            };
+                        }
+                    }
+                    KeyCode::Char(' ') => {
                         if let Some(source) = source {
                             return Action::PinSource {
                                 id: source.source_id.clone(),
@@ -196,6 +208,37 @@ impl App {
                     _ => {}
                 }
                 *removing = false;
+                return Action::None;
+            }
+            Panel::Plans {
+                plans,
+                selected,
+                asking,
+            } => {
+                // A key held down sends `d` twice: only `y` answers yes.
+                if let Some(ask) = asking.take() {
+                    if key.code != KeyCode::Char('y') {
+                        return Action::None;
+                    }
+                    return match ask {
+                        PlansAsk::Delete => plans.get(*selected).map_or(Action::None, |plan| {
+                            Action::RemovePlan(plan.source_id.clone())
+                        }),
+                        PlansAsk::Old => Action::RemoveOldPlans,
+                    };
+                }
+                match key.code {
+                    KeyCode::Char('d') if !plans.is_empty() => *asking = Some(PlansAsk::Delete),
+                    KeyCode::Char('o') if plans.iter().any(PlanFile::old) => {
+                        *asking = Some(PlansAsk::Old);
+                    }
+                    KeyCode::Char('o') => {
+                        self.flash = Some("no old plans: none is replaced or finished".into());
+                    }
+                    _ if up || down => step(selected, plans.len(), down),
+                    KeyCode::Esc => self.panel = None,
+                    _ => {}
+                }
                 return Action::None;
             }
             Panel::Jobs(view) => {
@@ -248,7 +291,10 @@ impl App {
                     KeyCode::Enter => {
                         let level = EFFORTS[*selected].to_owned();
                         self.panel = None;
-                        return Action::Command(Command::Effort { level: Some(level) });
+                        return Action::Command(Command::Effort {
+                            level: Some(level),
+                            thread_id: None,
+                        });
                     }
                     KeyCode::Esc => self.panel = None,
                     _ => {}
@@ -337,7 +383,47 @@ impl App {
             }
             Panel::Paste(_) => return self.editor_key(key),
             Panel::Agent(_) => return self.agent_window_key(key),
+            // While filtering, letters are the filter's; Escape empties it, then stops it.
+            Panel::Models(list) if list.filter.is_some() => {
+                let filter = list.filter.get_or_insert_default();
+                match key.code {
+                    KeyCode::Char(typed) => filter.push(typed),
+                    KeyCode::Backspace => {
+                        filter.pop();
+                    }
+                    KeyCode::Esc if filter.is_empty() => list.filter = None,
+                    KeyCode::Esc => filter.clear(),
+                    KeyCode::Up | KeyCode::Down => {
+                        let count = list.rows().len();
+                        step(&mut list.selected, count, key.code == KeyCode::Down);
+                        return Action::None;
+                    }
+                    KeyCode::Enter => {
+                        if let Some(ModelRow::Model { name, .. }) =
+                            list.rows().get(list.selected).cloned()
+                        {
+                            return Action::Command(Command::Model {
+                                name: Some(name),
+                                thread_id: None,
+                            });
+                        }
+                        return Action::None;
+                    }
+                    _ => return Action::None,
+                }
+                // The first match is selected as the filter changes.
+                list.selected = list
+                    .rows()
+                    .iter()
+                    .position(|row| matches!(row, ModelRow::Model { .. }))
+                    .unwrap_or(0);
+                list.removing = None;
+            }
             Panel::Models(list) => match key.code {
+                KeyCode::Char('/') => {
+                    list.filter = Some(String::new());
+                    list.removing = None;
+                }
                 _ if up || down => {
                     let count = list.rows().len();
                     step(&mut list.selected, count, down);
@@ -345,10 +431,16 @@ impl App {
                 }
                 KeyCode::Enter => match list.rows().get(list.selected).cloned() {
                     Some(ModelRow::Model { name, .. }) => {
-                        return Action::Command(Command::Model { name: Some(name) });
+                        return Action::Command(Command::Model {
+                            name: Some(name),
+                            thread_id: None,
+                        });
                     }
                     Some(ModelRow::Provider(_)) => {
-                        return Action::Command(Command::Model { name: None });
+                        return Action::Command(Command::Model {
+                            name: None,
+                            thread_id: None,
+                        });
                     }
                     None => {}
                 },
@@ -380,7 +472,12 @@ impl App {
                     return Action::ProviderEnabled(provider.to_owned(), !on);
                 }
                 KeyCode::Char('c') => self.panel = Some(Panel::Connect(Connection::default())),
-                KeyCode::Char('r') => return Action::Command(Command::Model { name: None }),
+                KeyCode::Char('r') => {
+                    return Action::Command(Command::Model {
+                        name: None,
+                        thread_id: None,
+                    });
+                }
                 KeyCode::Esc => self.panel = None,
                 _ => {}
             },
@@ -423,6 +520,34 @@ impl App {
                     self.panel = None;
                 }
             }
+            Panel::Source(reader) => {
+                if scroll(&mut reader.row, key.code, up, down) {
+                    return Action::None;
+                }
+                match key.code {
+                    KeyCode::Char('m') if reader.reads_on() => {
+                        if let Some(offset) = reader.next {
+                            return Action::ReadSource {
+                                id: reader.source.source_id.clone(),
+                                offset,
+                            };
+                        }
+                    }
+                    KeyCode::Char('c') if !reader.text.is_empty() => {
+                        return Action::Copy(reader.text.clone());
+                    }
+                    KeyCode::Esc => {
+                        let (sources, selected) =
+                            (std::mem::take(&mut reader.sources), reader.selected);
+                        self.panel = Some(Panel::Sources {
+                            sources,
+                            selected,
+                            removing: false,
+                        });
+                    }
+                    _ => {}
+                }
+            }
             Panel::Overview(view) => {
                 let team = self.team.as_ref().filter(|team| team.ended().is_none());
                 if let Some(edit) = &mut view.at_once {
@@ -448,7 +573,9 @@ impl App {
                 // `s` asks "Stop team? y/n": only `y` stops, and any other key, `s` held
                 // down included, answers no.
                 let stopping = std::mem::take(&mut view.stopping);
+                let retrying = std::mem::take(&mut view.retrying);
                 let members = self.team.as_ref().map_or(0, |team| team.members.len());
+                let failed = failed_ids(&self.tasks);
                 match (key.code, team) {
                     (KeyCode::Tab, _) if members > 0 => {
                         view.member = Some(view.member.map_or(0, |at| (at + 1) % members));
@@ -470,8 +597,12 @@ impl App {
                         }
                     }
                     (KeyCode::Char('y'), Some(_)) if stopping => return Action::StopTeam,
+                    (KeyCode::Char('y'), _) if retrying && !failed.is_empty() => {
+                        return Action::RetryTasks(failed);
+                    }
                     // Any other key answers no, and does nothing else.
-                    _ if stopping => {}
+                    _ if stopping || retrying => {}
+                    (KeyCode::Char('r'), _) if !failed.is_empty() => view.retrying = true,
                     (KeyCode::Char('s'), Some(_)) => view.stopping = true,
                     (KeyCode::Char('a'), Some(team)) => {
                         view.at_once = Some(AtOnceEdit {
@@ -533,6 +664,22 @@ fn scroll(row: &mut usize, code: KeyCode, up: bool, down: bool) -> bool {
     true
 }
 
+impl App {
+    /// The plan's failed tasks of the lead's own work, which `r` in the Overview retries.
+    pub fn failed_tasks(&self) -> Vec<String> {
+        failed_ids(&self.tasks)
+    }
+}
+
+fn failed_ids(tasks: &[dusk_protocol::thread::Task]) -> Vec<String> {
+    use dusk_protocol::thread::{TaskDuty, TaskStatus};
+    tasks
+        .iter()
+        .filter(|task| task.status == TaskStatus::Failed && task.duty == TaskDuty::Work)
+        .map(|task| task.task_id.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent};
@@ -573,6 +720,7 @@ mod tests {
             limit: 0,
             sections: Vec::new(),
             sources: Vec::new(),
+            compactions: 0,
         };
         app.panel = Some(Panel::Overview(Box::new(OverviewView::new(
             Overview::default(),
@@ -583,6 +731,58 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) -> Action {
         app.panel_key(KeyEvent::from(code))
+    }
+
+    /// Hidden models are left out but for the one in use; `/` filters, letters are its
+    /// text, and Escape empties it before it stops filtering.
+    #[test]
+    fn the_model_list_filters_and_leaves_hidden_models_out() {
+        use crate::app::{ModelList, panels::ModelRow};
+        use dusk_protocol::model::{Model, ProviderStatus};
+
+        let model = |id: &str| Model {
+            id: id.into(),
+            context_window: None,
+            max_output: None,
+        };
+        let provider = ProviderStatus {
+            name: "or".into(),
+            models: Ok(vec![model("qwen-max"), model("qwen-coder"), model("glm")]),
+            balance: None,
+            limits: None,
+            enabled: true,
+            failure: None,
+            hidden: vec!["qwen-coder".into(), "glm".into()],
+        };
+        let mut app = app();
+        let list = ModelList::checked(Some("or/glm".into()), vec![provider]);
+        app.panel = Some(Panel::Models(list));
+        let names = |app: &App| match &app.panel {
+            Some(Panel::Models(list)) => list
+                .rows()
+                .into_iter()
+                .filter_map(|row| match row {
+                    ModelRow::Model { name, .. } => Some(name),
+                    ModelRow::Provider(_) => None,
+                })
+                .collect::<Vec<_>>(),
+            _ => panic!("the list closed"),
+        };
+        assert_eq!(names(&app), ["or/qwen-max", "or/glm"]);
+        press(&mut app, KeyCode::Char('/'));
+        for typed in "max".chars() {
+            press(&mut app, KeyCode::Char(typed));
+        }
+        assert_eq!(names(&app), ["or/qwen-max"]);
+        assert!(matches!(
+            press(&mut app, KeyCode::Enter),
+            Action::Command(dusk_protocol::client::Command::Model { name: Some(name), .. }) if name == "or/qwen-max"
+        ));
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(names(&app).len(), 2);
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Esc);
+        assert!(app.panel.is_none());
     }
 
     /// `s` asks before a team stops: only `y` stops it, and any other key, a second
@@ -638,6 +838,36 @@ mod tests {
         assert!(view.at_once.is_none());
     }
 
+    /// `r` asks before the failed tasks are retried, ended team or not: only `y` retries
+    /// them, and with none failed `r` closes the panel as any key does.
+    #[test]
+    fn failed_tasks_retry_only_on_yes() {
+        use dusk_protocol::thread::{Task, TaskDuty};
+        let task = |id: &str, status: TaskStatus, duty: TaskDuty| Task {
+            task_id: id.into(),
+            status,
+            duty,
+            ..Task::default()
+        };
+        let mut app = overview(TeamStatus::Ended(TeamEnd::Steps));
+        app.tasks = vec![
+            task("t1", TaskStatus::Failed, TaskDuty::Work),
+            task("t2", TaskStatus::Done, TaskDuty::Work),
+            task("r1", TaskStatus::Failed, TaskDuty::Review),
+        ];
+        press(&mut app, KeyCode::Char('r'));
+        assert!(matches!(press(&mut app, KeyCode::Char('n')), Action::None));
+        assert!(app.panel.is_some(), "an answer closes nothing");
+        press(&mut app, KeyCode::Char('r'));
+        let Action::RetryTasks(ids) = press(&mut app, KeyCode::Char('y')) else {
+            panic!("nothing retried");
+        };
+        assert_eq!(ids, ["t1"]);
+        app.tasks.clear();
+        press(&mut app, KeyCode::Char('r'));
+        assert!(app.panel.is_none());
+    }
+
     /// Tab chooses a member and enter opens its chat.
     #[test]
     fn a_member_opens_from_the_overview() {
@@ -648,6 +878,46 @@ mod tests {
             panic!("no member opened");
         };
         assert_eq!(thread, "m2");
+    }
+
+    /// `d` and `o` ask first; only `y` deletes, any other key, `d` again too, keeps.
+    #[test]
+    fn a_plan_is_deleted_only_on_yes() {
+        use crate::app::PlansAsk;
+        use dusk_protocol::thread::PlanFile;
+        let plan = |id: &str, current: bool| PlanFile {
+            source_id: id.into(),
+            name: format!("{id}.md"),
+            bytes: 1,
+            written_at: 0,
+            current,
+            finished: false,
+        };
+        let mut app = app();
+        app.panel = Some(Panel::Plans {
+            plans: vec![plan("now", true), plan("before", false)],
+            selected: 0,
+            asking: None,
+        });
+        let asking = |app: &App| match &app.panel {
+            Some(Panel::Plans { asking, .. }) => *asking,
+            _ => None,
+        };
+        press(&mut app, KeyCode::Char('d'));
+        assert_eq!(asking(&app), Some(PlansAsk::Delete));
+        assert!(matches!(press(&mut app, KeyCode::Char('d')), Action::None));
+        assert_eq!(asking(&app), None);
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Char('d'));
+        let Action::RemovePlan(id) = press(&mut app, KeyCode::Char('y')) else {
+            panic!("no plan deleted");
+        };
+        assert_eq!(id, "before");
+        press(&mut app, KeyCode::Char('o'));
+        assert!(matches!(
+            press(&mut app, KeyCode::Char('y')),
+            Action::RemoveOldPlans
+        ));
     }
 }
 
@@ -715,5 +985,37 @@ mod team_tests {
         // The answer to a request that left before the end does not bring it back.
         app.team_heard(running, true);
         assert!(app.team.as_ref().is_some_and(|team| team.ended().is_some()));
+    }
+
+    /// `/agents clear` takes the finished members off and the roster does not bring them
+    /// back; the working one and one whose request waits stay.
+    #[test]
+    fn cleared_members_stay_away_but_not_the_asked_or_working() {
+        use dusk_protocol::tools::{ApprovalRequest, Request};
+        let mut app = app();
+        let roster = team(
+            TeamStatus::Running,
+            &[
+                ("m1", "t1", TaskStatus::Running),
+                ("m2", "t2", TaskStatus::Done),
+                ("m3", "t3", TaskStatus::Done),
+            ],
+        );
+        app.team_heard(roster.clone(), false);
+        app.apply(ThreadEvent::Subagent {
+            thread_id: "m3".into(),
+            event: Box::new(ThreadEvent::Approval(ApprovalRequest {
+                id: 4,
+                request: Request::Command {
+                    command: "make".into(),
+                },
+                session: None,
+                steps: Vec::new(),
+            })),
+        });
+        assert_eq!(app.clear_agents(), 1);
+        app.team_heard(roster, false);
+        let listed: Vec<&str> = app.subagents.iter().map(|c| c.thread_id.as_str()).collect();
+        assert_eq!(listed, ["m1", "m3"]);
     }
 }

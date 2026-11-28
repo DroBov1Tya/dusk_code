@@ -1,13 +1,15 @@
-//! The first screen of a clean install, as the desktop app has it: four pages walked
-//! sideways in order (hello, a model, the tools, ready), with dots, Back and Next and
+//! The first screen of a clean install, as the desktop app has it: five pages walked
+//! sideways in order (hello, a model, how much the agent may do alone, the tools, ready), with dots, Back and Next and
 //! the arrow keys. It shows while the core has no provider and the user has not finished
 //! it, and it stays until Start or Skip setup even once a provider connects in the middle.
 //! "Finished" is this browser's own preference, kept in its storage.
 
+mod access;
 mod provider;
 mod tools;
 
 use crate::{api, chat::Chat, state::state};
+use access::Access;
 use dusk_protocol::client::{Answer, Command};
 use leptos::{ev, prelude::*, task::spawn_local};
 use provider::Provider;
@@ -19,11 +21,18 @@ const FINISHED: &str = "duskcode-welcome-finished";
 pub enum Page {
     Hello,
     Model,
+    Access,
     Tools,
     Ready,
 }
 
-const PAGES: [Page; 4] = [Page::Hello, Page::Model, Page::Tools, Page::Ready];
+const PAGES: [Page; 5] = [
+    Page::Hello,
+    Page::Model,
+    Page::Access,
+    Page::Tools,
+    Page::Ready,
+];
 
 impl Page {
     fn index(self) -> usize {
@@ -186,6 +195,7 @@ fn Pages(welcome: Welcome) -> impl IntoView {
                 let body = match page {
                     Page::Hello => hello().into_any(),
                     Page::Model => view! { <Provider welcome /> }.into_any(),
+                    Page::Access => view! { <Access /> }.into_any(),
                     Page::Tools => view! { <Tools /> }.into_any(),
                     Page::Ready => ready(welcome).into_any(),
                 };
@@ -229,10 +239,9 @@ fn next(welcome: Welcome, page: Page) -> impl IntoView {
 fn hello() -> impl IntoView {
     view! {
         <div class="welcome-page center">
-            <img src="mark.png" alt="" width="64" height="64" />
             <h1>"duskcode"</h1>
             <p class="muted">"An agent that works in your projects, on the model you choose."</p>
-            <p class="muted small">"Three short steps: a model, the tools, and you are in."</p>
+            <p class="muted small">"Three short steps: a model, how much it may do alone, and the tools."</p>
         </div>
     }
 }
@@ -244,7 +253,6 @@ fn ready(welcome: Welcome) -> impl IntoView {
     };
     view! {
         <div class="welcome-page center">
-            <img src="mark.png" alt="" width="48" height="48" />
             <h2>"Ready"</h2>
             <p class="muted">{line}</p>
             <p class="muted small">"Tools and voice stay in Customize."</p>

@@ -8,8 +8,8 @@ mod workshop;
 
 pub use agents::{AgentWindow, SubagentView};
 pub use panel::{
-    AtOnceEdit, Connection, DiffView, JobsView, ModelList, ModelRow, OverviewView, Panel,
-    PluginRow, Preset, Preview, SecretEntry, ThreadList, step,
+    AtOnceEdit, Connection, DiffView, JobsView, ModelList, ModelRow, OverviewView, Panel, PlansAsk,
+    PluginRow, Preset, Preview, SecretEntry, SourceReader, ThreadList, step,
 };
 pub use settings::{
     AgentRow, FileButton, FileEditor, HitTarget, McpRow, SettingCategory, SettingsHit,

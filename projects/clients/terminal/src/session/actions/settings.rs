@@ -68,7 +68,12 @@ pub async fn connect(
             let model = client.status.borrow().model.clone();
             app.panel = Some(Panel::Models(ModelList::checking(model)));
             terminal.draw(|frame| ui::draw(frame, app))?;
-            answer(client, app, open, Command::Model { name: None }).await;
+            let thread_id = app.thread_id.clone();
+            let models = Command::Model {
+                name: None,
+                thread_id,
+            };
+            answer(client, app, open, models).await;
             app.flash =
                 Some("Provider saved; choose a model, then /resend for local messages".into());
         }
@@ -95,7 +100,12 @@ pub async fn disconnect(
                 let model = client.status.borrow().model.clone();
                 app.panel = Some(Panel::Models(ModelList::checking(model)));
                 terminal.draw(|frame| ui::draw(frame, app))?;
-                answer(client, app, open, Command::Model { name: None }).await;
+                let thread_id = app.thread_id.clone();
+                let models = Command::Model {
+                    name: None,
+                    thread_id,
+                };
+                answer(client, app, open, models).await;
             }
             app.flash = Some(format!("Provider {name} forgotten"));
         }
@@ -117,7 +127,12 @@ pub async fn provider_enabled(
             let model = client.status.borrow().model.clone();
             app.panel = Some(Panel::Models(ModelList::checking(model)));
             terminal.draw(|frame| ui::draw(frame, app))?;
-            answer(client, app, open, Command::Model { name: None }).await;
+            let thread_id = app.thread_id.clone();
+            let models = Command::Model {
+                name: None,
+                thread_id,
+            };
+            answer(client, app, open, models).await;
             let state = if on { "on" } else { "off" };
             app.flash = Some(format!("Provider {name} is {state}"));
         }
@@ -236,6 +251,18 @@ pub async fn set_model_timeout(client: &Client, app: &mut App, seconds: u32) {
     }
 }
 
+pub async fn set_auto_compact_percent(client: &Client, app: &mut App, percent: u64) {
+    match client.settings().auto_compact_percent(percent).await {
+        Ok(saved) => {
+            if let Some(Panel::Settings(list)) = &mut app.panel {
+                list.auto_compact_percent = saved;
+            }
+            app.flash = Some(format!("Compact at {saved}% of the context"));
+        }
+        Err(error) => app.error(format!("cannot save where compaction starts: {error:#}")),
+    }
+}
+
 pub async fn set_max_attempts(client: &Client, app: &mut App, attempts: u32) {
     match client.settings().max_attempts(attempts).await {
         Ok(()) => {
@@ -291,6 +318,7 @@ pub async fn switch(
         SwitchKind::DevChannel => Switch::DevChannel,
         SwitchKind::Approvals(policy) => Switch::Approvals(policy),
         SwitchKind::Logging => Switch::Logging,
+        SwitchKind::AutoCompact => Switch::AutoCompact,
     };
     match client.settings().switch(switch, on).await {
         Ok(()) => answer(client, app, open, Command::Settings).await,

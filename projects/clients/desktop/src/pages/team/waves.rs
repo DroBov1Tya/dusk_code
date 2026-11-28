@@ -28,6 +28,10 @@ use crate::{
     workspace::Workspace,
 };
 
+/// What Retry does, on hover wherever it is offered.
+pub const RETRY_TIP: &str =
+    "Run it again as it is now, its later tasks with it; a team that ended starts again";
+
 /// A task's square.
 const SQUARE: f32 = 9.;
 /// How long a square of a task that just came takes to fade in.
@@ -496,6 +500,7 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
                 run.and_then(|run| run.effort)
                     .map(|effort| format!("{} effort", effort.name())),
                 (task.attempts > 0).then(|| format!("attempt {}", task.attempts)),
+                (task.retries > 0).then(|| format!("try {}", task.retries + 1)),
             ]
             .into_iter()
             .flatten()
@@ -519,7 +524,9 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
         }
         None => div().text_color(muted).child("Not given to a member yet"),
     };
-    // The note is model or program text: drawn as plain text, a few lines at most.
+    // The note is model or program text: drawn as plain text, a few lines at most. Why a
+    // task failed, a gate's output tail with it, is what decides a retry: more of it shows.
+    let failed = task.status == TaskStatus::Failed;
     let note = (!task.note.trim().is_empty()).then(|| {
         div()
             .flex()
@@ -538,8 +545,11 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_color(muted)
-                    .line_clamp(4)
+                    .text_color(match failed {
+                        true => theme.foreground.opacity(0.8),
+                        false => muted,
+                    })
+                    .line_clamp(if failed { 8 } else { 4 })
                     .child(task.note.clone()),
             )
     });
@@ -564,6 +574,17 @@ fn details(task: &Task, run: Option<&Subagent>, view: &View, cx: &mut Context<Wo
             .primary()
             .label("Confirm")
             .on_click(cx.listener(move |ws, _, _, cx| ws.confirm_task(&id, cx))),
+        );
+    }
+    if failed && task.duty == TaskDuty::Work {
+        let id = task.task_id.clone();
+        actions = actions.child(
+            Button::new(SharedString::from(format!("{key}-retry-{}", task.task_id)))
+                .small()
+                .primary()
+                .label("Retry")
+                .tooltip(RETRY_TIP)
+                .on_click(cx.listener(move |ws, _, _, cx| ws.retry_task(&id, cx))),
         );
     }
     if let Some(owner) = &task.owner {

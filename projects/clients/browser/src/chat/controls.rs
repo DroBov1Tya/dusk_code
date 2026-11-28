@@ -9,11 +9,17 @@ use crate::{
 use dusk_protocol::config::ApprovalPolicy;
 use leptos::prelude::*;
 
-/// What this chat's tools may do without asking; it belongs to the chat once it exists.
+/// What this chat's tools may do without asking. A chat not started yet keeps the
+/// choice until its first message, which starts it with that mode.
 #[component]
 pub fn Access(id: Option<String>, chat: ChatSignal) -> impl IntoView {
     let app = state();
-    let access = move || match chat.with(|c| c.access) {
+    let started = id.is_some();
+    let own = move || match started {
+        true => chat.with(|c| c.access),
+        false => app.access_next.get(),
+    };
+    let access = move || match own() {
         None => "default",
         Some(ApprovalPolicy::Ask) => "ask",
         Some(ApprovalPolicy::Sandbox) => "sandbox",
@@ -27,7 +33,8 @@ pub fn Access(id: Option<String>, chat: ChatSignal) -> impl IntoView {
             other => ApprovalPolicy::parse_stored(other).ok(),
         };
         let Some(id) = id.clone() else {
-            return app.fail("Send a message first: the access belongs to the chat.");
+            app.access_next.set(policy);
+            return;
         };
         run(
             async move { api::set_approvals(&id, policy).await },
@@ -64,13 +71,17 @@ pub fn Mode() -> impl IntoView {
     }
 }
 
-/// The model, under the box on the right, its name cut short.
+/// The model, under the box on the right, its name cut short: the chat's own, or for a
+/// draft the one new chats start with.
 #[component]
-pub fn Model() -> impl IntoView {
+pub fn Model(id: Option<String>, chat: ChatSignal) -> impl IntoView {
     let app = state();
     let full = move || {
-        app.status
-            .with(|s| s.as_ref().and_then(|s| s.model.clone()))
+        chat.with(|c| c.model.clone())
+            .or_else(|| {
+                app.status
+                    .with(|s| s.as_ref().and_then(|s| s.model.clone()))
+            })
             .unwrap_or_else(|| "no model".to_owned())
     };
     let short = move || {
@@ -83,7 +94,10 @@ pub fn Model() -> impl IntoView {
     };
     view! {
         <button class="under" title=full
-            on:click=move |_| app.show(View::Settings(crate::pages::settings::Page::Model))>
+            on:click=move |_| {
+                app.model_chat.set(id.clone());
+                app.show(View::Settings(crate::pages::settings::Page::Model));
+            }>
             {short}<Icon name=IconName::ChevronDown />
         </button>
     }

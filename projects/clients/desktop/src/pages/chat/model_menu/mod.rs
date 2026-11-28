@@ -40,7 +40,7 @@ pub fn render(
     cx: &mut Context<Workspace>,
 ) -> Div {
     let viewport = window.viewport_size();
-    let current = ws.status.model.clone().unwrap_or_default();
+    let current = ws.chat_model().unwrap_or_default();
     let provider = current.split('/').next().unwrap_or_default();
     let max_height = (viewport.height.as_f32() - 165.).clamp(150., 440.);
     let chat_width = ws.chat_width(window);
@@ -89,7 +89,7 @@ pub fn render(
                 side_by_side,
                 cx,
             )
-            .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::Effort, cx))),
+            .on_click(cx.listener(|ws, _, window, cx| ws.open_submenu(Picker::Effort, window, cx))),
         )
         .child(
             submenu_row(
@@ -100,7 +100,9 @@ pub fn render(
                 side_by_side,
                 cx,
             )
-            .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::MoreModels, cx))),
+            .on_click(
+                cx.listener(|ws, _, window, cx| ws.open_submenu(Picker::MoreModels, window, cx)),
+            ),
         )
         .child(
             div()
@@ -290,7 +292,10 @@ pub fn model_row(
                     .child(key.unwrap_or_default().to_string()),
             )
         })
-        .on_click(cx.listener(move |ws, _, _, cx| ws.choose_model(target.clone(), cx)))
+        .on_click(cx.listener(move |ws, _, window, cx| {
+            ws.leave_models_search(window, cx);
+            ws.choose_model(target.clone(), cx);
+        }))
 }
 
 fn submenu_row(
@@ -340,15 +345,21 @@ pub fn back_row(label: &str, side_by_side: bool, cx: &mut Context<Workspace>) ->
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(label.to_owned()),
         )
-        .on_click(cx.listener(|ws, _, _, cx| {
+        .on_click(cx.listener(|ws, _, window, cx| {
             ws.picker = Some(Picker::Model);
+            ws.leave_models_search(window, cx);
             cx.notify();
         }))
 }
 
 impl Workspace {
     /// Opens a submenu, or goes back to the menu alone when it is open.
-    fn open_submenu(&mut self, submenu: Picker, cx: &mut Context<Self>) {
+    pub(crate) fn open_submenu(
+        &mut self,
+        submenu: Picker,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.picker = Some(if self.picker == Some(submenu) {
             Picker::Model
         } else {
@@ -356,10 +367,19 @@ impl Workspace {
         });
         // More models opens on the provider in use, whose first models have digit keys.
         if self.picker == Some(Picker::MoreModels)
-            && let Some(provider) = self.status.model.as_deref()
+            && let Some(provider) = self.chat_model().as_deref()
             && let Some((provider, _)) = provider.split_once('/')
         {
             self.models_open.insert(provider.to_owned());
+        }
+        // The search starts empty and takes the keys, so typing filters at once.
+        if self.picker == Some(Picker::MoreModels) {
+            self.models_search.update(cx, |search, cx| {
+                search.set_value("", window, cx);
+                search.focus(window, cx);
+            });
+        } else {
+            self.leave_models_search(window, cx);
         }
         cx.notify();
     }

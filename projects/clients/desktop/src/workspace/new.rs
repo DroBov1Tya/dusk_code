@@ -46,6 +46,18 @@ impl Workspace {
             cx.notify()
         })
         .detach();
+        let providers_page = crate::pages::settings::providers::State::new(window, cx);
+        cx.subscribe_in(
+            &providers_page.models_filter,
+            window,
+            |_, _, _: &InputEvent, _, cx| cx.notify(),
+        )
+        .detach();
+        let models_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search models"));
+        cx.subscribe_in(&models_search, window, |_, _, _: &InputEvent, _, cx| {
+            cx.notify()
+        })
+        .detach();
         let model_input = cx.new(|cx| InputState::new(window, cx).placeholder("provider/model"));
         cx.subscribe_in(&model_input, window, |ws, _, event: &InputEvent, _, cx| {
             if let InputEvent::PressEnter { .. } = event {
@@ -54,6 +66,7 @@ impl Workspace {
         })
         .detach();
         let limit_edit = crate::pages::settings::LimitEdit::new(window, cx);
+        let compact_slider = crate::pages::settings::compaction::default_slider(cx);
         cx.subscribe_in(
             &limit_edit.input,
             window,
@@ -139,6 +152,7 @@ impl Workspace {
             found: Default::default(),
             jump: None,
             temporary_next: false,
+            access_next: None,
             composer,
             fill_composer: Vec::new(),
             drafts: Default::default(),
@@ -159,7 +173,8 @@ impl Workspace {
             focus: cx.focus_handle(),
             agents_trigger_focus: cx.focus_handle(),
             modal_focus: cx.focus_handle(),
-            modal_scroll: ScrollHandle::new(),
+            agent_list: Default::default(),
+            agent_steps: Default::default(),
             confirm_focus: cx.focus_handle(),
             file: crate::pages::file::FileView::new(),
             mcp_restarting: HashSet::new(),
@@ -169,7 +184,7 @@ impl Workspace {
             dock: crate::pages::chat::dock::Dock::new(cx),
             alerts: Default::default(),
             plan: crate::columns::inspector::plan::Plan::new(window, cx),
-            providers_page: crate::pages::settings::providers::State::new(window, cx),
+            providers_page,
             secrets: None,
             voice: None,
             voice_models: None,
@@ -182,11 +197,13 @@ impl Workspace {
             token_box: crate::pages::settings::TokenBox::new(window, cx),
             repositories: crate::pages::settings::Repositories::new(window, cx),
             limit_edit,
+            compact_slider,
             context_open: HashSet::new(),
             context_load: Default::default(),
             team_page: Default::default(),
             overview: Default::default(),
             models_open: HashSet::new(),
+            models_search,
             sent_pictures: HashMap::new(),
             last_input: std::time::Instant::now(),
             fog_cleared: None,
@@ -204,6 +221,7 @@ impl Workspace {
             picker_closed: None,
             picked: Vec::new(),
             approval_open: Default::default(),
+            approval_shown: None,
             attach_open: false,
             left_hidden: false,
             rail_hidden: false,
@@ -241,11 +259,18 @@ impl Workspace {
             list_chat: None,
             texts: Default::default(),
             measure_again: false,
+            briefs_open: Default::default(),
             welcome: crate::pages::welcome::Welcome::new(window, cx),
         };
         workspace.pump_events(events, cx);
         workspace.pump_status(status, cx);
         workspace.watch_idle(cx);
+        // The terminal panel is here: the agent may reach its shells and open new ones.
+        workspace.core.run(|client| async move {
+            if let Err(error) = client.terminal().host().await {
+                tracing::warn!("terminal: {error:#}");
+            }
+        });
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
         workspace.ask_welcome(cx);

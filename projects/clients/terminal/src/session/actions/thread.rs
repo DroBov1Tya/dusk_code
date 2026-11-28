@@ -20,9 +20,28 @@ pub async fn approve(client: &Client, app: &mut App, thread_id: &str, id: u64, d
     }
 }
 
+/// Starts or dismisses a proposed session. A started one runs as a chat of its own,
+/// which the chat list offers; this tab stays where it is.
+pub async fn proposal(client: &Client, app: &mut App, proposal_id: &str, start: bool) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    let threads = client.threads();
+    app.flash = Some(match start {
+        true => match threads.start_proposal(&thread_id, proposal_id).await {
+            Ok(started) => format!("Started the session as chat {started}"),
+            Err(error) => format!("cannot start the session: {error:#}"),
+        },
+        false => match threads.dismiss_proposal(&thread_id, proposal_id).await {
+            Ok(()) => "Dismissed the proposed session".into(),
+            Err(error) => format!("cannot dismiss the session: {error:#}"),
+        },
+    });
+}
+
 pub async fn access(client: &Client, app: &mut App, name: Option<String>) {
     let Some(thread_id) = app.thread_id.clone() else {
-        app.flash = Some("Send a message first; the access mode belongs to a chat".into());
+        access_next(app, name);
         return;
     };
     let Some(name) = name else {
@@ -36,16 +55,8 @@ pub async fn access(client: &Client, app: &mut App, name: Option<String>) {
         }
         return;
     };
-    let policy = match name.as_str() {
-        "default" => None,
-        "ask" => Some(ApprovalPolicy::Ask),
-        "sandbox" => Some(ApprovalPolicy::Sandbox),
-        "auto" | "arbiter" => Some(ApprovalPolicy::Arbiter),
-        "full" | "full access" | "full_access" => Some(ApprovalPolicy::FullAccess),
-        _ => {
-            app.flash = Some("Use ask, sandbox, auto, full or default".into());
-            return;
-        }
+    let Some(policy) = policy_named(app, &name) else {
+        return;
     };
     match client.threads().set_approvals(&thread_id, policy).await {
         Ok(()) => {
@@ -56,6 +67,38 @@ pub async fn access(client: &Client, app: &mut App, name: Option<String>) {
         }
         Err(error) => app.error(format!("cannot set the access mode: {error:#}")),
     }
+}
+
+/// /access before the first message: the choice waits for it and starts the chat with it.
+fn access_next(app: &mut App, name: Option<String>) {
+    if let Some(name) = name {
+        let Some(policy) = policy_named(app, &name) else {
+            return;
+        };
+        app.access_next = policy;
+    }
+    app.flash = Some(match app.access_next {
+        Some(policy) => format!("Access for the new chat: {}", policy.name()),
+        None => {
+            let default = app.status.approvals.name();
+            format!("Access for the new chat: {default} (the default)")
+        }
+    });
+}
+
+/// The mode a name stands for, `Some(None)` for the default; none after saying the names.
+fn policy_named(app: &mut App, name: &str) -> Option<Option<ApprovalPolicy>> {
+    Some(match name {
+        "default" => None,
+        "ask" => Some(ApprovalPolicy::Ask),
+        "sandbox" => Some(ApprovalPolicy::Sandbox),
+        "auto" | "arbiter" => Some(ApprovalPolicy::Arbiter),
+        "full" | "full access" | "full_access" => Some(ApprovalPolicy::FullAccess),
+        _ => {
+            app.flash = Some("Use ask, sandbox, auto, full or default".into());
+            return None;
+        }
+    })
 }
 
 pub async fn resend(client: &Client, app: &mut App, open: &mut Option<OpenThread>, id: String) {
@@ -142,10 +185,37 @@ pub async fn open_agent(client: &Client, app: &mut App, thread_id: String) {
                 .iter()
                 .find(|card| card.thread_id == thread_id);
             let parent = card.and_then(|card| card.parent.clone());
-            let window = AgentWindow::new(thread_id, parent, transcript);
+            let unknown = card.is_some_and(|card| card.limit == 0);
+            let window = AgentWindow::new(thread_id.clone(), parent, transcript);
             app.panel = Some(Panel::Agent(window));
+            if unknown {
+                read_agent_context(client, app, thread_id).await;
+            }
         }
         Err(error) => app.error(format!("cannot open the agent: {error:#}")),
+    }
+}
+
+/// Asks the core how full the context of agent `thread_id` is: one that worked before the
+/// chat was open here sent its numbers to no one. The line is an extra; without it the
+/// window stands.
+async fn read_agent_context(client: &Client, app: &mut App, thread_id: String) {
+    use dusk_protocol::client::Answer;
+    let command = Command::Context {
+        thread_id: Some(thread_id.clone()),
+    };
+    match client.command(command).await {
+        Ok(Answer::Context(report)) => {
+            if let Some(card) = app
+                .subagents
+                .iter_mut()
+                .find(|card| card.thread_id == thread_id)
+            {
+                card.context_report(&report);
+            }
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!("no context for agent {thread_id}: {error:#}"),
     }
 }
 

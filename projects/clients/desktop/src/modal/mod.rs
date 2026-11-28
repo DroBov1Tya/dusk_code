@@ -1,4 +1,5 @@
-//! What opens over the window: the chat search, the project form and the file viewer.
+//! What opens over the window: the chat search, the project form, the file viewer and
+//! the source reader.
 //! One at a time; a click on the dimmed backdrop or the close button shuts it.
 
 mod agent_chat;
@@ -9,6 +10,7 @@ pub mod detail;
 mod picture;
 mod project;
 mod search;
+pub mod source;
 mod sphere;
 mod task_card;
 mod team;
@@ -31,6 +33,8 @@ use gpui_kit::{
 
 use crate::workspace::Workspace;
 
+pub use agent_chat::AgentList;
+pub use agents::StepCounts;
 pub use chat_menu::{FADE, render as chat_menu};
 
 use crate::pages::customize::plugins::workshop::detail as listing;
@@ -46,6 +50,8 @@ pub enum Modal {
         content: ViewerContent,
     },
     Detail(detail::Detail),
+    /// A source of the shown chat, opened from the side panel to read.
+    Source(source::SourceView),
     DeleteFile {
         path: PathBuf,
     },
@@ -115,6 +121,8 @@ pub enum Modal {
     TaskCard {
         task_id: String,
     },
+    /// Deleting a plan of the shown chat, or its old ones; asks first.
+    DeletePlan(crate::columns::inspector::plan::PlanDelete),
     /// Stopping the shown chat's team; asks first.
     StopTeam {
         thread_id: String,
@@ -168,6 +176,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             880.,
             viewer::render(path, content, window, cx),
         ),
+        Modal::Source(view) => (view.source.name.clone(), 880., source::render(view, cx)),
         Modal::Rename { title, .. } => {
             ("Rename chat".to_owned(), 480., chat_menu::rename(title, cx))
         }
@@ -180,6 +189,14 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             task_card::render(ws, task_id, cx),
         ),
         Modal::StopTeam { .. } => ("Stop team".to_owned(), 480., team::stop(cx)),
+        Modal::DeletePlan(delete) => {
+            let title = match delete {
+                crate::columns::inspector::plan::PlanDelete::One { .. } => "Delete plan",
+                crate::columns::inspector::plan::PlanDelete::Old { .. } => "Delete old plans",
+            };
+            let body = crate::columns::inspector::plan::confirm(delete, cx);
+            (title.to_owned(), 480., body)
+        }
         Modal::TeamAtOnce(form) => ("Members at once".to_owned(), 400., team::at_once(form, cx)),
         // It has the whole window, not a panel with a title.
         Modal::Picture { image, size, view } => {
@@ -330,8 +347,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     .then(|| ws.modal_focus.clone());
     // A listing's gallery steps with Left and Right.
     let gallery = matches!(ws.modal, Some(Modal::Listing { .. }));
-    let agent_scroll =
-        matches!(ws.modal, Some(Modal::AgentChat { .. })).then(|| ws.modal_scroll.clone());
+    // A subagent's chat scrolls as a list of its own.
+    let agent_chat = matches!(ws.modal, Some(Modal::AgentChat { .. }));
     let theme = cx.theme();
     // A press inside is marked rather than stopped: the window's text selection hears
     // presses only after every element, so a stopped one could not start a selection.
@@ -405,8 +422,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .id("modal-body")
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scroll()
-                .when_some(agent_scroll, |body, scroll| body.track_scroll(&scroll))
+                .when(agent_chat, |body| body.flex().flex_col())
+                .when(!agent_chat, |body| body.overflow_y_scroll())
                 .child(body),
         );
     Some(

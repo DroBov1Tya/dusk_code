@@ -197,7 +197,6 @@ pub fn Workspace(children: Children) -> impl IntoView {
                     <Icon name=IconName::Menu />
                 </button>
                 <div class="workspace-brand" role="img" aria-label="Duskcode">
-                    <img class="brand-emblem" src="mark.png" alt="" width="24" height="24" />
                     <span class="brand-name" aria-hidden="true"><b>"Dusk"</b>"code"</span>
                 </div>
                 <h1 id="workspace-title" class="workspace-title" tabindex="-1">{title}</h1>

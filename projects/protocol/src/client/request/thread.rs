@@ -10,13 +10,19 @@ use crate::tools::Decision;
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadRequest {
+    /// `approvals` is the chat's own approval mode from its start, as `SetApprovals`
+    /// sets it later; none keeps the default in settings.
     New {
         cwd: PathBuf,
+        #[serde(default)]
+        approvals: Option<ApprovalPolicy>,
     },
     /// A new chat that is never written to disk: its messages stay in memory and its
     /// files in the system's temporary folder, and all of it goes when the core stops.
     NewTemporary {
         cwd: PathBuf,
+        #[serde(default)]
+        approvals: Option<ApprovalPolicy>,
     },
     Resume {
         thread_id: String,
@@ -58,6 +64,12 @@ pub enum ThreadRequest {
         thread_id: String,
         text: String,
         now: bool,
+    },
+    /// Takes back the newest message the user sent that the thread has not taken in yet,
+    /// so the user can edit it; answers `Response::Unqueued` with its text, or none when
+    /// every message was taken in already.
+    Unqueue {
+        thread_id: String,
     },
     Cancel {
         thread_id: String,
@@ -133,5 +145,18 @@ pub enum ThreadRequest {
     /// `ThreadEvent::Unread(false)` when it was unread.
     Seen {
         thread_id: String,
+    },
+    /// Starts the session the agent proposed in the chat as `proposal_id`: a new
+    /// chat with the proposal's brief as its first message; answers `Opened`. The chat
+    /// hears `ThreadEvent::ProposalSettled`, its agent the outcome on its next turn. A
+    /// proposal answered already starts nothing again.
+    StartProposal {
+        thread_id: String,
+        proposal_id: String,
+    },
+    /// Drops that proposal; the agent hears so on its next turn.
+    DismissProposal {
+        thread_id: String,
+        proposal_id: String,
     },
 }

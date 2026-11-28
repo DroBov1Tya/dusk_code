@@ -94,7 +94,10 @@ fn plan() -> Vec<Made> {
             "appsec-reviewer",
             true,
             json!({ "files": ["src/key.rs"], "attempts": 3, "reworks": 2, "skipped": true,
-                    "note": "gave up after two reworks: the key is hashed with the default hasher",
+                    "retries": 1,
+                    "gate": { "kind": "command", "command": "uv run pytest tests/test_key.py" },
+                    "note": "gate failed, exit 127: uv: command not found | \
+                             make sure uv is installed and on PATH",
                     "steps": 40, "tokens": 310_000 }),
         ),
         made(
@@ -418,5 +421,67 @@ pub fn subagents(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
             agent.started_at -= 40_000;
         }
     }
+    cx.notify();
+}
+
+/// `fake=agent-approvals`: after `fake=subagents`, the agents' context fill and
+/// compactions, and three requests for approval open at once: one of the chat's own and
+/// two of the subagent at work, lifted into the chat as the core's wrapped events are.
+pub fn agent_approvals(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    use dusk_protocol::{
+        thread::{Compaction, ThreadTokens},
+        tools::{ApprovalRequest, Request},
+    };
+    let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) else {
+        eprintln!("fake=agent-approvals needs fake=subagents first");
+        return;
+    };
+    let agents: Vec<String> = chat.agents.keys().cloned().collect();
+    for (index, thread_id) in agents.iter().enumerate() {
+        let wrap = |event| ThreadEvent::Subagent {
+            thread_id: thread_id.clone(),
+            event: Box::new(event),
+        };
+        let tokens = ThreadTokens {
+            context: 38_000 + 61_000 * index as u64,
+            ..ThreadTokens::default()
+        };
+        chat.apply(wrap(ThreadEvent::Tokens {
+            tokens,
+            limit: 272_000,
+        }));
+        for compaction in 0..index {
+            chat.apply(wrap(ThreadEvent::CompactionFinished(Compaction {
+                compaction_id: compaction as i64,
+                thread_id: thread_id.clone(),
+                through_sequence: 10,
+                summary: "so far".into(),
+                summary_tokens: 400,
+            })));
+        }
+    }
+    let command = |id, command: &str| {
+        ThreadEvent::Approval(ApprovalRequest {
+            id,
+            request: Request::Command {
+                command: command.into(),
+            },
+            session: Some("uv".into()),
+            steps: Vec::new(),
+        })
+    };
+    chat.apply(command(1, "git push origin agent/cache-fix"));
+    if let Some(working) = agents.get(1) {
+        for (id, line) in [
+            (2, "uv run pytest -q tests/cache"),
+            (3, "uv pip install fakeredis"),
+        ] {
+            chat.apply(ThreadEvent::Subagent {
+                thread_id: working.clone(),
+                event: Box::new(command(id, line)),
+            });
+        }
+    }
+    ws.approval_shown = Some(2);
     cx.notify();
 }

@@ -16,6 +16,7 @@ use dusk_protocol::{
     model::Effort,
     release::Channel,
     system::SystemReport,
+    thread::{MAX_AUTO_COMPACT_PERCENT, MIN_AUTO_COMPACT_PERCENT},
 };
 use std::{collections::BTreeSet, time::Instant};
 
@@ -37,6 +38,10 @@ pub struct SettingsView {
     pub model_timeout_seconds: u32,
     /// Tries of one model call that wrote nothing, the first included.
     pub max_attempts: u32,
+    /// Off, chats compact only with `/compact`.
+    pub auto_compact: bool,
+    /// The share of the context, in percent, at which a chat compacts.
+    pub auto_compact_percent: u64,
     /// 0 never starts the idle screen.
     pub idle_screen_minutes: u32,
     pub memory: Memory,
@@ -102,6 +107,8 @@ impl SettingsView {
             max_agents_at_work: settings.max_agents_at_work,
             model_timeout_seconds: settings.model_timeout_seconds,
             max_attempts: settings.max_attempts,
+            auto_compact: settings.auto_compact,
+            auto_compact_percent: settings.auto_compact_percent,
             idle_screen_minutes: settings.idle_screen_minutes,
             mode: settings.mode,
             memory: settings.memory,
@@ -151,7 +158,7 @@ impl SettingsView {
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Personalize) => 4,
-            Some(SettingCategory::Limits) => 3,
+            Some(SettingCategory::Limits) => 5,
             Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
             Some(SettingCategory::Access) => ACCESS_POLICIES.len() + 1,
@@ -199,7 +206,10 @@ impl SettingsView {
     pub(super) fn model_action(&self, row: usize) -> Option<Action> {
         // The providers open without a chosen model too: that is where one is connected.
         if row == PROVIDERS_ROW {
-            return Some(Action::Command(Command::Model { name: None }));
+            return Some(Action::Command(Command::Model {
+                name: None,
+                thread_id: None,
+            }));
         }
         self.selected_model.as_ref()?;
         match row {
@@ -207,7 +217,10 @@ impl SettingsView {
             1..=4 => Some(Action::SetContextPolicy(ContextPolicy::Fixed(
                 ContextPreset::ALL[row - 1],
             ))),
-            6 => Some(Action::Command(Command::Effort { level: None })),
+            6 => Some(Action::Command(Command::Effort {
+                level: None,
+                thread_id: None,
+            })),
             _ => None,
         }
     }
@@ -256,7 +269,24 @@ impl SettingsView {
         match self.selected {
             0 => Action::SetAgentLimit(step(self.max_agents_at_work as u32, 1, u32::MAX) as usize),
             1 => Action::SetModelTimeout(step(self.model_timeout_seconds, 5, 3600)),
-            _ => Action::SetMaxAttempts(step(self.max_attempts, 1, 20)),
+            2 => Action::SetMaxAttempts(step(self.max_attempts, 1, 20)),
+            // Right turns it on, left off.
+            3 if more != self.auto_compact => Action::Switch {
+                kind: SwitchKind::AutoCompact,
+                name: "auto-compaction".into(),
+                on: more,
+            },
+            3 => Action::None,
+            // The share means nothing while auto-compaction is off.
+            _ if !self.auto_compact => Action::None,
+            _ => {
+                let (min, max) = (
+                    MIN_AUTO_COMPACT_PERCENT as u32,
+                    MAX_AUTO_COMPACT_PERCENT as u32,
+                );
+                let percent = step(self.auto_compact_percent as u32, min, max);
+                Action::SetAutoCompactPercent(percent.into())
+            }
         }
     }
 
@@ -313,6 +343,11 @@ impl SettingsView {
                 self.work_history.enabled,
             ),
             SettingCategory::Personalize if row != 0 => return None,
+            SettingCategory::Limits if row == 3 => (
+                SwitchKind::AutoCompact,
+                "auto-compaction".into(),
+                self.auto_compact,
+            ),
             SettingCategory::Limits
             | SettingCategory::Appearance
             | SettingCategory::VersionControl => return None,

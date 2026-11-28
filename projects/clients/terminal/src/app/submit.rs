@@ -27,6 +27,7 @@ impl App {
                 return Action::None;
             }
             "/plan" => return Action::OpenPlan,
+            "/plans" => return Action::OpenPlans,
             "/overview" => return Action::Overview,
             "/schedules" => return Action::Schedule(ScheduleAction::Open),
             "/files" => return Action::ChangedFiles,
@@ -112,6 +113,17 @@ impl App {
                 }
             };
         }
+        if trimmed == "/agents clear" {
+            let count = self.clear_agents();
+            self.flash = Some(match count {
+                0 => "No finished subagents to clear".into(),
+                count => format!(
+                    "Cleared {}",
+                    dusk_protocol::thread::plural(count as u64, "finished subagent")
+                ),
+            });
+            return Action::None;
+        }
         if trimmed == "/access" || trimmed.starts_with("/access ") {
             let name = trimmed["/access".len()..].trim();
             return Action::Access((!name.is_empty()).then(|| name.to_lowercase()));
@@ -149,7 +161,7 @@ impl App {
         if command.is_some() {
             self.scroll = 0;
             self.transcript.notice(text.trim().to_owned(), Tone::Info);
-        } else if self.is_busy() && !now {
+        } else if self.is_busy() && !now && !self.compacting_before_turn() {
             self.queued.push(text);
             return Action::None;
         } else {
@@ -182,6 +194,12 @@ impl App {
                 }
             }
         }
+    }
+
+    /// The context is compacted before a turn: the core takes in what is sent now as
+    /// soon as the summary is written, so it goes at once and shows as sent.
+    fn compacting_before_turn(&self) -> bool {
+        self.activity == Activity::Compacting && !self.turn_running
     }
 
     pub fn after_compaction(&mut self) {

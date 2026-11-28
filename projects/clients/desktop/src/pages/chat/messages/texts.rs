@@ -20,9 +20,17 @@ const TAIL_FADE: std::time::Duration = std::time::Duration::from_millis(220);
 
 /// Kept behind a cell so rows drawn from a shared `Workspace`, such as an agent's report
 /// inside an unfolded activity, keep their texts too.
-#[derive(Default)]
 pub struct Texts {
     kept: RefCell<HashMap<SharedString, Kept>>,
+    /// Measures again the row of the list these texts belong to that shows an item.
+    changed: fn(&mut Workspace, usize, &mut Context<Workspace>),
+}
+
+impl Default for Texts {
+    /// The texts of the shown chat's list.
+    fn default() -> Self {
+        Self::of(Workspace::text_changed)
+    }
 }
 
 struct Kept {
@@ -33,6 +41,14 @@ struct Kept {
 }
 
 impl Texts {
+    /// The texts of another list, whose row showing an item `changed` measures again.
+    pub fn of(changed: fn(&mut Workspace, usize, &mut Context<Workspace>)) -> Self {
+        Self {
+            kept: RefCell::default(),
+            changed,
+        }
+    }
+
     /// A message's words, under `key`, for item `item` of the chat.
     pub fn message(
         &self,
@@ -85,7 +101,8 @@ impl Texts {
                 false => state,
             }
         });
-        let changed = cx.observe(&state, move |ws, _, cx| ws.text_changed(item, cx));
+        let measure = self.changed;
+        let changed = cx.observe(&state, move |ws, _, cx| measure(ws, item, cx));
         self.kept.borrow_mut().insert(
             key,
             Kept {
@@ -125,16 +142,20 @@ impl Source {
 impl Workspace {
     /// Measures again the row that shows item `item`: its own, or the activity it is in.
     fn text_changed(&mut self, item: usize, cx: &mut Context<Self>) {
-        let shows = |row: &Row| match *row {
-            Row::Item(at) => at == item,
-            Row::Activity { start, end, .. } => (start..end).contains(&item),
-            Row::Working => false,
-        };
-        if let Some(row) = self.rows.iter().position(shows) {
+        if let Some(row) = row_of(&self.rows, item) {
             self.list.remeasure_items(row..row + 1);
             cx.notify();
         }
     }
+}
+
+/// The row of `rows` that shows item `item`: its own, or the activity it is in.
+pub fn row_of(rows: &[Row], item: usize) -> Option<usize> {
+    rows.iter().position(|row| match *row {
+        Row::Item(at) => at == item,
+        Row::Activity { start, end, .. } => (start..end).contains(&item),
+        Row::Working => false,
+    })
 }
 
 #[cfg(test)]

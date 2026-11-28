@@ -205,6 +205,9 @@ pub struct Workspace {
     pub jump: Option<(String, String)>,
     /// The chat about to start is a temporary one: kept in memory, gone with the app.
     pub temporary_next: bool,
+    /// The access mode picked for the chat about to start; none keeps the default. It is
+    /// given to the core with the first message and dropped for each new chat.
+    pub access_next: Option<dusk_protocol::config::ApprovalPolicy>,
     pub composer: Entity<TextareaState>,
     /// Text for the composer, put there on the next frame, which has the window.
     pub fill_composer: Vec<chat::composer::Edit>,
@@ -231,8 +234,10 @@ pub struct Workspace {
     pub agents_trigger_focus: FocusHandle,
     /// The keys of a window that takes them: the subagents' list, a listing's gallery.
     pub modal_focus: FocusHandle,
-    /// The scroll of a subagent's chat window, so it opens at its latest message.
-    pub modal_scroll: ScrollHandle,
+    /// The rows of a subagent's chat window, drawn as a list like the chat's.
+    pub agent_list: crate::modal::AgentList,
+    /// The steps of each subagent, as the list of subagents shows them.
+    pub agent_steps: crate::modal::StepCounts,
     /// The Workshop confirmation's Cancel button, where the keyboard starts.
     pub confirm_focus: FocusHandle,
     pub file: crate::pages::file::FileView,
@@ -275,10 +280,15 @@ pub struct Workspace {
     pub repositories: crate::pages::settings::Repositories,
     /// The Advanced page's number being typed in place of its minus and plus.
     pub limit_edit: crate::pages::settings::LimitEdit,
+    /// The Chat page's share of the context at which a compaction starts.
+    pub compact_slider: Entity<gpui_kit::component::slider::SliderState>,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.
     pub models_open: HashSet<String>,
+    /// The search at the top of More models; while it holds text, every provider with a
+    /// match is unfolded.
+    pub models_search: Entity<InputState>,
     /// Pictures of the user's messages, by thread and source name, as the core gave them.
     pub sent_pictures: HashMap<(String, String), chat::messages::SentPicture>,
     /// The last click or key, for the mist that rises when the window is left alone.
@@ -307,6 +317,8 @@ pub struct Workspace {
     pub picked: Vec<usize>,
     /// Approval command boxes shown in full, by request and step.
     pub approval_open: std::collections::HashSet<(u64, usize)>,
+    /// The request shown of several open; the oldest when none or it was answered.
+    pub approval_shown: Option<u64>,
     pub attach_open: bool,
     pub left_hidden: bool,
     /// The strip of places at the left edge, hidden on the user's word.
@@ -378,6 +390,8 @@ pub struct Workspace {
     pub texts: crate::pages::chat::messages::Texts,
     /// A row changed height, as when folded: measure every row again.
     pub measure_again: bool,
+    /// Proposed sessions whose whole brief is shown, by chat and call.
+    pub briefs_open: HashSet<(String, String)>,
     /// How wide the transcript's rows are drawn, for blocks that set their columns by it.
     pub reading_width: f32,
     /// The chat whose reply buttons were just pressed and how many items it had then,

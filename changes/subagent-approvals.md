@@ -1,0 +1,2 @@
+Fixed
+A subagent or team member that asks for approval no longer waits forever: its request shows in the chat beside the chat's own, in all three clients, saying who asks (such as `Ember-0c (code-writer) wants to run ...`), and is answered from there. A client that opens the chat later, or joins one another client keeps open, is told every request still waiting, its agents' included. The chat's working row says it waits for your approval while an agent's request is open, even when its own turn has ended.

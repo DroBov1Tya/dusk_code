@@ -78,6 +78,20 @@ pub struct LiveTurn {
 }
 
 impl LiveTurn {
+    /// Request `id` was answered here; the core's close may come later or not at all.
+    pub fn close_approval(&mut self, id: u64) {
+        self.approvals.retain(|open| *open != id);
+    }
+
+    /// Takes the open requests `later`, followed live, knows of.
+    pub fn merge_approvals(&mut self, later: &LiveTurn) {
+        for id in &later.approvals {
+            if !self.approvals.contains(id) {
+                self.approvals.push(*id);
+            }
+        }
+    }
+
     /// Takes in `event`, which came at `now` (Unix milliseconds, the client's clock).
     pub fn apply(&mut self, event: &ThreadEvent, now: i64) {
         self.heard = now;
@@ -85,6 +99,14 @@ impl LiveTurn {
             Some(RetryRow::Show(retry)) => self.retry = Some((retry, now)),
             Some(RetryRow::Clear) => self.retry = None,
             None => {}
+        }
+        // An agent's request at any depth waits on the user as the chat's own does.
+        match event.deepest().1 {
+            ThreadEvent::Approval(request) if !self.approvals.contains(&request.id) => {
+                self.approvals.push(request.id)
+            }
+            ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|open| open != id),
+            _ => {}
         }
         match event {
             ThreadEvent::TurnStarted(turn) => {
@@ -123,8 +145,6 @@ impl LiveTurn {
             ThreadEvent::CompactionFinished(_) | ThreadEvent::CompactionFailed { .. } => {
                 self.compacting = false;
             }
-            ThreadEvent::Approval(request) => self.approvals.push(request.id),
-            ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|open| open != id),
             ThreadEvent::Question(_) => self.questions += 1,
             ThreadEvent::UserMessage(_) => self.questions = 0,
             ThreadEvent::SubagentStarted { thread_id, .. } => {
@@ -204,13 +224,12 @@ pub fn activity(live: &LiveTurn, now: i64) -> Option<Work> {
             stalled: false,
         })
     };
-    if live.running {
-        if !live.approvals.is_empty() {
-            return work(WorkKind::WaitingForUser, "Waiting for your approval");
-        }
-        if live.questions > 0 {
-            return work(WorkKind::WaitingForUser, "Waiting for your answer");
-        }
+    // An agent's request waits while the chat's own turn has ended, as a team's does.
+    if !live.approvals.is_empty() {
+        return work(WorkKind::WaitingForUser, "Waiting for your approval");
+    }
+    if live.running && live.questions > 0 {
+        return work(WorkKind::WaitingForUser, "Waiting for your answer");
     }
     match live.waiting {
         Some(wait @ TurnWait::Decision { .. }) => {

@@ -20,8 +20,19 @@ use super::{
     ShownPreview, SubagentView, Tab, TabHit, Tone, Transcript, TranscriptHit, panels::agents,
 };
 
+/// What a chat said it answers on: its own model, not the one new chats start with.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnModel {
+    pub name: String,
+    pub limit: u64,
+    pub effort: Option<Effort>,
+}
+
 pub struct App {
     pub model: String,
+    /// The open chat's own model, once it told it; with none the status's is shown,
+    /// which a new chat starts with.
+    pub own_model: Option<OwnModel>,
     /// The chat's mode: its prompt and tools.
     pub mode: String,
     /// The reasoning effort; `None` leaves it to the provider.
@@ -33,6 +44,9 @@ pub struct App {
     /// The chat about to start is a temporary one; and whether the open one is.
     pub temporary_next: bool,
     pub temporary: bool,
+    /// The access mode set by /access for the chat about to start; none keeps the
+    /// default. It goes to the core with the first message.
+    pub access_next: Option<dusk_protocol::config::ApprovalPolicy>,
     pub title: Option<String>,
     /// The open chat's pins, as the core last listed them.
     pub pins: Vec<dusk_protocol::thread::Pin>,
@@ -158,6 +172,9 @@ pub struct App {
     /// What the folder of a path being typed holds.
     pub paths: Option<PathPopup>,
     pub subagents: Vec<SubagentView>,
+    /// Finished subagents `/agents clear` put away; the team's roster does not bring them
+    /// back until they work again.
+    pub cleared_agents: std::collections::HashSet<String>,
     /// The agent's task board in the open thread.
     pub tasks: Vec<Task>,
     /// A newer release the core found in the background, such as `v0.66.5`.
@@ -214,6 +231,7 @@ impl App {
             thread_id: None,
             temporary_next: false,
             temporary: false,
+            access_next: None,
             title: None,
             pins: Vec::new(),
             transcript: Transcript::default(),
@@ -268,6 +286,7 @@ impl App {
             goal: None,
             update_available: None,
             undone: None,
+            own_model: None,
             paths: None,
             goal_hits: Vec::new(),
             poll: None,
@@ -301,6 +320,7 @@ impl App {
             previews: Vec::new(),
             pictures: Default::default(),
             subagents: Vec::new(),
+            cleared_agents: Default::default(),
             tasks: Vec::new(),
             mcp: Vec::new(),
             turn_started_at: None,
@@ -329,6 +349,7 @@ impl App {
             self.input = self.drafts.remove(&thread_id).unwrap_or_default();
         }
         self.temporary = false;
+        self.access_next = None;
         self.pins.clear();
         (self.sent_ids, self.sent) = history
             .iter()
@@ -344,6 +365,9 @@ impl App {
         self.jobs.clear();
         self.jobs_stale = true;
         self.forget_overview();
+        if self.thread_id != thread_id {
+            self.own_model = None;
+        }
         self.thread_id = thread_id;
         self.title = title;
         self.branch = None;
@@ -376,6 +400,7 @@ impl App {
         self.agent_max_scroll = 0;
         self.mcp_max_scroll = 0;
         self.subagents.clear();
+        self.cleared_agents.clear();
         self.tasks.clear();
         self.goal = None;
         self.turn_started_at = None;

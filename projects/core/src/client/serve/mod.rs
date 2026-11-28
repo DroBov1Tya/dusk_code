@@ -183,7 +183,7 @@ pub struct Server {
     /// when it goes; the core has none until another is attached as the owner.
     owner: Option<ClientId>,
     threads: HashMap<String, OpenThread>,
-    terminals: Terminals,
+    terminals: Arc<Terminals>,
     /// The repository status of the projects clients watch.
     pulls: crate::project::forge::Tracker,
     /// The passes under way over the pull requests of each project's chats.
@@ -195,6 +195,7 @@ pub struct Server {
 impl Server {
     pub fn new(runtime: Runtime, subscribers: Subscribers) -> (Self, watch::Receiver<Status>) {
         let status = read_status(&runtime, None);
+        let terminals = runtime.terminals();
         let (sender, receiver) = watch::channel(status);
         let server = Self {
             runtime: Arc::new(runtime),
@@ -210,7 +211,7 @@ impl Server {
             .0,
             owner: None,
             threads: HashMap::new(),
-            terminals: Terminals::new(crate::terminal::login_shell()),
+            terminals,
             pulls: crate::project::forge::Tracker::default(),
             chat_pulls: thread_pulls::Syncs::default(),
             user_runs: user_runs::UserRuns::default(),
@@ -237,6 +238,14 @@ impl Server {
         self.clients
             .get(&self.caller)
             .map_or(HostFiles::Left, |attached| attached.scope.host_files())
+    }
+
+    /// Whether the client being answered runs in this process, on this machine, so a path
+    /// of the core's files means something to it.
+    pub(super) fn in_process(&self) -> bool {
+        self.clients
+            .get(&self.caller)
+            .is_some_and(|attached| attached.transport == "in-process")
     }
 
     /// Answers calls until the client asks to shut down or goes away, then closes every

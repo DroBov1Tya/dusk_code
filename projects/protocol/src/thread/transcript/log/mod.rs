@@ -9,11 +9,17 @@
 //! that moves rows: an item came, went or became another kind, an answer's text or
 //! thinking stopped being blank, or a turn boundary was drawn.
 
+mod approvals;
+mod cleared;
+mod context;
 mod history;
 mod run;
 mod team;
 
-use std::collections::BTreeMap;
+pub use approvals::CHAT_ASKS;
+pub use context::context_line;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -24,8 +30,9 @@ use crate::{
     model::{Effort, ModelEvent, ToolCall},
     plugin::{SUGGEST_TOOL, Suggestion},
     thread::{
-        Block, GoalEvaluation, JobResult, LiveTurn, Pin, SUGGEST_NEXT_TOOL, Task, Team,
-        ThreadEvent, ThreadTokens, TurnStatus, TurnWait, Work, WorkKind, activity, agent_name,
+        Block, GoalEvaluation, JobResult, LiveTurn, PROPOSE_SESSION_TOOL, Pin, Proposal,
+        ProposalCalls, ProposalState, SUGGEST_NEXT_TOOL, Task, Team, ThreadEvent, ThreadTokens,
+        TurnStatus, TurnWait, Work, WorkKind, activity, agent_name, read_outcome,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind},
 };
@@ -67,6 +74,13 @@ pub enum Item<L = Infallible> {
     /// The Workshop listings a `suggest_from_workshop` call put in the chat, in place of
     /// that call's step.
     Suggestion(Suggestion),
+    /// A session the agent proposed with `propose_session`, in place of that call's step,
+    /// and where it stands: the user starts or dismisses it from the card, which names
+    /// it by `proposal.id`.
+    Proposal {
+        proposal: Proposal,
+        state: ProposalState,
+    },
     /// A team or subagents the chat started, in place of the steps that started them;
     /// `ChatLog::run_card` says what its card shows.
     Run(Run),
@@ -223,10 +237,18 @@ pub struct ChatLog<L = Infallible> {
     pub spend: Option<TurnSpend>,
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
+    /// How many times the context was compacted, as far as this client knows: those it
+    /// saw finish, or the core's count when it was asked (`context_report`).
+    pub compactions: u32,
     /// The token report as the core last sent it.
     pub usage: Option<ThreadTokens>,
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
+    /// The chat's own model as `provider/model`, once the core told it; until then a
+    /// client shows the one new chats start with.
+    pub model: Option<String>,
+    /// The chat's own effort, told with its model; none is the provider's default.
+    pub effort: Option<Effort>,
     pub tasks: Vec<Task>,
     /// The team running the chat's plan, as the core last told it.
     pub team: Option<Team>,
@@ -238,7 +260,13 @@ pub struct ChatLog<L = Infallible> {
     pub agents: BTreeMap<String, Subagent>,
     /// What each subagent said and did, by its thread ID.
     pub agent_chats: BTreeMap<String, ChatLog<L>>,
+    /// The finished agents the user put away, which the team's roster must not bring back.
+    cleared: BTreeSet<String>,
+    /// The open requests for approval, the chat's own and its agents' at any depth,
+    /// oldest first.
     pub approvals: Vec<ApprovalRequest>,
+    /// The thread of the agent below the chat that asked each lifted request.
+    asked_by: BTreeMap<u64, String>,
     pub title: Option<String>,
     /// Text the core gave back after /undo, for the composer to offer again.
     pub offered: Option<String>,
@@ -248,6 +276,8 @@ pub struct ChatLog<L = Infallible> {
     /// The blocks `show` calls ask for, by call, until their results say whether they
     /// were shown.
     showing: BTreeMap<String, Block>,
+    /// The `propose_session` calls whose result may put a card in place of their step.
+    proposing: ProposalCalls,
     /// The subagents' run of the step under way, which its next `ask_agent` joins.
     batch: Option<usize>,
 }
@@ -272,20 +302,26 @@ impl<L> Default for ChatLog<L> {
             waiting: None,
             spend: None,
             tokens: None,
+            compactions: 0,
             usage: None,
             cost: None,
+            model: None,
+            effort: None,
             tasks: Vec::new(),
             team: None,
             pins: Vec::new(),
             skill_changes: Vec::new(),
             agents: BTreeMap::new(),
             agent_chats: BTreeMap::new(),
+            cleared: BTreeSet::new(),
             approvals: Vec::new(),
+            asked_by: BTreeMap::new(),
             title: None,
             offered: None,
             rollback_at: None,
             asked: Asked::default(),
             showing: BTreeMap::new(),
+            proposing: ProposalCalls::default(),
             batch: None,
         }
     }
@@ -402,6 +438,19 @@ impl<L> ChatLog<L> {
             self.meta[index].message_id = meta.message_id;
         }
         self.working = later.working;
+        // What the live events told of the context and the requests outlasts the history.
+        self.tokens = later.tokens.or(self.tokens);
+        self.usage = later.usage.or(self.usage.take());
+        self.compactions = self.compactions.max(later.compactions);
+        for request in later.approvals {
+            let asker = later.asked_by.get(&request.id).cloned();
+            self.open_approval(request, asker.as_deref());
+        }
+        self.live.merge_approvals(&later.live);
+        // Agents put away while the history was read stay away.
+        for id in later.cleared {
+            self.clear_away(id);
+        }
     }
 
     /// The item at `index` to change in place; it is marked changed.
@@ -557,6 +606,7 @@ impl<L> ChatLog<L> {
         // The piece that answers a call tried again changes what the indicator says.
         let retried = self.live.retrying();
         self.live.apply(&event, now);
+        self.follow_approval(&event);
         // A model call opens a new step: its `ask_agent` calls are a run of their own.
         if matches!(event, ThreadEvent::Model(_) | ThreadEvent::TurnStarted(_)) {
             self.batch = None;
@@ -613,9 +663,11 @@ impl<L> ChatLog<L> {
                 self.waiting = turn.waiting;
             }
             ThreadEvent::CompactionStarted => self.compacting = true,
-            ThreadEvent::CompactionFinished(_) | ThreadEvent::CompactionFailed { .. } => {
-                self.compacting = false
+            ThreadEvent::CompactionFinished(_) => {
+                self.compacting = false;
+                self.compactions += 1;
             }
+            ThreadEvent::CompactionFailed { .. } => self.compacting = false,
             ThreadEvent::TurnFailed(_) => self.end_turn(),
             _ => {}
         }
@@ -637,6 +689,7 @@ impl<L> ChatLog<L> {
             return;
         }
         match event {
+            ThreadEvent::FromAgent(message) if self.settled_by(&message.content) => {}
             ThreadEvent::FromAgent(message) => {
                 let from = message
                     .from_thread_id
@@ -709,7 +762,9 @@ impl<L> ChatLog<L> {
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => self.start_tool(&call, ToolState::Running, now),
             ThreadEvent::ToolFinished { call_id, result } => {
-                let shown = !result.is_error && self.suggestion(&call_id, &result.content);
+                let shown = !result.is_error
+                    && (self.suggestion(&call_id, &result.content)
+                        || self.proposal(&call_id, &result.content));
                 if !shown
                     && !self.finish_run(&call_id, &result)
                     && !self.show_block(&call_id, &result.content)
@@ -727,9 +782,15 @@ impl<L> ChatLog<L> {
                 self.cost = tokens.cost();
                 self.usage = Some(tokens);
             }
-            ThreadEvent::ModelSelected { input_limit, .. } => {
+            ThreadEvent::ModelSelected {
+                name,
+                input_limit,
+                effort,
+            } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);
                 self.tokens = Some((used, input_limit));
+                self.model = Some(name);
+                self.effort = effort;
             }
             ThreadEvent::Tasks(tasks) => {
                 self.tasks = tasks;
@@ -756,7 +817,8 @@ impl<L> ChatLog<L> {
                 task_id,
             } => {
                 self.touch_agent_run(&call_id);
-                // Asking the same thread again brings it back to work.
+                // Asking the same thread again brings it back to work, and to the list.
+                self.unclear(&thread_id);
                 let agent = Subagent {
                     name: agent_name(&thread_id),
                     thread_id: thread_id.clone(),
@@ -785,10 +847,11 @@ impl<L> ChatLog<L> {
                     .or_default()
                     .apply(*event, now);
             }
-            ThreadEvent::Approval(request) => self.approvals.push(request),
-            ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
+            // Taken in `apply` from any depth (`follow_approval`).
+            ThreadEvent::Approval(_) | ThreadEvent::ApprovalClosed { .. } => {}
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Pins(pins) => self.pins = pins,
+            ThreadEvent::ProposalSettled { proposal_id, state } => self.settle(&proposal_id, state),
             ThreadEvent::SkillChanged(change) => self.skill_changed(change),
             ThreadEvent::Undone { text } => {
                 // The core forgot the message and all after it; so does the chat.
@@ -854,6 +917,7 @@ impl<L> ChatLog<L> {
         self.meta.truncate(at);
         self.asked = Asked::default();
         self.showing.clear();
+        self.proposing.clear();
         self.batch = None;
         let kept = self
             .activity_boundaries
@@ -976,6 +1040,7 @@ impl<L> ChatLog<L> {
     /// A step that starts, live or read from history; a `show` call also keeps the block it
     /// asks for, which its result may put in the step's place.
     fn start_tool(&mut self, call: &ToolCall, state: ToolState, at: i64) {
+        self.proposing.call(call);
         // A suggested next message is no step: the composer shows it, from
         // `NextSuggested`, and its result finds no row to land on.
         if call.name == SUGGEST_NEXT_TOOL {
@@ -1026,6 +1091,58 @@ impl<L> ChatLog<L> {
         self.touch(index);
         self.reshape();
         true
+    }
+
+    /// Puts the card of a finished `propose_session` call in place of its step, when
+    /// `result` holds one; whether it did.
+    fn proposal(&mut self, call_id: &str, result: &str) -> bool {
+        // Only the call's own result: text another tool returned is never a card.
+        let Some(proposal) = self.proposing.card(call_id, result) else {
+            return false;
+        };
+        let Some(index) = self.tool_index(call_id) else {
+            return false;
+        };
+        if !matches!(&self.items[index], Item::Tool(tool) if tool.name == PROPOSE_SESSION_TOOL) {
+            return false;
+        }
+        self.items[index] = Item::Proposal {
+            proposal,
+            state: ProposalState::Pending,
+        };
+        self.touch(index);
+        self.reshape();
+        true
+    }
+
+    /// Marks the card of the proposal `id` started or dismissed.
+    fn settle(&mut self, id: &str, settled: ProposalState) {
+        let index = self
+            .items
+            .iter()
+            .rposition(|item| matches!(item, Item::Proposal { proposal, .. } if proposal.id == id));
+        if let Some(index) = index
+            && let Item::Proposal { state, .. } = &mut self.items[index]
+        {
+            *state = settled;
+            self.touch(index);
+        }
+    }
+
+    /// Whether `text`, a message from a thread, is the core's note of how a proposal of
+    /// this chat was answered: it settles the card and is not drawn itself.
+    fn settled_by(&mut self, text: &str) -> bool {
+        let Some((id, state)) = read_outcome(text) else {
+            return false;
+        };
+        let carded = self
+            .items
+            .iter()
+            .any(|item| matches!(item, Item::Proposal { proposal, .. } if proposal.id == id));
+        if carded {
+            self.settle(&id, state);
+        }
+        carded
     }
 
     /// The pictures and sounds a tool or a message carries. Pictures of a tool other than

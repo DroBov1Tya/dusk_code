@@ -24,6 +24,8 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         max_agents_at_work: config.limits().max_agents_at_work,
         model_timeout_seconds: config.limits().model_timeout_seconds,
         max_attempts: config.limits().max_attempts,
+        auto_compact: config.limits().auto_compact,
+        auto_compact_percent: config.limits().auto_compact_percent,
         idle_screen_minutes: config.appearance().idle_screen_minutes,
         mode: config.mode().to_owned(),
         modes: runtime.mode_infos(),

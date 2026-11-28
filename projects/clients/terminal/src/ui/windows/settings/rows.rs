@@ -325,6 +325,19 @@ impl SettingsWindow<'_> {
                 self.view.max_attempts.to_string(),
                 "    attempts of one call that wrote nothing, the first included",
             ),
+            row(
+                "auto-compaction",
+                if self.view.auto_compact { "on" } else { "off" }.into(),
+                "    summarize older messages when the context fills up",
+            ),
+            row(
+                "compact at, %",
+                self.view.auto_compact_percent.to_string(),
+                match self.view.auto_compact {
+                    true => "    how full the context gets before it is summarized",
+                    false => "    off: chats will stop when the context fills up",
+                },
+            ),
         ]
     }
 

@@ -3,7 +3,7 @@
 use dusk_core::client::Client;
 use dusk_protocol::client::Command;
 
-use crate::app::{App, DiffView, OverviewView, Panel, PasteEditor};
+use crate::app::{App, DiffView, OverviewView, Panel, PasteEditor, SourceReader};
 use crate::session::{
     answers::answer,
     thread::{OpenThread, ensure_open},
@@ -54,6 +54,23 @@ pub async fn stop_team(client: &Client, app: &mut App) {
     }
 }
 
+/// Retries failed tasks of the chat's plan in place; their own events move the plan.
+pub async fn retry_tasks(client: &Client, app: &mut App, ids: Vec<String>) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    for task_id in &ids {
+        if let Err(error) = client.work().retry_task(&thread_id, task_id).await {
+            return app.error(format!("cannot retry the task: {error:#}"));
+        }
+    }
+    app.flash = Some(match ids.len() {
+        1 => "Retrying the failed task".into(),
+        count => format!("Retrying {count} failed tasks"),
+    });
+    app.overview_stale = true;
+}
+
 /// Lets `at_once` members of the chat's running team work at once; a refusal stays under
 /// the stepper.
 pub async fn set_team_at_once(client: &Client, app: &mut App, at_once: u32) {
@@ -90,6 +107,54 @@ pub async fn save_plan(client: &Client, app: &mut App, text: String) {
             Err(error) => app.error(format!("cannot save the plan: {error:#}")),
         }
     }
+}
+
+/// Opens the plans panel, or reads it again, keeping the row chosen; none closes it.
+pub async fn plans(client: &Client, app: &mut App) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        app.flash = Some("Send a message first; the plans belong to a chat".into());
+        return;
+    };
+    match client.work().plans(&thread_id).await {
+        Ok(plans) if plans.is_empty() => {
+            app.panel = None;
+            app.flash = Some("No plans; the agent pins one when the work needs it".into());
+        }
+        Ok(plans) => {
+            let selected = match &app.panel {
+                Some(Panel::Plans { selected, .. }) => (*selected).min(plans.len() - 1),
+                _ => 0,
+            };
+            app.panel = Some(Panel::Plans {
+                plans,
+                selected,
+                asking: None,
+            });
+        }
+        Err(error) => app.error(format!("cannot read the plans: {error:#}")),
+    }
+}
+
+/// Deletes the plan with the source ID `id`, or with none every old plan, then lists
+/// what is left.
+pub async fn remove_plan(client: &Client, app: &mut App, id: Option<String>) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    let work = client.work();
+    let done = match id {
+        Some(id) => work.remove_source(&thread_id, &id).await.map(|()| 1),
+        None => work.remove_old_plans(&thread_id).await,
+    };
+    match done {
+        Ok(count) => app.flash = Some(format!("{count} plan{} deleted", plural(count))),
+        Err(error) => return app.error(format!("cannot delete the plan: {error:#}")),
+    }
+    plans(client, app).await;
+}
+
+fn plural(count: u64) -> &'static str {
+    if count == 1 { "" } else { "s" }
 }
 
 pub async fn diff(client: &Client, app: &mut App) {
@@ -188,6 +253,51 @@ pub async fn remove_source(
             add: None,
         };
         answer(client, app, open, command).await;
+    }
+}
+
+/// Opens a source of the list to read, or adds its next part to the one being read.
+pub async fn read_source(client: &Client, app: &mut App, id: String, offset: u64) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        return;
+    };
+    let chunk = match client.work().source_text(&thread_id, &id, offset).await {
+        Ok(chunk) => chunk,
+        Err(error) => return app.error(format!("cannot read the source: {error:#}")),
+    };
+    match app.panel.take() {
+        Some(Panel::Sources {
+            sources, selected, ..
+        }) => {
+            let Some(source) = sources
+                .iter()
+                .find(|source| source.source_id == id)
+                .cloned()
+            else {
+                app.panel = Some(Panel::Sources {
+                    sources,
+                    selected,
+                    removing: false,
+                });
+                return;
+            };
+            app.panel = Some(Panel::Source(Box::new(SourceReader {
+                sources,
+                selected,
+                source,
+                kind: Some(chunk.kind),
+                text: chunk.text,
+                next: chunk.next,
+                row: 0,
+            })));
+        }
+        Some(Panel::Source(mut reader)) if reader.source.source_id == id => {
+            reader.text.push_str(&chunk.text);
+            reader.next = chunk.next;
+            app.panel = Some(Panel::Source(reader));
+        }
+        // The panel changed while the part was read; leave it as it is.
+        other => app.panel = other,
     }
 }
 

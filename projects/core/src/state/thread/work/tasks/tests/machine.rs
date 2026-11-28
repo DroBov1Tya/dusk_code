@@ -7,6 +7,9 @@ use crate::state::{
     BlockedOn, LEASE_MS, PassedBy, PlanError, PlanStatus, PlanTask, State, TaskEdit, WaitsOn,
 };
 
+/// Stands for the time of the move in `retried_at`, which the test cannot know before.
+const RETRIED_NOW: i64 = i64::MAX;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum From {
     Open,
@@ -146,6 +149,8 @@ fn legal(from: From, mv: Move, task: &mut PlanTask) -> bool {
             if from == From::Failed {
                 task.attempts = 0;
                 task.reworks = 0;
+                task.retries += 1;
+                task.retried_at = Some(RETRIED_NOW);
             }
             task.status = Open;
             task.owner_thread_id = None;
@@ -153,7 +158,7 @@ fn legal(from: From, mv: Move, task: &mut PlanTask) -> bool {
             task.waits_on = None;
             task.note = String::new();
         }
-        (From::Open | From::BlockedBehind, Move::Edit) => {
+        (From::Open | From::BlockedBehind | From::Failed, Move::Edit) => {
             task.description = "new words".to_owned();
             task.last_owner_thread_id = None;
         }
@@ -282,6 +287,11 @@ async fn every_move_from_every_status_is_made_or_refused_whole() {
             }
             made.unwrap_or_else(|error| panic!("{from:?} {mv:?} is legal: {error}"));
             let mut now = get(&state, &target.task_id).await;
+            // A retry is stamped with the time of the move.
+            if expected.retried_at == Some(RETRIED_NOW) {
+                assert_eq!(now.retried_at, Some(now.updated_at), "{from:?} {mv:?}");
+                expected.retried_at = now.retried_at;
+            }
             // When it changed is the one column every move may write.
             now.updated_at = expected.updated_at;
             assert_eq!(now, expected, "{from:?} {mv:?} changed other columns");

@@ -1,9 +1,12 @@
-//! The More models submenu: every enabled provider, folded, with its models.
+//! The More models submenu: every enabled provider, folded, with the models the user did not
+//! hide, under a search that unfolds whatever matches.
 
+use dusk_protocol::model::{Model, ProviderStatus};
 use gpui_kit::{
     component::{
         ActiveTheme, Icon, IconName,
         button::{Button, ButtonVariants},
+        input::Input,
         tooltip::Tooltip,
     },
     prelude::FluentBuilder,
@@ -18,6 +21,26 @@ use crate::{
     workspace::Workspace,
 };
 
+/// The models of a provider More models offers: all but the hidden ones, and the one in use
+/// even when hidden, so the menu never loses the current model.
+pub fn shown_models<'a>(provider: &'a ProviderStatus, current: &str) -> Vec<&'a Model> {
+    let Ok(models) = &provider.models else {
+        return Vec::new();
+    };
+    models
+        .iter()
+        .filter(|model| {
+            !provider.is_hidden(&model.id)
+                || current.split_once('/') == Some((provider.name.as_str(), model.id.as_str()))
+        })
+        .collect()
+}
+
+/// The search typed at the top of More models, lowercased; empty when there is none.
+pub fn models_query(ws: &Workspace, cx: &App) -> String {
+    ws.models_search.read(cx).value().trim().to_lowercase()
+}
+
 pub fn all_models(
     ws: &Workspace,
     current: &str,
@@ -28,7 +51,7 @@ pub fn all_models(
 ) -> Div {
     let mut scroll = div()
         .id("all-models")
-        .max_h(px(max_height - 54.))
+        .max_h(px(max_height - 54. - ROW))
         .flex()
         .flex_col()
         .overflow_y_scroll();
@@ -36,15 +59,28 @@ pub fn all_models(
         scroll = scroll.child(widgets::muted(catalog_status(ws), cx));
     }
     let (foreground, hint) = (cx.theme().foreground, picker_hint(cx));
+    let query = models_query(ws, cx);
+    let searching = !query.is_empty();
+    let mut matched = false;
     // A provider switched off offers nothing, so it is not listed.
     for provider in ws.providers.iter().filter(|provider| provider.enabled) {
         let name = provider.name.clone();
-        let open = ws.models_open.contains(&provider.name);
-        let toggled = provider.name.clone();
         let pending = ws.models_pending.contains(&provider.name);
+        // A provider's name matching keeps all its models; otherwise only the matching ones.
+        let name_matches = provider.name.to_lowercase().contains(&query);
+        let models: Vec<&Model> = shown_models(provider, current)
+            .into_iter()
+            .filter(|model| name_matches || model.id.to_lowercase().contains(&query))
+            .collect();
+        if searching && !name_matches && models.is_empty() {
+            continue;
+        }
+        matched = true;
+        let open = searching || ws.models_open.contains(&provider.name);
+        let toggled = provider.name.clone();
         let count = match (&provider.models, pending) {
             (_, true) => String::from("..."),
-            (Ok(models), _) => models.len().to_string(),
+            (Ok(_), _) => models.len().to_string(),
             (Err(_), _) => String::from("!"),
         };
         // The provider's name is the landmark of the list: larger and brighter than its
@@ -101,11 +137,15 @@ pub fn all_models(
             continue;
         }
         match &provider.models {
-            Ok(models) if models.is_empty() => {
+            Ok(listed) if listed.is_empty() => {
                 scroll = scroll.child(widgets::muted("No listed models", cx));
             }
-            Ok(models) => {
-                let keyed = current.split('/').next() == Some(provider.name.as_str());
+            Ok(_) if models.is_empty() => {
+                scroll = scroll.child(widgets::muted("Every model is hidden in Settings", cx));
+            }
+            Ok(_) => {
+                // The digits pick from the list as it stands unfiltered, as `first_models` does.
+                let keyed = !searching && current.split('/').next() == Some(provider.name.as_str());
                 for (index, model) in models.iter().enumerate() {
                     let name = format!("{}/{}", provider.name, model.id);
                     let key = (keyed && index < FIRST).then_some(index + 1);
@@ -115,6 +155,9 @@ pub fn all_models(
             Err(error) => scroll = scroll.child(widgets::muted(error.clone(), cx)),
         }
     }
+    if searching && !matched {
+        scroll = scroll.child(widgets::muted("No models match", cx));
+    }
     // Beside the menu the row it opened from already names it; alone, it needs the way back.
     picker_panel(cx)
         .w(px(width))
@@ -122,6 +165,11 @@ pub fn all_models(
             list.child(back_row("More models", side_by_side, cx))
         })
         .child(refresh_row(ws, cx))
+        .child(
+            div().px_1().pb_1().child(
+                Styled::h(Input::new(&ws.models_search), px(ROW)).aria_label("Search models"),
+            ),
+        )
         .child(scroll)
 }
 

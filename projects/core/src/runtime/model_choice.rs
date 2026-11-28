@@ -1,14 +1,18 @@
-//! The provider and model threads talk to. `/model` switches it for every thread at once;
-//! a model call that has started finishes with the model it started with. The choice is
-//! kept in the config as `model: provider/model`, so it outlives a restart.
+//! The provider and model threads talk to. The runtime's selection is the one last
+//! chosen, kept in the config as `model: provider/model`: a new chat starts with it. Each
+//! chat has a selection of its own (`ModelChoice::own`), which its agents start from, so
+//! `/model` in one chat never switches another. A model call that has started finishes
+//! with the model it started with.
 
 use std::{
     collections::HashMap,
-    sync::Arc,
+    sync::{Arc, Weak},
     time::{Duration, Instant},
 };
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
+
+use dusk_protocol::model::Effort;
 
 use anyhow::{Context, Result, anyhow, ensure};
 use tokio::task::JoinSet;
@@ -28,14 +32,26 @@ const VISION_RETRY: Duration = Duration::from_secs(10 * 60);
 
 pub struct ModelChoice {
     current: RwLock<Selection>,
+    shared: Arc<Shared>,
+}
+
+/// What the runtime's selection and every thread's own one share.
+#[derive(Default)]
+struct Shared {
     /// Whether each model, by `provider/model`, saw the test picture.
     vision: RwLock<HashMap<String, bool>>,
     /// When asking a model failed, so it is not asked again at every step.
     vision_failed: RwLock<HashMap<String, Instant>>,
+    /// The threads' own selections, which a provider reconnected or removed reaches too.
+    own: Mutex<Vec<Weak<ModelChoice>>>,
 }
 
 struct Selection {
     choice: Option<Choice>,
+    /// A chat's own effort; `None` follows the settings.
+    effort: Option<Option<Effort>>,
+    /// The effort before the last change, for a model that refuses `off`.
+    previous_effort: Option<Option<Effort>>,
     revision: Arc<()>,
 }
 
@@ -74,9 +90,15 @@ impl Choice {
     /// Constructs a saved model without asking the provider for its catalogue. This keeps
     /// local history available while the provider is down.
     pub fn configured(config: &Config) -> Result<Option<Choice>> {
-        let Some(name) = config.model() else {
-            return Ok(None);
-        };
+        match config.model() {
+            Some(name) => Self::named(config, name),
+            None => Ok(None),
+        }
+    }
+
+    /// `provider/model` of a configured provider that is switched on, built the same way
+    /// without asking the provider; `None` when no such provider is left.
+    pub fn named(config: &Config, name: &str) -> Result<Option<Choice>> {
         let Some((provider_name, id)) = name.split_once('/') else {
             return Ok(None);
         };
@@ -165,51 +187,119 @@ impl Choice {
 
 impl ModelChoice {
     pub fn new(choice: Choice) -> Self {
-        Self {
-            current: RwLock::new(Selection {
-                choice: Some(choice),
-                revision: Arc::new(()),
-            }),
-            vision: RwLock::default(),
-            vision_failed: RwLock::default(),
-        }
+        Self::with(Some(choice), Arc::default())
     }
 
     pub fn offline() -> Self {
+        Self::with(None, Arc::default())
+    }
+
+    fn with(choice: Option<Choice>, shared: Arc<Shared>) -> Self {
         Self {
             current: RwLock::new(Selection {
-                choice: None,
+                choice,
+                effort: None,
+                previous_effort: None,
                 revision: Arc::new(()),
             }),
-            vision: RwLock::default(),
-            vision_failed: RwLock::default(),
+            shared,
         }
+    }
+
+    /// A thread's own selection, starting at `choice`: setting it changes no other
+    /// thread, while a provider reconnected or removed reaches it as it reaches this one.
+    pub fn own(&self, choice: Option<Choice>) -> Arc<Self> {
+        let own = Arc::new(Self::with(choice, Arc::clone(&self.shared)));
+        let mut all = self.shared.own.lock();
+        all.retain(|weak| weak.strong_count() > 0);
+        all.push(Arc::downgrade(&own));
+        own
+    }
+
+    /// The threads' own selections still in use.
+    fn owned(&self) -> Vec<Arc<Self>> {
+        self.shared
+            .own
+            .lock()
+            .iter()
+            .filter_map(Weak::upgrade)
+            .collect()
+    }
+
+    /// `provider/model` with its sizes as some selection learned them, else `None`.
+    pub fn known(&self, name: &str) -> Option<Choice> {
+        std::iter::once(self.current())
+            .chain(self.owned().iter().map(|own| own.current()))
+            .flatten()
+            .filter(|choice| choice.name() == name)
+            .max_by_key(|choice| {
+                u8::from(choice.model.context_window.is_some())
+                    + u8::from(choice.model.max_output.is_some())
+            })
     }
 
     /// `None` until the model was asked.
     pub fn vision(&self, model: &str) -> Option<bool> {
-        self.vision.read().get(model).copied()
+        self.shared.vision.read().get(model).copied()
     }
 
     pub fn set_vision(&self, model: String, sees: bool) {
-        self.vision_failed.write().remove(&model);
-        self.vision.write().insert(model, sees);
+        self.shared.vision_failed.write().remove(&model);
+        self.shared.vision.write().insert(model, sees);
     }
 
     /// Whether the model may be asked again after a failed ask.
     pub fn may_ask_vision(&self, model: &str) -> bool {
-        self.vision_failed
+        self.shared
+            .vision_failed
             .read()
             .get(model)
             .is_none_or(|failed| failed.elapsed() >= VISION_RETRY)
     }
 
     pub fn vision_failed(&self, model: String) {
-        self.vision_failed.write().insert(model, Instant::now());
+        self.shared
+            .vision_failed
+            .write()
+            .insert(model, Instant::now());
     }
 
     pub fn current(&self) -> Option<Choice> {
         self.current.read().choice.clone()
+    }
+
+    /// The chat's own effort; `None` follows the settings, `Some(None)` is the provider's.
+    pub fn effort(&self) -> Option<Option<Effort>> {
+        self.current.read().effort
+    }
+
+    pub fn set_effort(&self, effort: Option<Option<Effort>>) {
+        let mut current = self.current.write();
+        if current.effort != effort {
+            current.previous_effort = current.effort;
+            current.effort = effort;
+        }
+    }
+
+    /// A model refused `off`: a chat whose own effort is `off` goes back to the one before.
+    /// The effort it has now, when it changed.
+    pub fn restore_unsupported_effort(&self) -> Option<Option<Effort>> {
+        let mut current = self.current.write();
+        if current.effort != Some(Some(Effort::Off)) {
+            return None;
+        }
+        let previous = current
+            .previous_effort
+            .filter(|effort| *effort != Some(Effort::Off));
+        let restored = previous.unwrap_or(None);
+        current.previous_effort = current.effort;
+        current.effort = Some(restored);
+        Some(restored)
+    }
+
+    /// The effort this selection thinks at under `config`.
+    pub fn effort_in(&self, config: &Config) -> Option<Effort> {
+        self.effort().unwrap_or_else(|| config.effort())
     }
 
     /// The largest request the current model takes under `config`'s policy.
@@ -238,10 +328,28 @@ impl ModelChoice {
     }
 
     /// No model is selected, and discovery started before this must not select one.
+    /// Every thread loses its own as well: no provider is left to ask.
     pub fn clear(&self) {
+        for own in self.owned() {
+            own.current.write().choice = None;
+        }
         let mut current = self.current.write();
         current.choice = None;
         current.revision = Arc::new(());
+    }
+
+    /// Threads that have no model yet take `choice`: they never answered on another.
+    /// Whether any did.
+    pub fn fill_empty(&self, choice: &Choice) -> bool {
+        let mut filled = false;
+        for own in self.owned() {
+            let mut current = own.current.write();
+            if current.choice.is_none() {
+                current.choice = Some(choice.clone());
+                filled = true;
+            }
+        }
+        filled
     }
 
     pub fn revision(&self) -> Arc<()> {
@@ -259,20 +367,35 @@ impl ModelChoice {
     }
 
     pub fn replace_provider(&self, name: &str, provider: Arc<dyn ModelProvider>) {
-        let mut current = self.current.write();
+        for own in self.owned() {
+            own.replace_own_provider(name, &provider);
+        }
         // Even an offline selection must reject discovery started before reconnect.
-        current.revision = Arc::new(());
+        self.current.write().revision = Arc::new(());
+        self.replace_own_provider(name, &provider);
+    }
+
+    fn replace_own_provider(&self, name: &str, provider: &Arc<dyn ModelProvider>) {
+        let mut current = self.current.write();
         if let Some(choice) = current
             .choice
             .as_mut()
             .filter(|choice| choice.provider_name == name)
         {
-            choice.provider = provider;
+            choice.provider = Arc::clone(provider);
         }
     }
 
-    /// A catalogue response applies only to the selection and adapter it checked.
+    /// A catalogue response applies only to the selection and adapter it checked; the
+    /// threads on that model learn its sizes too.
     pub fn refresh_model(&self, expected: &Choice, model: Model) -> Option<Choice> {
+        for own in self.owned() {
+            own.refresh_own(expected, &model);
+        }
+        self.refresh_own(expected, &model)
+    }
+
+    fn refresh_own(&self, expected: &Choice, model: &Model) -> Option<Choice> {
         let mut current = self.current.write();
         let choice = current.choice.as_mut()?;
         if choice.provider_name != expected.provider_name
@@ -281,14 +404,23 @@ impl ModelChoice {
         {
             return None;
         }
-        choice.model = model;
+        choice.model = model.clone();
         Some(choice.clone())
     }
 
     /// Takes the chosen model's sizes from a catalogue of its provider when they are not
     /// known yet: the start asks once, and a provider that was down then must not leave
-    /// the model at the unknown window for good. The choice, when it changed.
-    pub fn learn(&self, statuses: &[ProviderStatus]) -> Option<Choice> {
+    /// the model at the unknown window for good. The threads' own selections learn as
+    /// well. Whether any of them learned something.
+    pub fn learn(&self, statuses: &[ProviderStatus]) -> bool {
+        let mut learned = false;
+        for own in self.owned() {
+            learned |= own.learn_own(statuses).is_some();
+        }
+        self.learn_own(statuses).is_some() || learned
+    }
+
+    fn learn_own(&self, statuses: &[ProviderStatus]) -> Option<Choice> {
         let mut current = self.current.write();
         let choice = current.choice.as_mut()?;
         if choice.model.context_window.is_some() && choice.model.max_output.is_some() {
@@ -362,6 +494,9 @@ pub async fn check_provider(
             Some(dusk_protocol::model::CheckFailure::Unreachable),
         ),
     };
+    let hidden = settings
+        .map(|settings| settings.hidden_models.into_iter().collect())
+        .unwrap_or_default();
     ProviderStatus {
         name,
         models,
@@ -369,6 +504,7 @@ pub async fn check_provider(
         limits: provider.limits(),
         enabled: true,
         failure,
+        hidden,
     }
 }
 
@@ -397,11 +533,10 @@ mod tests {
             limits: None,
             enabled: true,
             failure: None,
+            hidden: Vec::new(),
         };
-        assert_eq!(
-            selected.learn(&[status]).unwrap().model.max_output,
-            Some(262144)
-        );
+        assert!(selected.learn(&[status]));
+        assert_eq!(selected.current().unwrap().model.max_output, Some(262144));
         assert_eq!(selected.current().unwrap().model.context_window, None);
     }
 

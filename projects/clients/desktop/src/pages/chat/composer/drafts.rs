@@ -15,8 +15,32 @@ pub struct Draft {
 }
 
 impl Draft {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.text.is_empty() && self.attachments.is_empty() && self.pastes.is_empty()
+    }
+
+    /// The message as it goes to the core: the text, each long paste wrapped, then the
+    /// attached files as their paths, which the core keeps among the chat's sources.
+    pub fn flat(&self) -> String {
+        let mut text = self.text.trim().to_owned();
+        for pasted in &self.pastes {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&dusk_protocol::thread::wrap(pasted));
+        }
+        for path in &self.attachments {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            // A path with spaces goes quoted, so the core reads it as one.
+            let path = path.display().to_string();
+            match path.contains(char::is_whitespace) && !path.contains('"') {
+                true => text.push_str(&format!("\"{path}\"")),
+                false => text.push_str(&path),
+            }
+        }
+        text
     }
 }
 

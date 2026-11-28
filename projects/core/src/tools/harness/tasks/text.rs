@@ -25,9 +25,11 @@ pub const DESCRIPTION: &str = "\
     by a fresh reviewer, and writes to you only when a task waits for you, fails or is \
     blocked, and when the team ends. End your turn and wait; never ask for status. \
     `review` accepts `ids`, or rejects one `id` with `text` to redo. `show` prints the \
-    plan, or one task whole with its report with `id`. `edit` changes a task not yet \
-    started. `skip` gives up a failed or blocked task (with `text`, why) so the next \
-    wave can start. `fail`, `reopen` and `stop` do what they say.";
+    plan, or one task whole with its report with `id`. `edit` (`id`, or `ids` for the \
+    same fields of several, such as `gate`; one task in `tasks`) changes any field of an \
+    open, blocked or failed task; `reopen` retries a failed one in place, dependents with \
+    it; `run` again after a new gate. `skip` gives up a failed or blocked task (with \
+    `text`, why) so the next wave can start. `fail` and `stop` do what they say.";
 
 /// The schema the lead is offered. Calls are checked against the union of both forms
 /// (`checked_schema`) and parsed into `lead::PlanArguments`.
@@ -55,8 +57,7 @@ pub fn schema() -> Value {
                     "effort": {"type": "string", "enum": [
                         "off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]}
                 },
-                "additionalProperties": false,
-                "required": ["text"]
+                "additionalProperties": false
             }},
             "id": {"type": "string"},
             "ids": {"type": "array", "items": {"type": "string"}},
@@ -316,6 +317,9 @@ pub fn task(shown: &Shown<'_>, after: &[(String, Option<PlanStatus>)]) -> String
         ". Attempts: {}, reworks: {}.",
         task.attempts, task.reworks
     ));
+    if task.retries > 0 {
+        text.push_str(&format!(" Try {} (retried in place).", task.retries + 1));
+    }
     if !after.is_empty() {
         let after: Vec<String> = after
             .iter()

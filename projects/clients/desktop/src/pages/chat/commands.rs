@@ -123,10 +123,14 @@ impl Workspace {
             Command::New => self.new_chat(None, window, cx),
             Command::Temporary => self.new_temporary_chat(window, cx),
             Command::Resume { .. } => self.modal = Some(Modal::Search),
-            Command::Model { name: Some(name) } => self.choose_model(name, cx),
-            Command::Model { name: None } => self.open_picker(Picker::Model, cx),
-            Command::Effort { level: Some(level) } => self.choose_effort(&level, cx),
-            Command::Effort { level: None } => self.open_picker(Picker::Effort, cx),
+            Command::Model {
+                name: Some(name), ..
+            } => self.choose_model(name, cx),
+            Command::Model { name: None, .. } => self.open_picker(Picker::Model, cx),
+            Command::Effort {
+                level: Some(level), ..
+            } => self.choose_effort(&level, cx),
+            Command::Effort { level: None, .. } => self.open_picker(Picker::Effort, cx),
             Command::Settings => self.open_settings(cx),
             Command::Update { .. } => {
                 self.center = Center::Settings;

@@ -15,7 +15,10 @@ use crate::runtime::agent::Mailboxes;
 use crate::runtime::team;
 use crate::runtime::thread::project;
 use crate::runtime::thread::start::{self, project_dir, start_thread};
-use crate::runtime::{ThreadLock, ThreadRunner, ThreadSetup, model_choice::ModelChoice};
+use crate::runtime::{
+    ThreadLock, ThreadRunner, ThreadSetup,
+    model_choice::{Choice, ModelChoice},
+};
 use crate::{
     catalog::agents::{Agents, MAX_AGENT_DEPTH},
     config::live::LiveConfig,
@@ -62,6 +65,8 @@ pub struct Launcher {
     /// Its chats leave nothing behind: the database is in memory, their files are in the
     /// system's temporary folder, and they write no memory.
     pub temporary: bool,
+    /// The user's terminals; a chat reaches those of the app with the `terminal` tool.
+    pub terminals: Arc<crate::terminal::Terminals>,
 }
 
 impl Launcher {
@@ -95,7 +100,9 @@ impl Launcher {
         }
         Ok(ThreadSetup {
             state: Arc::clone(&self.state),
-            model: Arc::clone(&self.model),
+            // Never the runtime's own selection: a choice made for new chats must not
+            // reach a thread at work. Its caller gives it the chat's.
+            model: self.model.own(self.model.current()),
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
@@ -196,6 +203,10 @@ impl Launcher {
             tools.add(Box::new(SearchWorkshop::new(self.paths.clone())));
             tools.add(Box::new(SuggestFromWorkshop::new(self.paths.clone())));
             tools.add(Box::new(SuggestNext));
+            let terminals = Arc::clone(&self.terminals);
+            tools.add(Box::new(crate::tools::console::Terminal(terminals)));
+            let modes = self.paths.modes_dir();
+            tools.add(Box::new(crate::tools::ProposeSession::new(modes)));
             tools.add(Box::new(PlanEdit::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
@@ -226,15 +237,26 @@ impl Launcher {
         self.new_thread_on(source, cwd, None).await
     }
 
-    /// A new thread that asks `model` instead of the chosen one, as a scheduled task may.
+    /// A new thread that asks `model` instead of the last chosen, as a scheduled task may.
     pub async fn new_thread_on(
         &self,
         source: &str,
         cwd: &Path,
-        model: Option<Arc<ModelChoice>>,
+        model: Option<Choice>,
     ) -> Result<ThreadHandle> {
         let mode = self.config.current().mode().to_owned();
-        let thread = start_thread(&self.state, &self.paths, source, &mode, cwd).await?;
+        self.new_thread_in(source, cwd, &mode, model).await
+    }
+
+    /// A new thread that starts in `mode`, a known mode, instead of the chosen one.
+    pub async fn new_thread_in(
+        &self,
+        source: &str,
+        cwd: &Path,
+        mode: &str,
+        model: Option<Choice>,
+    ) -> Result<ThreadHandle> {
+        let thread = start_thread(&self.state, &self.paths, source, mode, cwd).await?;
         info!(
             "thread {} started in {}",
             thread.thread_id,
@@ -291,10 +313,21 @@ impl Launcher {
         thread_id: String,
         workspace: &Path,
         cwd: &Path,
-        model: Option<Arc<ModelChoice>>,
+        model: Option<Choice>,
     ) -> Result<ThreadHandle> {
         // A chat opened right after the start still gets the tools of MCP servers.
         self.mcp.wait(MCP_START_WAIT).await;
+        // The chat answers on its own model, which another chat's choice never changes.
+        if let Some(choice) = &model {
+            self.state
+                .set_chat_model(&thread_id, &choice.name())
+                .await?;
+        }
+        let selection = self.chat_selection(&thread_id).await?;
+        // The model as it was picked, with the sizes its provider listed.
+        if let Some(choice) = model {
+            selection.set(choice);
+        }
         let mailboxes = Arc::clone(&self.mailboxes);
         let mut live = mailboxes.lock().await;
         ensure!(
@@ -302,9 +335,7 @@ impl Launcher {
             "thread {thread_id} is already open"
         );
         let mut setup = self.setup(&thread_id, cwd, workspace, None, 0)?;
-        if let Some(model) = model {
-            setup.model = model;
-        }
+        setup.model = selection;
         let (runner, input, output) = ThreadRunner::new(setup);
         live.insert(thread_id.clone(), runner.mailbox(&input));
         drop(live);
@@ -363,6 +394,8 @@ mod tests {
         ("show", true, false),
         ("suggest_from_workshop", true, false),
         ("suggest_next", true, false),
+        ("terminal", false, false), // true for list and read only, both ways
+        ("propose_session", false, false),
         ("tasks", false, false),
         ("type_text", false, false),
         ("window_session", false, false),
@@ -420,7 +453,7 @@ mod tests {
     #[tokio::test]
     async fn argument_dependent_tools_repeat_only_for_reads() {
         let (chat, _) = registries("arguments").await;
-        let cases: [(&str, Value, bool); 11] = [
+        let cases: [(&str, Value, bool); 14] = [
             ("branch", json!({"action": "status"}), true),
             ("branch", json!({"action": "list"}), true),
             ("branch", json!({"action": "merge"}), false),
@@ -432,6 +465,13 @@ mod tests {
             ("project_graph", json!({"action": "about"}), true),
             ("project_graph", json!({"action": "record"}), false),
             ("project_graph", json!({"action": "fix"}), false),
+            ("terminal", json!({"action": "list"}), true),
+            ("terminal", json!({"action": "read", "terminal": "t"}), true),
+            (
+                "terminal",
+                json!({"action": "write", "terminal": "t"}),
+                false,
+            ),
         ];
         for (name, arguments, expected) in cases {
             assert_eq!(

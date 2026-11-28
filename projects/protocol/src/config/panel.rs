@@ -13,6 +13,14 @@ pub struct Settings {
     pub model_timeout_seconds: u32,
     /// Tries of one model call that wrote nothing, the first included.
     pub max_attempts: u32,
+    /// Whether the core compacts a chat's context on its own as it fills up. Off, a chat
+    /// stops once its context is full, until it is compacted by hand.
+    #[serde(default = "crate::config::yes")]
+    pub auto_compact: bool,
+    /// The share of the model's input limit, in percent, at which the context is
+    /// compacted, within `MIN_AUTO_COMPACT_PERCENT..=MAX_AUTO_COMPACT_PERCENT`.
+    #[serde(default = "auto_compact_percent")]
+    pub auto_compact_percent: u64,
     pub idle_screen_minutes: u32,
     pub memory: Memory,
     pub work_history: WorkHistory,
@@ -41,6 +49,10 @@ pub struct Settings {
     pub skills: Vec<SkillInfo>,
     pub agents: AgentTree,
     pub mcp: Vec<McpInfo>,
+}
+
+fn auto_compact_percent() -> u64 {
+    crate::thread::AUTO_COMPACT_PERCENT
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

@@ -116,6 +116,14 @@ pub async fn run(
             app.model = name.clone();
             app.limit = status.input_limit;
         }
+        // The open chat answers on its own model; the status names the one new chats
+        // start with.
+        app.effort = status.effort;
+        if let Some(own) = &app.own_model {
+            app.model = own.name.clone();
+            app.limit = own.limit;
+            app.effort = own.effort;
+        }
         // A sign-in ends in the browser; say here how it went.
         if known_chatgpt != status.chatgpt {
             use dusk_protocol::client::ChatGpt;
@@ -131,7 +139,6 @@ pub async fn run(
             }
             known_chatgpt = status.chatgpt.clone();
         }
-        app.effort = status.effort;
         app.mode = status.mode.clone();
         if let Some(Panel::Settings(view)) = &mut app.panel {
             view.selected_model = status.model.clone();

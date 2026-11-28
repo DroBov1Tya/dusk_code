@@ -5,15 +5,20 @@ use crate::runtime::jobs::JobInfo;
 use crate::{
     catalog::mentions::Mentions,
     message::sources::{HostFiles, ThreadSources},
+    runtime::ThreadEvent,
     runtime::thread::start::{self},
     state::{Source, UndoPoint},
     tools::Decision,
 };
 use anyhow::{Context, Result};
+use dusk_protocol::thread::SourceChunk;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+/// Agents nest no deeper than this; a longer chain is cut, never followed forever.
+const MAX_DEPTH: usize = 16;
 
 impl Runtime {
     /// Sends a running foreground command of the thread to the background.
@@ -109,8 +114,14 @@ impl Runtime {
         Ok(dusk_protocol::thread::source_tag(&source.name))
     }
 
-    /// The bytes of the thread's picture source `name`, for a client to draw.
-    pub async fn source_picture(&self, thread_id: &str, name: &str) -> Result<Vec<u8>> {
+    /// The bytes of the thread's picture source `source_id`, or else the newest named
+    /// `name`, for a client to draw.
+    pub async fn source_picture(
+        &self,
+        thread_id: &str,
+        name: &str,
+        source_id: Option<&str>,
+    ) -> Result<Vec<u8>> {
         let launcher = self.of(thread_id).await;
         let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         ThreadSources {
@@ -118,7 +129,25 @@ impl Runtime {
             workspace: &workspace,
             thread_id,
         }
-        .picture(name)
+        .picture(name, source_id)
+        .await
+    }
+
+    /// A part of the thread's source `source_id` from byte `offset`, for a reader.
+    pub async fn source_text(
+        &self,
+        thread_id: &str,
+        source_id: &str,
+        offset: u64,
+    ) -> Result<SourceChunk> {
+        let launcher = self.of(thread_id).await;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        ThreadSources {
+            state: &launcher.state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .chunk(source_id, offset)
         .await
     }
 
@@ -179,10 +208,27 @@ impl Runtime {
         if text.trim().is_empty() {
             return crate::tools::clear_plan(state, &workspace, thread_id).await;
         }
-        let name = crate::tools::PLAN_NAME;
-        crate::tools::save_plan(state, &workspace, thread_id, name, text)
+        // The user edits the plan the Plan screen shows: the one written last.
+        let name = crate::tools::current_plan_name(state, thread_id).await?;
+        crate::tools::save_plan(state, &workspace, thread_id, &name, text)
             .await
             .map(drop)
+    }
+
+    /// Every plan of the thread, newest written first.
+    pub async fn plans(&self, thread_id: &str) -> Result<Vec<dusk_protocol::thread::PlanFile>> {
+        let launcher = self.of(thread_id).await;
+        let state = &launcher.state;
+        let workspace = start::workspace(state, &launcher.paths, thread_id).await?;
+        crate::tools::list_plans(state, &workspace, thread_id).await
+    }
+
+    /// Deletes the thread's replaced and finished plans; says how many.
+    pub async fn remove_old_plans(&self, thread_id: &str) -> Result<u64> {
+        let launcher = self.of(thread_id).await;
+        let state = &launcher.state;
+        let workspace = start::workspace(state, &launcher.paths, thread_id).await?;
+        crate::tools::remove_old_plans(state, &workspace, thread_id).await
     }
 
     /// The git changes in the folder the thread started in.
@@ -296,5 +342,48 @@ impl Runtime {
             return asked_chat == named_chat && launcher.approvals.answer(id, decision);
         }
         false
+    }
+
+    /// The requests still waiting in `thread_id` and in every agent below it, as the events
+    /// that opened them in that thread: an agent's wrapped once for each agent between, as it
+    /// came live, so a client that comes after they were asked can still answer them.
+    pub async fn waiting_approvals(&self, thread_id: &str) -> Vec<ThreadEvent> {
+        let mut events = Vec::new();
+        for launcher in [&self.launcher, &self.temporary] {
+            let state = &launcher.state;
+            if state.root_thread(thread_id).await.is_err() {
+                continue;
+            }
+            for (asked, request) in launcher.approvals.waiting() {
+                let id = request.id;
+                let mut event = ThreadEvent::Approval(request);
+                let mut thread = asked;
+                let mut below = false;
+                for _ in 0..MAX_DEPTH {
+                    if thread == thread_id {
+                        below = true;
+                        break;
+                    }
+                    let parent = match state.parent_thread(&thread).await {
+                        Ok(parent) => parent,
+                        Err(error) => {
+                            tracing::warn!("approval {id} not told again: {error:#}");
+                            None
+                        }
+                    };
+                    let Some(parent) = parent else { break };
+                    event = ThreadEvent::Subagent {
+                        thread_id: thread,
+                        event: Box::new(event),
+                    };
+                    thread = parent;
+                }
+                // Asked by a thread beside this one, or above it: not this thread's.
+                if below {
+                    events.push(event);
+                }
+            }
+        }
+        events
     }
 }

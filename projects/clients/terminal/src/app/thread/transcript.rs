@@ -83,6 +83,12 @@ pub enum Entry {
     Block(dusk_protocol::thread::Block),
     /// The Workshop listings the agent suggested, in place of that tool step.
     Suggestion(dusk_protocol::plugin::Suggestion),
+    /// A session the agent proposed, and where it stands; the reply row starts or
+    /// dismisses it while it is the last thing in the chat.
+    Proposal {
+        proposal: dusk_protocol::thread::Proposal,
+        state: dusk_protocol::thread::ProposalState,
+    },
     /// A team or subagents the chat started, as its card said at `seen` (Unix
     /// milliseconds): a running card's clock goes on from there.
     Run {
@@ -528,6 +534,10 @@ impl Transcript {
             }
             Item::Block(block) => Entry::Block(block.clone()),
             Item::Suggestion(card) => Entry::Suggestion(card.clone()),
+            Item::Proposal { proposal, state } => Entry::Proposal {
+                proposal: proposal.clone(),
+                state: state.clone(),
+            },
             Item::Run(_) => {
                 let seen = now_ms();
                 let Some(card) = self.log.run_card(index, seen) else {
@@ -639,6 +649,7 @@ impl Transcript {
             }
             Entry::Block(block) => block.text(),
             Entry::Suggestion(card) => card_text(card),
+            Entry::Proposal { proposal, .. } => format!("{}\n{}", proposal.title, proposal.brief),
             Entry::Run { card, .. } => format!("{} \u{00B7} {}", card.title, card.line()),
             Entry::Tool { tool, .. } => match tool.state {
                 ToolState::Running => tool.arguments.clone(),

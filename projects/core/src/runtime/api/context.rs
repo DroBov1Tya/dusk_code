@@ -28,12 +28,20 @@ impl Runtime {
             Some(thread_id) => launcher.mailboxes.get(thread_id).await,
             None => None,
         };
+        // A stored chat is counted with its own model, as it will be when it opens.
+        let model = match (&live, thread_id) {
+            (None, Some(thread_id)) => {
+                let chat = launcher.stored_chat_model(thread_id).await?;
+                launcher.model.own(chat.choice)
+            }
+            _ => Arc::clone(&launcher.model),
+        };
         let source = match live {
             Some(mailbox) => mailbox.context,
             None => ContextSource {
                 tools: Arc::new(launcher.tools(thread_id.unwrap_or_default(), None, 0)),
                 scope: Arc::new(ToolScope::new(&cwd, &cwd)?),
-                model: Arc::clone(&launcher.model),
+                model,
                 config: Arc::clone(&launcher.config),
             },
         };

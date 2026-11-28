@@ -4,8 +4,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Usage;
 /// Compacting starts once the context passes this share of the input limit. The rest is
-/// room for the summary request and its answer, so 256k compacts at about 205k.
+/// room for the summary request and its answer, so 256k compacts at about 205k. It is the
+/// default of `limits.auto_compact_percent`, which the user may lower.
 pub const AUTO_COMPACT_PERCENT: u64 = 80;
+/// The lowest share `limits.auto_compact_percent` takes; below it a summary would be
+/// written too often to pay for itself.
+pub const MIN_AUTO_COMPACT_PERCENT: u64 = 60;
+/// The highest share: above it the summary request may not fit what is left.
+pub const MAX_AUTO_COMPACT_PERCENT: u64 = 80;
+/// What a chat whose context is full is told while auto-compaction is off.
+pub const AUTO_COMPACT_OFF_HINT: &str =
+    "Auto-compaction is off. Run /compact, or turn auto-compaction on in Settings.";
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

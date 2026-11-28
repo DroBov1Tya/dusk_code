@@ -5,7 +5,7 @@ use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, WorkRequest},
     project::{Change, FileChange, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanPage, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanFile, PlanPage, SourceChunk, Team},
 };
 
 /// A thread's background jobs and sources.
@@ -145,6 +145,14 @@ impl Work<'_> {
             .await
     }
 
+    /// Retries a failed task of the chat's plan in place.
+    pub async fn retry_task(&self, thread_id: &str, task_id: &str) -> Result<()> {
+        let (thread_id, task_id) = (thread_id.to_owned(), task_id.to_owned());
+        self.0
+            .done(Request::Work(WorkRequest::RetryTask { thread_id, task_id }))
+            .await
+    }
+
     /// Ends the chat's running team as stopped: its members at work are cancelled and
     /// their tasks go back to open.
     pub async fn stop_team(&self, thread_id: &str) -> Result<()> {
@@ -163,6 +171,32 @@ impl Work<'_> {
                 at_once,
             }))
             .await
+    }
+
+    /// Every plan of the chat, newest written first.
+    pub async fn plans(&self, thread_id: &str) -> Result<Vec<PlanFile>> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::Plans { thread_id }))
+            .await?
+        {
+            Response::Plans(plans) => Ok(plans),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Deletes the plans a newer one replaced and finished ones; says how many.
+    pub async fn remove_old_plans(&self, thread_id: &str) -> Result<u64> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::RemoveOldPlans { thread_id }))
+            .await?
+        {
+            Response::Number(removed) => Ok(removed),
+            other => Err(unexpected(other)),
+        }
     }
 
     /// Rewrites the plan; empty text removes it.
@@ -195,12 +229,40 @@ impl Work<'_> {
         self.0.done(Request::Work(request)).await
     }
 
-    /// The bytes of the thread's picture source `name`.
-    pub async fn source_picture(&self, thread_id: &str, name: &str) -> Result<Vec<u8>> {
-        let (thread_id, name) = (thread_id.to_owned(), name.to_owned());
-        let request = WorkRequest::SourcePicture { thread_id, name };
+    /// The bytes of the thread's picture source `source_id`, or else the newest named
+    /// `name`.
+    pub async fn source_picture(
+        &self,
+        thread_id: &str,
+        name: &str,
+        source_id: Option<&str>,
+    ) -> Result<Vec<u8>> {
+        let request = WorkRequest::SourcePicture {
+            thread_id: thread_id.to_owned(),
+            name: name.to_owned(),
+            source_id: source_id.map(str::to_owned),
+        };
         match self.0.call(Request::Work(request)).await? {
             Response::Picture(bytes) => Ok(bytes),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// A part of the source `source_id` from byte `offset`, for a reader.
+    pub async fn source_text(
+        &self,
+        thread_id: &str,
+        source_id: &str,
+        offset: u64,
+    ) -> Result<SourceChunk> {
+        let (thread_id, source_id) = (thread_id.to_owned(), source_id.to_owned());
+        let request = WorkRequest::SourceText {
+            thread_id,
+            source_id,
+            offset,
+        };
+        match self.0.call(Request::Work(request)).await? {
+            Response::SourceText(chunk) => Ok(chunk),
             other => Err(unexpected(other)),
         }
     }

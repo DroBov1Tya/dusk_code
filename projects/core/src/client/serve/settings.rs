@@ -31,6 +31,11 @@ impl Server {
                 let saved = runtime.config().current().limits().max_attempts;
                 return Ok(Response::Number(saved.into()));
             }
+            SettingsRequest::AutoCompactPercent(percent) => {
+                runtime.set_auto_compact_percent(percent)?;
+                let saved = runtime.config().current().limits().auto_compact_percent;
+                return Ok(Response::Number(saved));
+            }
             SettingsRequest::MemoryChars(chars) => runtime.set_memory_chars(chars)?,
             SettingsRequest::WorkHistoryChars(chars) => {
                 runtime.set_work_history_chars(chars)?;
@@ -68,6 +73,11 @@ impl Server {
             SettingsRequest::ProviderEnabled { name, enabled } => {
                 runtime.set_provider_enabled(&name, enabled)?;
             }
+            SettingsRequest::ModelsHidden {
+                provider,
+                models,
+                hidden,
+            } => runtime.set_models_hidden(&provider, &models, hidden)?,
             SettingsRequest::RemoveAllProviders => runtime.remove_all_providers()?,
             SettingsRequest::SetSecret { name, value } => {
                 runtime.set_secret(&name, &value.0).await?
@@ -121,6 +131,7 @@ impl Server {
             Switch::Logging => runtime.set_logging_enabled(on),
             Switch::Notifications => runtime.set_notifications(on),
             Switch::SoundNotifications => runtime.set_sound_notifications(on),
+            Switch::AutoCompact => runtime.set_auto_compact(on),
         }
     }
 }

@@ -5,7 +5,7 @@ use crate::link::request;
 use dusk_protocol::{
     client::{Response, WorkRequest},
     project::{Change, FileDiff},
-    thread::{JobInfo, LogEntry, Overview, PlanCounts, Team},
+    thread::{JobInfo, LogEntry, Overview, PlanCounts, PlanFile, Source, SourceChunk, Team},
 };
 
 use super::*;
@@ -35,6 +35,24 @@ pub async fn save_plan(thread_id: &str, text: String) -> Res<()> {
     done(work(WorkRequest::SavePlan { thread_id, text })).await
 }
 
+/// Every plan of the chat, newest written first.
+pub async fn plans(thread_id: &str) -> Res<Vec<PlanFile>> {
+    let thread_id = thread_id.to_owned();
+    ask!(work(WorkRequest::Plans { thread_id }), Response::Plans(p) => p)
+}
+
+/// Deletes the plans a newer one replaced and finished ones; says how many.
+pub async fn remove_old_plans(thread_id: &str) -> Res<u64> {
+    let thread_id = thread_id.to_owned();
+    ask!(work(WorkRequest::RemoveOldPlans { thread_id }), Response::Number(n) => n)
+}
+
+/// Forgets a source of the chat, such as a plan, and deletes its file.
+pub async fn remove_source(thread_id: &str, id: &str) -> Res<()> {
+    let (thread_id, id) = (thread_id.to_owned(), id.to_owned());
+    done(work(WorkRequest::RemoveSource { thread_id, id })).await
+}
+
 pub async fn chat_diff(thread_id: &str, path: Option<String>) -> Res<Vec<FileDiff>> {
     let thread_id = thread_id.to_owned();
     ask!(work(WorkRequest::Diff { thread_id, path }), Response::Diff(d) => d)
@@ -51,6 +69,40 @@ pub async fn upload_picture(thread_id: &str, name: String, bytes: Vec<u8>) -> Re
     ask!(
         work(WorkRequest::UploadPicture { thread_id, name, bytes }),
         Response::Text(tag) => tag
+    )
+}
+
+/// The thread's sources, oldest first.
+pub async fn sources(thread_id: &str) -> Res<Vec<Source>> {
+    let thread_id = Some(thread_id.to_owned());
+    match command(dusk_protocol::client::Command::Sources {
+        thread_id,
+        add: None,
+    })
+    .await?
+    {
+        dusk_protocol::client::Answer::Sources(sources) => Ok(sources),
+        other => Err(format!("The core answered {other:?}, not the sources.")),
+    }
+}
+
+/// A part of the source `source_id` from byte `offset`, for the reader.
+pub async fn source_text(thread_id: &str, source_id: &str, offset: u64) -> Res<SourceChunk> {
+    let (thread_id, source_id) = (thread_id.to_owned(), source_id.to_owned());
+    ask!(
+        work(WorkRequest::SourceText { thread_id, source_id, offset }),
+        Response::SourceText(chunk) => chunk
+    )
+}
+
+/// The bytes of the picture source `source_id`, or else the newest named `name`, a PNG
+/// or JPEG the core checked.
+pub async fn source_picture(thread_id: &str, name: &str, source_id: Option<&str>) -> Res<Vec<u8>> {
+    let (thread_id, name) = (thread_id.to_owned(), name.to_owned());
+    let source_id = source_id.map(str::to_owned);
+    ask!(
+        work(WorkRequest::SourcePicture { thread_id, name, source_id }),
+        Response::Picture(bytes) => bytes
     )
 }
 
@@ -94,6 +146,12 @@ pub async fn stop_team(thread_id: &str) -> Res<()> {
 pub async fn set_team_at_once(thread_id: &str, at_once: u32) -> Res<()> {
     let thread_id = thread_id.to_owned();
     done(work(WorkRequest::SetTeamAtOnce { thread_id, at_once })).await
+}
+
+/// Retries a failed task in place; its own event moves the row.
+pub async fn retry_task(thread_id: &str, task_id: &str) -> Res<()> {
+    let (thread_id, task_id) = (thread_id.to_owned(), task_id.to_owned());
+    done(work(WorkRequest::RetryTask { thread_id, task_id })).await
 }
 
 /// Passes a task that waits for the user's confirmation; its own event moves the row.
